@@ -225,6 +225,27 @@
   from{opacity:.65;transform:scaleX(.85)}
   to{opacity:1;transform:scaleX(1)}
 }
+/* Each desktop column owns its layout and scroll; long forms cannot
+   reflow or vertically recenter the opposite decorative column. */
+@media(min-width:801px){
+  .auth{
+    height:100dvh;min-height:480px;
+    grid-template-rows:minmax(0,1fr);
+    overflow:hidden
+  }
+  .auth-art.art-v4{
+    height:100%;min-height:0;
+    overflow-x:hidden;overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-width:thin
+  }
+  .auth-main{
+    height:100%;min-height:0;
+    overflow-x:hidden;overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable
+  }
+}
 @media(min-width:1300px){.auth-panel{max-width:545px}}
 @media(max-width:1100px) and (min-width:801px){
   .auth-panel{padding:25px!important;min-height:520px}
