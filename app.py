@@ -81,10 +81,10 @@ def normalize_phone(value: str) -> str:
 
     Phone numbers are unverified; never use them as proof of identity.
     """
-    number=re.sub(r'[\\s().-]', '', str(value or ''))
+    number=re.sub(r'[\s().-]', '', str(value or ''))
     if re.fullmatch(r'0[0-9]{9}',number):
         number='+84'+number[1:]
-    if not re.fullmatch(r'\\+[1-9][0-9]{7,14}',number):
+    if not re.fullmatch(r'\+[1-9][0-9]{7,14}',number):
         raise HTTPException(422,'Số điện thoại phải gồm 10 chữ số (Việt Nam) hoặc dạng +mã quốc gia.')
     return number
 
@@ -93,7 +93,7 @@ def normalize_email(value: str | None) -> str:
     email=str(value or '').strip().lower()
     if not email:
         return ''
-    if len(email)>254 or not re.fullmatch(r'[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}',email):
+    if len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]{2,}',email):
         raise HTTPException(422,'Email không hợp lệ. Vui lòng nhập email đúng định dạng.')
     return email
 
