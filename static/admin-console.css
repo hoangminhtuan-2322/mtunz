@@ -107,3 +107,22 @@
 @media(prefers-reduced-motion:reduce){
  .admin-shell .admin-nav,.admin-shell .admin-capacity-meter>span{transition:none!important}
 }
+/* Keep the overlay out of the desktop grid until the mobile menu opens. */
+.admin-shell .admin-menu-backdrop{display:none}
+.admin-shell .admin-nav{align-items:stretch}
+.admin-shell .admin-nav .nav-label{display:block}
+.admin-shell .admin-nav .logo span:not(.logo-mark){display:inline}
+.admin-shell .admin-nav button[data-act="logout"]{font-size:12px}
+#modal-root .admin-proof-box{margin-top:15px;padding:15px;border:1px solid #526687;border-radius:13px;background:#101b30}
+#modal-root .admin-proof-box .field{margin-top:11px}
+#modal-root .admin-proof-box .hint{line-height:1.65;color:#c7d4ee}
+#modal-root .premium-dialog{max-height:calc(100dvh - 28px);overflow-y:auto;overscroll-behavior:contain}
+.admin-command-overlay{position:fixed;z-index:450;inset:0;display:flex;align-items:flex-start;justify-content:center;padding:15vh 16px 20px;background:#050b19ca}
+.admin-command-dialog{width:min(540px,100%);max-height:75dvh;overflow:auto;background:#142038;border:1px solid #7880ae;border-radius:18px;box-shadow:0 30px 90px #000a;padding:22px}
+.admin-command-dialog h2{font-size:17px;margin-bottom:15px;color:#f0f5ff}
+.admin-command-dialog .input{width:100%;margin-bottom:12px}
+.admin-command-results{display:flex;flex-direction:column;gap:5px}
+.admin-command-results button{border:1px solid transparent;background:#20304d;color:#e5efff;font-size:12px;font-weight:650;padding:12px;text-align:left;border-radius:10px}
+.admin-command-results button:hover,.admin-command-results button:focus-visible{border-color:#a89bff;background:#384b70}
+.admin-shell .data-table tbody tr[hidden],.admin-shell .ticket-item[hidden],.admin-shell .audit-item[hidden]{display:none!important}
+@media(max-width:950px){.admin-shell.admin-menu-open .admin-menu-backdrop{display:block}}
