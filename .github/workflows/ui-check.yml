@@ -55,8 +55,8 @@ jobs:
           signals = Path('static/signals.css').read_text(encoding='utf-8')
           assert 'signal-stage' in signals and 'signal-feature' in application
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=5.0' in h
-          assert '/static/auth-refined.css?v=5.0' in h
+          assert '/static/app.js?v=5.1' in h
+          assert '/static/auth-refined.css?v=5.1' in h
           assert 'showcase-contact' not in application
           assert 'tối thiểu 10 ký tự' in application
           assert 'brandGlyph' in application and 'class="brand-glyph"' in application
@@ -65,6 +65,9 @@ jobs:
           assert 'prefers-reduced-motion' in notices and 'notify-progress' in notices
           assert '<svg' in mark and 'mtunz' in mark
           assert 'MỘT KHÔNG GIAN, NHIỀU KẾT NỐI' in application
+          assert '<h1 class="auth-headline-copy">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>' in application
+          assert '<p>Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>' in application
+          assert 'Gần nhau hơn.<br>' not in application
           assert 'aria-invalid' in js
           assert '/api/username/check' in js
           assert 'field-error' in css and 'is-loading' in css
