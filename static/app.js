@@ -28,6 +28,8 @@ const Ipaths = {
   chevron:'<path d="m9 18 6-6-6-6"/>'
 };
 const icon=(name,size=19)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${Ipaths[name]||Ipaths.chat}</svg>`;
+const brandGlyph=()=>`<svg class="brand-glyph" width="25" height="25" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7.2 22.4V12.3c0-3 1.9-5 4.6-5 2.4 0 4.2 1.6 4.5 3.6.7-2 2.3-3.6 4.6-3.6 2.8 0 4.7 2 4.7 5v10.1" stroke="white" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.3 11v11.4" stroke="white" stroke-width="3.7" stroke-linecap="round"/><circle cx="26" cy="6.4" r="2.5" fill="#B2FFF1"/></svg>`;
+
 const avatar=(name,online=false,size='')=>`<div class="avatar ${size} ${online?'online':''}">${esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
  regName:'',regStatus:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
@@ -136,18 +138,43 @@ async function enterApp(){
 async function logout(){try{await post('/api/auth/logout');}catch{}state.user=null;state.selected=null;state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();}
 
 // ==== Onboarding and anonymous support ====
-function authArt(){return `<aside class="auth-art"><div class="logo"><span class="logo-mark">m</span> mtunz<span style="color:#8984fc">.</span></div>
-<div class="art-content"><span class="eyebrow">A new way to stay connected</span>
-<h1>Nơi mọi kết nối<br>trở nên <span class="gradient-text">gần gũi.</span></h1>
-<p>Trò chuyện theo thời gian thực, giữ liên lạc với bạn bè, và tận hưởng một không gian riêng tư, tinh giản.</p>
-<div class="mock-chat"><div class="mock-head">${avatar('Linh',true,'sm')}<div><b>Linh Nguyễn</b><div class="small muted"><span class="dot"></span>Đang hoạt động</div></div></div>
-<div class="mock-msg">Cuối tuần mình có hẹn nhé! ✨</div><div class="mock-msg me">Okii, gặp nhau thứ Bảy nha! 💜</div>
-<div class="mock-foot">✓✓ Đã xem · 08:42</div></div></div>
-<div class="auth-art-footer"><span>✦ Realtime messaging</span><span>✦ Secure login</span><span>✦ Friends first</span></div></aside>`;}
+function authArt(){return `<aside class="auth-art art-v3">
+  <div class="art-aurora art-aurora-a" aria-hidden="true"></div><div class="art-aurora art-aurora-b" aria-hidden="true"></div>
+  <div class="art-stars" aria-hidden="true"></div>
+  <div class="logo brand-lockup"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span class="brand-dot">.</span></span><span class="brand-byline">CHAT REIMAGINED</span></div>
+  <div class="art-content">
+    <div class="art-kicker"><span class="live-spark"></span> KẾT NỐI THEO CÁCH CỦA BẠN</div>
+    <h1>Chuyện trò<br><span class="gradient-text">tự nhiên hơn.</span></h1>
+    <p>Một góc nhỏ chỉ dành cho những cuộc trò chuyện quan trọng. Gửi tin nhắn tức thì, chia sẻ khoảnh khắc và luôn gần nhau.</p>
+    <div class="showcase" aria-label="Minh họa trò chuyện trên mtunz">
+      <div class="showcase-chrome">
+        <div class="chrome-dots"><i></i><i></i><i></i></div>
+        <span>Cuộc trò chuyện của bạn</span>
+        <span class="chrome-lock">${icon('lock',13)} Riêng tư</span>
+      </div>
+      <div class="showcase-body">
+        <div class="showcase-contact">
+          <div class="showcase-avatar-wrap"><span class="showcase-avatar">AN</span><i class="showcase-online"></i></div>
+          <div class="showcase-contact-text"><strong>An Nhiên</strong><span>Đang hoạt động</span></div>
+          <span class="showcase-call" aria-hidden="true">${icon('chat',19)}</span>
+        </div>
+        <div class="showcase-day"><span>Hôm nay</span></div>
+        <div class="showcase-bubble showcase-received">Cuối tuần này có hẹn không? <span class="showcase-heart" aria-hidden="true">♡</span></div>
+        <div class="showcase-bubble showcase-sent">Có chứ! Mình đợi ngày đó mãi <span aria-hidden="true">✦</span></div>
+        <div class="showcase-meta">${icon('check',12)} Đã xem · 08:42</div>
+        <div class="showcase-typing"><span class="showcase-typing-dots"><i></i><i></i><i></i></span> An Nhiên đang nhập…</div>
+      </div>
+    </div>
+    <div class="showcase-note"><span class="note-symbol">${icon('shield',17)}</span><span><strong>Không gian của riêng bạn</strong><small>Đăng nhập nhiều lớp, kết nối an tâm</small></span><span class="note-check">${icon('check',16)}</span></div>
+  </div>
+  <div class="auth-art-footer" aria-label="Các tính năng nổi bật">
+    <span>${icon('chat',15)} Nhắn tin tức thì</span><span>${icon('users',15)} Bạn bè thân thiết</span><span>${icon('lock',15)} Bảo vệ tài khoản</span>
+  </div>
+  </aside>`;}
 function inputField(label,name,type='text',placeholder='',attr=''){return `<div class="field"><label for="${name}">${label}</label><input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div>`;}
-function authTabs(){return `<div class="auth-nav"><button class="${state.mode==='login'?'active':''}" data-act="mode-login">Đăng nhập</button>
-<button class="${state.mode==='register'?'active':''}" data-act="mode-register">Tạo tài khoản</button>
-<button class="${state.mode==='support'?'active':''}" data-act="mode-support">Hỗ trợ</button></div>`;}
+function authTabs(){return `<div class="auth-nav" aria-label="Điều hướng tài khoản"><button class="${state.mode==='login'?'active':''}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
+<button class="${state.mode==='register'?'active':''}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
+<button class="${state.mode==='support'?'active':''}" data-act="mode-support">${icon('inbox',16)}<span>Hỗ trợ</span></button></div>`;}
 function authLogin(){
  const step=state.step;
  const forms={
@@ -219,7 +246,7 @@ function authSupport(){
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
 function renderAuth(){
- root().innerHTML=`<div class="auth">${authArt()}<main class="auth-main"><div class="auth-mobile-logo logo"><span class="logo-mark">m</span> mtunz<span style="color:#8984fc">.</span></div><div class="auth-panel">${authTabs()}${state.mode==='login'?authLogin():state.mode==='register'?authRegister():authSupport()}
+ root().innerHTML=`<div class="auth">${authArt()}<main class="auth-main"><div class="auth-mobile-logo logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span> mtunz<span style="color:#8984fc">.</span></div><div class="auth-panel">${authTabs()}${state.mode==='login'?authLogin():state.mode==='register'?authRegister():authSupport()}
  <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div></div></main></div>`;
  const panel=$('.auth-panel');panel?.scrollIntoView({block:'nearest'});
 }
@@ -388,7 +415,7 @@ async function goTab(tab){
 // ==== Administrator workspace ====
 const adminTabs=[['groups','group','Nhóm chat'],['overview','grid','Tổng quan'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin']];
 function adminNav(){
- return `<aside class="admin-nav"><div class="logo"><span class="logo-mark">m</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
+ return `<aside class="admin-nav"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
  <div class="nav-label">QUẢN LÝ HỆ THỐNG</div>
  ${adminTabs.map(([t,ic,label])=>`<button data-act="admin-tab" data-tab="${t}" title="${label}" class="${state.adminTab===t?'active':''}">${icon(ic,19)} ${label}</button>`).join('')}
  <div class="nav-spacer"></div><div class="nav-label">TÀI KHOẢN</div>
