@@ -1,0 +1,12 @@
+# Never commit credentials, databases, or user uploads.
+.env
+.env.*
+!.env.example
+data/
+backups/
+.devdata/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.zip
