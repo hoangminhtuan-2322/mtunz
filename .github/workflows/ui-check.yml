@@ -33,6 +33,7 @@ jobs:
       - name: Check isolated auth animation and keyboard tab state
         run: |
           node tests/auth_isolation.cjs
+          node tests/member_navigation.cjs
       - name: Verify left-side hero motion scope
         run: |
           node tests/hero_motion_isolation.cjs
