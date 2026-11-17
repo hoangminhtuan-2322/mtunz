@@ -11,6 +11,7 @@ import secrets
 import sqlite3
 from pathlib import Path
 from typing import Literal
+from account_deletion import delete_user_records
 from urllib.parse import quote
 
 from fastapi import HTTPException, Request, UploadFile, File
@@ -180,6 +181,76 @@ def install(core):
                       (u['id'],saved_hash))
         await hub.terminate_user(u['id'], except_hash=current)
         return {'ok':True}
+
+    # Account deletion is irreversible. Both paths require re-authentication,
+    # a typed account name and an exact explicit confirmation phrase.
+    class PermanentDelete(BaseModel):
+        username: str = Field(min_length=1, max_length=80)
+        password: str = Field(min_length=1, max_length=128)
+        pin: str | None = None
+        confirm: Literal['XOA VINH VIEN']
+
+    def check_delete_identity(c, actor_id: int, body: PermanentDelete):
+        actor=one(c,'SELECT * FROM users WHERE id=?',(actor_id,))
+        if not actor or not core.verify_secret(actor['password_hash'],body.password):
+            raise HTTPException(401,'Mật khẩu xác nhận không đúng.')
+        if actor['pin_hash'] and not core.verify_secret(actor['pin_hash'],body.pin or ''):
+            raise HTTPException(401,'Mã PIN xác nhận không đúng.')
+        return actor
+
+    def remove_local_uploads(names):
+        # Blob bytes are removed atomically from Neon. Local development uploads
+        # are cleaned only by safe generated filenames, after DB commit.
+        for filename in names:
+            if not re.fullmatch(r'[a-f0-9]{40}\\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip)',filename or ''):
+                continue
+            try:
+                (upload_dir/filename).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    async def finish_account_delete(result):
+        uid=result['deleted_user_id']
+        await hub.user(uid,'session-ended',reason='Tài khoản đã bị xóa vĩnh viễn.')
+        await hub.terminate_user(uid)
+        for peer in result['friend_ids']:
+            await hub.user(peer,'friends-updated')
+        for peer in result['group_peer_ids']:
+            await hub.user(peer,'groups-updated')
+        remove_local_uploads(result['filenames'])
+
+    @app.post('/api/me/delete')
+    async def delete_own_account(request:Request,body:PermanentDelete):
+        actor=current_user(request)
+        if actor['is_admin']:
+            raise HTTPException(403,'Tài khoản Admin không thể tự xóa tại mục cài đặt.')
+        throttle(request,'delete-own-account',5,3600,str(actor['id']))
+        with db() as c:
+            current=check_delete_identity(c,actor['id'],body)
+            if current['username'].casefold()!=body.username.strip().casefold():
+                raise HTTPException(422,'Tên tài khoản xác nhận không khớp.')
+            result=delete_user_records(c,actor['id'])
+        await finish_account_delete(result)
+        response=JSONResponse({'ok':True,'deleted':True})
+        response.delete_cookie('s',path='/')
+        response.delete_cookie(core.REMEMBER_COOKIE,path='/')
+        return response
+
+    @app.post('/api/admin/users/{uid}/delete')
+    async def delete_member_as_admin(request:Request,uid:int,body:PermanentDelete):
+        admin=require_admin(request)
+        throttle(request,'admin-delete-account',5,3600,str(admin['id']))
+        with db() as c:
+            check_delete_identity(c,admin['id'],body)
+            target=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
+            if not target:
+                raise HTTPException(404,'Không tìm thấy tài khoản người dùng có thể xóa.')
+            if target['username'].casefold()!=body.username.strip().casefold():
+                raise HTTPException(422,'Tên tài khoản xác nhận không khớp.')
+            result=delete_user_records(c,uid)
+            admin_log(c,admin['id'],'permanent_user_delete',f'user_id={uid}')
+        await finish_account_delete(result)
+        return {'ok':True,'deleted_user_id':uid}
 
     @app.get('/api/me/export')
     async def export_account(request:Request):
