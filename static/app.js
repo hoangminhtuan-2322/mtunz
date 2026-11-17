@@ -1064,15 +1064,22 @@ function adminProofFields(){
  return `<div class="admin-proof-box">
  <p class="hint">Xác minh lại trước khi thực hiện. Mật khẩu và PIN chỉ gửi tới máy chủ để kiểm tra.</p>
  <div class="field"><label for="admin-confirm-password">Mật khẩu Admin</label>
- <input class="input" id="admin-confirm-password" type="password" autocomplete="off" maxlength="128" required></div>
+ <input class="input" id="admin-confirm-password" type="password" autocomplete="off" readonly data-admin-proof="1" maxlength="128" required></div>
  ${state.user?.pin_length?`<div class="field"><label for="admin-confirm-pin">PIN Admin</label>
- <input class="input" id="admin-confirm-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="6" required></div>`:''}
+ <input class="input" id="admin-confirm-pin" type="password" autocomplete="off" readonly data-admin-proof="1" inputmode="numeric" maxlength="6" required></div>`:''}
  </div>`;
 }
+function unlockAdminProof(input){
+ if(!input?.matches?.('input[data-admin-proof]')||!input.readOnly)return;
+ input.value='';input.readOnly=false;input.dataset.manuallyUnlocked='1';
+}
+document.addEventListener('pointerdown',event=>unlockAdminProof(event.target),true);
+document.addEventListener('focusin',event=>unlockAdminProof(event.target));
 function adminProofValue(host){
  const password=host.querySelector('#admin-confirm-password')?.value||'';
  const pin=host.querySelector('#admin-confirm-pin')?.value||'';
  if(!password||(state.user?.pin_length&&!pin))throw Error('Cần nhập mật khẩu và PIN Admin để xác nhận.');
+ if(!host.querySelector('#admin-confirm-password')?.dataset.manuallyUnlocked||(state.user?.pin_length&&!host.querySelector('#admin-confirm-pin')?.dataset.manuallyUnlocked))throw Error('Vui lòng chọn ô xác minh và nhập lại thông tin bảo mật.');
  return {admin_password:password,admin_pin:pin};
 }
 function sanctionDialog(uid,kind){
