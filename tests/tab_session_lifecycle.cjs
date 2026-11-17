@@ -86,6 +86,30 @@ vm.runInContext(enter+boot,context);
  assert(!calls.includes('POST /api/auth/remembered'),'Reload must not request PIN');
  assert.equal(state.selected,null,'Only valid/accepted chat IDs should restore');
  calls.length=0;
+ // An accepted conversation returns to exactly that conversation after refresh.
+ context.refreshFriends=async()=>{
+  calls.push('friends');
+  state.friends=[{other_id:42,state:'accepted'}];
+ };
+ state.user=null;
+ await context.setup();
+ assert.equal(state.tab,'messages');
+ assert.equal(state.selected,42,'The active conversation must survive reload');
+ assert(calls.includes('messages'),'Messages for the selected chat are fetched again');
+ assert(!calls.includes('POST /api/auth/lock'));
+ calls.length=0;
+ // Administrator dashboard section is also restored without fresh credentials.
+ storage.set('mtunz.active-tab.v1',JSON.stringify({uid:1}));
+ storage.set('mtunz.active-view.v1',JSON.stringify({uid:1,adminTab:'users'}));
+ state.user=null;current={id:1,is_admin:true};
+ await context.setup();
+ assert.equal(state.adminTab,'users','Admin should remain on current section');
+ assert(calls.includes('loadAdmin'));
+ assert(!calls.includes('POST /api/auth/remembered'));
+ calls.length=0;
+ // Restore the member tab for the network-recovery case.
+ storage.set('mtunz.active-tab.v1',JSON.stringify({uid:17}));
+ state.user=null;current={id:17,is_admin:false};
  // A later transient network fault shows retry instead of logging out.
  state.user=null;failNetwork=true;
  await context.setup();
