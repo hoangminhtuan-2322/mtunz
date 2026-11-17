@@ -34,7 +34,7 @@ for(const pin_length of [null,6]){
  assert(markup.includes('type="password"'),'Password remains password-type');
 }
 assert(html.includes('/static/form-layout.css?v=8.3'),'Global form fix must load and bust cache');
-assert(html.includes('/static/app.js?v=8.3'),'Security wrapper JavaScript must bust cache');
+assert(html.includes('/static/app.js?v=9.0'),'Security wrapper JavaScript must bust cache');
 assert(html.indexOf('form-layout.css?v=8.3')>html.indexOf('auth-refined.css?v=5.1'),'Geometry fix loads after original auth styles');
 assert(css.includes('.auth-input-wrap > input.input'),'Icon spacing must apply outside auth panels');
 assert(css.includes('padding-inline-start:48px'),'Text reserves at least 48px for icon');
