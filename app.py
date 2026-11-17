@@ -570,8 +570,13 @@ async def auth_password(request: Request, body: PasswordLogin):
             raise HTTPException(403, {'code':'sanction','kind':u['sanction_kind'],
                                       'until':u['sanction_until'],'reason':u['sanction_reason']})
         if u['is_admin'] and not u['pin_hash']:
+            old_device = request.cookies.get(REMEMBER_COOKIE)
+            if valid_remember_token(old_device):
+                c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(old_device),))
             raw = issue_session(c,u['id'])
-            return session_response({'ok':True,'admin':True},raw)
+            response = session_response({'ok':True,'admin':True},raw)
+            if old_device: response.delete_cookie(REMEMBER_COOKIE,path='/')
+            return response
         challenge = token()
         c.execute('DELETE FROM login_challenges WHERE guest_id=?', (request.state.gid,))
         c.execute('INSERT INTO login_challenges VALUES(?,?,?,?)',
@@ -601,6 +606,9 @@ async def auth_pin(request: Request, body: PinLogin):
             raise HTTPException(403,'Tài khoản đang bị hạn chế.')
         c.execute('DELETE FROM login_challenges WHERE token_hash=?',(digest(body.challenge),))
         raw = issue_session(c,r['user_id'])
+        previous = request.cookies.get(REMEMBER_COOKIE)
+        if valid_remember_token(previous):
+            c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(previous),))
         saved = token() if body.remember_device else None
         if saved:
             c.execute('INSERT INTO trusted_devices(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)',
@@ -608,6 +616,8 @@ async def auth_pin(request: Request, body: PinLogin):
         is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
     response = session_response({'ok':True,'admin':is_admin,'remembered':bool(saved)},raw)
     if saved: remember_cookie(response,saved)
+    elif request.cookies.get(REMEMBER_COOKIE):
+        response.delete_cookie(REMEMBER_COOKIE,path='/')
     return response
 
 
