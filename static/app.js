@@ -382,16 +382,32 @@ function authRegister(){
  <div class="info-strip">Màn hình sẽ tự cập nhật khi admin duyệt. Bạn cũng có thể kiểm tra lại thủ công.</div>
  <button class="btn ghost full" data-act="refresh-registration">${icon('refresh')} Kiểm tra trạng thái</button></div>`;
  if(state.regStatus==='denied')return `<span class="eyebrow">YÊU CẦU BỊ TỪ CHỐI</span><h1>Chưa thể đăng ký.</h1><p class="hint">Admin đã từ chối yêu cầu <b>${esc(state.regName)}</b>. Bạn có thể gửi yêu cầu mới với tên khác.</p><button class="btn primary full" data-act="retry-registration">Gửi yêu cầu khác</button>`;
- if(state.regStatus==='approved')return `<span class="eyebrow">ĐÃ ĐƯỢC ADMIN DUYỆT</span><h1>Hoàn tất tài khoản.</h1>
- <p class="hint">Tên <b>${esc(state.regName)}</b> đã được giữ chỗ. Thiết lập mật khẩu và chọn PIN 4–6 số.</p>
- <div class="info-strip">✓ Được phép tạo tài khoản · Mật khẩu và PIN được lưu bằng mã băm, không hiển thị cho admin.</div>
- <form data-form="register-complete">${inputField('Mật khẩu (tối thiểu 10 ký tự)','new-password','password','Tạo mật khẩu mạnh','minlength="10" autocomplete="new-password"')}
- ${inputField('Nhập lại mật khẩu','repeat-password','password','Nhập lại mật khẩu','minlength="10"')}
- <div class="field"><label>Độ dài mã PIN</label><select class="select" id="pin-length" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6">6 chữ số</option></select></div>
- ${inputField('Mã PIN','new-pin','password','Chỉ dùng chữ số','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6"')}
- ${inputField('Nhập lại PIN','repeat-pin','password','Nhập lại PIN','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6"')}
- <label class="row" style="align-items:flex-start;margin:15px 0 19px;font-size:11px;color:var(--muted)"><input type="checkbox" required style="margin-top:3px"> <span>Tôi hiểu quản trị viên được phép kiểm duyệt dữ liệu tài khoản và lịch sử tin nhắn; không ai được xem mật khẩu/PIN gốc.</span></label>
- <button class="btn primary full">Tạo tài khoản ${icon('check',17)}</button></form>`;
+ if(state.regStatus==='approved')return `<div class="registration-complete">
+ <div class="registration-approved">${icon('check',15)} <span>ĐÃ ĐƯỢC PHÊ DUYỆT</span></div>
+ <h1>Hoàn tất tài khoản.</h1>
+ <p class="hint registration-lead">Tên tài khoản <strong>${esc(state.regName)}</strong> đã được giữ chỗ. Tạo mật khẩu và PIN bảo mật để bắt đầu sử dụng mtunz.</p>
+ <form data-form="register-complete" class="registration-form">
+   <section class="registration-section" aria-labelledby="registration-password-heading">
+     <div class="registration-section-heading">
+       <span class="registration-section-number" aria-hidden="true">01</span>
+       <div><h2 id="registration-password-heading">Mật khẩu đăng nhập</h2><p>Sử dụng mật khẩu riêng, tối thiểu 10 ký tự.</p></div>
+     </div>
+     ${inputField('Mật khẩu','new-password','password','Tạo mật khẩu mạnh','minlength="10" autocomplete="new-password"')}
+     ${inputField('Nhập lại mật khẩu','repeat-password','password','Xác nhận mật khẩu','minlength="10" autocomplete="new-password"')}
+   </section>
+   <section class="registration-section" aria-labelledby="registration-pin-heading">
+     <div class="registration-section-heading">
+       <span class="registration-section-number" aria-hidden="true">02</span>
+       <div><h2 id="registration-pin-heading">Mã PIN xác minh</h2><p>Lớp bảo vệ bổ sung khi đăng nhập.</p></div>
+     </div>
+     <div class="field registration-pin-select"><label for="pin-length">Độ dài mã PIN</label><select class="select" id="pin-length" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6">6 chữ số</option></select></div>
+     ${inputField('Mã PIN','new-pin','password','Chỉ dùng chữ số','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+     ${inputField('Nhập lại PIN','repeat-pin','password','Xác nhận mã PIN','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+   </section>
+   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi hiểu quản trị viên có thể kiểm duyệt dữ liệu tài khoản và lịch sử trò chuyện để đảm bảo an toàn, nhưng không thể xem mật khẩu hoặc mã PIN gốc.</span></label>
+   <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
+   <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
+ </form></div>`;
  return `<span class="eyebrow">THAM GIA MTUNZ</span><h1>Bắt đầu một kết nối mới.</h1>
  <p class="hint">Bước đầu tiên là đăng ký tên tài khoản riêng và chờ admin chấp thuận trước khi tạo mật khẩu.</p>
  <div class="auth-step"><span class="active"></span><span></span><span></span></div>
