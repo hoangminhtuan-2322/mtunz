@@ -611,6 +611,144 @@ async def auth_pin(request: Request, body: PinLogin):
     return response
 
 
+@app.post('/api/auth/remembered')
+async def remembered_status(request: Request):
+    """Lock previous cookie session on every fresh page load; reveal only valid saved device metadata."""
+    from fastapi.responses import JSONResponse
+    session_raw = request.cookies.get('s')
+    saved = request.cookies.get(REMEMBER_COOKIE)
+    lock_hash = None
+    result = {'remembered': False}
+    stale_saved = bool(saved)
+    with db() as c:
+        if session_raw:
+            active = one(c, '''SELECT s.token_hash,u.pin_hash FROM sessions s
+                              JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?''',
+                         (digest(session_raw),now()))
+            if active and active['pin_hash']:
+                c.execute('DELETE FROM sessions WHERE token_hash=?',(digest(session_raw),))
+                lock_hash = digest(session_raw)
+        if valid_remember_token(saved):
+            saved_user = one(c, '''SELECT d.token_hash,d.expires_at,u.username,u.pin_length,
+                               u.pin_hash,u.sanction_kind,u.sanction_until
+                               FROM trusted_devices d JOIN users u ON u.id=d.user_id
+                               WHERE d.token_hash=?''',(digest(saved),))
+            if saved_user:
+                if (saved_user['expires_at'] <= now() or not saved_user['pin_hash']
+                        or (saved_user['sanction_kind'] and
+                            (not saved_user['sanction_until'] or saved_user['sanction_until'] > now()))):
+                    c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(saved),))
+                else:
+                    result = {'remembered':True,'username':saved_user['username'],
+                              'pin_length':saved_user['pin_length']}
+                    stale_saved = False
+    if lock_hash:
+        await hub.terminate_session(lock_hash)
+    response = JSONResponse(result)
+    if lock_hash:
+        response.delete_cookie('s',path='/')
+    if stale_saved:
+        response.delete_cookie(REMEMBER_COOKIE,path='/')
+    return response
+
+
+class RememberedUnlock(BaseModel):
+    pin: str
+
+
+@app.post('/api/auth/remembered/unlock')
+async def remembered_unlock(request: Request, body: RememberedUnlock):
+    saved = request.cookies.get(REMEMBER_COOKIE)
+    if not valid_remember_token(saved):
+        raise HTTPException(401,'Thiết bị chưa được ghi nhớ. Vui lòng đăng nhập lại.')
+    throttle(request,'remembered-unlock',18,900,digest(saved)[:20])
+    error = None
+    raw = None
+    is_admin = False
+    with db() as c:
+        r = one(c, '''SELECT d.*,u.pin_hash,u.pin_length,u.is_admin,u.sanction_kind,u.sanction_until
+                      FROM trusted_devices d JOIN users u ON u.id=d.user_id
+                      WHERE d.token_hash=?''',(digest(saved),))
+        if not r or r['expires_at'] <= now() or not r['pin_hash']:
+            error = HTTPException(401,'Thiết bị hết hạn hoặc đã bị thu hồi. Hãy đăng nhập lại.')
+        elif r['sanction_kind'] and (not r['sanction_until'] or r['sanction_until']>now()):
+            error = HTTPException(403,'Tài khoản đang bị hạn chế.')
+        elif r['locked_until'] > now():
+            error = HTTPException(429,'Nhập sai PIN quá nhiều lần. Vui lòng thử lại sau.',
+                                  headers={'Retry-After':str(max(1,r['locked_until']-now()))})
+        else:
+            pin_ok = (len(body.pin)==r['pin_length'] and body.pin.isascii()
+                      and body.pin.isdigit() and verify_secret(r['pin_hash'],body.pin))
+            if not pin_ok:
+                attempts = r['failed_attempts']+1
+                lock_until = now()+15*60 if attempts>=5 else 0
+                c.execute('UPDATE trusted_devices SET failed_attempts=?,locked_until=? WHERE token_hash=?',
+                          (attempts,lock_until,digest(saved)))
+                error = HTTPException(429 if attempts>=5 else 401,
+                   'Sai PIN 5 lần. Thiết bị tạm khóa 15 phút.' if attempts>=5 else 'Mã PIN không đúng.',
+                   headers={'Retry-After':'900'} if attempts>=5 else None)
+            else:
+                c.execute('UPDATE trusted_devices SET failed_attempts=0,locked_until=0 WHERE token_hash=?',
+                          (digest(saved),))
+                raw = issue_session(c,r['user_id'])
+                is_admin = bool(r['is_admin'])
+    if error:
+        raise error
+    return session_response({'ok':True,'admin':is_admin,'remembered':True},raw)
+
+
+@app.post('/api/auth/remembered/forget')
+async def forget_remembered_device(request:Request):
+    from fastapi.responses import JSONResponse
+    saved = request.cookies.get(REMEMBER_COOKIE)
+    if valid_remember_token(saved):
+        with db() as c:
+            c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(saved),))
+    response=JSONResponse({'ok':True})
+    response.delete_cookie(REMEMBER_COOKIE,path='/')
+    return response
+
+
+@app.post('/api/auth/lock')
+async def lock_session(request:Request):
+    """Revoke current access while retaining saved-device credential for PIN unlock."""
+    t=request.cookies.get('s')
+    from fastapi.responses import JSONResponse
+    if t:
+        with db() as c:
+            c.execute('DELETE FROM sessions WHERE token_hash=?',(digest(t),))
+        await hub.terminate_session(digest(t))
+    response=JSONResponse({'ok':True})
+    response.delete_cookie('s',path='/')
+    return response
+
+
+class SetupAdminPin(BaseModel):
+    current_password: str
+    pin: str
+    pin_length: int
+
+
+@app.post('/api/me/pin/setup')
+async def setup_admin_pin(request:Request,body:SetupAdminPin):
+    u=require_admin(request)
+    throttle(request,'admin-pin-setup',8,3600,str(u['id']))
+    ensure_pin(body.pin,body.pin_length)
+    if not verify_secret(u['password_hash'],body.current_password):
+        raise HTTPException(401,'Mật khẩu quản trị không đúng.')
+    with db() as c:
+        if one(c,'SELECT pin_hash FROM users WHERE id=?',(u['id'],))['pin_hash']:
+            raise HTTPException(409,'PIN đã được thiết lập. Hãy dùng mục Đổi mã PIN.')
+        c.execute('UPDATE users SET pin_hash=?,pin_length=? WHERE id=?',
+                  (hash_secret(body.pin),body.pin_length,u['id']))
+        c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
+        c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
+                  (u['id'],digest(request.cookies.get('s',''))))
+        admin_log(c,u['id'],'enable_admin_pin','Administrator enabled PIN for remembered devices')
+    await hub.terminate_user(u['id'],except_hash=digest(request.cookies.get('s','')))
+    return {'ok':True,'pin_length':body.pin_length}
+
+
 @app.get('/api/me')
 async def me(request: Request):
     u = current_user(request, require=False)
@@ -643,8 +781,8 @@ class ChangePin(BaseModel):
 async def change_pin(request: Request, body: ChangePin):
     u = current_user(request)
     throttle(request, 'change-pin', 12, 3600, str(u['id']))
-    if u['is_admin']:
-        raise HTTPException(403,'Admin không sử dụng PIN.')
+    if not u['pin_hash']:
+        raise HTTPException(403,'Tài khoản chưa thiết lập PIN.')
     ensure_pin(body.new_pin, body.pin_length)
     with db() as c:
         if not verify_secret(u['pin_hash'],body.old_pin):
