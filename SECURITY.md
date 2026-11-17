@@ -22,3 +22,13 @@
 - Trên máy chủ production, cookie đăng nhập dùng `HttpOnly`, `Secure`, `SameSite=Lax`. PIN là lớp xác minh bổ sung kiểu *knowledge factor*, không phải xác thực đa yếu tố bằng thiết bị độc lập. Admin vẫn được xét duyệt thủ công theo thiết kế hiện tại.
 - **Chưa có E2EE, quét virus đầy đủ, bảo vệ chống tấn công phân tán, xác thực TOTP/hardware key hay kiểm thử thâm nhập độc lập**. Không khẳng định hệ thống đạt chuẩn bảo mật doanh nghiệp.
 - Mật khẩu admin được thiết lập trước đây có thể đã xuất hiện trong cuộc hội thoại. Nên đổi mật khẩu admin **trong ứng dụng** qua mục bảo mật, vì sửa riêng biến `ADMIN_PASSWORD` trên Render sẽ không đổi hash đã lưu trong Neon. Không chia sẻ mật khẩu, API key, cookie hoặc chuỗi kết nối database.
+
+## Lưu thiết bị, mở khóa bằng PIN (tháng 11/2026)
+
+- Người dùng chọn **Ghi nhớ thiết bị này trong 30 ngày** khi đăng nhập thành công bằng mật khẩu và PIN. Thiết bị được lưu bằng token 256-bit ngẫu nhiên trong cookie `HttpOnly`, `SameSite=Strict`, `Secure` trên Render HTTPS; phía Neon chỉ lưu SHA-256 của token, không lưu mật khẩu hoặc PIN trên trình duyệt.
+- Khi tải lại / mở trang mtunz, client gửi yêu cầu khóa phiên truy cập cũ trước khi hiển thị tin nhắn. Nếu thiết bị còn hợp lệ, nó hiện màn hình yêu cầu PIN, không tự mở tin nhắn. Thiết bị hết hạn, bị thu hồi hoặc tài khoản bị khóa phải xác minh lại theo quy trình đăng nhập.
+- PIN sai 5 lần sẽ tạm khóa thiết bị ghi nhớ **15 phút**; số lần thử được lưu trong PostgreSQL để giới hạn không tự reset khi Render khởi động lại.
+- Đổi mật khẩu, đổi PIN, khôi phục tài khoản hoặc quản trị viên khóa tài khoản sẽ thu hồi các token ghi nhớ của tài khoản đó. **Đăng xuất** cũng thu hồi token ghi nhớ của thiết bị hiện tại.
+- Trong mục **Phiên đăng nhập**, người dùng xem số phiên hoạt động và thiết bị ghi nhớ; chọn **Đăng xuất thiết bị khác** để thu hồi cả hai. Với thiết bị đã được ghi nhớ, nút **Khóa bằng PIN** đóng quyền truy cập hiện tại nhưng không xóa thiết bị.
+- Tài khoản admin trước đây không có PIN. Muốn ghi nhớ thiết bị, admin phải vào **Bảo mật → Kích hoạt PIN cho admin** bằng mật khẩu admin hiện tại; từ đó đăng nhập trên thiết bị mới bằng mật khẩu + PIN.
+- **Giới hạn:** Chế độ bảo vệ PIN khi mở lại website được áp dụng bằng API khóa phiên lúc ứng dụng khởi tạo. Không nên xem đây là xác thực đa yếu tố chống thiết bị bị chiếm quyền điều khiển: kẻ có quyền thực thi JavaScript trong tab đã mở khóa có thể sử dụng phiên đang hoạt động. Việc mở lại mtunz trong tab khác có thể làm phiên ở tab trước cần xác minh lại. Thời hạn cookie và trạng thái phiên còn phụ thuộc chính sách trình duyệt.
