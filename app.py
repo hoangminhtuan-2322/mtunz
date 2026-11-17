@@ -43,6 +43,8 @@ ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'mtunz7' if not PUBLIC_MODE else ''
 if PUBLIC_MODE and (len(ADMIN_PASSWORD) < 12 or ADMIN_PASSWORD == 'mtunz7'):
     raise RuntimeError('PUBLIC_MODE=1 yêu cầu ADMIN_PASSWORD mạnh từ 12 ký tự (không dùng mật khẩu demo).')
 COOKIE_SECURE = PUBLIC_MODE or os.getenv('COOKIE_SECURE', '0') == '1'
+REMEMBER_COOKIE = '__Host-mtunz-remember' if COOKIE_SECURE else 'mtunz_remember'
+REMEMBER_SECONDS = 30 * 86400
 # Optional fixed browser origin for custom domains. Without this, compare against Host.
 PUBLIC_ORIGIN = os.getenv('PUBLIC_ORIGIN', '').strip().rstrip('/')
 if PUBLIC_ORIGIN and not PUBLIC_ORIGIN.startswith(('https://', 'http://')):
@@ -144,6 +146,14 @@ def init_db():
           token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           expires_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS trusted_devices (
+          token_hash TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+          failed_attempts INTEGER NOT NULL DEFAULT 0,
+          locked_until INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS trusted_devices_user_idx ON trusted_devices(user_id);
         CREATE TABLE IF NOT EXISTS login_challenges (
           token_hash TEXT PRIMARY KEY, guest_id TEXT NOT NULL,
           user_id INTEGER NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL
@@ -402,8 +412,18 @@ def issue_session(c, uid):
 def session_response(result, raw):
     from fastapi.responses import JSONResponse
     response = JSONResponse(result)
-    response.set_cookie('s', raw, httponly=True, secure=COOKIE_SECURE, samesite='lax', max_age=7*86400)
+    response.set_cookie('s', raw, httponly=True, secure=COOKIE_SECURE, samesite='lax', path='/')
     return response
+
+
+def remember_cookie(response, raw):
+    response.set_cookie(REMEMBER_COOKIE, raw, httponly=True, secure=COOKIE_SECURE,
+                        samesite='strict', path='/', max_age=REMEMBER_SECONDS)
+    return response
+
+
+def valid_remember_token(raw):
+    return bool(raw and 30 <= len(raw) <= 128 and re.fullmatch(r'[A-Za-z0-9_-]+', raw))
 
 
 def admin_log(c, admin_id, action, detail):
@@ -549,7 +569,7 @@ async def auth_password(request: Request, body: PasswordLogin):
         if u['sanction_kind'] and (not u['sanction_until'] or u['sanction_until'] > now()):
             raise HTTPException(403, {'code':'sanction','kind':u['sanction_kind'],
                                       'until':u['sanction_until'],'reason':u['sanction_reason']})
-        if u['is_admin']:
+        if u['is_admin'] and not u['pin_hash']:
             raw = issue_session(c,u['id'])
             return session_response({'ok':True,'admin':True},raw)
         challenge = token()
@@ -562,6 +582,7 @@ async def auth_password(request: Request, body: PasswordLogin):
 class PinLogin(BaseModel):
     challenge: str
     pin: str
+    remember_device: bool = False
 
 
 @app.post('/api/auth/pin')
@@ -580,7 +601,14 @@ async def auth_pin(request: Request, body: PinLogin):
             raise HTTPException(403,'Tài khoản đang bị hạn chế.')
         c.execute('DELETE FROM login_challenges WHERE token_hash=?',(digest(body.challenge),))
         raw = issue_session(c,r['user_id'])
-        return session_response({'ok':True,'admin':False},raw)
+        saved = token() if body.remember_device else None
+        if saved:
+            c.execute('INSERT INTO trusted_devices(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)',
+                      (digest(saved),r['user_id'],now()+REMEMBER_SECONDS,now()))
+        is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
+    response = session_response({'ok':True,'admin':is_admin,'remembered':bool(saved)},raw)
+    if saved: remember_cookie(response,saved)
+    return response
 
 
 @app.get('/api/me')
@@ -592,13 +620,16 @@ async def me(request: Request):
 @app.post('/api/auth/logout')
 async def logout(request: Request):
     t = request.cookies.get('s')
-    if t:
-        with db() as c:
-            c.execute('DELETE FROM sessions WHERE token_hash=?',(digest(t),))
-        await hub.terminate_session(digest(t))
+    remembered = request.cookies.get(REMEMBER_COOKIE)
+    with db() as c:
+        if t: c.execute('DELETE FROM sessions WHERE token_hash=?',(digest(t),))
+        if valid_remember_token(remembered):
+            c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(remembered),))
+    if t: await hub.terminate_session(digest(t))
     from fastapi.responses import JSONResponse
     response=JSONResponse({'ok':True})
-    response.delete_cookie('s')
+    response.delete_cookie('s',path='/')
+    response.delete_cookie(REMEMBER_COOKIE,path='/')
     return response
 
 
@@ -620,6 +651,7 @@ async def change_pin(request: Request, body: ChangePin):
             raise HTTPException(401,'Mã PIN hiện tại không đúng.')
         c.execute('UPDATE users SET pin_hash=?,pin_length=? WHERE id=?',
                   (hash_secret(body.new_pin),body.pin_length,u['id']))
+        c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
     return {'ok':True}
 
 
@@ -639,6 +671,7 @@ async def change_password(request: Request, body: ChangePassword):
         c.execute('UPDATE users SET password_hash=? WHERE id=?', (hash_secret(body.new_password),u['id']))
         c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
                   (u['id'],digest(request.cookies.get('s',''))))
+        c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
     await hub.terminate_user(u['id'], except_hash=digest(request.cookies.get('s','')))
     return {'ok':True}
 
@@ -926,6 +959,7 @@ async def reset_account(request:Request,body:ResetAccount):
         else:raise HTTPException(400,'Loại khôi phục không được hỗ trợ.')
         c.execute('UPDATE recovery_grants SET used_at=? WHERE token_hash=?',(now(),digest(body.code.strip())))
         c.execute('DELETE FROM sessions WHERE user_id=?',(r['user_id'],))
+        c.execute('DELETE FROM trusted_devices WHERE user_id=?',(r['user_id'],))
     await hub.user(r['user_id'],'session-ended',reason='Thông tin xác minh vừa được thay đổi.')
     await hub.terminate_user(r['user_id'])
     return {'ok':True}
@@ -1020,7 +1054,9 @@ async def admin_sanction(request:Request,uid:int,body:Sanction):
         expiry=(now()+body.minutes*60) if kind and body.minutes else None
         c.execute('UPDATE users SET sanction_kind=?,sanction_until=?,sanction_reason=? WHERE id=?',
                   (kind,expiry,body.reason.strip() if kind else None,uid))
-        if kind:c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+        if kind:
+            c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+            c.execute('DELETE FROM trusted_devices WHERE user_id=?',(uid,))
         admin_log(c,admin['id'],'sanction_'+body.kind,f"{u['username']}: {body.reason}; mins={body.minutes}")
     if kind:
         await hub.user(uid,'account-sanction',kind=kind,until=expiry,reason=body.reason)
