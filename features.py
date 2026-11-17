@@ -209,6 +209,30 @@ def install(core):
                       (label,stored_hash,u['id']))
         return {'ok':True}
 
+    @app.delete('/api/me/sessions/{kind}/{device_id}')
+    async def revoke_own_device(request:Request,kind:str,device_id:str):
+        u=current_user(request)
+        active_hash=core.digest(request.cookies.get('s',''))
+        saved=request.cookies.get(core.REMEMBER_COOKIE)
+        saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
+        with db() as c:
+            table, stored_hash=owned_device(c,u['id'],kind,device_id)
+            if kind == 'session' and stored_hash == active_hash:
+                raise HTTPException(409,'Không thể thu hồi phiên hiện tại. Hãy chọn Đăng xuất.')
+            c.execute(f'DELETE FROM {table} WHERE token_hash=? AND user_id=?',(stored_hash,u['id']))
+        if kind == 'session':
+            for ws, connected_hash in list(hub.session_hashes.items()):
+                if connected_hash == stored_hash:
+                    try:
+                        await ws.send_json({'type':'session-ended','reason':'Phiên đăng nhập đã bị thu hồi.'})
+                    except Exception:
+                        pass
+            await hub.terminate_session(stored_hash)
+        response=JSONResponse({'ok':True})
+        if kind == 'remembered' and stored_hash == saved_hash:
+            response.delete_cookie(core.REMEMBER_COOKIE,path='/')
+        return response
+
     @app.post('/api/me/sessions/revoke-others')
     async def revoke_others(request:Request):
         u=current_user(request)
