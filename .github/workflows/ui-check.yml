@@ -40,6 +40,8 @@ jobs:
       - name: Verify approved registration content flow and consent layout
         run: |
           node tests/registration_layout.cjs
+      - name: Verify 30-day account lifecycle and privileged deletion UI
+        run: node tests/account_lifecycle_ui.cjs
       - name: Verify Admin full-width layout across breakpoints
         run: |
           node tests/admin_layout.cjs
