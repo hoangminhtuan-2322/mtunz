@@ -1,0 +1,50 @@
+name: Verify mtunz premium UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - static/**
+      - tests/test_premium_ui.py
+      - .github/workflows/ui-check.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check frontend JavaScript syntax
+        run: |
+          node --check static/app.js
+          node --check static/extras.js
+          node --check static/premium.js
+      - name: Check theme wiring
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          h = Path('static/index.html').read_text(encoding='utf-8')
+          assert '/static/premium.css' in h
+          assert '/static/premium.js' in h
+          assert '/static/app.js' in h
+          assert '/static/extras.js' in h
+          assert 'defer' in h
+          assert 'role="status"' in h
+          css = Path('static/premium.css').read_text(encoding='utf-8')
+          js = Path('static/premium.js').read_text(encoding='utf-8')
+          assert 'prefers-reduced-motion' in css
+          assert 'aria-invalid' in js
+          assert '/api/username/check' in js
+          assert 'field-error' in css and 'is-loading' in css
+          print('Premium assets and validation wiring are present.')
+          PY
+      - name: Run Python API regression tests
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m pytest -q
