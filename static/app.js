@@ -1060,17 +1060,34 @@ function showPermanentDeleteDialog(target=null){
   }
  });
 }
+function adminProofFields(){
+ return `<div class="admin-proof-box">
+ <p class="hint">Xác minh lại trước khi thực hiện. Mật khẩu và PIN chỉ gửi tới máy chủ để kiểm tra.</p>
+ <div class="field"><label for="admin-confirm-password">Mật khẩu Admin</label>
+ <input class="input" id="admin-confirm-password" type="password" autocomplete="off" maxlength="128" required></div>
+ ${state.user?.pin_length?`<div class="field"><label for="admin-confirm-pin">PIN Admin</label>
+ <input class="input" id="admin-confirm-pin" type="password" autocomplete="off" inputmode="numeric" maxlength="6" required></div>`:''}
+ </div>`;
+}
+function adminProofValue(host){
+ const password=host.querySelector('#admin-confirm-password')?.value||'';
+ const pin=host.querySelector('#admin-confirm-pin')?.value||'';
+ if(!password||(state.user?.pin_length&&!pin))throw Error('Cần nhập mật khẩu và PIN Admin để xác nhận.');
+ return {admin_password:password,admin_pin:pin};
+}
 function sanctionDialog(uid,kind){
  const u=(state.adminData||[]).find(x=>x.id===uid);
  const title=kind==='ban'?'Cấm tài khoản':kind==='lock'?'Khóa tài khoản':'Bỏ hạn chế';
- if(kind==='unban')return ask('Mở khóa / Unban',`Khôi phục quyền truy cập cho ${u?.username||'#'+uid}?`,async()=>{await post(`/api/admin/users/${uid}/sanction`,{kind:'unban',reason:''});toast('Đã mở tài khoản.','ok');await loadAdmin();},'Unban');
+ if(kind==='unban')return modal({title:'Mở khóa / Unban',description:`Khôi phục quyền truy cập cho ${u?.username||'#'+uid}?`,
+ confirm:'Xác nhận bỏ hạn chế',content:adminProofFields(),
+ handler:async host=>{await post(`/api/admin/users/${uid}/sanction`,{kind:'unban',reason:'',...adminProofValue(host)});toast('Đã mở tài khoản.','ok');await loadAdmin();}});
  modal({title,description:`Áp dụng tức thì cho ${u?.username||'#'+uid}. Người dùng sẽ nhận thông báo và phải rời khỏi tài khoản.`,danger:true,confirm:kind==='ban'?'Cấm ngay':'Khóa ngay',
  content:`<div class="field"><label>Thời gian (phút)</label><input class="input" type="number" id="sanction-minutes" min="1" value="60" placeholder="Bỏ trống nếu cấm vĩnh viễn"></div>
  <div class="hint">${kind==='ban'?'Để trống để cấm vĩnh viễn.':'Khóa tài khoản cần thời hạn cụ thể.'} Ví dụ: 60 = 1 giờ, 1440 = 1 ngày.</div>
- <div class="field"><label>Lý do</label><textarea id="sanction-reason" class="textarea" maxlength="250"></textarea></div>`,
- handler:async()=>{const raw=$('#sanction-minutes').value.trim(),minutes=raw?Number(raw):null;
+ <div class="field"><label>Lý do</label><textarea id="sanction-reason" class="textarea" maxlength="250"></textarea></div>${adminProofFields()}`,
+ handler:async host=>{const raw=$('#sanction-minutes').value.trim(),minutes=raw?Number(raw):null;
   if(kind==='lock'&&!minutes)throw Error('Khóa tài khoản cần thời hạn.');
-  await post(`/api/admin/users/${uid}/sanction`,{kind,minutes,reason:$('#sanction-reason').value});toast('Quyết định đã có hiệu lực.','ok');await loadAdmin();}});
+  await post(`/api/admin/users/${uid}/sanction`,{kind,minutes,reason:$('#sanction-reason').value,...adminProofValue(host)});toast('Quyết định đã có hiệu lực.','ok');await loadAdmin();}});
 }
 function adminDetailRow(label,value){
  return `<div class="admin-detail-row"><span class="muted">${esc(label)}</span><strong>${value}</strong></div>`;
@@ -1145,9 +1162,9 @@ async function userMessageLog(uid){
 function grantDialog(tid){
  modal({title:'Cấp mã khôi phục',description:'Xác minh danh tính người yêu cầu bằng kênh độc lập trước khi cấp quyền đặt lại. Mã chỉ hiệu lực 15 phút và được gửi qua cuộc trò chuyện hỗ trợ.',
  confirm:'Cấp mã một lần',content:`<div class="field"><label>Tên tài khoản cần đặt lại</label><input id="grant-username" class="input"></div>
- <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>`,
- handler:async()=>{if(!$('#grant-verified').checked)throw Error('Bạn phải hoàn tất xác minh danh tính.');
-  const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true});
+ <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>${adminProofFields()}`,
+ handler:async host=>{if(!$('#grant-verified').checked)throw Error('Bạn phải hoàn tất xác minh danh tính.');
+  const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true,...adminProofValue(host)});
   toast('Đã gửi mã khôi phục tới cuộc trò chuyện.','ok');await loadAdmin();}});
 }
 
@@ -1390,7 +1407,11 @@ document.addEventListener('submit',async event=>{
     toast('Đã đổi mật khẩu quản trị và thu hồi thiết bị ghi nhớ.','ok');await loadAdmin();break;
    }
    case 'admin-capacity':{
-    await post('/api/admin/capacity',{max_users:Number(fd.get('max_users'))});toast('Đã cập nhật số lượng người dùng tối đa.','ok');await loadAdmin();break;
+    const max_users=Number(fd.get('max_users'));
+     modal({title:'Thay đổi giới hạn tài khoản',description:`Giới hạn mới: ${max_users.toLocaleString('vi-VN')} tài khoản. Xác minh quyền quản trị.`,
+       confirm:'Cập nhật giới hạn',content:adminProofFields(),
+       handler:async host=>{await post('/api/admin/capacity',{max_users,...adminProofValue(host)});toast('Đã cập nhật giới hạn người dùng.','ok');await loadAdmin();}});
+     break;
    }
    case 'admin-search-users':state.adminQuery=val('q');await loadAdmin();break;
    case 'admin-ticket-reply':{
@@ -1398,9 +1419,11 @@ document.addEventListener('submit',async event=>{
    }
    case 'admin-broadcast':{
     const message=val('body');
-    ask('Gửi thông báo toàn hệ thống',`Thông báo này sẽ hiển thị ngay cho tất cả người dùng: “${short(message,100)}”`,async()=>{
-     const result=await post('/api/admin/broadcast',{body:message});
-     toast(`Đã gửi đến ${result.recipients} người dùng.`,'ok');await loadAdmin();},'Gửi thông báo');
+    modal({title:'Gửi thông báo toàn hệ thống',description:`Nội dung gửi tới tất cả người dùng: “${short(message,100)}”`,
+      confirm:'Xác nhận gửi',content:adminProofFields(),handler:async host=>{
+       const result=await post('/api/admin/broadcast',{body:message,...adminProofValue(host)});
+       toast(`Đã gửi đến ${result.recipients} người dùng.`,'ok');await loadAdmin();
+      }});
     break;
    }
   }
