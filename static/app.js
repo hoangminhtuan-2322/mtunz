@@ -494,7 +494,6 @@ function authLogin(){
  const step=state.step;
  if(step==='remembered')return `<span class="eyebrow">THIẾT BỊ ĐƯỢC GHI NHỚ</span>
  <h1>Chào mừng trở lại, ${esc(state.username)}!</h1>
- <p class="hint">Thiết bị này đã được ghi nhớ. Nhập PIN ${state.pinLength} chữ số để mở khóa — không cần nhập lại mật khẩu.</p>
  <div class="auth-remember-summary">${icon('shield',18)}<span>Phiên truy cập đang khóa. Chỉ mở sau khi xác minh PIN.</span></div>
  <form data-form="login-remembered">
  ${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),
@@ -560,7 +559,6 @@ function authRegister(){
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
  return `<span class="eyebrow">THAM GIA MTUNZ</span><h1>Bắt đầu một kết nối mới.</h1>
- <p class="hint">Bước đầu tiên là đăng ký tên tài khoản riêng và chờ admin chấp thuận trước khi tạo mật khẩu.</p>
  <div class="auth-step"><span class="active"></span><span></span><span></span></div>
  <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','Ví dụ: hanh_uyen','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
  <div class="hint" style="margin:0 0 13px">3–24 ký tự, bắt đầu bằng chữ; chỉ dùng a-z, 0-9 và dấu gạch dưới.</div>
