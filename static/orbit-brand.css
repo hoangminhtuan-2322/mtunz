@@ -1,0 +1,135 @@
+/* mtunz Orbit v8 — one approved vector icon across all application surfaces.
+   The SVG itself contains the tile, letter, orbit and sparkle. Never paint
+   an additional CSS tile behind it, or the mark will look doubled. */
+
+.logo-mark,
+.auth-mobile-logo .logo-mark,
+.rail .logo-mark,
+.admin-nav .logo-mark,
+.nova-brand .nova-brand-mark {
+  width:47px;
+  height:47px;
+  flex:0 0 47px;
+  padding:0!important;
+  overflow:visible!important;
+  display:grid;
+  place-items:center;
+  border:0!important;
+  border-radius:0!important;
+  background:none!important;
+  box-shadow:none!important;
+  isolation:isolate;
+  font-size:0!important;
+  line-height:0;
+  vertical-align:middle;
+}
+.logo-mark::after,.logo-mark::before,
+.nova-brand .nova-brand-mark::after,
+.nova-brand .nova-brand-mark::before {
+  display:none!important;
+  content:none!important;
+}
+.logo-mark > .brand-glyph,
+.nova-brand .nova-brand-mark > .brand-glyph {
+  display:block;
+  width:100%!important;
+  height:100%!important;
+  max-width:none;
+  max-height:none;
+  object-fit:contain;
+  filter:drop-shadow(0 7px 12px rgba(70,42,165,.25))!important;
+  pointer-events:none;
+  user-select:none;
+  -webkit-user-drag:none;
+}
+.nova-brand .nova-brand-mark {
+  width:58px;
+  height:58px;
+  flex-basis:58px;
+  transition:transform .3s cubic-bezier(.22,1,.36,1);
+}
+@media(hover:hover) and (pointer:fine){
+  .auth-art.art-v5 .nova-brand .nova-brand-mark:hover{
+    transform:translateY(-3px) rotate(-3deg);
+    box-shadow:none!important;
+  }
+}
+.rail .logo-mark {
+  width:49px;
+  height:49px;
+  flex-basis:49px;
+  margin-bottom:20px;
+}
+.admin-nav .logo-mark{
+  width:45px;
+  height:45px;
+  flex-basis:45px;
+}
+.auth-mobile-logo .logo-mark{
+  width:48px;
+  height:48px;
+  flex-basis:48px;
+}
+/* No second colored app tile behind the approved Orbit artwork. */
+.auth-art.art-v5 .signal-nucleus.nova-nucleus {
+  padding:0;
+  border:0;
+  background:none!important;
+  box-shadow:0 0 0 10px rgba(135,118,255,.08),0 0 0 26px rgba(125,126,241,.04)!important;
+  border-radius:28px;
+}
+.nova-nucleus > .nova-nucleus-inner {
+  display:block;
+  width:100%;
+  height:100%;
+}
+.nova-nucleus .brand-glyph {
+  display:block;
+  width:100%!important;
+  height:100%!important;
+  max-width:none;
+  object-fit:contain;
+  filter:drop-shadow(0 12px 18px rgba(98,72,214,.45))!important;
+}
+.nova-nucleus .signal-nucleus-glow{display:none!important}
+/* Boot screen now uses the identical icon, not a plain 'm'. */
+.boot-screen .loading-logo{
+  width:85px;
+  height:85px;
+  display:block;
+  overflow:visible;
+  border-radius:0;
+  background:transparent url('/static/favicon.svg?v=8.0') center/contain no-repeat!important;
+  box-shadow:none!important;
+  font-size:0!important;
+  line-height:0!important;
+  color:transparent!important;
+  text-indent:-9999px;
+  animation:orbit-boot .9s cubic-bezier(.22,1,.36,1) both!important;
+}
+.boot-screen .loading-logo::after,
+.boot-screen .loading-logo::before{
+  display:none!important;
+  content:none!important;
+}
+@keyframes orbit-boot {
+  from{opacity:0;transform:translate3d(0,9px,0) scale(.93)}
+  to{opacity:1;transform:translate3d(0,0,0) scale(1)}
+}
+@media(min-width:801px) and (max-width:1030px){
+  .nova-brand .nova-brand-mark{
+    width:51px;
+    height:51px;
+    flex-basis:51px;
+  }
+}
+@media(max-width:520px){
+  .auth-mobile-logo .logo-mark{
+    width:46px;height:46px;flex-basis:46px;
+  }
+  .rail .logo-mark{width:46px;height:46px;flex-basis:46px}
+}
+@media(prefers-reduced-motion:reduce){
+  .boot-screen .loading-logo{animation:none!important}
+  .nova-brand .nova-brand-mark{transition:none!important}
+}
