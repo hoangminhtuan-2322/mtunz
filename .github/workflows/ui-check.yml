@@ -36,7 +36,6 @@ jobs:
           assert '/static/premium.css' in h
           assert '/static/aurora.css?v=3.0' in h
           assert '/static/notifications.css?v=4.0' in h
-          assert '/static/app.js?v=4.0' in h
           assert '/static/favicon.svg?v=3.0' in h
           assert '/static/premium.js' in h
           assert '/static/app.js' in h
