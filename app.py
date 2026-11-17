@@ -677,7 +677,7 @@ async def auth_pin(request: Request, body: PinLogin):
 
 @app.post('/api/auth/remembered')
 async def remembered_status(request: Request):
-    """Lock previous cookie session on every fresh page load; reveal only valid saved device metadata."""
+    """Lock stale cookie sessions on a new-tab visit; provide remembered-device metadata. An in-tab reload skips this endpoint."""
     from fastapi.responses import JSONResponse
     session_raw = request.cookies.get('s')
     saved = request.cookies.get(REMEMBER_COOKIE)
