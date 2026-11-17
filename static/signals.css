@@ -1,0 +1,142 @@
+/* mtunz Aurora 4: abstract capability constellation replacing demo conversation */
+.auth-art.art-v4{
+  background:
+    radial-gradient(ellipse at 72% 42%,#404b9266,transparent 40%),
+    radial-gradient(ellipse at 3% 97%,#513a9866,transparent 49%),
+    linear-gradient(146deg,#101932 0%,#17223d 48%,#111b36 100%)
+}
+.art-v4 .art-content{max-width:540px}
+.art-v4 .art-content h1{font-size:clamp(43px,4.2vw,66px)}
+.art-v4 .art-content>p{max-width:460px;font-size:13.6px}
+.signal-stage{
+  position:relative;isolation:isolate;
+  width:min(100%,520px);height:310px;
+  margin:27px auto 4px;
+  border-radius:30px;
+  background:
+    radial-gradient(ellipse at 50% 52%,#5857b139 0%,transparent 42%),
+    linear-gradient(135deg,#6577a609,#8e87fb06);
+  border:1px solid #b0c6ff15;
+  box-shadow:inset 0 1px #ffffff08,0 25px 65px #03092236;
+  overflow:hidden
+}
+.signal-grid{
+  position:absolute;inset:0;pointer-events:none;opacity:.3;
+  background-image:radial-gradient(circle,#9fb3ff66 .8px,transparent 1px);
+  background-size:19px 19px;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 50%,#000 4%,transparent 80%);
+  mask-image:radial-gradient(ellipse at 50% 50%,#000 4%,transparent 80%)
+}
+.signal-halo{
+  position:absolute;left:50%;top:51%;border-radius:50%;
+  border:1px solid #96a9ff35;pointer-events:none;
+  transform:translate(-50%,-50%);
+}
+.halo-one{width:215px;height:215px;box-shadow:0 0 35px #7d80e517,inset 0 0 45px #6271c719}
+.halo-two{width:288px;height:288px;border-color:#a3aaff19}
+.halo-one:before,.halo-two:before{
+  content:"";position:absolute;top:14%;left:13%;height:5px;width:5px;
+  border-radius:50%;background:#96ceff;box-shadow:0 0 15px #96ceff
+}
+.halo-two:before{top:75%;left:92%;background:#8df1cf;box-shadow:0 0 14px #8df1cf}
+.signal-nucleus{
+  width:102px;height:102px;border-radius:32px;
+  position:absolute;left:50%;top:51%;z-index:1;
+  transform:translate(-50%,-50%) rotate(-7deg);
+  background:linear-gradient(140deg,#b39cff 0%,#8477f5 50%,#59c8dc 100%);
+  box-shadow:0 18px 42px #7b6cec65,inset 0 1px #ffffff80,0 0 0 9px #9397ee13,0 0 0 24px #818df00a;
+  display:grid;place-items:center;
+  animation:signal-breathe 6s ease-in-out infinite
+}
+.signal-nucleus-icon{display:grid;place-items:center}
+.signal-nucleus-icon .brand-glyph{height:60px;width:60px;filter:drop-shadow(0 3px 3px #3c3d9a40)}
+.signal-nucleus-glow{
+  position:absolute;bottom:-10px;width:60%;height:15px;z-index:-1;
+  background:#8a8bf9;filter:blur(18px)
+}
+.signal-feature{
+  position:absolute;z-index:2;
+  display:flex;align-items:center;gap:10px;
+  width:clamp(166px,48%,238px);min-height:70px;
+  padding:11px 12px;
+  background:linear-gradient(125deg,#263b5bf5,#1c2a48f8);
+  border:1px solid #a5bafc50;border-radius:17px;
+  box-shadow:0 13px 32px #050e2785,0 1px 0 #ffffff1d inset;
+  backdrop-filter:blur(12px);
+  animation:signal-float 6s ease-in-out infinite;
+}
+.signal-feature>span:nth-child(2){display:flex;flex-direction:column;gap:3px;min-width:0}
+.signal-feature strong{
+  display:block;font-size:11.4px;line-height:1.3;
+  font-weight:800;color:#f4f8ff;letter-spacing:-.07px
+}
+.signal-feature small{font-size:9.5px;line-height:1.42;color:#9db2d1}
+.signal-feature-icon{
+  width:36px;height:36px;flex:0 0 36px;
+  display:grid;place-items:center;border-radius:12px;
+  background:#9282ff2c;border:1px solid #948aff34;color:#bbafff
+}
+.feature-privacy .signal-feature-icon{background:#40c6ad1d;color:#8df1d0;border-color:#7bdabd2f}
+.feature-members .signal-feature-icon{background:#79b3ed21;color:#a3d5ff;border-color:#8dcbff2b}
+.signal-feature-pulse{
+  flex:0 0 7px;width:7px;height:7px;margin-left:auto;
+  background:#7ff3c8;border-radius:50%;
+  box-shadow:0 0 0 4px #7ff3c821,0 0 12px #7ff3c87a
+}
+.feature-check{margin-left:auto;color:#86e9cb;display:grid;place-items:center}
+.feature-realtime{top:10%;left:4%;animation-delay:-1.3s}
+.feature-privacy{top:35%;right:3%;animation-delay:-4.1s}
+.feature-members{bottom:8%;left:8%;animation-delay:-2.5s}
+.auth-art.art-v4 .art-kicker{
+  background:#5374b41a;border-color:#b5cafa35
+}
+.auth-art.art-v4 .auth-art-footer{padding-top:14px}
+.auth-art.art-v4 .auth-art-footer span{
+  background:#e2e8ff0a;
+  border:1px solid #a6b6e63b
+}
+@keyframes signal-breathe{
+  0%,100%{transform:translate(-50%,-50%) rotate(-7deg) scale(1)}
+  50%{transform:translate(-50%,-50%) rotate(-4deg) scale(1.045)}
+}
+@keyframes signal-float{
+  0%,100%{transform:translate3d(0,0,0)}
+  50%{transform:translate3d(0,-5px,0)}
+}
+@media(max-width:1270px){
+  .art-v4 .art-content h1{font-size:clamp(38px,4.1vw,53px)}
+  .signal-stage{height:294px}
+  .signal-feature{min-height:63px;padding:9px}
+  .signal-feature-icon{width:33px;height:33px;flex-basis:33px}
+  .signal-feature strong{font-size:10.5px}
+  .signal-feature small{font-size:9px}
+  .signal-nucleus{width:91px;height:91px;border-radius:29px}
+  .signal-nucleus-icon .brand-glyph{width:55px;height:55px}
+  .feature-realtime{left:2%}.feature-privacy{right:1%}.feature-members{left:4%}
+}
+@media(max-width:1100px){
+  .signal-feature{width:57%;gap:7px}
+  .signal-feature-icon{width:30px;height:30px;flex-basis:30px}
+  .signal-feature-icon svg{width:17px;height:17px}
+  .signal-feature strong{font-size:10px}.signal-feature small{font-size:8.5px}
+  .signal-stage{margin-top:19px;height:270px}
+  .halo-one{width:185px;height:185px}.halo-two{width:248px;height:248px}
+  .signal-nucleus{width:79px;height:79px;border-radius:26px}
+  .signal-nucleus-icon .brand-glyph{width:47px;height:47px}
+}
+@media(max-width:800px){
+  .auth-art.art-v4{display:none}
+}
+@media(min-width:801px) and (max-height:740px){
+  .signal-stage{height:240px;margin-top:16px}
+  .signal-feature{min-height:56px}
+  .signal-feature-icon{width:30px;height:30px;flex-basis:30px}
+  .signal-halo.halo-two{width:226px;height:226px}
+  .signal-halo.halo-one{width:166px;height:166px}
+  .signal-nucleus{width:75px;height:75px;border-radius:25px}
+  .art-v4 .art-content h1{font-size:43px}
+  .auth-art.art-v4{min-height:660px}
+}
+@media(prefers-reduced-motion:reduce){
+  .signal-nucleus,.signal-feature{animation:none!important}
+}
