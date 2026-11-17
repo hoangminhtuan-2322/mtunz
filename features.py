@@ -184,6 +184,31 @@ def install(core):
                 entry['network_hint']=entry['network_hint'] or ''
         return {'sessions':rows,'remembered_devices':devices}
 
+    def owned_device(c, user_id, kind, public_id):
+        if kind not in ('session', 'remembered') or not re.fullmatch(r'[a-f0-9]{24}', public_id):
+            raise HTTPException(404, 'Không tìm thấy thiết bị.')
+        table = 'sessions' if kind == 'session' else 'trusted_devices'
+        entries = many(c, f'SELECT token_hash FROM {table} WHERE user_id=?', (user_id,))
+        entry = next((x for x in entries if core.digest(kind+':'+x['token_hash'])[:24] == public_id), None)
+        if not entry:
+            raise HTTPException(404, 'Thiết bị không tồn tại hoặc đã được thu hồi.')
+        return table, entry['token_hash']
+
+    class DeviceLabel(BaseModel):
+        label: str = Field(max_length=40)
+
+    @app.patch('/api/me/sessions/{kind}/{device_id}/label')
+    async def rename_own_device(request:Request,kind:str,device_id:str,body:DeviceLabel):
+        u=current_user(request)
+        label=body.label.strip()
+        if any(ord(ch)<32 or ord(ch)==127 for ch in label):
+            raise HTTPException(422,'Tên thiết bị không được chứa ký tự điều khiển.')
+        with db() as c:
+            table, stored_hash=owned_device(c,u['id'],kind,device_id)
+            c.execute(f'UPDATE {table} SET device_label=? WHERE token_hash=? AND user_id=?',
+                      (label,stored_hash,u['id']))
+        return {'ok':True}
+
     @app.post('/api/me/sessions/revoke-others')
     async def revoke_others(request:Request):
         u=current_user(request)
