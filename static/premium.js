@@ -64,8 +64,8 @@
       return 'Thông tin chưa hợp lệ. Vui lòng kiểm tra lại.';
     }
     if (input.name === 'phone' && value) {
-      const normalized = value.replace(/[\\s().-]/g, '');
-      if (!/^(?:0[0-9]{9}|\\+[1-9][0-9]{7,14})$/.test(normalized))
+      const normalized = value.replace(/[\s().-]/g, '');
+      if (!/^(?:0[0-9]{9}|\+[1-9][0-9]{7,14})$/.test(normalized))
         return 'Vui lòng nhập số điện thoại Việt Nam 10 chữ số hoặc số quốc tế có mã quốc gia.';
     }
     if ((input.name === 'repeat-password' || input.name === 'repeat_password')) {
