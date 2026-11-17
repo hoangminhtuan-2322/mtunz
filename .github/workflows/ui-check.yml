@@ -42,6 +42,8 @@ jobs:
           node tests/registration_layout.cjs
       - name: Verify 30-day account lifecycle and privileged deletion UI
         run: node tests/account_lifecycle_ui.cjs
+      - name: Verify registration contacts, admin details, logout dialog and motion
+        run: node tests/contact_and_motion_ui.cjs
       - name: Verify Admin full-width layout across breakpoints
         run: |
           node tests/admin_layout.cjs
