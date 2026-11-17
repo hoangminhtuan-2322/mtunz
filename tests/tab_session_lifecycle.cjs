@@ -29,7 +29,7 @@ const sessionStorage={
  setItem:(k,v)=>storage.set(k,String(v)),
  removeItem:key=>storage.delete(key),
 };
-const context={sessionStorage,JSON,Number,state,calls,
+const context={sessionStorage,JSON,Number,state,calls,setTimeout,clearTimeout,
  api:async path=>{
   calls.push('GET '+path);
   if(failNetwork)throw Error('network unavailable');
@@ -72,6 +72,21 @@ vm.runInContext(enter+boot,context);
   'POST /api/auth/lock','POST /api/auth/remembered','GET /api/registration/status'
  ]);
  assert(!calls.includes('GET /api/me'),'Fresh tab must not auto-enter old account');
+ calls.length=0;
+ // Opening a second tab cannot kick out an already-open tab.
+ vm.runInContext(`tabPresenceChannel={
+  onmessage:null,
+  postMessage(message){
+   if(message.kind==='probe')setTimeout(()=>this.onmessage?.({
+    data:{kind:'alive',nonce:message.nonce}
+   }),8);
+  }
+ }`,context);
+ await context.setup();
+ assert(!calls.includes('POST /api/auth/lock'),'New tab must not revoke an active sibling tab');
+ assert(!calls.includes('POST /api/auth/remembered'),'New tab must not revoke sibling through remembered endpoint');
+ assert(!calls.includes('GET /api/me'),'New tab still requires authentication');
+ vm.runInContext('tabPresenceChannel=null',context);
  calls.length=0;
  // Successful login writes a tab-only marker and last screen ID.
  state.user={id:17,is_admin:false};
