@@ -166,3 +166,34 @@ def test_existing_login_can_opt_out_of_remembering():
     assert result.status_code==200
     assert c.post("/api/auth/remembered").json()["remembered"] is False
     assert c.get("/api/me").json()["user"] is None
+
+
+def test_revoking_other_sessions_also_revokes_saved_devices():
+    new_user()
+    first=TestClient(app)
+    second=TestClient(app)
+    login_with_pin(first)
+    login_with_pin(second)
+    original=first.get("/api/me/sessions")
+    assert original.status_code==200,original.text
+    assert len(original.json()["remembered_devices"])==2
+    assert sum(d["current"] for d in original.json()["remembered_devices"])==1
+    revoked=first.post("/api/me/sessions/revoke-others")
+    assert revoked.status_code==200,revoked.text
+    current=first.get("/api/me/sessions").json()
+    assert len(current["remembered_devices"])==1
+    assert current["remembered_devices"][0]["current"] is True
+    assert second.post("/api/auth/remembered").json()["remembered"] is False
+    assert second.get("/api/me").json()["user"] is None
+
+
+def test_changing_pin_revokes_saved_device_on_next_visit():
+    new_user()
+    client=TestClient(app)
+    login_with_pin(client)
+    changed=client.post("/api/me/pin",json={
+        "old_pin":"543210","new_pin":"765432","pin_length":6
+    })
+    assert changed.status_code==200,changed.text
+    assert client.post("/api/auth/remembered").json()["remembered"] is False
+    assert client.get("/api/me").json()["user"] is None
