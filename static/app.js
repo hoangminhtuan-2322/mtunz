@@ -342,9 +342,39 @@ function authSupport(){
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
 function renderAuth(){
- root().innerHTML=`<div class="auth">${authArt()}<main class="auth-main"><div class="auth-mobile-logo logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span> mtunz<span style="color:#8984fc">.</span></div><div class="auth-panel">${authTabs()}${state.mode==='login'?authLogin():state.mode==='register'?authRegister():authSupport()}
- <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div></div></main></div>`;
- const panel=$('.auth-panel');panel?.scrollIntoView({block:'nearest'});
+ // Keep the left-side hero DOM mounted across login/register/support transitions.
+ // Rebuilding #app here restarted every decorative animation in the opposite column.
+ const host=root();
+ const view=state.mode==='login'?authLogin():state.mode==='register'?authRegister():authSupport();
+ const screenMarkup=`<div class="auth-screen-content">${view}</div>`;
+ const existing=host.querySelector(':scope > .auth');
+ if(!existing){
+   host.innerHTML=`<div class="auth">${authArt()}<main class="auth-main">
+     <div class="auth-mobile-logo logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span> mtunz<span class="brand-dot">.</span></div>
+     <div class="auth-panel">${authTabs()}
+       <section class="auth-screen" aria-live="polite">${screenMarkup}</section>
+       <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
+     </div>
+   </main></div>`;
+   return;
+ }
+ const nav=existing.querySelector('.auth-nav');
+ if(nav){
+   for(const button of nav.querySelectorAll('button[data-act^="mode-"]')){
+     const selected=button.dataset.act===`mode-${state.mode}`;
+     button.classList.toggle('active',selected);
+     button.setAttribute('aria-pressed',String(selected));
+   }
+ }
+ const screen=existing.querySelector('.auth-screen');
+ if(screen){
+   screen.innerHTML=screenMarkup;
+   // Never scroll the entire page: only the form's own scroll pane may move.
+   const main=existing.querySelector('.auth-main');
+   if(main && main.scrollTop>0 && screen.getBoundingClientRect().top<main.getBoundingClientRect().top){
+     main.scrollTo({top:0,behavior:'instant'});
+   }
+ }
 }
 async function loadTickets(){const r=await api('/api/support/tickets');state.tickets=r.tickets;}
 async function loadTicketMessages(){if(!state.supportTicket)return;const r=await api(`/api/support/tickets/${state.supportTicket}/messages`);state.ticketMessages=r.messages;
