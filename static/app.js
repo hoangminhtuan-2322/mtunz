@@ -287,7 +287,7 @@ function sideBody(){
 function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
 function appRail(){
   const buttons=[['messages','chat','Tin nhắn'],['groups','group','Nhóm'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['restricted','shield','Hạn chế'],['settings','settings','Cài đặt'],['support','inbox','Hỗ trợ']];
-  return `<aside class="rail"><span class="logo-mark" title="mtunz">m</span>
+  return `<aside class="rail"><span class="logo-mark" title="mtunz" aria-hidden="true">${brandGlyph()}</span>
     ${buttons.map(([tab,ic,label])=>`<button class="rail-btn ${state.tab===tab?'active':''}" title="${label}" aria-label="${label}" data-act="app-tab" data-tab="${tab}">${icon(ic,21)}</button>`).join('')}
     <div class="rail-foot"><button class="rail-btn" title="Đăng xuất" data-act="logout">${icon('logout',20)}</button>
     ${avatar(state.user.username,false,'sm')}</div></aside>`;
