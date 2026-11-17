@@ -17,7 +17,7 @@ def isolate_remembered_device_tests():
         c.execute("DELETE FROM sessions")
         c.execute("DELETE FROM login_challenges")
         c.execute("DELETE FROM registrations")
-        c.execute("DELETE FROM users WHERE is_admin=0")
+        c.execute("DELETE FROM users WHERE username='saved_demo'")
         c.execute("UPDATE users SET pin_hash=NULL,pin_length=NULL WHERE username='admin'")
     yield
     with db() as c:
@@ -25,7 +25,7 @@ def isolate_remembered_device_tests():
         c.execute("DELETE FROM sessions")
         c.execute("DELETE FROM login_challenges")
         c.execute("DELETE FROM registrations")
-        c.execute("DELETE FROM users WHERE is_admin=0")
+        c.execute("DELETE FROM users WHERE username='saved_demo'")
         c.execute("UPDATE users SET pin_hash=NULL,pin_length=NULL WHERE username='admin'")
     RATE_BUCKETS.clear()
 
