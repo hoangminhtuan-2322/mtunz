@@ -495,11 +495,30 @@ function sideBody(){
 }
 function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
 function appRail(){
-  const buttons=[['messages','chat','Tin nhắn'],['groups','group','Nhóm'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['restricted','shield','Hạn chế'],['settings','settings','Cài đặt'],['support','inbox','Hỗ trợ']];
-  return `<aside class="rail"><span class="logo-mark" title="mtunz" aria-hidden="true">${brandGlyph()}</span>
-    ${buttons.map(([tab,ic,label])=>`<button class="rail-btn ${state.tab===tab?'active':''}" title="${label}" aria-label="${label}" data-act="app-tab" data-tab="${tab}">${icon(ic,21)}</button>`).join('')}
-    <div class="rail-foot"><button class="rail-btn" title="Đăng xuất" data-act="logout">${icon('logout',20)}</button>
-    ${avatar(state.user.username,false,'sm')}</div></aside>`;
+  const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
+  const secondary=[['restricted','shield','Danh sách hạn chế'],['support','inbox','Hỗ trợ']];
+  const moreOpen=!!state.railMoreOpen || secondary.some(([tab])=>state.tab===tab);
+  const item=([tab,ic,label])=>`<button type="button" class="rail-btn ${state.tab===tab?'active':''}" title="${label}" aria-label="${label}" aria-current="${state.tab===tab?'page':'false'}" data-act="app-tab" data-tab="${tab}">
+    <span class="rail-icon" aria-hidden="true">${icon(ic,20)}</span><span class="rail-text">${label}</span></button>`;
+  return `<aside class="rail" aria-label="Thanh điều hướng mtunz">
+    <button type="button" class="rail-home" data-act="app-tab" data-tab="messages" title="Về tin nhắn" aria-label="mtunz – về tin nhắn">
+      <span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span class="rail-brand">mtunz<span class="brand-dot">.</span></span></button>
+    <nav class="rail-nav" aria-label="Điều hướng chính">
+      ${primary.map(item).join('')}
+      <div class="rail-secondary">
+        <button type="button" class="rail-btn rail-more ${moreOpen?'is-open':''}" data-act="rail-more" aria-controls="rail-more-items" aria-expanded="${moreOpen}" title="Các mục khác" aria-label="Các mục khác">
+          <span class="rail-icon" aria-hidden="true">${icon('dots',20)}</span><span class="rail-text">Thêm</span><span class="rail-more-chevron" aria-hidden="true">${icon('chevron',14)}</span></button>
+        <div id="rail-more-items" class="rail-extra ${moreOpen?'is-open':''}" ${moreOpen?'':'hidden'}>
+          ${secondary.map(item).join('')}
+        </div>
+      </div>
+    </nav>
+    <div class="rail-foot">
+      <div class="rail-account">${avatar(state.user.username,false,'sm')}<span class="rail-account-name" title="${esc(state.user.username)}">${esc(state.user.username)}</span></div>
+      <button type="button" class="rail-btn rail-logout" data-act="logout" title="Đăng xuất tài khoản" aria-label="Đăng xuất tài khoản">
+        <span class="rail-icon" aria-hidden="true">${icon('logout',19)}</span><span class="rail-text">Đăng xuất</span></button>
+    </div>
+  </aside>`;
 }
 function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
   <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" id="side-filter" placeholder="Tìm cuộc trò chuyện..." value="${esc(state.sideFilter||'')}" autocomplete="off"></div></div>
@@ -584,6 +603,15 @@ function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
  <p class="section-lead">Kiểm soát thông tin đăng nhập và cách bạn tương tác trên mtunz.</p>
  <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)} · Mã PIN hiện tại: ${state.user.pin_length} chữ số</div></div><span class="pill good">Đã xác thực</span></div>
+ <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
+   <h3>${icon('grid',17)} Tiện ích khác</h3>
+   <p class="hint">Những chức năng ít dùng được sắp xếp tại đây để thanh điều hướng gọn gàng hơn.</p>
+   <div class="rail-settings-actions">
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
+     <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
+   </div>
+ </section>
  ${profileSettings()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3><p class="hint">Có thể đổi cả độ dài PIN 4, 5 hoặc 6 chữ số.</p>
  <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','PIN cũ','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
@@ -873,6 +901,7 @@ async function clickAction(button){
   case 'delete-own-account':showPermanentDeleteDialog();break;
   case 'logout':await logout();break;
   case 'app-tab':await goTab(button.dataset.tab);break;
+  case 'rail-more':state.railMoreOpen=!state.railMoreOpen;renderApp();break;
   case 'back-to-list':state.selected=null;state.groupSelected=null;state.tab=state.tab==='groups'?'groups':'messages';renderApp();break;
   case 'open-chat':await openChat(id);break;
   case 'friend-request':await post(`/api/friends/request/${id}`);toast('Đã gửi lời mời kết bạn.','ok');await refreshFriends(false);if(state.peopleQuery){state.peopleResults=(await api(`/api/people/search?q=${encodeURIComponent(state.peopleQuery)}`)).users;}renderApp();break;
