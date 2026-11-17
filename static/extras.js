@@ -136,7 +136,12 @@ function profileSettings(){
  <section class="card"><h3>${icon('shield',17)} Dữ liệu & phiên đăng nhập</h3><p class="hint">Tải dữ liệu tài khoản hoặc đăng xuất toàn bộ thiết bị khác.</p>
  <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap"><a class="btn ghost sm" href="/api/me/export">${icon('file',15)} Xuất dữ liệu JSON</a>
  <button class="btn ghost sm" data-act="list-sessions">${icon('lock',15)} Phiên đăng nhập</button>
- <button class="btn danger sm" data-act="revoke-sessions">Đăng xuất thiết bị khác</button></div></section>`;
+ <button class="btn danger sm" data-act="revoke-sessions">Đăng xuất thiết bị khác</button>
+ ${state.savedDevice?`<button class="btn ghost sm" data-act="lock-device">${icon('lock',15)} Khóa bằng PIN</button>`:''}
+ </div>
+ <div class="remember-settings-note">${icon('shield',17)} ${state.savedDevice?
+  'Thiết bị này đã được ghi nhớ 30 ngày. Khi mở lại mtunz, bạn cần nhập PIN để truy cập. Đăng xuất sẽ xóa thiết bị đã lưu.':
+  'Bạn có thể bật “Ghi nhớ thiết bị” ở bước nhập PIN khi đăng nhập. Không lưu mật khẩu hay mã PIN trên trình duyệt.'}</div></section>`;
 }
 function groupManageDialog(){
  const gid=state.groupSelected;
