@@ -259,15 +259,26 @@ class Hub:
 hub = Hub()
 # Lightweight per-process guardrails. Use centralized Redis counters for multi-worker hosting.
 RATE_BUCKETS: dict[tuple, list[int]] = defaultdict(list)
+MAX_JSON_REQUEST = 64 * 1024
+MAX_UPLOAD_REQUEST = 3 * 1024 * 1024
+MAX_WEBSOCKET_EVENT = 16 * 1024
+MAX_WEBSOCKET_EVENTS_PER_WINDOW = 100
 
 
 def throttle(request: Request, scope: str, limit: int, window: int, identity: str = ''):
     peer = request.client.host if request.client else 'unknown'
     key = (scope, peer, identity.lower()[:80])
     current = now()
+    # Bound the number of distinct in-memory rate-limit keys against unbounded spam.
+    if len(RATE_BUCKETS) > 4000:
+        for stale_key, timestamps in list(RATE_BUCKETS.items()):
+            if not timestamps or timestamps[-1] < current - 3600:
+                RATE_BUCKETS.pop(stale_key, None)
+        if len(RATE_BUCKETS) > 5000:
+            RATE_BUCKETS.clear()
     hits = [t for t in RATE_BUCKETS[key] if current-t < window]
     if len(hits) >= limit:
-        raise HTTPException(429, 'Thao tác quá nhanh. Vui lòng thử lại sau.')
+        raise HTTPException(429, 'Thao tác quá nhanh. Vui lòng thử lại sau.', headers={'Retry-After': str(max(1, window - (current - hits[0])))})
     hits.append(current)
     RATE_BUCKETS[key] = hits
 
@@ -275,29 +286,53 @@ def throttle(request: Request, scope: str, limit: int, window: int, identity: st
 
 @app.middleware('http')
 async def cookies_and_origin(request: Request, call_next):
-    # Lax cookies + strict same-origin writes protect the cookie-authenticated API.
+    # Cookies are HttpOnly and SameSite=Lax; require consistent browser provenance
+    # for state-changing calls, including browsers which omit an Origin header.
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        from fastapi.responses import JSONResponse
+        from urllib.parse import urlsplit
+        def reject(detail, status=403):
+            return JSONResponse({'detail': detail}, status_code=status, headers={'Cache-Control':'no-store'})
+        site = request.headers.get('sec-fetch-site', '').lower()
+        if site == 'cross-site':
+            return reject('Yêu cầu từ trang khác đã bị chặn để bảo vệ tài khoản.')
         origin = request.headers.get('origin')
-        if origin:
-            from urllib.parse import urlsplit
-            a = urlsplit(origin)
-            b = urlsplit(PUBLIC_ORIGIN) if PUBLIC_ORIGIN else None
-            expected_scheme = b.scheme if b else ('https' if COOKIE_SECURE else request.url.scheme)
-            expected_host = b.netloc if b else request.headers.get('host', '')
-            if (a.scheme, a.netloc) != (expected_scheme, expected_host):
-                from fastapi.responses import JSONResponse
-                return JSONResponse({'detail': 'Nguồn yêu cầu không hợp lệ.'}, status_code=403)
-    gid = request.cookies.get('g') or token()
+        referer = request.headers.get('referer')
+        b = urlsplit(PUBLIC_ORIGIN) if PUBLIC_ORIGIN else None
+        expected_scheme = b.scheme if b else ('https' if COOKIE_SECURE else request.url.scheme)
+        expected_host = b.netloc if b else request.headers.get('host', '')
+        for supplied in (origin, referer if not origin else None):
+            if supplied:
+                a = urlsplit(supplied)
+                if (a.scheme, a.netloc) != (expected_scheme, expected_host):
+                    return reject('Nguồn yêu cầu không hợp lệ.')
+        # Reject oversized JSON and uploads early, before parsing or allocating.
+        length = request.headers.get('content-length', '')
+        if length.isdigit():
+            size = int(length)
+            limit = MAX_UPLOAD_REQUEST if request.url.path == '/api/uploads' else MAX_JSON_REQUEST
+            if size > limit:
+                return reject('Nội dung yêu cầu vượt quá dung lượng cho phép.', 413)
+        if request.url.path.startswith('/api/') and request.url.path != '/api/uploads':
+            media = request.headers.get('content-type', '').split(';', 1)[0].lower().strip()
+            if media and media not in ('application/json',):
+                return reject('API chỉ chấp nhận dữ liệu JSON.', 415)
+    gid = request.cookies.get('g')
+    if not gid or len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}', gid):
+        gid = token()
     request.state.gid = gid
     result = await call_next(request)
-    if not request.cookies.get('g'):
-        result.set_cookie('g', gid, max_age=365*86400, httponly=True, secure=COOKIE_SECURE, samesite='lax')
+    if request.cookies.get('g') != gid:
+        result.set_cookie('g', gid, max_age=365*86400, httponly=True, secure=COOKIE_SECURE, samesite='lax', path='/')
     result.headers['X-Content-Type-Options'] = 'nosniff'
     if COOKIE_SECURE:
         result.headers['Strict-Transport-Security'] = 'max-age=31536000'
     result.headers['Permissions-Policy'] = 'geolocation=(), payment=()'
     result.headers['Referrer-Policy'] = 'no-referrer'
     result.headers['X-Frame-Options'] = 'DENY'
+    result.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
+    result.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+    result.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     result.headers['Cache-Control'] = 'no-store'
     result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -410,8 +445,9 @@ class UsernameIn(BaseModel):
 
 
 @app.post('/api/username/check')
-async def username_check(body: UsernameIn):
+async def username_check(request: Request, body: UsernameIn):
     name = norm_username(body.username)
+    throttle(request, 'username-check', 75, 900)
     with db() as c:
         if one(c,'SELECT 1 FROM users WHERE username=?',(name,)):
             return {'state': 'exists'}
@@ -480,8 +516,9 @@ async def register_complete(request: Request, body: RegisterComplete):
 
 # --- Three-stage login ---
 @app.post('/api/auth/start')
-async def auth_start(body: UsernameIn):
+async def auth_start(request: Request, body: UsernameIn):
     name = norm_username(body.username)
+    throttle(request, 'auth-start', 60, 900)
     with db() as c:
         u = one(c, 'SELECT id,is_admin FROM users WHERE username=?', (name,))
     if not u:
@@ -567,6 +604,7 @@ class ChangePin(BaseModel):
 @app.post('/api/me/pin')
 async def change_pin(request: Request, body: ChangePin):
     u = current_user(request)
+    throttle(request, 'change-pin', 12, 3600, str(u['id']))
     if u['is_admin']:
         raise HTTPException(403,'Admin không sử dụng PIN.')
     ensure_pin(body.new_pin, body.pin_length)
@@ -586,6 +624,7 @@ class ChangePassword(BaseModel):
 @app.post('/api/me/password')
 async def change_password(request: Request, body: ChangePassword):
     u=current_user(request)
+    throttle(request, 'change-password', 12, 3600, str(u['id']))
     ensure_password(body.new_password)
     with db() as c:
         if not verify_secret(u['password_hash'],body.old_password):
@@ -1122,6 +1161,8 @@ async def websocket_events(ws:WebSocket):
     await ws.accept()
     sid=ws.cookies.get('s')
     gid=ws.cookies.get('g')
+    if gid and (len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}',gid)):
+        gid = None
     uid=None
     if sid:
         with db() as c:
@@ -1141,9 +1182,27 @@ async def websocket_events(ws:WebSocket):
         await ws.close(code=1008)
         return
     try:
+        activity = []
         while True:
-            msg=await ws.receive_json()
-            if uid is not None and isinstance(msg,dict) and msg.get('type')=='typing':
+            raw_message = await ws.receive_text()
+            # Stop oversized socket events and floods before decoding JSON.
+            if len(raw_message.encode('utf-8')) > MAX_WEBSOCKET_EVENT:
+                await ws.close(code=1009)
+                break
+            current = time.monotonic()
+            activity = [t for t in activity if current - t < 30]
+            if len(activity) >= MAX_WEBSOCKET_EVENTS_PER_WINDOW:
+                await ws.close(code=1008)
+                break
+            activity.append(current)
+            try:
+                msg = json.loads(raw_message)
+            except json.JSONDecodeError:
+                await ws.close(code=1003)
+                break
+            if not isinstance(msg,dict):
+                continue
+            if uid is not None and msg.get('type')=='typing':
                 other=msg.get('to')
                 if not isinstance(other,int):continue
                 with db() as c:
