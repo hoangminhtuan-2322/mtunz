@@ -1,0 +1,117 @@
+/* mtunz navigation v1 — scoped to the member shell, leaving admin untouched. */
+.shell:not(.admin-shell){grid-template-columns:194px 294px minmax(0,1fr)}
+.shell:not(.admin-shell)>.rail{
+  width:100%;min-width:0;min-height:0;padding:22px 12px 14px;gap:0;align-items:stretch;
+  overflow:hidden;background:#101a2d;border-right:1px solid #34415d;
+}
+.rail-home{
+  width:100%;display:flex;align-items:center;gap:12px;border:0;padding:6px 9px 17px;
+  background:none;color:#f3f3ff;text-align:left;min-height:65px;border-bottom:1px solid #ffffff13;
+}
+.rail-home .logo-mark{flex:none;margin:0;width:40px;height:40px}
+.rail-brand{font-size:20px;font-weight:800;letter-spacing:-.75px}
+.rail-brand .brand-dot{color:#a89cff}
+.rail-nav{display:flex;flex-direction:column;gap:5px;margin-top:19px;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;overscroll-behavior:contain}
+.rail-nav::-webkit-scrollbar{display:none}
+.shell:not(.admin-shell) .rail-btn{
+  width:100%;min-width:0;min-height:44px;height:auto;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:flex-start;gap:13px;
+  padding:10px 13px;border:1px solid transparent;border-radius:12px;
+  background:transparent;color:#a7b4d0;font-size:12px;font-weight:650;
+  line-height:1.35;text-align:left;white-space:nowrap;
+  transition:background .16s ease,color .16s ease,border-color .16s ease;
+}
+.rail-btn .rail-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px}
+.rail-btn .rail-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.shell:not(.admin-shell) .rail-btn:hover{
+  transform:none;background:#23314b;color:#f3f4ff;border-color:#59698855;
+}
+.shell:not(.admin-shell) .rail-btn.active{
+  background:linear-gradient(105deg,#474379bd,#353d68a8);border-color:#8980e778;color:#fff;
+  box-shadow:inset 0 1px 0 #ffffff11;
+}
+.shell:not(.admin-shell) .rail-btn.active:before{
+  width:3px;height:23px;left:-13px;top:50%;transform:translateY(-50%);
+  background:linear-gradient(#a894ff,#63d8e9);border-radius:4px;
+}
+.rail-secondary{border-top:1px solid #ffffff16;margin-top:13px;padding-top:10px}
+.shell:not(.admin-shell) .rail-btn.rail-more{color:#93a4c4}
+.rail-more-chevron{margin-left:auto;display:inline-flex;transform:rotate(0);transition:transform .18s ease}
+.rail-more.is-open .rail-more-chevron{transform:rotate(90deg)}
+.rail-extra{display:flex;flex-direction:column;gap:4px;margin:5px 0 4px 10px;padding-left:8px;border-left:1px solid #4f5f8566}
+.rail-extra[hidden]{display:none!important}
+.shell:not(.admin-shell) .rail-extra .rail-btn{font-size:11px;padding-left:11px}
+.rail-foot{
+  display:flex;align-items:stretch;gap:8px;flex-direction:column;
+  margin-top:auto;padding-top:15px;border-top:1px solid #ffffff16
+}
+.rail-account{display:flex;align-items:center;gap:10px;padding:3px 9px 7px;min-width:0}
+.rail-account-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d5dffa;font-size:12px;font-weight:650}
+.rail-account .avatar{flex:none}
+.shell:not(.admin-shell) .rail-logout:hover{color:#ffc0ca}
+.shell:not(.admin-shell) .rail-btn:focus-visible,.rail-home:focus-visible{
+  outline:2px solid #80d6f3;outline-offset:2px
+}
+.rail-settings-shortcuts{margin-bottom:18px}
+.rail-settings-shortcuts .hint{margin:10px 0 14px}
+.rail-settings-actions{display:flex;gap:10px;flex-wrap:wrap}
+@media(max-width:1279px) and (min-width:801px){
+  .shell:not(.admin-shell){grid-template-columns:72px 265px minmax(0,1fr)}
+  .shell:not(.admin-shell)>.rail{padding:20px 9px 12px}
+  .rail-home{justify-content:center;padding:5px 0 17px}
+  .rail-brand,.rail-btn .rail-text,.rail-more-chevron,.rail-account-name{display:none}
+  .rail-nav{margin-top:15px;gap:7px}
+  .shell:not(.admin-shell) .rail-btn{justify-content:center;width:48px;height:48px;min-height:48px;padding:10px;margin:0 auto}
+  .shell:not(.admin-shell) .rail-btn.active:before{left:-11px}
+  .rail-secondary{padding-top:9px;margin-top:9px}
+  .rail-extra{padding-left:0;margin-left:0;border-left:0}
+  .rail-foot{align-items:center;gap:5px}
+  .rail-account{padding:3px 0}
+  .shell:not(.admin-shell) .rail-extra .rail-btn{padding:10px}
+}
+@media(max-width:800px){
+  /* Native-feeling bottom navigation: five named destinations, no redundant icons. */
+  .shell:not(.admin-shell){
+    display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);
+    padding-bottom:calc(67px + env(safe-area-inset-bottom,0px));
+  }
+  .shell:not(.admin-shell)>.rail{
+    position:fixed;z-index:30;top:auto;left:0;right:0;bottom:0;
+    width:100%;height:calc(67px + env(safe-area-inset-bottom,0px));
+    min-height:0;padding:6px max(8px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px));
+    flex-direction:row;align-items:center;border-right:0;border-top:1px solid #414b6b;
+    background:#101a2ef7;box-shadow:0 -8px 26px #050b1899;
+  }
+  .rail-home,.rail-secondary,.rail-foot{display:none!important}
+  .rail-nav{
+    flex:1;margin:0;padding:0;display:flex;flex-direction:row;align-items:stretch;
+    gap:2px;justify-content:space-around;overflow:visible
+  }
+  .shell:not(.admin-shell) .rail-nav>.rail-btn{
+    flex:1 1 0;min-width:0;max-width:none;min-height:54px;height:54px;
+    display:flex;flex-direction:column;justify-content:center;align-items:center;
+    gap:3px;padding:6px 2px;border-radius:11px;margin:0;
+  }
+  .shell:not(.admin-shell) .rail-btn .rail-icon{width:22px;height:22px}
+  .shell:not(.admin-shell) .rail-btn .rail-text{
+    display:block;width:100%;text-align:center;font-size:10px;font-weight:650;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+  }
+  .shell:not(.admin-shell) .rail-btn.active:before{
+    width:26px;height:3px;top:auto;bottom:1px;left:50%;transform:translateX(-50%)
+  }
+  .shell:not(.admin-shell)>.side,.shell:not(.admin-shell)>.main{
+    grid-column:1;grid-row:1;min-width:0;min-height:0
+  }
+  .shell:not(.admin-shell)>.side{height:100%}
+  .shell:not(.admin-shell)>.main{height:100%}
+  .shell:not(.admin-shell) .rail-nav .rail-btn:hover{transform:none}
+  #toast-root{bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+}
+@media(max-width:380px){
+  .shell:not(.admin-shell) .rail-btn .rail-text{font-size:9px;letter-spacing:-.2px}
+  .shell:not(.admin-shell)>.rail{padding-left:4px;padding-right:4px}
+}
+@media(prefers-reduced-motion:reduce){
+  .shell:not(.admin-shell) .rail-btn,.rail-more-chevron{transition:none}
+}
