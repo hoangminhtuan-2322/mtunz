@@ -52,6 +52,13 @@ def install(core):
                 column('messages', col, typ)
             column('notifications', 'read_at','INTEGER')
             column('sessions','created_at','INTEGER')
+            for table in ('sessions', 'trusted_devices'):
+                for name, typ in (
+                    ('last_seen', 'INTEGER'), ('device_label', 'TEXT'),
+                    ('device_name', 'TEXT'), ('device_type', 'TEXT'),
+                    ('browser', 'TEXT'), ('os_name', 'TEXT'),
+                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT')):
+                    column(table, name, typ)
             c.executescript('''
               CREATE TABLE IF NOT EXISTS attachments (
                 id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id),
