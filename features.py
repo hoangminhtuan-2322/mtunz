@@ -11,7 +11,9 @@ import secrets
 import sqlite3
 from pathlib import Path
 from typing import Literal
-from account_deletion import delete_user_records
+from account_deletion import delete_user_records, purge_due_deletions, DELETION_GRACE_SECONDS
+import asyncio
+import logging
 from urllib.parse import quote
 
 from fastapi import HTTPException, Request, UploadFile, File
@@ -87,6 +89,11 @@ def install(core):
                 user_id INTEGER NOT NULL REFERENCES users(id), other_id INTEGER NOT NULL REFERENCES users(id),
                 muted INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY(user_id,other_id));
+              CREATE TABLE IF NOT EXISTS account_deletion_requests (
+                user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                requested_at INTEGER NOT NULL,
+                purge_at INTEGER NOT NULL);
+              CREATE INDEX IF NOT EXISTS deletion_due_idx ON account_deletion_requests(purge_at);
             ''')
             column('attachments','file_content','BLOB')
     migrate()
@@ -246,15 +253,20 @@ def install(core):
         await hub.terminate_user(u['id'], except_hash=current)
         return {'ok':True}
 
-    # Account deletion is irreversible. Both paths require re-authentication,
-    # a typed account name and an exact explicit confirmation phrase.
+
+    # 30-day self-service deletion grace period. Admin can irreversibly purge
+    # immediately, but only after password+PIN reauthentication.
     class PermanentDelete(BaseModel):
         username: str = Field(min_length=1, max_length=80)
         password: str = Field(min_length=1, max_length=128)
         pin: str | None = None
-        confirm: Literal['XOA VINH VIEN']
+        confirm: Literal['XOA VINH VIEN', 'XOA SAU 30 NGAY']
 
-    def check_delete_identity(c, actor_id: int, body: PermanentDelete):
+    class CancelDelete(BaseModel):
+        password: str = Field(min_length=1, max_length=128)
+        pin: str | None = None
+
+    def check_delete_identity(c, actor_id: int, body):
         actor=one(c,'SELECT * FROM users WHERE id=?',(actor_id,))
         if not actor or not core.verify_secret(actor['password_hash'],body.password):
             raise HTTPException(401,'Mật khẩu xác nhận không đúng.')
@@ -263,8 +275,6 @@ def install(core):
         return actor
 
     def remove_local_uploads(names):
-        # Blob bytes are removed atomically from Neon. Local development uploads
-        # are cleaned only by safe generated filenames, after DB commit.
         for filename in names:
             if not re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip)',filename or ''):
                 continue
@@ -283,26 +293,72 @@ def install(core):
             await hub.user(peer,'groups-updated')
         remove_local_uploads(result['filenames'])
 
+    @app.get('/api/me/deletion')
+    async def own_deletion_status(request:Request):
+        actor=current_user(request)
+        with db() as c:
+            row=one(c,'SELECT requested_at,purge_at FROM account_deletion_requests WHERE user_id=?',
+                    (actor['id'],))
+        return {'pending':bool(row), 'requested_at':row['requested_at'] if row else None,
+                'purge_at':row['purge_at'] if row else None}
+
     @app.post('/api/me/delete')
-    async def delete_own_account(request:Request,body:PermanentDelete):
+    async def request_own_deletion(request:Request,body:PermanentDelete):
         actor=current_user(request)
         if actor['is_admin']:
             raise HTTPException(403,'Tài khoản Admin không thể tự xóa tại mục cài đặt.')
+        if body.confirm!='XOA SAU 30 NGAY':
+            raise HTTPException(422,'Hãy xác nhận đúng yêu cầu xóa sau 30 ngày.')
         throttle(request,'delete-own-account',5,3600,str(actor['id']))
         with db() as c:
             current=check_delete_identity(c,actor['id'],body)
             if current['username'].casefold()!=body.username.strip().casefold():
                 raise HTTPException(422,'Tên tài khoản xác nhận không khớp.')
-            result=delete_user_records(c,actor['id'])
-        await finish_account_delete(result)
-        response=JSONResponse({'ok':True,'deleted':True})
-        response.delete_cookie('s',path='/')
-        response.delete_cookie(core.REMEMBER_COOKIE,path='/')
-        return response
+            if one(c,'SELECT user_id FROM account_deletion_requests WHERE user_id=?',(actor['id'],)):
+                raise HTTPException(409,'Yêu cầu xóa đã được lên lịch. Bạn có thể hủy trước hạn.')
+            requested=now()
+            deadline=requested+DELETION_GRACE_SECONDS
+            c.execute('INSERT INTO account_deletion_requests(user_id,requested_at,purge_at) VALUES(?,?,?)',
+                      (actor['id'],requested,deadline))
+            c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
+                      (actor['id'],'Bạn đã yêu cầu xóa tài khoản sau 30 ngày. Có thể hủy trong Cài đặt trước hạn.',requested))
+        await hub.admins('account-deletion-updated')
+        return {'ok':True,'pending':True,'requested_at':requested,'purge_at':deadline}
+
+    @app.post('/api/me/delete/cancel')
+    async def cancel_own_deletion(request:Request,body:CancelDelete):
+        actor=current_user(request)
+        if actor['is_admin']:
+            raise HTTPException(403,'Tài khoản quản trị không có yêu cầu tự xóa.')
+        throttle(request,'cancel-delete-account',8,3600,str(actor['id']))
+        with db() as c:
+            check_delete_identity(c,actor['id'],body)
+            changed=c.execute('DELETE FROM account_deletion_requests WHERE user_id=? AND purge_at>?',
+                              (actor['id'],now()))
+            if changed.rowcount!=1:
+                raise HTTPException(409,'Không có yêu cầu xóa còn hiệu lực để hủy.')
+            c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
+                      (actor['id'],'Bạn đã hủy yêu cầu xóa tài khoản.',now()))
+        await hub.admins('account-deletion-updated')
+        return {'ok':True,'pending':False}
+
+    @app.get('/api/admin/deletions')
+    async def admin_deletion_queue(request:Request):
+        require_admin(request)
+        with db() as c:
+            rows=many(c,'''SELECT d.user_id,u.username,d.requested_at,d.purge_at
+                            FROM account_deletion_requests d
+                            JOIN users u ON u.id=d.user_id AND u.is_admin=0
+                            ORDER BY d.purge_at ASC LIMIT 500''')
+        return {'requests':rows}
 
     @app.post('/api/admin/users/{uid}/delete')
     async def delete_member_as_admin(request:Request,uid:int,body:PermanentDelete):
         admin=require_admin(request)
+        if not admin['pin_hash']:
+            raise HTTPException(403,'Hãy bật PIN quản trị trước khi xóa vĩnh viễn tài khoản.')
+        if body.confirm!='XOA VINH VIEN':
+            raise HTTPException(422,'Xác nhận xóa vĩnh viễn không hợp lệ.')
         throttle(request,'admin-delete-account',5,3600,str(admin['id']))
         with db() as c:
             check_delete_identity(c,admin['id'],body)
@@ -312,9 +368,38 @@ def install(core):
             if target['username'].casefold()!=body.username.strip().casefold():
                 raise HTTPException(422,'Tên tài khoản xác nhận không khớp.')
             result=delete_user_records(c,uid)
-            admin_log(c,admin['id'],'permanent_user_delete',f'user_id={uid}')
+            admin_log(c,admin['id'],'permanent_user_delete',f'user_id={uid}; request=admin_approved')
         await finish_account_delete(result)
+        await hub.admins('account-deletion-updated')
         return {'ok':True,'deleted_user_id':uid}
+
+    async def process_due_deletions():
+        # Any failed DB operation rolls back the current user; next hourly retry is safe.
+        try:
+            for result in purge_due_deletions(db,now()):
+                await finish_account_delete(result)
+            # Expired pending records are never silently restored by worker failures.
+        except Exception:
+            logging.getLogger('mtunz.deletion').exception('Scheduled account deletion failed')
+
+    async def deletion_worker():
+        while True:
+            await process_due_deletions()
+            await asyncio.sleep(3600)
+
+    @app.on_event('startup')
+    async def start_deletion_worker():
+        app.state.deletion_worker=asyncio.create_task(deletion_worker())
+
+    @app.on_event('shutdown')
+    async def stop_deletion_worker():
+        task=getattr(app.state,'deletion_worker',None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     @app.get('/api/me/export')
     async def export_account(request:Request):
