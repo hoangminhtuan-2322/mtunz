@@ -142,3 +142,36 @@ def delete_user_records(c, uid: int) -> dict:
         'group_peer_ids': sorted(group_peers),
         'filenames': filenames,
     }
+
+
+# The queue is persisted in the same database as the account. Each claim and
+# erasure runs in one transaction: a user's cancellation can win before the
+# deadline, but cannot race a successful deletion claim.
+DELETION_GRACE_SECONDS = 30 * 24 * 60 * 60
+
+
+def purge_due_deletions(db, timestamp: int, limit: int = 25) -> list[dict]:
+    """Purge only expired requests; safe to retry or run in multiple workers.
+
+    Each user is claimed via a conditional DELETE ... RETURNING under the same
+    transaction as the final account erasure. The caller handles websocket
+    notifications and local-file cleanup after commit.
+    """
+    with db() as c:
+        queued = c.execute(
+            'SELECT user_id FROM account_deletion_requests '
+            'WHERE purge_at<=? ORDER BY purge_at,user_id LIMIT ?',
+            (timestamp, limit),
+        ).fetchall()
+    completed = []
+    for row in queued:
+        uid = row['user_id']
+        with db() as c:
+            claimed = c.execute(
+                'DELETE FROM account_deletion_requests '
+                'WHERE user_id=? AND purge_at<=? RETURNING user_id',
+                (uid, timestamp),
+            ).fetchone()
+            if claimed:
+                completed.append(delete_user_records(c, uid))
+    return completed
