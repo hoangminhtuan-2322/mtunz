@@ -52,6 +52,13 @@ def install(core):
                 column('messages', col, typ)
             column('notifications', 'read_at','INTEGER')
             column('sessions','created_at','INTEGER')
+            for table in ('sessions', 'trusted_devices'):
+                for name, typ in (
+                    ('last_seen', 'INTEGER'), ('device_label', 'TEXT'),
+                    ('device_name', 'TEXT'), ('device_type', 'TEXT'),
+                    ('browser', 'TEXT'), ('os_name', 'TEXT'),
+                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT')):
+                    column(table, name, typ)
             c.executescript('''
               CREATE TABLE IF NOT EXISTS attachments (
                 id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id),
@@ -159,15 +166,72 @@ def install(core):
         u=current_user(request)
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
+        active_hash=core.digest(request.cookies.get('s',''))
+        columns='token_hash,expires_at,created_at,last_seen,device_label,device_name,device_type,browser,os_name,location_hint,network_hint'
         with db() as c:
-            rows=many(c,'SELECT token_hash,expires_at,created_at FROM sessions WHERE user_id=? ORDER BY expires_at DESC',(u['id'],))
-            devices=many(c,'''SELECT token_hash,created_at,expires_at FROM trusted_devices
-                              WHERE user_id=? AND expires_at>? ORDER BY created_at DESC''',(u['id'],core.now()))
-        for r in rows:
-            r['current']=(r.pop('token_hash')==core.digest(request.cookies.get('s','')))
-        for r in devices:
-            r['current']=(r.pop('token_hash')==saved_hash)
+            c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',(now(),active_hash,u['id']))
+            rows=many(c,f'SELECT {columns} FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC',(u['id'],now()))
+            devices=many(c,f'SELECT {columns} FROM trusted_devices WHERE user_id=? AND expires_at>? ORDER BY created_at DESC',(u['id'],now()))
+        for kind, entries, active in (('session',rows,active_hash),('remembered',devices,saved_hash)):
+            for entry in entries:
+                stored=entry.pop('token_hash')
+                entry['id']=core.digest(kind+':'+stored)[:24]
+                entry['current']=stored==active
+                entry['label']=entry.pop('device_label') or entry['device_name'] or 'Thiết bị cũ'
+                for field in ('device_name','browser','os_name'):
+                    entry[field]=entry[field] or 'Chưa có dữ liệu'
+                entry['location_hint']=entry['location_hint'] or 'Chưa xác định'
+                entry['network_hint']=entry['network_hint'] or ''
         return {'sessions':rows,'remembered_devices':devices}
+
+    def owned_device(c, user_id, kind, public_id):
+        if kind not in ('session', 'remembered') or not re.fullmatch(r'[a-f0-9]{24}', public_id):
+            raise HTTPException(404, 'Không tìm thấy thiết bị.')
+        table = 'sessions' if kind == 'session' else 'trusted_devices'
+        entries = many(c, f'SELECT token_hash FROM {table} WHERE user_id=?', (user_id,))
+        entry = next((x for x in entries if core.digest(kind+':'+x['token_hash'])[:24] == public_id), None)
+        if not entry:
+            raise HTTPException(404, 'Thiết bị không tồn tại hoặc đã được thu hồi.')
+        return table, entry['token_hash']
+
+    class DeviceLabel(BaseModel):
+        label: str = Field(max_length=40)
+
+    @app.patch('/api/me/sessions/{kind}/{device_id}/label')
+    async def rename_own_device(request:Request,kind:str,device_id:str,body:DeviceLabel):
+        u=current_user(request)
+        label=body.label.strip()
+        if any(ord(ch)<32 or ord(ch)==127 for ch in label):
+            raise HTTPException(422,'Tên thiết bị không được chứa ký tự điều khiển.')
+        with db() as c:
+            table, stored_hash=owned_device(c,u['id'],kind,device_id)
+            c.execute(f'UPDATE {table} SET device_label=? WHERE token_hash=? AND user_id=?',
+                      (label,stored_hash,u['id']))
+        return {'ok':True}
+
+    @app.delete('/api/me/sessions/{kind}/{device_id}')
+    async def revoke_own_device(request:Request,kind:str,device_id:str):
+        u=current_user(request)
+        active_hash=core.digest(request.cookies.get('s',''))
+        saved=request.cookies.get(core.REMEMBER_COOKIE)
+        saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
+        with db() as c:
+            table, stored_hash=owned_device(c,u['id'],kind,device_id)
+            if kind == 'session' and stored_hash == active_hash:
+                raise HTTPException(409,'Không thể thu hồi phiên hiện tại. Hãy chọn Đăng xuất.')
+            c.execute(f'DELETE FROM {table} WHERE token_hash=? AND user_id=?',(stored_hash,u['id']))
+        if kind == 'session':
+            for ws, connected_hash in list(hub.session_hashes.items()):
+                if connected_hash == stored_hash:
+                    try:
+                        await ws.send_json({'type':'session-ended','reason':'Phiên đăng nhập đã bị thu hồi.'})
+                    except Exception:
+                        pass
+            await hub.terminate_session(stored_hash)
+        response=JSONResponse({'ok':True})
+        if kind == 'remembered' and stored_hash == saved_hash:
+            response.delete_cookie(core.REMEMBER_COOKIE,path='/')
+        return response
 
     @app.post('/api/me/sessions/revoke-others')
     async def revoke_others(request:Request):

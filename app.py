@@ -23,6 +23,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from device_info import device_metadata
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
@@ -403,9 +404,16 @@ def public_user(u):
             'show_online':bool(u['show_online']), 'show_receipts':bool(u['show_receipts'])}
 
 
-def issue_session(c, uid):
+def issue_session(c, uid, request):
     raw = token()
-    c.execute('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)', (digest(raw), uid, now() + 7*86400, now()))
+    info = device_metadata(request)
+    created = now()
+    c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
+                 device_name,device_type,browser,os_name,location_hint,network_hint)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+              (digest(raw), uid, created + 7*86400, created, created,
+               info['device_name'], info['device_type'], info['browser'], info['os_name'],
+               info['location_hint'], info['network_hint']))
     return raw
 
 
@@ -573,7 +581,7 @@ async def auth_password(request: Request, body: PasswordLogin):
             old_device = request.cookies.get(REMEMBER_COOKIE)
             if valid_remember_token(old_device):
                 c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(old_device),))
-            raw = issue_session(c,u['id'])
+            raw = issue_session(c,u['id'],request)
             response = session_response({'ok':True,'admin':True},raw)
             if old_device: response.delete_cookie(REMEMBER_COOKIE,path='/')
             return response
@@ -605,14 +613,20 @@ async def auth_pin(request: Request, body: PinLogin):
         if r['sanction_kind'] and (not r['sanction_until'] or r['sanction_until'] > now()):
             raise HTTPException(403,'Tài khoản đang bị hạn chế.')
         c.execute('DELETE FROM login_challenges WHERE token_hash=?',(digest(body.challenge),))
-        raw = issue_session(c,r['user_id'])
+        raw = issue_session(c,r['user_id'],request)
         previous = request.cookies.get(REMEMBER_COOKIE)
         if valid_remember_token(previous):
             c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(previous),))
         saved = token() if body.remember_device else None
         if saved:
-            c.execute('INSERT INTO trusted_devices(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)',
-                      (digest(saved),r['user_id'],now()+REMEMBER_SECONDS,now()))
+            info = device_metadata(request)
+            created = now()
+            c.execute('''INSERT INTO trusted_devices(token_hash,user_id,expires_at,created_at,last_seen,
+                         device_name,device_type,browser,os_name,location_hint,network_hint)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                      (digest(saved),r['user_id'],created+REMEMBER_SECONDS,created,created,
+                       info['device_name'],info['device_type'],info['browser'],info['os_name'],
+                       info['location_hint'],info['network_hint']))
         is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
     response = session_response({'ok':True,'admin':is_admin,'remembered':bool(saved)},raw)
     if saved: remember_cookie(response,saved)
@@ -698,9 +712,13 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
                    'Sai PIN 5 lần. Thiết bị tạm khóa 15 phút.' if attempts>=5 else 'Mã PIN không đúng.',
                    headers={'Retry-After':'900'} if attempts>=5 else None)
             else:
-                c.execute('UPDATE trusted_devices SET failed_attempts=0,locked_until=0 WHERE token_hash=?',
-                          (digest(saved),))
-                raw = issue_session(c,r['user_id'])
+                info = device_metadata(request)
+                c.execute('''UPDATE trusted_devices SET failed_attempts=0,locked_until=0,
+                             last_seen=?,device_name=?,device_type=?,browser=?,os_name=?,
+                             location_hint=?,network_hint=? WHERE token_hash=?''',
+                          (now(),info['device_name'],info['device_type'],info['browser'],
+                           info['os_name'],info['location_hint'],info['network_hint'],digest(saved)))
+                raw = issue_session(c,r['user_id'],request)
                 is_admin = bool(r['is_admin'])
     if error:
         raise error
@@ -1366,6 +1384,9 @@ async def websocket_events(ws:WebSocket):
         was_online=bool(hub.users.get(uid))
         hub.users[uid].add(ws)
         hub.session_hashes[ws] = digest(sid)
+        with db() as c:
+            c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
+                      (now(),digest(sid),uid))
         if not was_online:await notify_presence(uid,True)
     elif gid:
         hub.guests[gid].add(ws)
@@ -1374,8 +1395,14 @@ async def websocket_events(ws:WebSocket):
         return
     try:
         activity = []
+        last_session_activity = now()
         while True:
             raw_message = await ws.receive_text()
+            if uid is not None and now() - last_session_activity >= 120:
+                with db() as c:
+                    c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
+                              (now(),digest(sid),uid))
+                last_session_activity = now()
             # Stop oversized socket events and floods before decoding JSON.
             if len(raw_message.encode('utf-8')) > MAX_WEBSOCKET_EVENT:
                 await ws.close(code=1009)
