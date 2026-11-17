@@ -694,8 +694,8 @@ async function loadAdmin(){
   switch(state.adminTab){
    case 'groups':state.adminData=(await api('/api/admin/groups')).groups;break;
    case 'overview':{
-    const [st,reg]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations')]);
-    state.adminData={stats:st,registrations:reg.registrations};break;
+    const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations'),api('/api/admin/audit')]);
+    state.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
    }
    case 'registrations':state.adminData=(await api('/api/admin/registrations')).registrations;break;
    case 'deletions':state.adminData=(await api('/api/admin/deletions')).requests;break;
@@ -717,14 +717,26 @@ function adminOverview(){
  const d=state.adminData||{},s=d.stats||{total_users:0,online:0,pending:0,tickets:0,reserved_slots:0,max_users:100,messages:0};
  const regs=(d.registrations||[]).filter(x=>x.status==='pending').slice(0,5);
  return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}${statCard('Đang online',s.online,'Theo kết nối realtime')}
- ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa 30 ngày',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}</div>
+ ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa 30 ngày',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
  <div class="admin-panels"><section class="card"><div class="row between"><h2>Yêu cầu đăng ký mới</h2><button class="btn ghost sm" data-act="admin-tab" data-tab="registrations">Xem tất cả</button></div>
  <div class="sep"></div>${regs.length?regs.map(r=>`<div class="people-row">${avatar(r.username,false,'sm')}<div class="grow"><b>${esc(r.username)}</b><div class="hint">${date(r.created_at)}</div></div><button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button></div>`).join(''):'<div class="empty">Không có yêu cầu đang chờ.</div>'}</section>
  <section class="card"><h2>Giới hạn người dùng</h2><p class="hint">Kiểm soát số tài khoản tối đa được phép tồn tại. Các chỗ đã duyệt nhưng chưa tạo tài khoản vẫn được tính.</p>
  <div class="row" style="margin:22px 0"><span class="pill good">${s.total_users} đã tạo</span><span class="pill warn">${s.reserved_slots} đã duyệt</span><span class="pill">Giới hạn ${s.max_users}</span></div>
  <form data-form="admin-capacity"><div class="field"><label>Số người dùng tối đa</label><input type="number" class="input" name="max_users" min="1" max="100000" value="${s.max_users}" required></div><button class="btn primary full">Lưu giới hạn mới</button></form>
  <div class="sep"></div><div class="row between"><span class="muted small">Tổng tin nhắn đã gửi</span><b>${s.messages.toLocaleString('vi-VN')}</b></div></section></div>
- <div class="info-strip" style="margin-top:22px">Quyền admin bao gồm duyệt đăng ký, ban/khóa tức thời, xem thông tin người dùng, đọc nhật ký chat phục vụ kiểm duyệt và giải quyết khôi phục. Mật khẩu, PIN không được hiển thị.</div>`;
+ <div class="admin-panels" style="margin-top:20px">
+  <section class="card"><div class="row between"><h2>${icon('clock',17)} Hoạt động quản trị gần đây</h2>
+    <button type="button" class="btn ghost sm" data-act="admin-tab" data-tab="audit">Xem nhật ký</button></div>
+    ${(d.activity||[]).map(log=>`<div class="people-row"><div class="grow"><b>${esc(log.action)}</b>
+      <div class="hint" style="overflow-wrap:anywhere">${esc(log.detail||'—')}</div></div><span class="hint">${date(log.created_at)}</span></div>`).join('')||'<p class="hint" style="margin-top:14px">Chưa có thao tác quản trị.</p>'}
+  </section>
+  <section class="card"><h2>${icon('shield',17)} Trạng thái an toàn</h2>
+   <p class="hint" style="margin-top:12px">Phiên Admin tối đa 2 giờ và không có mở khóa nhanh bằng PIN trên thiết bị ghi nhớ.</p>
+   <div class="row" style="flex-wrap:wrap;gap:8px;margin:18px 0"><span class="pill ${state.user?.pin_length?'good':'bad'}">${state.user?.pin_length?'Đã bật PIN Admin':'Cần thiết lập PIN Admin'}</span><span class="pill warn">${s.deletion_pending||0} tài khoản chờ xóa</span></div>
+   <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn ghost sm" data-act="admin-tab" data-tab="security">Quản lý bảo mật</button>
+    <button class="btn ghost sm" data-act="admin-tab" data-tab="deletions">Danh sách chờ xóa</button></div>
+  </section></div>
+ <div class="info-strip" style="margin-top:22px">Mật khẩu và PIN gốc không hiển thị cho admin; các thao tác xóa ngay được ghi nhật ký quản trị.</div>`;
 }
 function statusPill(s){return s==='pending'?'<span class="pill warn">Chờ duyệt</span>':s==='approved'?'<span class="pill good">Đã duyệt</span>':s==='denied'?'<span class="pill bad">Từ chối</span>':'<span class="pill">Hoàn tất</span>';}
 function adminRegistrations(){const rows=state.adminData||[];
