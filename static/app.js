@@ -621,7 +621,7 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
  <p class="section-lead">Kiểm soát thông tin đăng nhập và cách bạn tương tác trên mtunz.</p>
- <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)} · Mã PIN hiện tại: ${state.user.pin_length} chữ số</div></div><span class="pill good">Đã xác thực</span></div>
+ <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div></div><span class="pill good">Đã xác thực</span></div>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Những chức năng ít dùng được sắp xếp tại đây để thanh điều hướng gọn gàng hơn.</p>
@@ -631,7 +631,7 @@ function settingsContent(){
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>
- ${profileSettings()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3><p class="hint">Có thể đổi cả độ dài PIN 4, 5 hoặc 6 chữ số.</p>
+ ${profileSettings()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
  <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','PIN cũ','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
  ${secureSettingsField('PIN mới','new_pin','password','PIN 4–6 chữ số','inputmode="numeric" minlength="4" maxlength="6"')}
@@ -750,7 +750,7 @@ function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ
 function adminUsers(){const data=state.adminData||[];
  return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
- ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id} · PIN ${u.pin_length} số</div></div></div></td>
+ ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id}</div></div></div></td>
  <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
@@ -928,7 +928,6 @@ function userDetails(uid){const u=(state.adminData||[]).find(x=>x.id===uid);if(!
   <div class="row between"><span class="muted">Tên đăng nhập</span><b>${esc(u.username)}</b></div>
   <div class="row between"><span class="muted">Ngày tạo</span><b>${date(u.created_at)}</b></div>
   <div class="row between"><span class="muted">Hoạt động cuối</span><b>${date(u.last_seen)}</b></div>
-  <div class="row between"><span class="muted">Độ dài PIN</span><b>${u.pin_length} số</b></div>
   <div class="row between"><span class="muted">Số bạn bè</span><b>${u.friend_count}</b></div>
   <div class="row between"><span class="muted">Số tin nhắn</span><b>${u.message_count}</b></div>
   <div class="row between"><span class="muted">Trạng thái</span>${userStatus(u)}</div>
