@@ -27,5 +27,19 @@ assert(js.includes('class="card rail-settings-shortcuts"'),'Settings provides fa
 assert(js.includes('data-tab="restricted"')&&js.includes('data-tab="support"'),'Secondary features preserved');
 assert(css.includes('@media(max-width:800px)')&&css.includes('position:fixed'),'Bottom mobile tab bar');
 assert(css.includes('aria-label')===false); // ARIA is owned by HTML not CSS
-assert(html.includes('/static/rail-navigation.css?v=1.0'));
+
+// Laptop widths must not silently turn the entire sidebar into icon-only mode.
+const laptopStart=css.indexOf('@media (min-width:801px) and (max-width:1279px)');
+const laptopEnd=css.indexOf('@media (min-width:801px) and (max-width:940px)',laptopStart);
+assert(laptopStart>=0 && laptopEnd>laptopStart,'Laptop-specific expanded menu breakpoint exists');
+const laptop=css.slice(laptopStart,laptopEnd);
+assert(laptop.includes('grid-template-columns:clamp(168px,16.5vw,194px)'),
+       'Laptop rail must be wide enough for navigation labels');
+assert(!laptop.includes('.rail-brand,.rail-btn .rail-text'),
+       'Laptop rail must never hide the logo, labels or account name');
+assert(laptop.includes('justify-content:flex-start'),
+       'Laptop menu items must align icons with their text');
+assert(css.includes('@media (min-width:801px) and (max-width:940px)'),
+       'Narrow laptops must still have a readable menu');
+assert(html.includes('/static/rail-navigation.css?v=2.0'));
 console.log('Member navigation: 5 primary actions, accessible secondary actions, bottom navigation, fallback shortcuts OK');
