@@ -1,6 +1,6 @@
-/* mtunz Performance Mode 8.1
-   Preserves the Orbit visual identity but removes costly animated/filter layers.
-   No permanently running animations are allowed in the welcome artwork. */
+/* mtunz Motion Lite 8.2
+   Static large surfaces; only one compositor-friendly orbit and tiny signal bars move.
+   No animated gradient, blur, backdrop filter or pointer-follow effects. */
 
 /* Stop frame-by-frame animation and GPU memory allocation for decorative work. */
 .auth-art.art-v5 .nova-orbit,
@@ -109,4 +109,56 @@
   .auth-art.art-v5 .auth-art-footer.nova-footer span{
     transition:none!important;
   }
+}
+
+
+/* Selective, lightweight motion: only elements with tiny repaint footprints. */
+@media (min-width:1100px) and (min-height:680px)
+       and (hover:hover) and (pointer:fine)
+       and (prefers-reduced-motion:no-preference) {
+  /* Only one orbit layer. No blur or gradient animation on its parent. */
+  .auth-art.art-v5 .nova-orbit.nova-orbit-one {
+    display:block!important;
+    animation:nova-orbit-spin 42s linear infinite!important;
+    animation-play-state:running!important;
+    will-change:transform;
+  }
+  .auth-art.art-v5 .nova-stage-bars i:nth-child(-n+3) {
+    animation:nova-wave 3.2s ease-in-out infinite!important;
+    animation-play-state:running!important;
+  }
+}
+/* A quick, one-time welcome transition, not an endlessly moving layout. */
+@media (prefers-reduced-motion:no-preference) {
+  .auth-art.art-v5 .nova-kicker {
+    animation:nova-in .42s cubic-bezier(.22,1,.36,1) both!important;
+  }
+  .auth-art.art-v5 .nova-headline {
+    animation:nova-in .52s .07s cubic-bezier(.22,1,.36,1) both!important;
+  }
+  .auth-art.art-v5 .nova-description {
+    animation:nova-in .55s .13s cubic-bezier(.22,1,.36,1) both!important;
+  }
+}
+.auth-art.art-v5 .signal-stage.nova-stage {contain:paint}
+/* Avoid running composition work in hidden tabs or on data saver. */
+html.mtunz-motion-paused .auth-art.art-v5 .nova-orbit,
+html.mtunz-motion-paused .auth-art.art-v5 .nova-stage-bars i {
+  animation-play-state:paused!important;
+}
+html.mtunz-save-data .auth-art.art-v5 .nova-orbit,
+html.mtunz-save-data .auth-art.art-v5 .nova-stage-bars i {
+  display:none!important;
+  animation:none!important;
+}
+/* Motion accessibility takes priority over every other rule. */
+@media (prefers-reduced-motion:reduce) {
+  .auth-art.art-v5 .nova-orbit,
+  .auth-art.art-v5 .nova-stage-bars i,
+  .auth-art.art-v5 .nova-kicker,
+  .auth-art.art-v5 .nova-headline,
+  .auth-art.art-v5 .nova-description {
+    animation:none!important;
+  }
+  .auth-art.art-v5 .nova-orbit {display:none!important}
 }
