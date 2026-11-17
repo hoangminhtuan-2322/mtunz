@@ -76,6 +76,27 @@ def norm_username(name: str):
         raise HTTPException(422, 'Tên tài khoản: 3–24 ký tự, bắt đầu bằng chữ, chỉ a-z, 0-9 và _.')
     return value
 
+def normalize_phone(value: str) -> str:
+    """Normalize VN local numbers or international E.164-like numbers.
+
+    Phone numbers are unverified; never use them as proof of identity.
+    """
+    number=re.sub(r'[\\s().-]', '', str(value or ''))
+    if re.fullmatch(r'0[0-9]{9}',number):
+        number='+84'+number[1:]
+    if not re.fullmatch(r'\\+[1-9][0-9]{7,14}',number):
+        raise HTTPException(422,'Số điện thoại phải gồm 10 chữ số (Việt Nam) hoặc dạng +mã quốc gia.')
+    return number
+
+
+def normalize_email(value: str | None) -> str:
+    email=str(value or '').strip().lower()
+    if not email:
+        return ''
+    if len(email)>254 or not re.fullmatch(r'[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}',email):
+        raise HTTPException(422,'Email không hợp lệ. Vui lòng nhập email đúng định dạng.')
+    return email
+
 
 def ensure_password(v: str):
     minimum = 10 if PUBLIC_MODE else 8
@@ -402,6 +423,7 @@ def public_user(u):
     return {'id': u['id'], 'username': u['username'], 'is_admin': bool(u['is_admin']),
             'pin_length': u['pin_length'], 'created_at': u['created_at'],
             'display_name':u['display_name'] or '', 'bio':u['bio'] or '',
+            'phone':u['phone'] or '', 'email':u['email'] or '',
             'show_online':bool(u['show_online']), 'show_receipts':bool(u['show_receipts'])}
 
 
@@ -494,9 +516,17 @@ async def username_check(request: Request, body: UsernameIn):
     return {'state': 'available'}
 
 
+class RegistrationRequest(BaseModel):
+    username: str
+    phone: str = Field(min_length=8,max_length=40)
+    email: str = Field(default='',max_length=254)
+
+
 @app.post('/api/registration/request')
-async def registration_request(request: Request, body: UsernameIn):
+async def registration_request(request: Request, body: RegistrationRequest):
     name = norm_username(body.username)
+    phone = normalize_phone(body.phone)
+    email = normalize_email(body.email)
     throttle(request, 'signup', 6, 3600)
     with db() as c:
         if name == 'admin' or one(c,'SELECT 1 FROM users WHERE username=?',(name,)):
@@ -506,20 +536,22 @@ async def registration_request(request: Request, body: UsernameIn):
             if existing['guest_id'] != request.state.gid and existing['status'] in ('pending','approved'):
                 raise HTTPException(409,'Tên này đang được chờ xét duyệt.')
             if existing['guest_id'] == request.state.gid and existing['status'] in ('pending','approved'):
-                return {'status': existing['status'], 'username': name}
+                # Existing requests from older versions can add contact details.
+                c.execute('UPDATE registrations SET phone=?,email=? WHERE id=?',(phone,email,existing['id']))
+                return {'status': existing['status'], 'username': name,'phone':phone,'email':email}
             if existing['status'] == 'completed':
                 raise HTTPException(409,'Tên tài khoản đã được sử dụng.')
             c.execute('DELETE FROM registrations WHERE id=?', (existing['id'],))
-        c.execute('INSERT INTO registrations(username,guest_id,created_at) VALUES(?,?,?)',
-                  (name,request.state.gid,now()))
+        c.execute('INSERT INTO registrations(username,guest_id,created_at,phone,email) VALUES(?,?,?,?,?)',
+                  (name,request.state.gid,now(),phone,email))
     await hub.admins('registration-updated')
-    return {'status':'pending','username':name}
+    return {'status':'pending','username':name,'phone':phone,'email':email}
 
 
 @app.get('/api/registration/status')
 async def registration_status(request: Request):
     with db() as c:
-        rows = many(c, "SELECT username,status,created_at FROM registrations WHERE guest_id=? AND status!='completed' ORDER BY id DESC LIMIT 5", (request.state.gid,))
+        rows = many(c, "SELECT username,status,created_at,phone,email FROM registrations WHERE guest_id=? AND status!='completed' ORDER BY id DESC LIMIT 5", (request.state.gid,))
     return {'requests':rows}
 
 
@@ -528,6 +560,7 @@ class RegisterComplete(BaseModel):
     password: str
     pin: str
     pin_length: int
+    phone: str | None = Field(default=None,max_length=40)
 
 
 @app.post('/api/registration/complete')
@@ -539,12 +572,15 @@ async def register_complete(request: Request, body: RegisterComplete):
         r = one(c, 'SELECT * FROM registrations WHERE username=? AND guest_id=?', (name,request.state.gid))
         if not r or r['status'] != 'approved':
             raise HTTPException(403,'Yêu cầu của bạn chưa được admin chấp thuận.')
+        phone=normalize_phone(r['phone'] or body.phone)
+        email=normalize_email(r['email'])
         total, reserved, max_users = registration_capacity(c)
         if total >= max_users:
             raise HTTPException(409,'Hệ thống đã đạt giới hạn người dùng.')
         try:
-            c.execute('INSERT INTO users(username,password_hash,pin_hash,pin_length,created_at) VALUES(?,?,?,?,?)',
-                      (name,hash_secret(body.password),hash_secret(body.pin),body.pin_length,now()))
+            c.execute('''INSERT INTO users(username,password_hash,pin_hash,pin_length,created_at,phone,email)
+                         VALUES(?,?,?,?,?,?,?)''',
+                      (name,hash_secret(body.password),hash_secret(body.pin),body.pin_length,now(),phone,email))
         except sqlite3.IntegrityError:
             raise HTTPException(409,'Tên tài khoản đã tồn tại.')
         c.execute("UPDATE registrations SET status='completed' WHERE id=?",(r['id'],))
@@ -1156,7 +1192,7 @@ async def admin_stats(request:Request):
 @app.get('/api/admin/registrations')
 async def admin_registrations(request:Request):
     require_admin(request)
-    with db() as c:return {'registrations':many(c,"SELECT id,username,status,created_at FROM registrations WHERE status IN ('pending','approved','denied') ORDER BY id DESC LIMIT 100")}
+    with db() as c:return {'registrations':many(c,"SELECT id,username,status,created_at,phone,email FROM registrations WHERE status IN ('pending','approved','denied') ORDER BY id DESC LIMIT 100")}
 
 
 class Decision(BaseModel):
