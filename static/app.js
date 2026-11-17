@@ -262,6 +262,13 @@ async function setup(){
    const current=await api('/api/me');
    if(current.user&&current.user.id===previous.uid){
     state.user=current.user;
+    // Read-only metadata keeps the "remember device" UI accurate after F5.
+    // A status-check failure must not invalidate an otherwise healthy session.
+    try {
+     const saved=await api('/api/auth/remembered/status');
+     state.savedDevice=!!saved.remembered;
+     state.rememberedDevice=state.savedDevice;
+    }catch{}
     await enterApp(true);
     return;
    }
