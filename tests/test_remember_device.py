@@ -147,9 +147,15 @@ def test_admin_enrollment_requires_password_then_pin_on_following_signin():
     verified=c.post("/api/auth/pin",json={
         "challenge":stage.json()["challenge"],"pin":"123456","remember_device":True})
     assert verified.status_code==200 and verified.json()["admin"] is True
-    assert c.post("/api/auth/remembered").json()["remembered"] is True
+    assert verified.json()["remembered"] is False
+    # Admin must never get a long-lived PIN-only login shortcut.
+    assert c.post("/api/auth/remembered").json()["remembered"] is False
     assert c.get("/api/me").json()["user"] is None
-    assert c.post("/api/auth/remembered/unlock",json={"pin":"123456"}).status_code==200
+    assert c.post("/api/auth/remembered/unlock",json={"pin":"123456"}).status_code==401
+    c.post("/api/auth/start",json={"username":"admin"})
+    refreshed=c.post("/api/auth/password",json={"username":"admin","password":"mtunz7"})
+    again=c.post("/api/auth/pin",json={"challenge":refreshed.json()["challenge"],"pin":"123456"})
+    assert again.status_code==200
     assert c.get("/api/me").json()["user"]["is_admin"] is True
 
 
