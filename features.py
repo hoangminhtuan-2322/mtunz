@@ -166,14 +166,22 @@ def install(core):
         u=current_user(request)
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
+        active_hash=core.digest(request.cookies.get('s',''))
+        columns='token_hash,expires_at,created_at,last_seen,device_label,device_name,device_type,browser,os_name,location_hint,network_hint'
         with db() as c:
-            rows=many(c,'SELECT token_hash,expires_at,created_at FROM sessions WHERE user_id=? ORDER BY expires_at DESC',(u['id'],))
-            devices=many(c,'''SELECT token_hash,created_at,expires_at FROM trusted_devices
-                              WHERE user_id=? AND expires_at>? ORDER BY created_at DESC''',(u['id'],core.now()))
-        for r in rows:
-            r['current']=(r.pop('token_hash')==core.digest(request.cookies.get('s','')))
-        for r in devices:
-            r['current']=(r.pop('token_hash')==saved_hash)
+            c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',(now(),active_hash,u['id']))
+            rows=many(c,f'SELECT {columns} FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC',(u['id'],now()))
+            devices=many(c,f'SELECT {columns} FROM trusted_devices WHERE user_id=? AND expires_at>? ORDER BY created_at DESC',(u['id'],now()))
+        for kind, entries, active in (('session',rows,active_hash),('remembered',devices,saved_hash)):
+            for entry in entries:
+                stored=entry.pop('token_hash')
+                entry['id']=core.digest(kind+':'+stored)[:24]
+                entry['current']=stored==active
+                entry['label']=entry.pop('device_label') or entry['device_name'] or 'Thiết bị cũ'
+                for field in ('device_name','browser','os_name'):
+                    entry[field]=entry[field] or 'Chưa có dữ liệu'
+                entry['location_hint']=entry['location_hint'] or 'Chưa xác định'
+                entry['network_hint']=entry['network_hint'] or ''
         return {'sessions':rows,'remembered_devices':devices}
 
     @app.post('/api/me/sessions/revoke-others')
