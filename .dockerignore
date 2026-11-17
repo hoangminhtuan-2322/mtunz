@@ -1,0 +1,9 @@
+data
+backups
+.venv
+.devdata
+.pytest_cache
+__pycache__
+tests
+*.zip
+preview-*.png
