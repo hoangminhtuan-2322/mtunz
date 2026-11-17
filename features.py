@@ -48,8 +48,10 @@ def install(core):
             def column(table, name, sqltype):
                 if name not in [x['name'] for x in c.execute(f'PRAGMA table_info({table})')]:
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {name} {sqltype}')
-            for col, typ in [('display_name','TEXT'),('bio','TEXT'),('show_online','INTEGER NOT NULL DEFAULT 1'),('show_receipts','INTEGER NOT NULL DEFAULT 1')]:
+            for col, typ in [('display_name','TEXT'),('bio','TEXT'),('phone','TEXT'),('email','TEXT'),('show_online','INTEGER NOT NULL DEFAULT 1'),('show_receipts','INTEGER NOT NULL DEFAULT 1')]:
                 column('users', col, typ)
+            for col, typ in [('phone','TEXT'),('email','TEXT')]:
+                column('registrations',col,typ)
             for col, typ in [('attachment_id','INTEGER'),('reply_to','INTEGER'),('edited_at','INTEGER'),('deleted_at','INTEGER')]:
                 column('messages', col, typ)
             column('notifications', 'read_at','INTEGER')
@@ -147,13 +149,19 @@ def install(core):
         bio:str=Field(default='',max_length=220)
         show_online:bool=True
         show_receipts:bool=True
+        phone:str | None=Field(default=None,max_length=40)
+        email:str | None=Field(default=None,max_length=254)
 
     @app.patch('/api/me/profile')
     async def edit_profile(request:Request, body:Profile):
         u=current_user(request)
+        phone=core.normalize_phone(body.phone) if body.phone is not None else u['phone']
+        email=core.normalize_email(body.email) if body.email is not None else u['email']
         with db() as c:
-            c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=? WHERE id=?''',
-                      (body.display_name.strip(),body.bio.strip(),int(body.show_online),int(body.show_receipts),u['id']))
+            c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
+                          phone=?,email=? WHERE id=?''',
+                      (body.display_name.strip(),body.bio.strip(),int(body.show_online),
+                       int(body.show_receipts),phone,email,u['id']))
         return {'ok':True}
 
     @app.get('/api/profile/{uid}')
@@ -405,7 +413,7 @@ def install(core):
     async def export_account(request:Request):
         u=current_user(request)
         with db() as c:
-            user=one(c,'SELECT username,created_at,display_name,bio FROM users WHERE id=?',(u['id'],))
+            user=one(c,'SELECT username,created_at,display_name,bio,phone,email FROM users WHERE id=?',(u['id'],))
             direct=many(c,'''SELECT id,sender_id,recipient_id,body,created_at,edited_at,deleted_at FROM messages
                              WHERE sender_id=? OR recipient_id=? ORDER BY id''',(u['id'],u['id']))
             groups=many(c,'''SELECT gm.group_id,g.title,gm.role FROM group_members gm
