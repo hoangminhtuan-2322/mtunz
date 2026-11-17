@@ -222,6 +222,10 @@ def test_30_day_cancellation_is_authenticated_and_preserves_data():
     status=member.get('/api/me/deletion').json()
     assert status['pending'] is True and status['purge_at']==deadline
     assert admin.get('/api/admin/deletions').json()['requests'][0]['user_id']==uid
+    users=admin.get('/api/admin/users')
+    assert users.status_code==200,users.text
+    item=next(u for u in users.json()['users'] if u['id']==uid)
+    assert item['deletion_purge_at']==deadline
     url='/api/me/delete/cancel'
     assert member.post(url,json={'password':'wrong','pin':PIN}).status_code==401
     assert member.post(url,json={'password':PASSWORD,'pin':'000000'}).status_code==401
