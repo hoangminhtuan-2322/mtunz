@@ -677,7 +677,7 @@ async function goTab(tab){
 }
 
 // ==== Administrator workspace ====
-const adminTabs=[['groups','group','Nhóm chat'],['overview','grid','Tổng quan'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin']];
+const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa 30 ngày'],['overview','grid','Tổng quan'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin']];
 function adminNav(){
  return `<aside class="admin-nav"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
  <div class="nav-label">QUẢN LÝ HỆ THỐNG</div>
@@ -686,7 +686,7 @@ function adminNav(){
  <div class="row" style="padding:11px 12px">${avatar('admin',true,'sm')}<div class="grow"><b>admin</b><div class="hint">Super administrator</div></div></div>
  <button data-act="logout" style="color:#ff93a0">${icon('logout')} Đăng xuất</button></aside>`;
 }
-const adminHeading={groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.']};
+const adminHeading={deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.']};
 async function loadAdmin(){
  if(!state.user?.is_admin)return;
  try{
@@ -697,6 +697,7 @@ async function loadAdmin(){
     state.adminData={stats:st,registrations:reg.registrations};break;
    }
    case 'registrations':state.adminData=(await api('/api/admin/registrations')).registrations;break;
+   case 'deletions':state.adminData=(await api('/api/admin/deletions')).requests;break;
    case 'users':state.adminData=(await api('/api/admin/users?q='+encodeURIComponent(state.adminQuery))).users;break;
    case 'tickets':{
     state.adminData=(await api('/api/admin/tickets')).tickets;
@@ -715,7 +716,7 @@ function adminOverview(){
  const d=state.adminData||{},s=d.stats||{total_users:0,online:0,pending:0,tickets:0,reserved_slots:0,max_users:100,messages:0};
  const regs=(d.registrations||[]).filter(x=>x.status==='pending').slice(0,5);
  return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}${statCard('Đang online',s.online,'Theo kết nối realtime')}
- ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}</div>
+ ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa 30 ngày',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}</div>
  <div class="admin-panels"><section class="card"><div class="row between"><h2>Yêu cầu đăng ký mới</h2><button class="btn ghost sm" data-act="admin-tab" data-tab="registrations">Xem tất cả</button></div>
  <div class="sep"></div>${regs.length?regs.map(r=>`<div class="people-row">${avatar(r.username,false,'sm')}<div class="grow"><b>${esc(r.username)}</b><div class="hint">${date(r.created_at)}</div></div><button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button></div>`).join(''):'<div class="empty">Không có yêu cầu đang chờ.</div>'}</section>
  <section class="card"><h2>Giới hạn người dùng</h2><p class="hint">Kiểm soát số tài khoản tối đa được phép tồn tại. Các chỗ đã duyệt nhưng chưa tạo tài khoản vẫn được tính.</p>
@@ -730,18 +731,31 @@ function adminRegistrations(){const rows=state.adminData||[];
  <div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Tên đề xuất</th><th>Thời gian</th><th>Trạng thái</th><th>Quyết định</th></tr></thead><tbody>
  ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions">${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
-function userStatus(u){return !u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
+function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
 function adminUsers(){const data=state.adminData||[];
  return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id} · PIN ${u.pin_length} số</div></div></div></td>
- <td>${userStatus(u)}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${date(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Ban</button>
  <button class="btn ghost sm" data-act="admin-sanction" data-kind="lock" data-id="${u.id}">Khóa</button>
  <button class="btn danger sm" type="button" data-act="admin-delete-user" data-id="${u.id}">${icon('ban',14)} Xóa vĩnh viễn</button>
  ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
+}
+function adminDeletionQueue(){
+ const items=state.adminData||[];
+ return `<div class="card" style="max-width:1100px">
+  <div class="row between"><div><h2>${icon('clock',19)} Tài khoản đang chờ xóa</h2>
+  <p class="hint">Người dùng có thể hủy yêu cầu trước hạn. Admin chỉ nên xóa ngay khi có lý do cần thiết; thao tác xóa ngay không thể hoàn tác.</p></div>
+  <button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
+  <div class="table-scroll" style="margin-top:18px"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Ngày yêu cầu</th><th>Hạn xóa</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
+  ${items.map(item=>`<tr><td><b>${esc(item.username)}</b><div class="hint">#${item.user_id}</div></td>
+  <td>${date(item.requested_at)}</td><td>${date(item.purge_at)}</td>
+  <td><span class="pill ${item.purge_at*1000<=Date.now()?'bad':'warn'}">${item.purge_at*1000<=Date.now()?'Đến hạn xử lý':'Trong thời gian cân nhắc'}</span></td>
+  <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
+  </tbody></table></div></div>`;
 }
 function adminTickets(){const tickets=state.adminData||[];
  const chosen=tickets.find(t=>t.id===state.adminTicket);
@@ -798,7 +812,7 @@ function adminAudit(){const logs=state.adminData||[];
  ${logs.length?logs.map(l=>`<div class="audit-item"><div class="row between"><strong>${esc(l.action)}</strong><span class="hint">${date(l.created_at)}</span></div><div class="muted" style="margin-top:6px;overflow-wrap:anywhere">${esc(l.detail)}</div></div>`).join(''):'<div class="empty">Chưa có hoạt động quản trị nào.</div>'}</div>`;}
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
- const content=state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
+ const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
  root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
