@@ -1,0 +1,76 @@
+/* mtunz Secure Device v6 — PIN-only unlock UI, safe responsive layouts. */
+.auth-remember-summary{
+ display:flex;align-items:center;gap:10px;
+ margin:15px 0 20px;padding:13px 15px;
+ border-radius:14px;border:1px solid #82ddc763;
+ background:linear-gradient(116deg,#3a9c8a21,#35588322);
+ color:#badfdb;font-size:12px;line-height:1.65
+}
+.auth-remember-summary svg{color:#8beccf;flex-shrink:0}
+.auth-remember-choice{
+ position:relative;display:flex;gap:12px;align-items:center;
+ padding:15px 15px;margin:18px 0 5px;
+ background:linear-gradient(145deg,#2d395aa8,#222e4bb8);
+ border:1px solid #586a91;border-radius:16px;
+ cursor:pointer;user-select:none;
+ transition:background-color .2s ease,border-color .2s ease,box-shadow .2s ease,
+ transform .22s cubic-bezier(.22,1,.36,1)
+}
+.auth-remember-choice:hover{
+ border-color:#968ef0;background:#303e60;
+ box-shadow:0 5px 18px #141b4240;transform:translateY(-1px)
+}
+.auth-remember-choice:focus-within{
+ outline:2px solid #8deae5;outline-offset:3px
+}
+.auth-remember-choice>input[type=checkbox]{
+ position:relative;appearance:none;-webkit-appearance:none;
+ margin:0;width:20px;height:20px;flex:0 0 20px;
+ background:#121d32;border:1.5px solid #7082a5;border-radius:6px;
+ transition:background-color .2s,border-color .2s,box-shadow .2s
+}
+.auth-remember-choice>input[type=checkbox]:checked{
+ background:linear-gradient(135deg,#a08afe,#7479ee);border-color:#a79aff;
+ box-shadow:0 0 0 3px #9285fb22
+}
+.auth-remember-choice>input[type=checkbox]:checked:after{
+ content:"";position:absolute;left:5px;top:2px;
+ height:9px;width:5px;border:solid #fff;border-width:0 2px 2px 0;
+ transform:rotate(45deg)
+}
+.auth-remember-choice-icon{
+ width:38px;height:38px;flex:0 0 38px;
+ display:grid;place-items:center;
+ border-radius:12px;background:#8978e829;color:#beb2ff
+}
+.auth-remember-choice>span:last-child{
+ display:flex;flex-direction:column;gap:4px;min-width:0
+}
+.auth-remember-choice strong{font-size:11.7px;color:#eef2ff;font-weight:750}
+.auth-remember-choice small{
+ font-size:10.6px;font-weight:450;line-height:1.55;color:#a6b4d0
+}
+.auth-remember-actions{
+ margin-top:20px;display:flex;justify-content:center
+}
+.auth-remember-actions .linkbtn{
+ font-size:11px;padding:7px 9px;line-height:1.5
+}
+.remember-settings-note{
+ display:flex;align-items:flex-start;gap:10px;
+ background:#3e5f8b20;border:1px solid #7292d446;
+ color:#b8cce6;padding:12px 14px;margin-top:15px;
+ border-radius:13px;line-height:1.75;font-size:11.5px
+}
+.remember-settings-note svg{color:#8de7db;margin-top:2px}
+@media(max-width:520px){
+ .auth-remember-choice{gap:9px;padding:12px 11px}
+ .auth-remember-choice-icon{width:33px;height:33px;flex-basis:33px}
+ .auth-remember-choice strong{font-size:11px}
+ .auth-remember-choice small{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){
+ .auth-remember-choice,.auth-remember-choice input[type=checkbox]{
+  transition:none!important;transform:none!important
+ }
+}
