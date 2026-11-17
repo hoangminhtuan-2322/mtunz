@@ -38,4 +38,6 @@ assert(core.includes('2 * 3600 if is_admin'));
 assert(core.includes('body.remember_device and not is_admin'));
 assert(js.includes('Phiên quản trị hết hạn sau 2 giờ'));
 
+assert(!js.includes('Mã PIN hiện tại:'), 'Do not show redundant current PIN length in settings');
+assert(!js.includes(' · PIN ${u.pin_length} số'), 'Do not expose PIN length in the admin list');
 console.log('30-day cancellation, administrator immediate deletion, and security UI wiring: OK');
