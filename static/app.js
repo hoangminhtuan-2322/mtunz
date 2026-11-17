@@ -653,12 +653,37 @@ function adminTickets(){const tickets=state.adminData||[];
 function adminBroadcast(){return `<div class="card" style="max-width:690px"><h2>${icon('announce',20)} Gửi thông báo đồng loạt</h2><p class="hint" style="margin:13px 0 20px">Thông báo xuất hiện ngay với người đang online và được lưu lại để người dùng xem sau.</p>
  <form data-form="admin-broadcast"><div class="field"><label>Nội dung thông báo (tối đa 500 ký tự)</label><textarea class="textarea" name="body" rows="5" maxlength="500" placeholder="Ví dụ: Hệ thống sẽ bảo trì lúc 23:00..." required></textarea></div>
  <button class="btn primary">${icon('send',17)} Gửi đến mọi người dùng</button></form></div>`;}
-function adminSecurity(){return `<div class="card" style="max-width:650px"><h2>${icon('lock',20)} Đổi mật khẩu admin</h2>
- <p class="hint" style="margin:15px 0">Mật khẩu mặc định chỉ dành cho bản thử nghiệm. Trước khi đưa web lên Internet, hãy thay ngay bằng mật khẩu riêng mạnh, dài tối thiểu 12 ký tự. Sau khi đổi, các phiên đăng nhập ở thiết bị khác sẽ bị thu hồi.</p>
- <form data-form="admin-password">${inputField('Mật khẩu hiện tại','old_password','password','Mật khẩu đang sử dụng')}
- ${inputField('Mật khẩu mới','new_password','password','Tối thiểu 12 ký tự','minlength="12"')}
- ${inputField('Nhập lại mật khẩu mới','repeat_password','password','Nhập lại mật khẩu','minlength="12"')}
- <button class="btn primary full">${icon('shield',17)} Đổi mật khẩu admin</button></form></div>`;}
+function adminSecurity(){
+ const configured=!!state.user?.pin_length;
+ const pinCard=configured?`<div class="card" style="max-width:650px;margin-top:17px">
+   <h2>${icon('shield',20)} PIN quản trị</h2>
+   <p class="hint" style="margin:12px 0">PIN đã được bật. Tài khoản admin giờ cần xác minh PIN sau mật khẩu và có thể ghi nhớ thiết bị.</p>
+   <form data-form="admin-pin-change">
+     ${inputField('PIN hiện tại','old_pin','password','Nhập mã PIN đang dùng','inputmode="numeric" autocomplete="off"')}
+     <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
+     ${inputField('PIN mới','new_pin','password','PIN mới','inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off"')}
+     <button class="btn primary full" type="submit">${icon('lock',16)} Đổi PIN quản trị</button>
+   </form></div>`:
+ `<div class="card" style="max-width:650px;margin-top:17px">
+   <h2>${icon('shield',20)} Kích hoạt PIN cho admin</h2>
+   <p class="hint" style="margin:12px 0">Thiết lập PIN để lần sau có thể chọn “Ghi nhớ thiết bị 30 ngày”. Tài khoản quản trị sẽ cần cả mật khẩu và PIN khi đăng nhập trên thiết bị mới.</p>
+   <form data-form="admin-pin-setup">
+     ${inputField('Mật khẩu admin hiện tại','current_password','password','Xác nhận mật khẩu','autocomplete="current-password"')}
+     <div class="field"><label>Độ dài PIN</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
+     ${inputField('Mã PIN quản trị','pin','password','Tạo PIN riêng','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+     <button class="btn primary full" type="submit">${icon('lock',16)} Kích hoạt PIN quản trị</button>
+   </form></div>`;
+ return `<div>
+   <div class="card" style="max-width:650px"><h2>${icon('lock',20)} Đổi mật khẩu admin</h2>
+   <p class="hint" style="margin:15px 0">Dùng mật khẩu riêng mạnh, tối thiểu 12 ký tự. Khi đổi, các phiên khác và thiết bị đã ghi nhớ sẽ bị thu hồi.</p>
+   <form data-form="admin-password">${inputField('Mật khẩu hiện tại','old_password','password','Mật khẩu đang sử dụng')}
+   ${inputField('Mật khẩu mới','new_password','password','Tối thiểu 12 ký tự','minlength="12"')}
+   ${inputField('Nhập lại mật khẩu mới','repeat_password','password','Nhập lại mật khẩu','minlength="12"')}
+   <button class="btn primary full">${icon('shield',17)} Đổi mật khẩu admin</button></form></div>
+   ${pinCard}
+   ${state.savedDevice?`<div class="card" style="max-width:650px;margin-top:17px"><h3>${icon('lock',18)} Khóa phiên hiện tại</h3><p class="hint" style="margin:11px 0">Quay về màn hình PIN mà không xóa thiết bị được ghi nhớ.</p><button class="btn ghost" type="button" data-act="lock-device">${icon('lock',16)} Khóa ngay</button></div>`:''}
+ </div>`;
+}
 function adminAudit(){const logs=state.adminData||[];
  return `<div class="card" style="max-width:940px;padding:0"><div style="padding:18px;border-bottom:1px solid var(--line)"><b>100 hoạt động quản trị gần nhất</b></div>
  ${logs.length?logs.map(l=>`<div class="audit-item"><div class="row between"><strong>${esc(l.action)}</strong><span class="hint">${date(l.created_at)}</span></div><div class="muted" style="margin-top:6px;overflow-wrap:anywhere">${esc(l.detail)}</div></div>`).join(''):'<div class="empty">Chưa có hoạt động quản trị nào.</div>'}</div>`;}
@@ -882,6 +907,20 @@ document.addEventListener('submit',async event=>{
    case 'settings-password':{
     await post('/api/me/password',{old_password:String(fd.get('old_password')||''),new_password:String(fd.get('new_password')||'')});
     toast('Đã đổi mật khẩu. Các thiết bị khác được đăng xuất.','ok');renderApp();break;
+   }
+   case 'admin-pin-setup':{
+    const pin=val('pin'),n=Number(fd.get('pin_length'));
+    if(pin.length!==n)throw Error(`PIN phải có đúng ${n} chữ số.`);
+    await post('/api/me/pin/setup',{current_password:String(fd.get('current_password')||''),pin,pin_length:n});
+    state.user.pin_length=n;
+    toast('Đã bật PIN quản trị. Lần sau có thể ghi nhớ thiết bị.','ok');await loadAdmin();break;
+   }
+   case 'admin-pin-change':{
+    const n=Number(fd.get('pin_length')),pin=val('new_pin');
+    if(pin.length!==n)throw Error(`PIN phải có đúng ${n} chữ số.`);
+    await post('/api/me/pin',{old_pin:val('old_pin'),new_pin:pin,pin_length:n});
+    state.user.pin_length=n;state.savedDevice=false;
+    toast('Đã đổi PIN và thu hồi các thiết bị ghi nhớ.','ok');await loadAdmin();break;
    }
    case 'admin-password':{
     const pw=String(fd.get('new_password')||'');if(pw!==String(fd.get('repeat_password')||''))throw Error('Hai lần nhập mật khẩu mới không khớp.');
