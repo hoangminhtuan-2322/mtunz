@@ -579,7 +579,13 @@ function settingsContent(){
  <section class="card"><h3>${icon('ban',17)} Danh sách đã chặn</h3><p class="hint">Người bị chặn không thể kết bạn hoặc nhắn tin với bạn.</p>
  ${state.blocks.length?state.blocks.map(b=>`<div class="row between" style="margin:12px 0"><b>${esc(b.username)}</b><button class="btn ghost sm" data-act="unblock" data-id="${b.id}">Bỏ chặn</button></div>`).join(''):'<div class="hint" style="margin-top:19px">Chưa có tài khoản bị chặn.</div>'}</section>
  <section class="card"><h3>${icon('announce',17)} Thông báo hệ thống</h3><div id="notifications-list"><div class="hint" style="margin-top:15px">Chọn mục này để xem thông báo.</div></div><button class="btn ghost sm" data-act="load-notifications" style="margin-top:15px">Xem thông báo</button></section>
- </div><div class="info-strip" style="margin-top:20px">Minh bạch dữ liệu: admin có thể xem thông tin tài khoản và lịch sử trò chuyện để thực hiện kiểm duyệt. Mật khẩu và PIN chỉ lưu dưới dạng mã băm; không thể xem trực tiếp.</div></div>`;
+ </div>
+ <section class="card account-delete-zone" aria-label="Xóa tài khoản vĩnh viễn">
+   <div><h3>${icon('ban',18)} Xóa tài khoản vĩnh viễn</h3>
+   <p class="hint" style="margin:12px 0">Khi không còn sử dụng mtunz, bạn có thể yêu cầu xóa tài khoản của chính mình. Thao tác này xóa tin nhắn, tệp tải lên, kết nối và dữ liệu cá nhân liên quan, không thể hoàn tác. Nhóm còn thành viên sẽ được chuyển quyền trưởng nhóm.</p></div>
+   <button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Xóa tài khoản của tôi</button>
+ </section>
+ <div class="info-strip" style="margin-top:20px">Minh bạch dữ liệu: admin có thể xem thông tin tài khoản và lịch sử trò chuyện để thực hiện kiểm duyệt. Mật khẩu và PIN chỉ lưu dưới dạng mã băm; không thể xem trực tiếp.</div></div>`;
 }
 function supportInApp(){return `<div class="section-wrap"><span class="eyebrow">LIÊN HỆ HỖ TRỢ</span><h1 class="section-title">Trò chuyện với admin</h1><p class="section-lead">Gửi câu hỏi và nhận phản hồi realtime từ quản trị viên.</p><div class="card" style="max-width:620px">${authSupport()}</div></div>`;}
 function renderApp(){
@@ -668,6 +674,7 @@ function adminUsers(){const data=state.adminData||[];
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Ban</button>
  <button class="btn ghost sm" data-act="admin-sanction" data-kind="lock" data-id="${u.id}">Khóa</button>
+ <button class="btn danger sm" type="button" data-act="admin-delete-user" data-id="${u.id}">${icon('ban',14)} Xóa vĩnh viễn</button>
  ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
 }
 function adminTickets(){const tickets=state.adminData||[];
@@ -728,6 +735,50 @@ function renderAdmin(){
  const content=state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
  root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
+}
+function showPermanentDeleteDialog(target=null){
+ const selfDelete=!target;
+ const account=selfDelete?state.user:target;
+ if(!account)return;
+ const username=account.username;
+ const requirePin=!!state.user?.pin_length;
+ modal({
+  title:selfDelete?'Xóa tài khoản của tôi':'Xóa tài khoản người dùng',
+  description:`Đây là hành động KHÔNG THỂ HOÀN TÁC. Tài khoản ${username}, tin nhắn riêng, tin nhắn nhóm đã gửi, tệp đính kèm và các liên kết liên quan sẽ bị xóa vĩnh viễn. Nhóm còn thành viên được chuyển trưởng nhóm.`,
+  danger:true,confirm:'Xóa vĩnh viễn',
+  content:`<div class="delete-confirm-form">
+    <p class="hint" style="margin:0 0 14px">Để xác nhận, nhập chính xác tên tài khoản, mật khẩu ${selfDelete?'của bạn':'Admin'}${requirePin?', mã PIN':''} và cụm chữ <b>XOA VINH VIEN</b>.</p>
+    <div class="field"><label for="delete-account-name">Nhập tên tài khoản cần xóa: <b>${esc(username)}</b></label>
+      <input id="delete-account-name" class="input" autocomplete="off" spellcheck="false" placeholder="Nhập đúng tên tài khoản" maxlength="80"></div>
+    <div class="field"><label for="delete-account-password">Mật khẩu ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
+      <input id="delete-account-password" class="input" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu để xác nhận" maxlength="128"></div>
+    ${requirePin?`<div class="field"><label for="delete-account-pin">Mã PIN ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
+      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" placeholder="Nhập PIN để xác nhận" maxlength="6"></div>`:''}
+    <div class="field"><label for="delete-account-phrase">Nhập <b>XOA VINH VIEN</b></label>
+      <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" placeholder="XOA VINH VIEN" maxlength="14"></div>
+    <p class="hint" style="margin-top:12px">Bạn nên tải bản sao dữ liệu trước nếu muốn lưu giữ. Sau khi xóa, mọi thiết bị sẽ bị đăng xuất.</p>
+  </div>`,
+  handler:async host=>{
+   const val=name=>String(host.querySelector('#delete-account-'+name)?.value||'').trim();
+   if(val('name')!==username)throw Error('Tên tài khoản xác nhận không khớp.');
+   if(val('phrase')!=='XOA VINH VIEN')throw Error('Hãy nhập chính xác XOA VINH VIEN.');
+   if(!val('password'))throw Error('Bạn cần nhập mật khẩu hiện tại.');
+   if(requirePin&&!val('pin'))throw Error('Bạn cần nhập mã PIN hiện tại.');
+   const payload={username,password:val('password'),pin:requirePin?val('pin'):null,confirm:'XOA VINH VIEN'};
+   if(selfDelete){
+    await post('/api/me/delete',payload);
+    state.user=null;state.selected=null;state.friends=[];state.blocks=[];
+    state.savedDevice=false;state.rememberedDevice=false;
+    state.ws?.close();state.mode='login';state.step='username';state.username='';
+    renderAuth();connectSocket();
+    toast('Tài khoản đã được xóa vĩnh viễn.','ok');
+   }else{
+    await post(`/api/admin/users/${account.id}/delete`,payload);
+    toast(`Đã xóa vĩnh viễn tài khoản ${username}.`,'ok');
+    await loadAdmin();
+   }
+  }
+ });
 }
 function sanctionDialog(uid,kind){
  const u=(state.adminData||[]).find(x=>x.id===uid);
@@ -802,6 +853,7 @@ async function clickAction(button){
   case 'retry-registration':state.regStatus='';state.regName='';renderAuth();break;
   case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
+  case 'delete-own-account':showPermanentDeleteDialog();break;
   case 'logout':await logout();break;
   case 'app-tab':await goTab(button.dataset.tab);break;
   case 'back-to-list':state.selected=null;state.groupSelected=null;state.tab=state.tab==='groups'?'groups':'messages';renderApp();break;
@@ -825,6 +877,11 @@ async function clickAction(button){
    const op=async()=>{await post(`/api/admin/registrations/${id}/decision`,{approve});toast(approve?'Đã duyệt! Người dùng có thể tạo mật khẩu/PIN.':'Đã từ chối yêu cầu.','ok');await loadAdmin();};
    if(approve)await op();else ask('Từ chối yêu cầu','Người dùng sẽ được thông báo rằng yêu cầu đăng ký chưa được chấp thuận.',op,'Từ chối',true);
    break;
+  }
+  case 'admin-delete-user':{
+   const candidate=(state.adminData||[]).find(x=>x.id===id);
+   if(!candidate)throw Error('Không tìm thấy người dùng được chọn.');
+   showPermanentDeleteDialog(candidate);break;
   }
   case 'admin-user-detail':userDetails(id);break;
   case 'admin-view-messages':await userMessageLog(id);break;
