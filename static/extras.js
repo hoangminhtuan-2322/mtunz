@@ -147,7 +147,7 @@ function profileSettings(){
  ${state.savedDevice?`<button class="btn ghost sm" data-act="lock-device">${icon('lock',15)} Khóa bằng PIN</button>`:''}
  </div>
  <div class="remember-settings-note">${icon('shield',17)} ${state.savedDevice?
-  'Thiết bị này đã được ghi nhớ 30 ngày. Khi mở lại mtunz, bạn cần nhập PIN để truy cập. Đăng xuất sẽ xóa thiết bị đã lưu.':
+  'Thiết bị này đã được ghi nhớ 30 ngày. Khi đóng tab rồi mở phiên mới, bạn cần dùng PIN để truy cập. Tải lại tab đang hoạt động không yêu cầu nhập PIN. Đăng xuất sẽ xóa thiết bị đã lưu.':
   'Bạn có thể bật “Ghi nhớ thiết bị” ở bước nhập PIN khi đăng nhập. Không lưu mật khẩu hay mã PIN trên trình duyệt.'}</div></section>`;
 }
 function deviceDate(timestamp){
