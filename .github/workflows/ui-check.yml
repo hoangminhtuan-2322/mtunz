@@ -10,6 +10,7 @@ on:
       - app.py
       - features.py
       - pg_storage.py
+      - render.yaml
       - tests/**
       - .github/workflows/ui-check.yml
   workflow_dispatch:
@@ -57,6 +58,8 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           h = Path('static/index.html').read_text(encoding='utf-8')
+          infra = Path('render.yaml').read_text(encoding='utf-8')
+          assert 'autoDeployTrigger: checksPass' in infra
           assert '/static/premium.css?v=2.2' in h
           assert '/static/aurora.css?v=3.0' in h
           assert '/static/notifications.css?v=4.0' in h
