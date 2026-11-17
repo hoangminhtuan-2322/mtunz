@@ -283,3 +283,17 @@
     transition:none!important
   }
 }
+
+/* Approved longer two-line brand headline. Preserve the original visual treatment. */
+.auth-art.art-v4 .art-content h1.auth-headline-copy{
+  font-size:clamp(28px,2.8vw,46px);
+  letter-spacing:-1.9px;
+  line-height:1.22;
+  text-wrap:balance;
+}
+@media(min-width:801px) and (max-width:1100px){
+  .auth-art.art-v4 .art-content h1.auth-headline-copy{
+    font-size:clamp(26px,2.65vw,32px);
+    letter-spacing:-1.1px;
+  }
+}
