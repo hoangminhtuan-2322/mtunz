@@ -902,11 +902,13 @@ document.addEventListener('submit',async event=>{
    }
    case 'settings-pin':{
     await post('/api/me/pin',{old_pin:val('old_pin'),new_pin:val('new_pin'),pin_length:Number(fd.get('pin_length'))});
-    state.user.pin_length=Number(fd.get('pin_length'));toast('Đã thay đổi mã PIN.','ok');renderApp();break;
+    state.user.pin_length=Number(fd.get('pin_length'));state.savedDevice=false;state.rememberedDevice=false;
+    toast('Đã đổi PIN. Các thiết bị ghi nhớ trước đó đã bị thu hồi.','ok');renderApp();break;
    }
    case 'settings-password':{
     await post('/api/me/password',{old_password:String(fd.get('old_password')||''),new_password:String(fd.get('new_password')||'')});
-    toast('Đã đổi mật khẩu. Các thiết bị khác được đăng xuất.','ok');renderApp();break;
+    state.savedDevice=false;state.rememberedDevice=false;
+    toast('Đã đổi mật khẩu, đăng xuất thiết bị khác và thu hồi ghi nhớ thiết bị.','ok');renderApp();break;
    }
    case 'admin-pin-setup':{
     const pin=val('pin'),n=Number(fd.get('pin_length'));
@@ -924,7 +926,9 @@ document.addEventListener('submit',async event=>{
    }
    case 'admin-password':{
     const pw=String(fd.get('new_password')||'');if(pw!==String(fd.get('repeat_password')||''))throw Error('Hai lần nhập mật khẩu mới không khớp.');
-    await post('/api/me/password',{old_password:String(fd.get('old_password')||''),new_password:pw});toast('Đã đổi mật khẩu quản trị.','ok');await loadAdmin();break;
+    await post('/api/me/password',{old_password:String(fd.get('old_password')||''),new_password:pw});
+    state.savedDevice=false;state.rememberedDevice=false;
+    toast('Đã đổi mật khẩu quản trị và thu hồi thiết bị ghi nhớ.','ok');await loadAdmin();break;
    }
    case 'admin-capacity':{
     await post('/api/admin/capacity',{max_users:Number(fd.get('max_users'))});toast('Đã cập nhật số lượng người dùng tối đa.','ok');await loadAdmin();break;
