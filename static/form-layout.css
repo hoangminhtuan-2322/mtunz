@@ -1,4 +1,4 @@
-/* mtunz Form Layout Guard v8.3
+/* mtunz Form Layout Guard v8.4
    Shared inputField() always renders an absolutely positioned leading icon.
    Inputs must reserve icon space in *all* contexts, not only the auth panel.
    This also keeps Admin security cards inside the usable content width. */
@@ -105,4 +105,50 @@
   .admin-security > .card {padding:16px}
   .admin-security > .card h2 {font-size:17px}
   .admin-security .auth-input-wrap > input.input {font-size:13px}
+}
+
+/* Structural v8.4 repair: Admin and signed-in Settings render native input
+   directly inside a field. With no absolutely positioned icon in the DOM,
+   text and placeholder can never overlap one. */
+.secure-settings-field {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-width:0;
+  width:100%;
+  max-width:100%;
+  box-sizing:border-box;
+}
+.secure-settings-field > .input {
+  position:static;
+  display:block;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  min-height:50px;
+  box-sizing:border-box;
+  padding:13px 16px !important;
+  text-indent:0;
+  text-overflow:ellipsis;
+  line-height:1.4;
+  font-size:14px;
+}
+.secure-settings-field > label {
+  position:static;
+  display:block;
+  max-width:100%;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.admin-security form,
+.setting-grid form {
+  min-width:0;
+  max-width:100%;
+}
+.admin-security form > .secure-settings-field,
+.setting-grid form > .secure-settings-field {
+  margin:14px 0;
+}
+@media(max-width:520px) {
+  .secure-settings-field > .input {font-size:16px}
 }
