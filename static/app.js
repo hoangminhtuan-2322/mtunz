@@ -35,7 +35,7 @@ const brandGlyph=()=>`<img class="brand-glyph" src="/static/favicon.svg?v=8.0" a
 const avatar=(name,online=false,size='')=>`<div class="avatar ${size} ${online?'online':''}">${esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
- regName:'',regStatus:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
+ regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminQuery:'',accountDeletion:null,typing:false};
 let toastTimer=0,typingTimer=0,socketRetry=null;
@@ -193,7 +193,7 @@ async function setup(){
    else{
       const r=await api('/api/registration/status');
       const active=r.requests.find(v=>['pending','approved'].includes(v.status));
-      if(active){state.mode='register';state.regName=active.username;state.regStatus=active.status;}
+      if(active){state.mode='register';state.regName=active.username;state.regStatus=active.status;state.regPhone=active.phone||'';state.regEmail=active.email||'';}
       renderAuth();connectSocket();
    }
  }catch(e){toast(e.message,'error');renderAuth();connectSocket();}
@@ -407,7 +407,10 @@ function authRegister(){
      ${inputField('Mã PIN','new-pin','password','Chỉ dùng chữ số','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
      ${inputField('Nhập lại PIN','repeat-pin','password','Xác nhận mã PIN','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
    </section>
-   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi hiểu quản trị viên có thể kiểm duyệt dữ liệu tài khoản và lịch sử trò chuyện để đảm bảo an toàn, nhưng không thể xem mật khẩu hoặc mã PIN gốc.</span></label>
+   ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
+     ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40" pattern="[+0-9() .-]{8,40}"')}
+   </section>`:''}
+   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý cung cấp số điện thoại và email (nếu có) cho quản trị viên để quản lý tài khoản. Thông tin liên hệ không hiển thị công khai; mật khẩu và PIN không thể xem được.</span></label>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
@@ -415,9 +418,12 @@ function authRegister(){
  <p class="hint">Bước đầu tiên là đăng ký tên tài khoản riêng và chờ admin chấp thuận trước khi tạo mật khẩu.</p>
  <div class="auth-step"><span class="active"></span><span></span><span></span></div>
  <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','Ví dụ: hanh_uyen','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
- <div class="hint" style="margin:0 0 16px">Từ 3–24 ký tự; bắt đầu bằng chữ, chỉ dùng a-z, 0-9, dấu gạch dưới. Không phân biệt hoa/thường.</div>
- <button class="btn primary full">Yêu cầu admin phê duyệt ${icon('chevron',17)}</button></form>
- <div class="info-strip">Tối đa tài khoản do admin quy định. Một tên đăng nhập chỉ thuộc về một người dùng.</div>`;
+ <div class="hint" style="margin:0 0 13px">3–24 ký tự, bắt đầu bằng chữ; chỉ dùng a-z, 0-9 và dấu gạch dưới.</div>
+ ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40" pattern="[+0-9() .-]{8,40}"')}
+ <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254" placeholder="tenban@gmail.com"></div></div>
+ <p class="hint" style="margin:0 0 16px">Số điện thoại chưa được xác minh bằng SMS. Chỉ admin được xem thông tin liên hệ khi quản lý tài khoản.</p>
+ <button class="btn primary full" type="submit">Gửi yêu cầu phê duyệt ${icon('chevron',17)}</button></form>
+ <div class="info-strip">Thông tin liên hệ được giữ riêng tư và không hiện trong hồ sơ công khai.</div>`;
 }
 function authSupport(){
  if(!state.supportTicket)return `<span class="eyebrow">TRUNG TÂM HỖ TRỢ</span><h1>Admin ở đây để hỗ trợ.</h1>
@@ -484,7 +490,7 @@ async function loadTicketMessages(){if(!state.supportTicket)return;const r=await
  else if(state.tab==='support')renderApp();
  const box=$('#support-list');if(box)box.scrollTop=box.scrollHeight;
 }
-async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
+async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
 
 // ==== Friends, messages and the member experience ====
 async function refreshFriends(redraw=true){
@@ -978,7 +984,7 @@ async function clickAction(button){
    renderAuth();break;
   }
   case 'refresh-registration':await refreshRegistration();break;
-  case 'retry-registration':state.regStatus='';state.regName='';renderAuth();break;
+  case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';renderAuth();break;
   case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
@@ -1105,8 +1111,8 @@ document.addEventListener('submit',async event=>{
     toast('Đã mở khóa bằng mã PIN.','ok');await enterApp();break;
    }
    case 'register-request':{
-    const r=await post('/api/registration/request',{username:val('username')});
-    state.regName=r.username;state.regStatus=r.status;renderAuth();break;
+    const r=await post('/api/registration/request',{username:val('username'),phone:val('phone'),email:val('email')});
+    state.regName=r.username;state.regStatus=r.status;state.regPhone=r.phone||'';state.regEmail=r.email||'';renderAuth();break;
    }
    case 'register-complete':{
     const pw=String(fd.get('new-password')||''),pw2=String(fd.get('repeat-password')||'');
@@ -1114,7 +1120,7 @@ document.addEventListener('submit',async event=>{
     if(pw!==pw2)throw Error('Hai lần nhập mật khẩu không khớp.');
     if(pin!==pin2)throw Error('Hai lần nhập PIN không khớp.');
     if(pin.length!==pinLen)throw Error(`PIN phải đúng ${pinLen} chữ số.`);
-    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen});
+    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined});
     state.username=state.regName;state.mode='login';state.step='username';state.regStatus='';renderAuth();
     toast('Tạo tài khoản thành công. Đăng nhập để bắt đầu!','ok');break;
    }
