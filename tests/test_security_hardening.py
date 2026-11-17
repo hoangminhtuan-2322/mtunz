@@ -60,8 +60,10 @@ def test_invalid_guest_id_cookie_is_rotated():
     client.cookies.set("g", "invalid-id")
     response = client.get("/")
     assert response.status_code == 200
-    assert client.cookies.get("g") != "invalid-id"
-    assert len(client.cookies.get("g")) >= 16
+    # Inspect the actual response cookie; the HTTPX test jar can retain both
+    # a domainless test cookie and the new testserver.local cookie.
+    assert response.cookies.get("g") != "invalid-id"
+    assert len(response.cookies.get("g")) >= 16
 
 
 def test_repeated_user_discovery_is_throttled():
