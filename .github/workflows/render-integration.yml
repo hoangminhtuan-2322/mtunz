@@ -1,0 +1,45 @@
+name: Render PostgreSQL integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - app.py
+      - features.py
+      - pg_storage.py
+      - requirements.txt
+      - tests/smoke_postgres.py
+      - .github/workflows/render-integration.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mtunz_ci
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: mtunz_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mtunz_ci -d mtunz_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_POSTGRES_URL: postgresql://mtunz_ci:ci-only-password@localhost:5432/mtunz_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Test Python imports and SQL against PostgreSQL
+        run: python tests/smoke_postgres.py
