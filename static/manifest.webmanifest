@@ -1,15 +1,15 @@
 {
   "name": "mtunz",
   "short_name": "mtunz",
-  "description": "mtunz — Không gian nhắn tin riêng tư, kết nối theo cách của bạn",
+  "description": "mtunz — Kết nối không giới hạn. Trò chuyện theo cách bạn.",
   "start_url": "/",
   "display": "standalone",
   "lang": "vi",
   "background_color": "#080e1e",
-  "theme_color": "#10192c",
+  "theme_color": "#121b36",
   "icons": [
     {
-      "src": "/static/favicon.svg?v=3.0",
+      "src": "/static/favicon.svg?v=8.0",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
