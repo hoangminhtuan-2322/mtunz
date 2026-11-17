@@ -91,5 +91,5 @@ assert(html.includes('auth-refined.css?v=5.1'));
 assert(html.includes('app.js?v=9.9'));
 assert(html.includes('orbit-brand.css?v=8.0'));
 assert(html.includes('hero-nova.css?v=7.0'));
-assert(!js.includes('Thiết bị này đã được ghi nhớ. Nhập PIN'), 'Remove redundant remembered-device PIN paragraph');
+assert(!code.includes('Thiết bị này đã được ghi nhớ. Nhập PIN'), 'Remove redundant remembered-device PIN paragraph');
 console.log('Auth isolation OK: 1 hero mount, 3 isolated form changes, no page-wide scroll, accessible nav and motion controls.');
