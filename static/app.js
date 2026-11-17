@@ -54,21 +54,113 @@ const post=(url,data={})=>api(url,{method:'POST',data});
 const del=url=>api(url,{method:'DELETE'});
 const root=()=>$('#app');
 function toast(message,type='info'){
-  const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=message;
-  $('#toast-root').append(el);setTimeout(()=>{el.style.opacity=0;el.style.transform='translateX(30px)';setTimeout(()=>el.remove(),200)},4200);
+  const host=$('#toast-root');
+  if(!host)return;
+  const kind=type==='ok'||type==='success'?'ok':type==='error'?'error':type==='warning'?'warning':'info';
+  const symbols={ok:'check',error:'ban',warning:'shield',info:'bell'};
+  const names={ok:'Thành công',error:'Có lỗi xảy ra',warning:'Lưu ý',info:'Thông báo'};
+  const el=document.createElement('div');
+  el.className='toast notify-toast '+kind;
+  el.setAttribute('role',kind==='error'?'alert':'status');
+  const accent=document.createElement('span');
+  accent.className='notify-icon';accent.innerHTML=icon(symbols[kind],19);
+  const content=document.createElement('span');
+  content.className='notify-content';
+  const title=document.createElement('strong');title.textContent=names[kind];
+  const body=document.createElement('span');body.textContent=String(message??'');
+  content.append(title,body);
+  const close=document.createElement('button');
+  close.className='notify-close';close.type='button';close.setAttribute('aria-label','Đóng thông báo');
+  close.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  const track=document.createElement('span');track.className='notify-progress';
+  el.append(accent,content,close,track);
+  const visible=[...host.querySelectorAll('.notify-toast')];
+  if(visible.length>=4)visible[0].remove();
+  host.append(el);
+  let timer,started=0,remaining=kind==='error'?6500:4400,done=false;
+  function dismiss(){
+    if(done)return;done=true;clearTimeout(timer);
+    el.classList.add('is-leaving');
+    setTimeout(()=>el.remove(),230);
+  }
+  function pause(){
+    if(done)return;clearTimeout(timer);
+    remaining=Math.max(0,remaining-(performance.now()-started));
+    track.style.animationPlayState='paused';
+  }
+  function resume(){
+    if(done)return;
+    started=performance.now();
+    track.style.animationPlayState='running';
+    timer=setTimeout(dismiss,remaining);
+  }
+  close.addEventListener('click',dismiss);
+  el.addEventListener('mouseenter',pause);
+  el.addEventListener('mouseleave',resume);
+  el.addEventListener('focusin',pause);
+  el.addEventListener('focusout',resume);
+  track.style.setProperty('--notify-duration', (kind==='error'?6500:4400)+'ms');
+  resume();
 }
 function modal({title,description='',content='',danger=false,confirm='Đồng ý',cancel='Hủy',closable=true,handler=()=>{}}){
   const host=$('#modal-root');
-  host.innerHTML=`<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-    <h2>${esc(title)}</h2>${description?`<p>${esc(description)}</p>`:''}${content}
-    <div class="modal-actions">${closable?`<button class="btn ghost" id="modal-cancel">${esc(cancel)}</button>`:''}
-    <button class="btn ${danger?'danger':'primary'}" id="modal-confirm">${esc(confirm)}</button></div></div></div>`;
-  if(closable)$('#modal-cancel').onclick=()=>host.replaceChildren();
-  $('#modal-confirm').onclick=async()=>{
-    const btn=$('#modal-confirm');btn.disabled=true;
-    try{const res=await handler(host);if(res!==false)host.replaceChildren();}
-    catch(e){toast(e.message,'error');btn.disabled=false;}
+  if(!host)return;
+  const previouslyFocused=document.activeElement;
+  const identity='mtunz-dialog-'+Math.random().toString(36).slice(2,9);
+  const accent=danger?'danger':'normal';
+  host.innerHTML=`<div class="modal-backdrop">
+    <div class="modal premium-dialog ${accent}" role="dialog" aria-modal="true" aria-labelledby="${identity}-title" aria-describedby="${identity}-desc" tabindex="-1">
+      <div class="dialog-top">
+        <div class="dialog-symbol" aria-hidden="true">${icon(danger?'shield':'chat',23)}</div>
+        <div class="dialog-headlines"><span class="dialog-eyebrow">${danger?'XÁC NHẬN HÀNH ĐỘNG':'MTUNZ · XÁC NHẬN'}</span>
+          <h2 id="${identity}-title">${esc(title)}</h2></div>
+        ${closable?`<button type="button" class="dialog-x" id="dialog-close" aria-label="Đóng cửa sổ">${icon('add',20)}</button>`:''}
+      </div>
+      <p class="dialog-description" id="${identity}-desc">${esc(description||'Vui lòng kiểm tra thông tin trước khi tiếp tục.')}</p>
+      ${content?`<div class="dialog-content">${content}</div>`:''}
+      <div class="modal-actions">
+        ${closable?`<button class="btn ghost" id="modal-cancel" type="button">${esc(cancel)}</button>`:''}
+        <button class="btn ${danger?'danger':'primary'}" id="modal-confirm" type="button">${icon(danger?'shield':'check',16)}<span>${esc(confirm)}</span></button>
+      </div>
+    </div>
+  </div>`;
+  const panel=host.querySelector('.premium-dialog');
+  const backdrop=host.querySelector('.modal-backdrop');
+  const closeDialog=()=>{
+    host.replaceChildren();
+    if(previouslyFocused instanceof HTMLElement&&previouslyFocused.isConnected)previouslyFocused.focus({preventScroll:true});
   };
+  if(closable){
+    host.querySelector('#modal-cancel')?.addEventListener('click',closeDialog);
+    host.querySelector('#dialog-close')?.addEventListener('click',closeDialog);
+    backdrop.addEventListener('click',e=>{if(e.target===backdrop&&!danger)closeDialog();});
+  }
+  panel.addEventListener('keydown',e=>{
+    if(e.key==='Escape'&&closable){e.preventDefault();closeDialog();return;}
+    if(e.key!=='Tab')return;
+    const focusable=[...panel.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]')].filter(x=>x.getClientRects().length);
+    if(!focusable.length){e.preventDefault();return;}
+    const first=focusable[0],last=focusable[focusable.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  });
+  const action=host.querySelector('#modal-confirm');
+  action.addEventListener('click',async()=>{
+    if(action.disabled)return;
+    action.disabled=true;
+    action.classList.add('is-loading');
+    action.setAttribute('aria-busy','true');
+    try{
+      const result=await handler(host);
+      if(result!==false)closeDialog();
+    }catch(e){toast(e.message||'Thao tác không thành công.','error');}
+    finally{
+      if(action.isConnected){
+        action.disabled=false;action.classList.remove('is-loading');action.removeAttribute('aria-busy');
+      }
+    }
+  });
+  requestAnimationFrame(()=>{if(panel.isConnected)panel.focus({preventScroll:true});});
 }
 function ask(title,description,handler,confirm='Xác nhận',danger=false){modal({title,description,handler,confirm,danger});}
 function showSanction(d){
