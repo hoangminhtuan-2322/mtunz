@@ -1,11 +1,18 @@
 {
   "name": "mtunz",
   "short_name": "mtunz",
-  "description": "Nhắn tin và kết nối realtime trên mtunz",
+  "description": "mtunz — Không gian nhắn tin riêng tư, kết nối theo cách của bạn",
   "start_url": "/",
   "display": "standalone",
   "lang": "vi",
-  "background_color": "#0e1423",
-  "theme_color": "#0e1423",
-  "icons": [{"src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+  "background_color": "#080e1e",
+  "theme_color": "#10192c",
+  "icons": [
+    {
+      "src": "/static/favicon.svg?v=3.0",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
 }
