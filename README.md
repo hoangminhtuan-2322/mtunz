@@ -108,3 +108,41 @@ sau khi hệ thống đã xóa tài khoản.
 một bước xác minh bổ sung, không thay thế MFA độc lập như passkey hoặc TOTP;
 đối với hệ thống production có dữ liệu nhạy cảm, cần triển khai MFA mạnh và
 đánh giá bảo mật độc lập.
+
+
+## Quản lý thông tin liên hệ và hồ sơ người dùng
+
+- Đăng ký mtunz mới **bắt buộc** nhập số điện thoại ngay khi gửi yêu cầu
+  phê duyệt; email/Gmail là tùy chọn. Số Việt Nam dạng `09xxxxxxxx` được
+  chuẩn hóa về `+84...`; số quốc tế nhận định dạng bắt đầu bằng dấu `+`.
+- Số điện thoại và email chỉ xuất hiện với **chủ tài khoản** tại
+  **Cài đặt → Thông tin liên hệ riêng tư** và với **Admin** tại
+  **Phê duyệt đăng ký / Người dùng → Chi tiết**. API hồ sơ công khai không
+  trả về hai trường này.
+- Admin được xem các trường hồ sơ có trong hệ thống: tên đăng nhập/hiển thị,
+  điện thoại, email, giới thiệu, mốc thời gian, trạng thái, quyền riêng tư,
+  hoạt động tài khoản và số lượng tài nguyên. API này chỉ trả về những trường
+  được chọn rõ ràng; không tiết lộ mật khẩu, mã băm, PIN, token hoặc mã khôi phục.
+  Mỗi lần Admin mở chi tiết được ghi vào nhật ký `admin_view_user_details`.
+- Với tài khoản tạo trước phiên bản này, điện thoại/email có thể trống cho
+  đến khi chủ tài khoản tự bổ sung. Các tài khoản cũ không bị khóa chỉ vì
+  chưa có số điện thoại. Trường hợp phê duyệt đăng ký từ phiên bản cũ
+  cũng có thể bổ sung số điện thoại trước khi tạo tài khoản.
+- **Chưa tích hợp xác thực sở hữu điện thoại qua SMS hoặc email**: dữ liệu
+  là thông tin người dùng khai báo, không đủ làm bằng chứng xác minh danh tính
+  hoặc phương thức khôi phục tài khoản an toàn.
+
+## Xác nhận đăng xuất và hiệu ứng hiệu năng cao
+
+Nút **Đăng xuất** trong menu, Cài đặt và Admin mở hộp thoại
+**Hủy / Đăng xuất**; không thu hồi phiên nếu người dùng chọn Hủy.
+Các màn hình xác minh, bảng quản trị và hộp thoại có hiệu ứng vào ngắn;
+nút chạy tác vụ có spinner được dọn sau cả thành công/lỗi; hồ sơ chi tiết
+Admin có skeleton khi chờ phản hồi. File `static/ui-interactions.css`
+chỉ sử dụng các biến đổi nhỏ `opacity`/`transform`, tránh blur nặng,
+và tôn trọng `prefers-reduced-motion` để tránh quá tải thiết bị yếu.
+
+Chạy `node tests/contact_and_motion_ui.cjs` và `python -m pytest -q`
+để kiểm tra thêm luồng mới. Khi triển khai thật cần kiểm tra Neon schema
+migration và quy trình gửi SMS/email riêng trước khi xem số liên hệ như
+dữ liệu đã được xác thực.
