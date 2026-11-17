@@ -52,7 +52,7 @@
 .shell:not(.admin-shell) .rail-btn:focus-visible,.rail-home:focus-visible{
   outline:2px solid #80d6f3;outline-offset:2px
 }
-.rail-settings-shortcuts{margin-bottom:18px}
+.rail-settings-shortcuts{display:none;margin-bottom:18px}
 .rail-settings-shortcuts .hint{margin:10px 0 14px}
 .rail-settings-actions{display:flex;gap:10px;flex-wrap:wrap}
 @media(max-width:1279px) and (min-width:801px){
@@ -70,6 +70,7 @@
   .shell:not(.admin-shell) .rail-extra .rail-btn{padding:10px}
 }
 @media(max-width:800px){
+  .rail-settings-shortcuts{display:block}
   /* Native-feeling bottom navigation: five named destinations, no redundant icons. */
   .shell:not(.admin-shell){
     display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);
