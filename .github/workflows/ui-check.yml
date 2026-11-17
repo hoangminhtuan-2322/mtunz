@@ -37,6 +37,9 @@ jobs:
       - name: Verify Admin full-width layout across breakpoints
         run: |
           node tests/admin_layout.cjs
+      - name: Verify Admin password and PIN form geometry
+        run: |
+          node tests/admin_security_layout.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
@@ -66,7 +69,8 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=8.1' in h
+          assert '/static/app.js?v=8.3' in h
+          assert '/static/form-layout.css?v=8.3' in h
           assert '/static/performance.css?v=8.2' in h
           assert '/static/motion-lite.js?v=8.2' in h
           assert '/static/hero-nova.css?v=7.0' in h
