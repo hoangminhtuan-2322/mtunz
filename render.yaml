@@ -9,7 +9,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    # Deploy the latest main commit only after GitHub CI checks pass.
+    autoDeployTrigger: checksPass
     envVars:
       - key: PUBLIC_MODE
         value: '1'
