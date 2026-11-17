@@ -30,6 +30,8 @@ jobs:
           node --check static/app.js
           node --check static/extras.js
           node --check static/premium.js
+      - name: Verify tab-scoped login survives page refresh
+        run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
         run: |
           node tests/auth_isolation.cjs
