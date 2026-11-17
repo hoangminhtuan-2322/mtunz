@@ -31,6 +31,9 @@ jobs:
       - name: Check isolated auth animation and keyboard tab state
         run: |
           node tests/auth_isolation.cjs
+      - name: Verify left-side hero motion scope
+        run: |
+          node tests/hero_motion_isolation.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
@@ -54,8 +57,13 @@ jobs:
           assert 'prefers-reduced-motion' in aurora
           signals = Path('static/signals.css').read_text(encoding='utf-8')
           assert 'signal-stage' in signals and 'signal-feature' in application
+          assert 'art-v5' in application and 'nova-stage' in application
+          nova = Path('static/hero-nova.css').read_text(encoding='utf-8')
+          assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
+          assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=6.1' in h
+          assert '/static/app.js?v=7.0' in h
+          assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
           assert '/static/extras.js?v=6.1' in h
@@ -68,8 +76,8 @@ jobs:
           assert 'prefers-reduced-motion' in notices and 'notify-progress' in notices
           assert '<svg' in mark and 'mtunz' in mark
           assert 'MỘT KHÔNG GIAN, NHIỀU KẾT NỐI' in application
-          assert '<h1 class="auth-headline-copy">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>' in application
-          assert '<p>Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>' in application
+          assert '<h1 class="auth-headline-copy nova-headline">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>' in application
+          assert '<p class="nova-description">Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>' in application
           assert 'Gần nhau hơn.<br>' not in application
           assert 'aria-invalid' in js
           assert '/api/username/check' in js
