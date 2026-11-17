@@ -64,7 +64,8 @@ jobs:
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
           assert '/static/app.js?v=8.1' in h
-          assert '/static/performance.css?v=8.1' in h
+          assert '/static/performance.css?v=8.2' in h
+          assert '/static/motion-lite.js?v=8.2' in h
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
@@ -83,7 +84,11 @@ jobs:
           assert '.logo-mark' in orbit and '.nova-nucleus' in orbit
           assert '.boot-screen .loading-logo' in orbit and 'prefers-reduced-motion' in orbit
           perf = Path('static/performance.css').read_text(encoding='utf-8')
-          assert '.auth-art.art-v5 .nova-orbit' in perf
+          assert '.auth-art.art-v5 .nova-orbit.nova-orbit-one' in perf
+          assert 'animation:nova-orbit-spin 42s' in perf
+          motion = Path('static/motion-lite.js').read_text(encoding='utf-8')
+          assert 'visibilitychange' in motion and 'saveData' in motion
+          assert 'requestAnimationFrame' not in motion
           assert 'backdrop-filter:none!important' in perf
           assert 'initializeHeroMotion' not in application
           import json
