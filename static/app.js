@@ -709,7 +709,7 @@ function adminSecurity(){
      ${inputField('Mã PIN quản trị','pin','password','Tạo PIN riêng','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
      <button class="btn primary full" type="submit">${icon('lock',16)} Kích hoạt PIN quản trị</button>
    </form></div>`;
- return `<div>
+ return `<div class="admin-security" aria-label="Bảo mật tài khoản quản trị">
    <div class="card" style="max-width:650px"><h2>${icon('lock',20)} Đổi mật khẩu admin</h2>
    <p class="hint" style="margin:15px 0">Dùng mật khẩu riêng mạnh, tối thiểu 12 ký tự. Khi đổi, các phiên khác và thiết bị đã ghi nhớ sẽ bị thu hồi.</p>
    <form data-form="admin-password">${inputField('Mật khẩu hiện tại','old_password','password','Mật khẩu đang sử dụng')}
