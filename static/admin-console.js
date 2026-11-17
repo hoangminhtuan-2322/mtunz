@@ -102,6 +102,9 @@
   if(tab==='audit'){
    controls.append(button('Xuất nhật ký CSV','export-audit'));
   }
+  if(tab==='tickets')all('.ticket-list .ticket-item',host).forEach(item=>{
+   item.tabIndex=0;item.setAttribute('role','button');item.setAttribute('aria-label','Mở phiếu hỗ trợ '+item.textContent.trim().slice(0,80));
+  });
   if(['users','registrations','deletions','groups'].includes(tab)){
    all('thead th',anchor).forEach((th,index)=>{
     th.setAttribute('title','Nhấn để sắp xếp theo cột');
@@ -226,7 +229,7 @@
   if(action==='menu'){q('.admin-shell')?.classList.toggle('admin-menu-open');return}
   if(action==='close-menu'){q('.admin-shell')?.classList.remove('admin-menu-open');return}
   if(action==='commands'){showCommands();return}
-  if(action==='refresh'){q('[data-act="admin-refresh"]')?.click()||((typeof loadAdmin==='function')&&loadAdmin());return}
+  if(action==='refresh'){if(typeof loadAdmin==='function')loadAdmin();return}
   if(action==='security'){navigate('security');return}
   if(action.startsWith('go-')){closeCommands();navigate(action.slice(3));return}
   if(action==='export-audit'){exportAudit();return}
