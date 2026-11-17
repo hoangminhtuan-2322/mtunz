@@ -55,10 +55,10 @@ jobs:
           signals = Path('static/signals.css').read_text(encoding='utf-8')
           assert 'signal-stage' in signals and 'signal-feature' in application
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=6.0' in h
+          assert '/static/app.js?v=6.1' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=6.0' in h
+          assert '/static/extras.js?v=6.1' in h
           assert 'auth-remember-choice' in application
           assert 'showcase-contact' not in application
           assert 'tối thiểu 10 ký tự' in application
