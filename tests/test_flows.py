@@ -70,6 +70,7 @@ def test_full_user_friend_chat_admin_and_recovery():
     first.post(f'/api/support/tickets/{ticket}/messages',json={'body':'Xin hỗ trợ khôi phục PIN'})
     assert admin.post(f'/api/admin/tickets/{ticket}/messages',json={'body':'Hãy cung cấp bằng chứng sở hữu.'}).status_code==200
     assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':False}).status_code==422
+    assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':True}).status_code==401
     assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':True, 'admin_password':'mtunz7'}).status_code==200
     text=first.get(f'/api/support/tickets/{ticket}/messages').json()['messages'][-1]['body']
     code=text.split(': ')[-1].split('.')[0]
@@ -92,7 +93,10 @@ def test_permissions_and_capacity():
     guest=TestClient(app);guest.get('/')
     assert guest.get('/api/admin/users').status_code==401
     assert guest.post('/api/auth/password',json={'username':'admin','password':'wrong'}).status_code==401
+    assert admin.post('/api/admin/capacity',json={'max_users':1}).status_code==401
     assert admin.post('/api/admin/capacity',json={'max_users':1, 'admin_password':'mtunz7'}).status_code==200
+    assert admin.post('/api/admin/broadcast',json={'body':'Thông báo'}).status_code==401
+    assert admin.post('/api/admin/broadcast',json={'body':'Thông báo', 'admin_password':'mtunz7'}).status_code==200
     first=register_user(admin,'first_one')
     guest.post('/api/registration/request',json={'username':'second_one','phone':'0912345678'})
     rid=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']=='second_one'][0]['id']
