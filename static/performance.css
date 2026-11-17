@@ -1,0 +1,112 @@
+/* mtunz Performance Mode 8.1
+   Preserves the Orbit visual identity but removes costly animated/filter layers.
+   No permanently running animations are allowed in the welcome artwork. */
+
+/* Stop frame-by-frame animation and GPU memory allocation for decorative work. */
+.auth-art.art-v5 .nova-orbit,
+.auth-art.art-v5 .nova-stage-bars i,
+.auth-art.art-v5 .signal-feature.nova-feature,
+.auth-art.art-v5 .nova-brand,
+.auth-art.art-v5 .nova-section-meta,
+.auth-art.art-v5 .nova-kicker,
+.auth-art.art-v5 .nova-headline,
+.auth-art.art-v5 .nova-description,
+.auth-art.art-v5 .nova-proof-row,
+.auth-art.art-v5 .nova-stage,
+.auth-art.art-v5 .nova-footer,
+.auth-art.art-v5 .art-aurora {
+  animation: none !important;
+}
+.auth-art.art-v5 .nova-orbit {display:none !important}
+.auth-art.art-v5 .nova-ambient-light,
+.auth-art.art-v5 .art-aurora,
+.auth-art.art-v5 .nova-mesh,
+.auth-art.art-v5 .nova-stage-sheen,
+.auth-art.art-v5 .signal-grid,
+.auth-art.art-v5 .nova-stage-field,
+.auth-art.art-v5 .nova-halo.halo-three {
+  display: none !important;
+}
+
+/* A simplified static gradient creates depth without giant blurred surfaces. */
+.auth-art.art-v5{
+  background:
+    radial-gradient(ellipse at 85% 44%,#293d6b48 0%,transparent 58%),
+    linear-gradient(145deg,#111a31 0%,#182344 55%,#131a38 100%) !important;
+  will-change: auto !important;
+  transform: none !important;
+}
+.auth-art.art-v5 > .art-stars{
+  opacity:.12;
+  background-size:43px 43px;
+  -webkit-mask-image:none!important;
+  mask-image:none!important;
+}
+.auth-art.art-v5 .art-content > p.nova-description,
+.auth-art.art-v5 .nova-headline .gradient-text{
+  filter:none!important;
+}
+.auth-art.art-v5 .signal-stage.nova-stage{
+  background:linear-gradient(145deg,#222d4f 0%,#15213e 100%)!important;
+  box-shadow:0 12px 29px #08122b68,inset 0 1px #ffffff12 !important;
+  transform:none!important;
+  will-change:auto!important;
+}
+.auth-art.art-v5 .signal-feature.nova-feature{
+  -webkit-backdrop-filter:none!important;
+  backdrop-filter:none!important;
+  background:#243451!important;
+  box-shadow:0 5px 14px #07102e59,inset 0 1px #ffffff11!important;
+  will-change:auto!important;
+  transition:border-color .16s ease,background-color .16s ease,transform .16s ease!important;
+}
+.auth-art.art-v5 .signal-feature.nova-feature:hover{
+  box-shadow:0 7px 17px #07102e5e!important;
+  transform:translate3d(0,-2px,0)!important;
+}
+.auth-art.art-v5 .nova-nucleus .brand-glyph,
+.auth-art.art-v5 .logo-mark .brand-glyph{
+  filter:none!important;
+}
+.auth-art.art-v5 .nova-nucleus{
+  box-shadow:0 0 0 9px #9287ea11!important;
+}
+.auth-art.art-v5 .nova-stage .halo-one,
+.auth-art.art-v5 .nova-stage .halo-two{
+  box-shadow:none!important;
+}
+.auth-art.art-v5 .auth-art-footer.nova-footer span,
+.auth-art.art-v5 .nova-brand-mark{
+  transition:background-color .16s ease,border-color .16s ease,transform .16s ease!important;
+}
+
+/* Minimize scroll work. The login form is a separate scroll container,
+   while the welcome art is static and does not consume extra animation frames. */
+.auth,.auth-main,.auth-art.art-v5{scroll-behavior:auto!important}
+.auth-art.art-v5{
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+@media(min-width:801px) and (max-height:850px){
+  .auth-art.art-v5>.art-content.nova-content{margin-top:16px}
+  .auth-art.art-v5 .nova-section-meta{margin-bottom:7px}
+  .auth-art.art-v5 .art-kicker.nova-kicker{margin-bottom:10px}
+  .auth-art.art-v5 .art-content>p.nova-description{margin-top:11px}
+  .auth-art.art-v5 .nova-proof-row{margin-top:10px}
+  .auth-art.art-v5 .signal-stage.nova-stage{height:220px;margin-top:15px}
+  .auth-art.art-v5 .signal-feature.nova-feature{min-height:54px}
+  .auth-art.art-v5 .auth-art-footer.nova-footer{margin-top:12px;padding-top:10px}
+  .auth-art.art-v5 .signal-nucleus.nova-nucleus{width:80px;height:80px}
+}
+@media(min-width:801px) and (max-width:1100px){
+  .auth-art.art-v5 .signal-stage.nova-stage{height:230px}
+  .auth-art.art-v5 .nova-stage-base{display:none}
+  .auth-art.art-v5 .art-content h1.nova-headline{line-height:1.18}
+}
+@media(prefers-reduced-motion:reduce){
+  .auth-art.art-v5 .signal-feature.nova-feature,
+  .auth-art.art-v5 .nova-brand-mark,
+  .auth-art.art-v5 .auth-art-footer.nova-footer span{
+    transition:none!important;
+  }
+}
