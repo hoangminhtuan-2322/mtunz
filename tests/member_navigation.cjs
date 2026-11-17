@@ -11,7 +11,8 @@ const state={tab:'messages',user:{username:'test_member'},railMoreOpen:false};
 const ctx={state,brandGlyph:()=>'<img>',avatar:()=>'<avatar>',icon:n=>'<svg data-icon="'+n+'"></svg>',esc:v=>String(v)};
 vm.createContext(ctx);vm.runInContext(js.slice(a,b),ctx);
 const initial=ctx.appRail();
-assert.equal((initial.match(/class="rail-btn (?:active|)"/g)||[]).length,5,'Five primary destinations');
+const primaryMarkup=initial.split('<nav class="rail-nav" aria-label="Điều hướng chính">')[1].split('<div class="rail-secondary">')[0];
+assert.equal((primaryMarkup.match(/class="rail-btn /g)||[]).length,5,'Five primary destinations');
 for(const tab of ['messages','groups','friends','notices','settings'])
   assert(initial.includes('data-tab="'+tab+'"'),'Primary menu: '+tab);
 assert(initial.includes('aria-current="page" data-act="app-tab" data-tab="messages"'));
