@@ -3,6 +3,8 @@ const $ = (s,root=document)=>root.querySelector(s);
 const esc = (v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date = t=>t?new Date(t*1000).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
 const clock = t=>t?new Date(t*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'';
+const deadlineDate = t=>t?new Date(t*1000).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+const daysUntil = t=>Math.max(0,Math.ceil((Number(t)*1000-Date.now())/(86400*1000)));
 const short = (s,n=34)=>String(s??'').length>n?String(s).slice(0,n-1)+'…':String(s??'');
 const initials = s=>(s||'?').slice(0,2).toUpperCase();
 const Ipaths = {
@@ -644,7 +646,7 @@ function settingsContent(){
  </div>
  <section class="card account-delete-zone" aria-label="Lịch xóa tài khoản">
    <div><h3>${icon('ban',18)} Xóa tài khoản và dữ liệu</h3>
-   ${state.accountDeletion?.pending?`<p class="hint" style="margin:12px 0">Yêu cầu xóa đã được ghi nhận. Dữ liệu sẽ bị xóa vĩnh viễn sau <b>${date(state.accountDeletion.purge_at)}</b> (giờ hiển thị theo máy bạn). Bạn có thể hủy trước thời điểm này.</p>
+   ${state.accountDeletion?.pending?`<p class="hint" style="margin:12px 0">Yêu cầu xóa đã được ghi nhận. Dữ liệu sẽ bị xóa vĩnh viễn sau <b>${deadlineDate(state.accountDeletion.purge_at)}</b> (giờ hiển thị theo máy bạn), còn khoảng <b>${daysUntil(state.accountDeletion.purge_at)} ngày</b>. Bạn có thể hủy trước thời điểm này.</p>
      <span class="pill warn">Đang trong thời gian 30 ngày cân nhắc</span>`:
    `<p class="hint" style="margin:12px 0">Bạn có thể yêu cầu xóa tài khoản. Hệ thống giữ dữ liệu thêm <b>30 ngày</b> để bạn suy nghĩ và hủy yêu cầu nếu cần. Sau hạn, tài khoản, tin nhắn và tệp của bạn sẽ được xóa vĩnh viễn. Admin vẫn có thể xóa ngay theo quyền quản trị.</p>`}</div>
    ${state.accountDeletion?.pending?
@@ -749,7 +751,7 @@ function adminUsers(){const data=state.adminData||[];
  return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id} · PIN ${u.pin_length} số</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${date(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Ban</button>
@@ -765,7 +767,7 @@ function adminDeletionQueue(){
   <button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
   <div class="table-scroll" style="margin-top:18px"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Ngày yêu cầu</th><th>Hạn xóa</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
   ${items.map(item=>`<tr><td><b>${esc(item.username)}</b><div class="hint">#${item.user_id}</div></td>
-  <td>${date(item.requested_at)}</td><td>${date(item.purge_at)}</td>
+  <td>${deadlineDate(item.requested_at)}</td><td>${deadlineDate(item.purge_at)}</td>
   <td><span class="pill ${item.purge_at*1000<=Date.now()?'bad':'warn'}">${item.purge_at*1000<=Date.now()?'Đến hạn xử lý':'Trong thời gian cân nhắc'}</span></td>
   <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
   </tbody></table></div></div>`;
