@@ -146,3 +146,36 @@ Chạy `node tests/contact_and_motion_ui.cjs` và `python -m pytest -q`
 để kiểm tra thêm luồng mới. Khi triển khai thật cần kiểm tra Neon schema
 migration và quy trình gửi SMS/email riêng trước khi xem số liên hệ như
 dữ liệu đã được xác thực.
+
+
+## Giữ phiên và màn hình hiện tại khi tải lại tab (11/2026)
+
+- Sau khi đăng nhập, mtunz đánh dấu phiên hoạt động trong **sessionStorage**
+  của tab (chỉ ID tài khoản và trang đang xem, không lưu mật khẩu/PIN).
+  Tải lại bằng **F5 / Ctrl+R** sẽ gọi `GET /api/me` để dùng tiếp phiên
+  cookie HttpOnly đã xác thực, **không gọi lại quy trình khóa phiên/PIN**.
+- Khi tải lại, ứng dụng khôi phục khu vực đang mở: trang Cài đặt, nhóm chat,
+  cuộc trò chuyện (nếu vẫn còn quyền truy cập) hoặc trang quản trị. Nội dung
+  tin nhắn được tải mới từ server; không lưu tin nhắn/PIN/mật khẩu vào
+  sessionStorage.
+- Khi mất kết nối tạm thời, màn hình cho phép **Thử kết nối lại** thay vì
+  mặc định xóa thông tin phiên hoặc chuyển về đăng nhập.
+- Một tab mới thông thường không có dấu phiên trong sessionStorage nên
+  không tự động mở tin nhắn. Tab mới kiểm tra sự tồn tại của tab khác qua
+  `BroadcastChannel` để tránh thu hồi phiên của tab đang hoạt động.
+  Nếu không có tab nào đang hoạt động, phiên cookie cũ được khóa và
+  người dùng phải đăng nhập lại hoặc xác minh PIN thiết bị đã ghi nhớ.
+- **Giới hạn của trình duyệt:** Không có sự kiện đáng tin cậy phân biệt
+  đóng tab với tải lại trong mọi trình duyệt. Tab bị đóng thông thường
+  xóa sessionStorage, nhưng việc khôi phục tab gần đây, nhân bản tab hoặc
+  crash recovery có thể phục hồi sessionStorage; server không bảo đảm
+  thu hồi phiên ngay chính xác vào thời điểm đóng tab. Phiên vẫn được
+  thu hồi khi người dùng bấm Đăng xuất, khi mở lại theo luồng tab mới,
+  hoặc khi hết hạn (Admin tối đa 2 giờ, thành viên tối đa 7 ngày).
+  Không nên dùng dấu sessionStorage làm yếu tố xác thực thay cho cookie,
+  PIN hoặc kiểm soát phiên phía máy chủ.
+
+Bài test: `node tests/tab_session_lifecycle.cjs`. Các kiểm tra gồm nạp lại
+không mất phiên, khôi phục cuộc trò chuyện và mục Admin, giữ tab khác không
+bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạng không thành
+đăng xuất.
