@@ -320,6 +320,12 @@ function inputField(label,name,type='text',placeholder='',attr=''){
  <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
  <input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div></div>`;
 }
+/* Plain form control for account settings/admin: no absolutely positioned icon.
+   Do not use the decorative auth-input component outside the sign-in flow. */
+function secureSettingsField(label,name,type='text',placeholder='',attr=''){
+ return `<div class="field secure-settings-field"><label for="${name}">${esc(label)}</label>
+ <input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div>`;
+}
 function authTabs(){return `<div class="auth-nav" role="group" aria-label="Điều hướng tài khoản">
  <button type="button" class="${state.mode==='login'?'active':''}" aria-pressed="${state.mode==='login'}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
  <button type="button" class="${state.mode==='register'?'active':''}" aria-pressed="${state.mode==='register'}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
@@ -568,13 +574,13 @@ function settingsContent(){
  <p class="section-lead">Kiểm soát thông tin đăng nhập và cách bạn tương tác trên mtunz.</p>
  <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)} · Mã PIN hiện tại: ${state.user.pin_length} chữ số</div></div><span class="pill good">Đã xác thực</span></div>
  ${profileSettings()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3><p class="hint">Có thể đổi cả độ dài PIN 4, 5 hoặc 6 chữ số.</p>
- <form data-form="settings-pin">${inputField('PIN hiện tại','old_pin','password','PIN cũ','inputmode="numeric" required')}
+ <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','PIN cũ','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
- ${inputField('PIN mới','new_pin','password','PIN 4–6 chữ số','inputmode="numeric" minlength="4" maxlength="6"')}
+ ${secureSettingsField('PIN mới','new_pin','password','PIN 4–6 chữ số','inputmode="numeric" minlength="4" maxlength="6"')}
  <button class="btn primary full">Cập nhật mã PIN</button></form></section>
  <section class="card"><h3>${icon('shield',17)} Đổi mật khẩu</h3><p class="hint">Mật khẩu mới nên khác hoàn toàn mật khẩu cũ.</p>
- <form data-form="settings-password">${inputField('Mật khẩu hiện tại','old_password','password','Mật khẩu cũ')}
- ${inputField('Mật khẩu mới','new_password','password','Ít nhất 10 ký tự','minlength="10"')}
+ <form data-form="settings-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','Mật khẩu cũ')}
+ ${secureSettingsField('Mật khẩu mới','new_password','password','Ít nhất 10 ký tự','minlength="10"')}
  <button class="btn primary full">Đổi mật khẩu</button></form></section>
  <section class="card"><h3>${icon('ban',17)} Danh sách đã chặn</h3><p class="hint">Người bị chặn không thể kết bạn hoặc nhắn tin với bạn.</p>
  ${state.blocks.length?state.blocks.map(b=>`<div class="row between" style="margin:12px 0"><b>${esc(b.username)}</b><button class="btn ghost sm" data-act="unblock" data-id="${b.id}">Bỏ chặn</button></div>`).join(''):'<div class="hint" style="margin-top:19px">Chưa có tài khoản bị chặn.</div>'}</section>
@@ -702,26 +708,26 @@ function adminSecurity(){
    <h2>${icon('shield',20)} PIN quản trị</h2>
    <p class="hint" style="margin:12px 0">PIN đã được bật. Tài khoản admin giờ cần xác minh PIN sau mật khẩu và có thể ghi nhớ thiết bị.</p>
    <form data-form="admin-pin-change">
-     ${inputField('PIN hiện tại','old_pin','password','Nhập mã PIN đang dùng','inputmode="numeric" autocomplete="off"')}
+     ${secureSettingsField('PIN hiện tại','old_pin','password','Nhập mã PIN đang dùng','inputmode="numeric" autocomplete="off"')}
      <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
-     ${inputField('PIN mới','new_pin','password','PIN mới','inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off"')}
+     ${secureSettingsField('PIN mới','new_pin','password','PIN mới','inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off"')}
      <button class="btn primary full" type="submit">${icon('lock',16)} Đổi PIN quản trị</button>
    </form></div>`:
  `<div class="card" style="max-width:650px;margin-top:17px">
    <h2>${icon('shield',20)} Kích hoạt PIN cho admin</h2>
    <p class="hint" style="margin:12px 0">Thiết lập PIN để lần sau có thể chọn “Ghi nhớ thiết bị 30 ngày”. Tài khoản quản trị sẽ cần cả mật khẩu và PIN khi đăng nhập trên thiết bị mới.</p>
    <form data-form="admin-pin-setup">
-     ${inputField('Mật khẩu admin hiện tại','current_password','password','Xác nhận mật khẩu','autocomplete="current-password"')}
+     ${secureSettingsField('Mật khẩu admin hiện tại','current_password','password','Xác nhận mật khẩu','autocomplete="current-password"')}
      <div class="field"><label>Độ dài PIN</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
-     ${inputField('Mã PIN quản trị','pin','password','Tạo PIN riêng','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+     ${secureSettingsField('Mã PIN quản trị','pin','password','Tạo PIN riêng','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
      <button class="btn primary full" type="submit">${icon('lock',16)} Kích hoạt PIN quản trị</button>
    </form></div>`;
  return `<div class="admin-security" aria-label="Bảo mật tài khoản quản trị">
    <div class="card" style="max-width:650px"><h2>${icon('lock',20)} Đổi mật khẩu admin</h2>
    <p class="hint" style="margin:15px 0">Dùng mật khẩu riêng mạnh, tối thiểu 12 ký tự. Khi đổi, các phiên khác và thiết bị đã ghi nhớ sẽ bị thu hồi.</p>
-   <form data-form="admin-password">${inputField('Mật khẩu hiện tại','old_password','password','Mật khẩu đang sử dụng')}
-   ${inputField('Mật khẩu mới','new_password','password','Tối thiểu 12 ký tự','minlength="12"')}
-   ${inputField('Nhập lại mật khẩu mới','repeat_password','password','Nhập lại mật khẩu','minlength="12"')}
+   <form data-form="admin-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','Mật khẩu đang sử dụng')}
+   ${secureSettingsField('Mật khẩu mới','new_password','password','Tối thiểu 12 ký tự','minlength="12"')}
+   ${secureSettingsField('Nhập lại mật khẩu mới','repeat_password','password','Nhập lại mật khẩu','minlength="12"')}
    <button class="btn primary full">${icon('shield',17)} Đổi mật khẩu admin</button></form></div>
    ${pinCard}
    ${state.savedDevice?`<div class="card" style="max-width:650px;margin-top:17px"><h3>${icon('lock',18)} Khóa phiên hiện tại</h3><p class="hint" style="margin:11px 0">Quay về màn hình PIN mà không xóa thiết bị được ghi nhớ.</p><button class="btn ghost" type="button" data-act="lock-device">${icon('lock',16)} Khóa ngay</button></div>`:''}
