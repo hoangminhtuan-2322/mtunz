@@ -58,7 +58,7 @@ def login_admin():
 def create_member(admin, name):
     client = TestClient(app)
     assert client.post('/api/registration/request',
-                       json={'username':name}).status_code == 200
+                       json={'username':name,'phone':'0912345678'}).status_code == 200
     pending = admin.get('/api/admin/registrations').json()['registrations']
     ticket = next(x['id'] for x in pending if x['username'] == name)
     assert admin.post(f'/api/admin/registrations/{ticket}/decision',
