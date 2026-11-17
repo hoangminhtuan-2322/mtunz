@@ -1,0 +1,31 @@
+/* mtunz device & session manager: responsive details without location tracking. */
+.premium-dialog:has(.device-session-manager){width:min(720px,100%);max-height:92dvh}
+.device-session-manager{display:flex;flex-direction:column;gap:12px;max-height:min(65dvh,660px);overflow-y:auto;overflow-x:hidden;padding:2px 4px 4px 0;scrollbar-width:thin}
+.device-session-privacy{font-size:12px!important;line-height:1.6!important;color:#aebdd7!important;margin:2px 0 8px!important}
+.device-session-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 2px;font-size:13px;color:#e8ecff}
+.device-session-section-title:first-of-type{margin-top:2px}
+.device-session-section-title span{min-width:26px;padding:3px 8px;border-radius:99px;background:#344464;color:#c9d6ee;font-size:11px;text-align:center}
+.device-session-card{border:1px solid #405477;border-radius:16px;padding:16px;background:linear-gradient(140deg,#1a2a46,#131f35);box-shadow:inset 0 1px 0 #ffffff0b}
+.device-session-heading{display:flex;align-items:center;gap:11px;margin-bottom:15px}
+.device-session-icon{display:grid;place-items:center;background:#2b3b5f;border:1px solid #4e638b;border-radius:13px;width:45px;height:45px;flex-shrink:0;font-size:23px}
+.device-session-identity{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
+.device-session-identity b{font-size:14px;color:#f4f7ff;overflow-wrap:anywhere}
+.device-session-identity span{font-size:11.5px;color:#aebbd3}
+.device-session-current{font-size:10px;color:#65eed1;background:#1c4348;border:1px solid #315b67;padding:5px 8px;border-radius:99px;white-space:nowrap;flex-shrink:0}
+.device-session-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;row-gap:12px;margin:0;padding:12px 0 15px;border-top:1px solid #344965;border-bottom:1px solid #344965}
+.device-session-facts div{min-width:0}
+.device-session-facts dt{font-size:10.5px;color:#9facc5;margin-bottom:3px}
+.device-session-facts dd{margin:0;font-size:12px;color:#e6edff;overflow-wrap:anywhere;line-height:1.5}
+.device-session-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px}
+.device-session-help{font-size:11px;color:#9caeca}
+.device-session-actions .btn{font-size:11px}
+@media(max-width:540px){
+ .modal-backdrop{padding:12px}
+ .premium-dialog:has(.device-session-manager){padding:18px 15px;width:100%;border-radius:17px}
+ .device-session-manager{max-height:60dvh}
+ .device-session-card{padding:12px}
+ .device-session-icon{width:38px;height:38px;font-size:19px}
+ .device-session-current{font-size:9px;padding:5px 6px}
+ .device-session-facts{grid-template-columns:1fr 1fr;column-gap:9px;row-gap:10px}
+ .device-session-facts dd{font-size:11px}
+}
