@@ -150,6 +150,7 @@ dữ liệu đã được xác thực.
 
 ## Giữ phiên và màn hình hiện tại khi tải lại tab (11/2026)
 
+- API `GET /api/auth/remembered/status` chỉ kiểm tra thiết bị đã ghi nhớ mà **không thu hồi phiên đăng nhập**. API khóa phiên cũ chỉ được gọi trong luồng truy cập tab mới, không gọi khi F5.
 - Sau khi đăng nhập, mtunz đánh dấu phiên hoạt động trong **sessionStorage**
   của tab (chỉ ID tài khoản và trang đang xem, không lưu mật khẩu/PIN).
   Tải lại bằng **F5 / Ctrl+R** sẽ gọi `GET /api/me` để dùng tiếp phiên
