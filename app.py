@@ -675,6 +675,27 @@ async def auth_pin(request: Request, body: PinLogin):
     return response
 
 
+@app.get('/api/auth/remembered/status')
+async def remembered_status_readonly(request: Request):
+    """Check a saved device without revoking the current access session.
+
+    Refreshing an already-authenticated tab must never request a new PIN.
+    """
+    saved=request.cookies.get(REMEMBER_COOKIE)
+    if not valid_remember_token(saved):
+        return {'remembered':False}
+    with db() as c:
+        row=one(c,'''SELECT d.expires_at,u.username,u.pin_hash,u.pin_length,
+                     u.is_admin,u.sanction_kind,u.sanction_until
+                     FROM trusted_devices d JOIN users u ON u.id=d.user_id
+                     WHERE d.token_hash=?''',(digest(saved),))
+    if (not row or row['expires_at']<=now() or row['is_admin']
+            or not row['pin_hash'] or (row['sanction_kind'] and
+            (not row['sanction_until'] or row['sanction_until']>now()))):
+        return {'remembered':False}
+    return {'remembered':True,'username':row['username'],'pin_length':row['pin_length']}
+
+
 @app.post('/api/auth/remembered')
 async def remembered_status(request: Request):
     """Lock stale cookie sessions on a new-tab visit; provide remembered-device metadata. An in-tab reload skips this endpoint."""
