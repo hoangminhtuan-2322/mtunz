@@ -5,6 +5,8 @@ Runs against an isolated SQLite test database. Never targets production Neon.
 import os
 import sys
 import tempfile
+import time
+from account_deletion import purge_due_deletions
 from pathlib import Path
 
 os.environ.setdefault('DATA_DIR', tempfile.mkdtemp(prefix='mtunz_deletion_tests_'))
@@ -29,7 +31,7 @@ def reset_test_database():
             'chat_preferences','attachments','recovery_grants',
             'ticket_messages','tickets','notifications','messages',
             'friendships','blocks','restrictions','sessions','trusted_devices',
-            'login_challenges','registrations','audit',
+            'login_challenges','registrations','audit','account_deletion_requests',
         ):
             c.execute(f'DELETE FROM {table}')
         c.execute('DELETE FROM users WHERE is_admin=0')
@@ -46,6 +48,10 @@ def login_admin():
         'username':'admin','password':'mtunz7'
     })
     assert login.status_code == 200, login.text
+    protect = client.post('/api/me/pin/setup',json={
+        'current_password':'mtunz7','pin':PIN,'pin_length':6
+    })
+    assert protect.status_code == 200, protect.text
     return client
 
 
@@ -70,17 +76,18 @@ def create_member(admin, name):
     return client, client.get('/api/me').json()['user']['id']
 
 
-def delete_payload(name, password=PASSWORD, pin=PIN):
-    return {'username':name,'password':password,'pin':pin,'confirm':CONFIRM}
+def delete_payload(name, password=PASSWORD, pin=PIN, *, schedule=False):
+    return {'username':name,'password':password,'pin':pin,
+            'confirm':'XOA SAU 30 NGAY' if schedule else CONFIRM}
 
 
 def test_self_delete_requires_live_password_pin_username_and_explicit_phrase():
     admin=login_admin()
     member,uid=create_member(admin,'wants_exit')
     endpoint='/api/me/delete'
-    assert member.post(endpoint,json=delete_payload('wants_exit',password='bad')).status_code==401
-    assert member.post(endpoint,json=delete_payload('wants_exit',pin='000000')).status_code==401
-    assert member.post(endpoint,json=delete_payload('wrong_name')).status_code==422
+    assert member.post(endpoint,json=delete_payload('wants_exit',password='bad',schedule=True)).status_code==401
+    assert member.post(endpoint,json=delete_payload('wants_exit',pin='000000',schedule=True)).status_code==401
+    assert member.post(endpoint,json=delete_payload('wrong_name',schedule=True)).status_code==422
     assert member.post(endpoint,json={**delete_payload('wants_exit'),'confirm':'YES'}).status_code==422
     with db() as c:
         assert c.execute('SELECT 1 FROM users WHERE id=?',(uid,)).fetchone()
@@ -141,9 +148,17 @@ def test_self_delete_cleans_dependencies_and_preserves_surviving_group():
                   'VALUES(?,?,?,?)',(ticket,0,'support message',1000))
         c.execute('INSERT INTO recovery_grants(token_hash,ticket_id,user_id,kind,expires_at) '
                   'VALUES(?,?,?,?,?)',('recovery-key',ticket,uid,'password',99999))
-    response=member.post('/api/me/delete',json=delete_payload('erase_self'))
+    response=member.post('/api/me/delete',json=delete_payload('erase_self',schedule=True))
     assert response.status_code==200,response.text
-    assert response.json()['deleted'] is True
+    assert response.json()['pending'] is True
+    assert response.json()['purge_at']-response.json()['requested_at']==30*86400
+    assert member.get('/api/me').json()['user']['username']=='erase_self'
+    assert path.exists(),'Grace period must preserve uploaded content.'
+    assert admin.get('/api/admin/deletions').json()['requests'][0]['username']=='erase_self'
+    response=admin.post(f'/api/admin/users/{uid}/delete',
+                        json=delete_payload('erase_self',password='mtunz7'))
+    assert response.status_code==200,response.text
+    assert response.json()['deleted_user_id']==uid
     assert member.get('/api/me').json()['user'] is None
     assert not path.exists(),'Local uploaded file should be removed after commit'
     with db() as c:
@@ -174,12 +189,12 @@ def test_admin_permanent_delete_requires_admin_password_and_never_deletes_admin(
     admin=login_admin()
     target,uid=create_member(admin,'remove_target')
     other,other_id=create_member(admin,'keep_target')
-    payload=delete_payload('remove_target',password='mtunz7',pin=None)
+    payload=delete_payload('remove_target',password='mtunz7',pin=PIN)
     guest=TestClient(app)
     assert guest.post(f'/api/admin/users/{uid}/delete',json=payload).status_code==401
     assert other.post(f'/api/admin/users/{uid}/delete',json=payload).status_code==403
     assert admin.post('/api/admin/users/1/delete',
-                      json=delete_payload('admin',password='mtunz7',pin=None)).status_code==404
+                      json=delete_payload('admin',password='mtunz7',pin=PIN)).status_code==404
     assert admin.post(f'/api/admin/users/{uid}/delete',
                       json={**payload,'password':'wrong'}).status_code==401
     assert admin.post(f'/api/admin/users/{uid}/delete',
@@ -195,3 +210,53 @@ def test_admin_permanent_delete_requires_admin_password_and_never_deletes_admin(
         assert c.execute('SELECT 1 FROM users WHERE id=?',(uid,)).fetchone() is None
         assert c.execute('SELECT 1 FROM users WHERE id=1 AND is_admin=1').fetchone()
         assert c.execute("SELECT 1 FROM audit WHERE action='permanent_user_delete'").fetchone()
+
+
+def test_30_day_cancellation_is_authenticated_and_preserves_data():
+    admin=login_admin()
+    member,uid=create_member(admin,'reconsider')
+    created=member.post('/api/me/delete',json=delete_payload('reconsider',schedule=True))
+    assert created.status_code==200,created.text
+    deadline=created.json()['purge_at']
+    assert member.post('/api/me/delete',json=delete_payload('reconsider',schedule=True)).status_code==409
+    status=member.get('/api/me/deletion').json()
+    assert status['pending'] is True and status['purge_at']==deadline
+    assert admin.get('/api/admin/deletions').json()['requests'][0]['user_id']==uid
+    url='/api/me/delete/cancel'
+    assert member.post(url,json={'password':'wrong','pin':PIN}).status_code==401
+    assert member.post(url,json={'password':PASSWORD,'pin':'000000'}).status_code==401
+    assert member.post(url,json={'password':PASSWORD,'pin':PIN}).status_code==200
+    assert member.get('/api/me/deletion').json()['pending'] is False
+    assert member.get('/api/me').json()['user']['id']==uid
+    assert admin.get('/api/admin/deletions').json()['requests']==[]
+    assert member.post(url,json={'password':PASSWORD,'pin':PIN}).status_code==409
+
+
+def test_scheduled_purge_is_idempotent_and_never_early():
+    admin=login_admin()
+    member,uid=create_member(admin,'expired_plan')
+    created=member.post('/api/me/delete',json=delete_payload('expired_plan',schedule=True))
+    assert created.status_code==200
+    now_ts=int(time.time())
+    assert purge_due_deletions(db,now_ts)==[]
+    with db() as c:
+        assert c.execute('SELECT 1 FROM users WHERE id=?',(uid,)).fetchone()
+        c.execute('UPDATE account_deletion_requests SET purge_at=? WHERE user_id=?',
+                  (now_ts-1,uid))
+    assert member.post('/api/me/delete/cancel',json={'password':PASSWORD,'pin':PIN}).status_code==409
+    completed=purge_due_deletions(db,now_ts)
+    assert [x['deleted_user_id'] for x in completed]==[uid]
+    assert purge_due_deletions(db,now_ts)==[]
+    assert member.get('/api/me').json()['user'] is None
+    assert admin.get('/api/admin/deletions').json()['requests']==[]
+
+
+def test_admin_immediate_delete_requires_enrolled_pin():
+    admin=login_admin()
+    member,uid=create_member(admin,'protect_user')
+    with db() as c:
+        c.execute("UPDATE users SET pin_hash=NULL,pin_length=NULL WHERE username='admin'")
+    response=admin.post(f'/api/admin/users/{uid}/delete',
+                        json=delete_payload('protect_user',password='mtunz7'))
+    assert response.status_code==403
+    assert member.get('/api/me').json()['user']['id']==uid
