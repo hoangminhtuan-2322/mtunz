@@ -255,7 +255,15 @@ button:disabled{cursor:wait;transform:none!important}
  border-radius:24px;animation:premium-modal .32s var(--ease)
 }
 .modal h2{letter-spacing:-.5px}
-.shell{grid-template-columns:76px 314px minmax(0,1fr)}
+.shell:not(.admin-shell){grid-template-columns:76px 314px minmax(0,1fr)}
+/* Admin has TWO children (navigation + content); never apply the 3-column chat grid. */
+.shell.admin-shell{
+  width:100%;
+  min-width:0;
+  grid-template-columns:256px minmax(0,1fr);
+}
+.shell.admin-shell > .admin-nav,
+.shell.admin-shell > .admin-page{min-width:0;max-width:100%}
 .rail{
  background:linear-gradient(180deg,#141c32,#101829);
  border-color:#38435e;gap:10px
@@ -352,8 +360,8 @@ button:disabled{cursor:wait;transform:none!important}
  .auth-panel{max-width:500px;padding:0}
  .auth-nav{margin-bottom:28px}
  .auth-mobile-logo{margin-bottom:30px}
- .shell{grid-template-columns:65px minmax(0,1fr)}
- .admin-shell{grid-template-columns:66px minmax(0,1fr)}
+ .shell:not(.admin-shell){grid-template-columns:65px minmax(0,1fr)}
+ .shell.admin-shell{grid-template-columns:66px minmax(0,1fr)}
 }
 @media(max-width:520px){
  .auth-main{padding:25px 20px 40px}
@@ -362,7 +370,8 @@ button:disabled{cursor:wait;transform:none!important}
  .auth-footer{margin-top:30px}
  .auth-nav button{font-size:11px;padding:9px 6px}
  .field{margin:12px 0}
- .shell{grid-template-columns:56px minmax(0,1fr)}
+ .shell:not(.admin-shell){grid-template-columns:56px minmax(0,1fr)}
+  .shell.admin-shell{grid-template-columns:56px minmax(0,1fr)}
  #toast-root{left:14px;right:14px;bottom:calc(15px + env(safe-area-inset-bottom,0px))}
  .toast{min-width:0;width:100%;max-width:100%;font-size:12px}
  .premium-offline{width:calc(100vw - 24px);top:12px}
