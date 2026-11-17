@@ -143,6 +143,54 @@ function profileSettings(){
   'Thiết bị này đã được ghi nhớ 30 ngày. Khi mở lại mtunz, bạn cần nhập PIN để truy cập. Đăng xuất sẽ xóa thiết bị đã lưu.':
   'Bạn có thể bật “Ghi nhớ thiết bị” ở bước nhập PIN khi đăng nhập. Không lưu mật khẩu hay mã PIN trên trình duyệt.'}</div></section>`;
 }
+function deviceDate(timestamp){
+ return timestamp?new Date(timestamp*1000).toLocaleString('vi-VN',{
+  year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'
+ }):'Chưa có dữ liệu';
+}
+function deviceSessionCard(entry,kind){
+ const active=!!entry.current;
+ const symbol=entry.device_type==='mobile'?'📱':entry.device_type==='tablet'?'▣':'💻';
+ const label=esc(entry.label||entry.device_name||'Thiết bị cũ');
+ const path=esc(entry.id);
+ const category=kind==='session'?'Phiên đăng nhập':'Thiết bị ghi nhớ';
+ return `<article class="device-session-card">
+  <div class="device-session-heading"><span class="device-session-icon" aria-hidden="true">${symbol}</span>
+   <div class="device-session-identity"><b>${label}</b>
+    <span>${esc(category)} · ${esc(entry.browser||'Không rõ trình duyệt')}</span></div>
+   ${active?'<span class="device-session-current">Thiết bị này</span>':''}
+  </div>
+  <dl class="device-session-facts">
+   <div><dt>Loại thiết bị</dt><dd>${esc(entry.device_name||'Chưa có dữ liệu')}</dd></div>
+   <div><dt>Hệ điều hành</dt><dd>${esc(entry.os_name||'Chưa có dữ liệu')}</dd></div>
+   <div><dt>Trình duyệt</dt><dd>${esc(entry.browser||'Chưa có dữ liệu')}</dd></div>
+   <div><dt>Vị trí gần đúng</dt><dd>${esc(entry.location_hint||'Không xác định')}</dd></div>
+   <div><dt>Mạng (IP rút gọn)</dt><dd>${esc(entry.network_hint||'Không có dữ liệu')}</dd></div>
+   <div><dt>Lần hoạt động gần nhất</dt><dd>${deviceDate(entry.last_seen)}</dd></div>
+   <div><dt>${kind==='session'?'Đăng nhập lúc':'Ghi nhớ từ'}</dt><dd>${deviceDate(entry.created_at)}</dd></div>
+   <div><dt>${kind==='session'?'Phiên hết hạn':'Ghi nhớ hết hạn'}</dt><dd>${deviceDate(entry.expires_at)}</dd></div>
+  </dl>
+  <div class="device-session-actions">
+   <button type="button" class="btn ghost sm" data-act="device-rename" data-kind="${kind}" data-device="${path}" data-label="${label}">Đổi tên</button>
+   ${kind==='session'&&active?'<span class="device-session-help">Dùng Đăng xuất để kết thúc phiên này.</span>':
+     `<button type="button" class="btn danger sm" data-act="device-revoke" data-kind="${kind}" data-device="${path}" data-current="${active}">Thu hồi</button>`}
+  </div>
+ </article>`;
+}
+async function showSessionsDialog(){
+ const details=await api('/api/me/sessions');
+ const sessions=details.sessions||[],devices=details.remembered_devices||[];
+ modal({title:'Quản lý phiên & thiết bị',
+  description:'Kiểm tra thiết bị đăng nhập, đặt tên cho dễ nhớ và thu hồi quyền truy cập khi cần.',
+  content:`<div class="device-session-manager">
+   <p class="device-session-privacy">Vị trí chỉ ước lượng theo mạng IP khi có dữ liệu GeoIP. Không sử dụng GPS; thiết bị đã đăng nhập từ trước có thể thiếu thông tin.</p>
+   <div class="device-session-section-title"><b>Phiên đang truy cập</b><span>${sessions.length}</span></div>
+   ${sessions.map(x=>deviceSessionCard(x,'session')).join('')||'<p class="hint">Không có phiên nào.</p>'}
+   <div class="device-session-section-title"><b>Thiết bị được ghi nhớ</b><span>${devices.length}</span></div>
+   ${devices.map(x=>deviceSessionCard(x,'remembered')).join('')||'<p class="hint">Chưa có thiết bị được ghi nhớ.</p>'}
+   <p class="device-session-privacy">Thu hồi phiên đăng nhập sẽ ngắt quyền truy cập ngay. Thu hồi thiết bị ghi nhớ chỉ xóa quyền mở khóa nhanh bằng PIN, không tự kết thúc một phiên đăng nhập khác.</p>
+  </div>`,confirm:'Đóng'});
+}
 function groupManageDialog(){
  const gid=state.groupSelected;
  if(!gid)return;
