@@ -50,13 +50,17 @@ jobs:
           application = Path('static/app.js').read_text(encoding='utf-8')
           mark = Path('static/favicon.svg').read_text(encoding='utf-8')
           assert 'prefers-reduced-motion' in aurora
-          assert 'showcase-contact' in aurora and 'showcase-contact' in application
+          signals = Path('static/signals.css').read_text(encoding='utf-8')
+          assert 'signal-stage' in signals and 'signal-feature' in application
+          assert '/static/signals.css?v=4.0' in h
+          assert '/static/app.js?v=4.1' in h
+          assert 'showcase-contact' not in application
           assert 'brandGlyph' in application and 'class="brand-glyph"' in application
           assert 'aria-labelledby' in application and 'notify-toast' in application
           notices = Path('static/notifications.css').read_text(encoding='utf-8')
           assert 'prefers-reduced-motion' in notices and 'notify-progress' in notices
           assert '<svg' in mark and 'mtunz' in mark
-          assert 'KẾT NỐI THEO CÁCH CỦA BẠN' in application
+          assert 'MỘT KHÔNG GIAN, NHIỀU KẾT NỐI' in application
           assert 'aria-invalid' in js
           assert '/api/username/check' in js
           assert 'field-error' in css and 'is-loading' in css
