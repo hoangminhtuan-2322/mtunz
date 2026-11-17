@@ -805,6 +805,15 @@ function adminSecurity(){
    ${secureSettingsField('Nhập lại mật khẩu mới','repeat_password','password','Nhập lại mật khẩu','minlength="12"')}
    <button class="btn primary full">${icon('shield',17)} Đổi mật khẩu admin</button></form></div>
    ${pinCard}
+   <div class="card" style="max-width:650px;margin-top:17px">
+     <h3>${icon('shield',18)} Trung tâm an toàn Admin</h3>
+     <p class="hint" style="margin:12px 0">Phiên quản trị hết hạn sau 2 giờ. Không ghi nhớ mật khẩu hay cho phép mở khóa admin chỉ bằng PIN. Xóa vĩnh viễn bắt buộc nhập lại cả mật khẩu và PIN.</p>
+     <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:16px">
+       <button class="btn ghost sm" type="button" data-act="list-sessions">${icon('lock',16)} Phiên đăng nhập</button>
+       <button class="btn danger sm" type="button" data-act="revoke-sessions">${icon('shield',16)} Thu hồi các phiên khác</button>
+     </div>
+     ${!configured?'<p class="hint" style="margin-top:12px">Cần bật PIN để có quyền xóa vĩnh viễn tức thì.</p>':''}
+   </div>
    ${state.savedDevice?`<div class="card" style="max-width:650px;margin-top:17px"><h3>${icon('lock',18)} Khóa phiên hiện tại</h3><p class="hint" style="margin:11px 0">Quay về màn hình PIN mà không xóa thiết bị được ghi nhớ.</p><button class="btn ghost" type="button" data-act="lock-device">${icon('lock',16)} Khóa ngay</button></div>`:''}
  </div>`;
 }
