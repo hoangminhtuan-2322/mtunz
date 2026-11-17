@@ -36,7 +36,7 @@ with TestClient(app, base_url="https://testserver") as admin:
 
     with TestClient(app, base_url="https://testserver") as guest:
         guest.get("/")
-        req = guest.post("/api/registration/request", json={"username": "render_ci_user"})
+        req = guest.post("/api/registration/request", json={"username": "render_ci_user", "phone": "0912345678"})
         assert req.status_code == 200, req.text
         pending = admin.get("/api/admin/registrations").json()["registrations"]
         registration = next(x for x in pending if x["username"] == "render_ci_user")
