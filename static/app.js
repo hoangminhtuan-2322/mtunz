@@ -477,13 +477,13 @@ function inputField(label,name,type='text',placeholder='',attr=''){
  const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
  return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
  <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
- <input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div></div>`;
+ <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required></div></div>`;
 }
 /* Plain form control for account settings/admin: no absolutely positioned icon.
    Do not use the decorative auth-input component outside the sign-in flow. */
 function secureSettingsField(label,name,type='text',placeholder='',attr=''){
  return `<div class="field secure-settings-field"><label for="${name}">${esc(label)}</label>
- <input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div>`;
+ <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required></div>`;
 }
 function authTabs(){return `<div class="auth-nav" role="group" aria-label="Điều hướng tài khoản">
  <button type="button" class="${state.mode==='login'?'active':''}" aria-pressed="${state.mode==='login'}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
@@ -496,7 +496,7 @@ function authLogin(){
  <h1>Chào mừng trở lại, ${esc(state.username)}!</h1>
  <div class="auth-remember-summary">${icon('shield',18)}<span>Phiên truy cập đang khóa. Chỉ mở sau khi xác minh PIN.</span></div>
  <form data-form="login-remembered">
- ${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),
+ ${inputField('Mã PIN','pin','password','',
  `inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="off"`)}
  <button class="btn primary full" type="submit">${icon('lock',17)} Mở khóa bằng PIN</button></form>
  <div class="auth-remember-actions"><button class="linkbtn" type="button" data-act="forget-remembered">Quên thiết bị · Đăng nhập tài khoản khác</button></div>`;
@@ -504,18 +504,18 @@ function authLogin(){
  const forms={
  username:`<span class="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h1>Tiếp tục cuộc trò chuyện.</h1>
  <p class="hint">Nhập tên tài khoản duy nhất để bắt đầu.</p><div class="auth-step"><span class="active"></span><span></span><span></span></div>
- <form data-form="login-username">${inputField('Tên tài khoản','username','text','Ví dụ: minh_anh','autocomplete="username" value="'+esc(state.username)+'"')}
+ <form data-form="login-username">${inputField('Tên tài khoản','username','text','','autocomplete="username" value="'+esc(state.username)+'"')}
  <button class="btn primary full" type="submit">Tiếp tục ${icon('chevron',17)}</button></form>`,
  password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${esc(state.username)} 👋</h1>
  <p class="hint">Nhập mật khẩu để tiếp tục. Tài khoản có PIN sẽ cần xác minh thêm một bước.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span></span></div>
- <form data-form="login-password" autocomplete="off">${inputField('Mật khẩu','password','password','Nhập mật khẩu','autocomplete="off" readonly data-manual-password="1"')}
+ <form data-form="login-password" autocomplete="off">${inputField('Mật khẩu','password','password','','autocomplete="off" readonly data-manual-password="1"')}
  <button type="submit" class="btn primary full">Xác nhận mật khẩu ${icon('chevron',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi tên tài khoản</button>`,
  pin:`<span class="eyebrow">BƯỚC 3/3 · XÁC MINH</span><h1>Thêm một lớp an toàn.</h1>
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
- <form data-form="login-pin">${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
+ <form data-form="login-pin">${inputField('Mã PIN','pin','password','',`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
 ${state.loginIsAdmin?`<p class="hint">Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị. Mỗi lần đăng nhập cần mật khẩu và PIN; phiên quản trị hết hạn sau 2 giờ.</p>`:` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Sau khi đóng tab, lần mở phiên mới có thể dùng PIN. Tải lại tab đang mở không cần xác thực lại.</small></span></label>`}
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đăng nhập lại</button>`
@@ -539,8 +539,8 @@ function authRegister(){
        <span class="registration-section-number" aria-hidden="true">01</span>
        <div><h2 id="registration-password-heading">Mật khẩu đăng nhập</h2><p>Sử dụng mật khẩu riêng, tối thiểu 10 ký tự.</p></div>
      </div>
-     ${inputField('Mật khẩu','new-password','password','Tạo mật khẩu mạnh','minlength="10" autocomplete="new-password"')}
-     ${inputField('Nhập lại mật khẩu','repeat-password','password','Xác nhận mật khẩu','minlength="10" autocomplete="new-password"')}
+     ${inputField('Mật khẩu','new-password','password','','minlength="10" autocomplete="new-password"')}
+     ${inputField('Nhập lại mật khẩu','repeat-password','password','','minlength="10" autocomplete="new-password"')}
    </section>
    <section class="registration-section" aria-labelledby="registration-pin-heading">
      <div class="registration-section-heading">
@@ -548,11 +548,11 @@ function authRegister(){
        <div><h2 id="registration-pin-heading">Mã PIN xác minh</h2><p>Lớp bảo vệ bổ sung khi đăng nhập.</p></div>
      </div>
      <div class="field registration-pin-select"><label for="pin-length">Độ dài mã PIN</label><select class="select" id="pin-length" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6">6 chữ số</option></select></div>
-     ${inputField('Mã PIN','new-pin','password','Chỉ dùng chữ số','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
-     ${inputField('Nhập lại PIN','repeat-pin','password','Xác nhận mã PIN','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+     ${inputField('Mã PIN','new-pin','password','','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+     ${inputField('Nhập lại PIN','repeat-pin','password','','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
    </section>
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
-     ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40"')}
+     ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
    <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý cung cấp số điện thoại và email (nếu có) cho quản trị viên để quản lý tài khoản. Thông tin liên hệ không hiển thị công khai; mật khẩu và PIN không thể xem được.</span></label>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
@@ -560,10 +560,10 @@ function authRegister(){
  </form></div>`;
  return `<span class="eyebrow">THAM GIA MTUNZ</span><h1>Bắt đầu một kết nối mới.</h1>
  <div class="auth-step"><span class="active"></span><span></span><span></span></div>
- <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','Ví dụ: hanh_uyen','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
+ <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
  <div class="hint" style="margin:0 0 13px">3–24 ký tự, bắt đầu bằng chữ; chỉ dùng a-z, 0-9 và dấu gạch dưới.</div>
- ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40"')}
- <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254" placeholder="tenban@gmail.com"></div></div>
+ ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
+ <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254"></div></div>
  <p class="hint" style="margin:0 0 16px">Số điện thoại chưa được xác minh bằng SMS. Chỉ admin được xem thông tin liên hệ khi quản lý tài khoản.</p>
  <button class="btn primary full" type="submit">Gửi yêu cầu phê duyệt ${icon('chevron',17)}</button></form>
  <div class="info-strip">Thông tin liên hệ được giữ riêng tư và không hiện trong hồ sơ công khai.</div>`;
@@ -576,7 +576,7 @@ function authSupport(){
  <option value="password" ${state.supportKind==='password'?'selected':''}>Quên mật khẩu</option>
  <option value="pin" ${state.supportKind==='pin'?'selected':''}>Quên mã PIN</option>
  <option value="other" ${state.supportKind==='other'?'selected':''}>Vấn đề khác</option></select></div>
- ${inputField('Thông tin gợi nhớ (không bắt buộc)','claim','text','Tên tài khoản dự đoán, thời điểm đăng ký...','maxlength="160"')}
+ ${inputField('Thông tin gợi nhớ (không bắt buộc)','claim','text','','maxlength="160"')}
  <button class="btn primary full">Bắt đầu trò chuyện ${icon('chat',17)}</button></form>
  ${state.tickets.length?`<div class="sep"></div><span class="eyebrow">CUỘC TRÒ CHUYỆN GẦN ĐÂY</span><div class="stack" style="margin-top:12px">${state.tickets.slice(0,5).map(t=>`<button class="btn ghost full" style="justify-content:space-between" data-act="support-open" data-id="${t.id}">#${t.id} · ${esc(t.kind)} <span class="pill">${esc(t.status)}</span></button>`).join('')}</div>`:''}`;
  return `<div class="row between" style="margin-bottom:17px"><button class="linkbtn" data-act="support-back">${icon('back',15)} Các yêu cầu</button><span class="pill">Phiếu hỗ trợ #${state.supportTicket}</span></div>
@@ -584,10 +584,10 @@ function authSupport(){
  <div class="support-list" id="support-list" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
  <form data-form="support-reply" style="margin-top:12px"><div class="row"><input name="body" class="input" maxlength="1500" placeholder="Nhắn cho admin..." required><button class="btn primary circle" title="Gửi">${icon('send')}</button></div></form>
  <div class="sep"></div><h3>Đặt lại mật khẩu hoặc PIN</h3><p class="hint">Sau khi xác minh, admin sẽ cấp mã dùng một lần trong cuộc trò chuyện trên.</p>
- <form data-form="support-reset">${inputField('Mã khôi phục từ admin','code','text','Dán mã được cấp','autocomplete="off"')}
+ <form data-form="support-reset">${inputField('Mã khôi phục từ admin','code','text','','autocomplete="off"')}
  <div class="field"><label>Đặt lại loại thông tin</label><select name="kind" class="select" id="reset-kind"><option value="password">Mật khẩu</option><option value="pin">Mã PIN</option></select></div>
  <div class="field"><label>Độ dài PIN mới (nếu khôi phục PIN)</label><select name="pin_length" class="select"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6">6 chữ số</option></select></div>
- ${inputField('Mật khẩu/PIN mới','new_value','password','Nhập giá trị mới','autocomplete="new-password"')}
+ ${inputField('Mật khẩu/PIN mới','new_value','password','','autocomplete="new-password"')}
  <button class="btn ghost full">Xác nhận đặt lại</button></form>`;
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
@@ -781,13 +781,13 @@ function settingsContent(){
    </div>
  </section>
  ${profileSettings()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
- <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','PIN cũ','inputmode="numeric" required')}
+ <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
- ${secureSettingsField('PIN mới','new_pin','password','PIN 4–6 chữ số','inputmode="numeric" minlength="4" maxlength="6"')}
+ ${secureSettingsField('PIN mới','new_pin','password','','inputmode="numeric" minlength="4" maxlength="6"')}
  <button class="btn primary full">Cập nhật mã PIN</button></form></section>
  <section class="card"><h3>${icon('shield',17)} Đổi mật khẩu</h3><p class="hint">Mật khẩu mới nên khác hoàn toàn mật khẩu cũ.</p>
- <form data-form="settings-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','Mật khẩu cũ')}
- ${secureSettingsField('Mật khẩu mới','new_password','password','Ít nhất 10 ký tự','minlength="10"')}
+ <form data-form="settings-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','')}
+ ${secureSettingsField('Mật khẩu mới','new_password','password','','minlength="10"')}
  <button class="btn primary full">Đổi mật khẩu</button></form></section>
  <section class="card"><h3>${icon('ban',17)} Danh sách đã chặn</h3><p class="hint">Người bị chặn không thể kết bạn hoặc nhắn tin với bạn.</p>
  ${state.blocks.length?state.blocks.map(b=>`<div class="row between" style="margin:12px 0"><b>${esc(b.username)}</b><button class="btn ghost sm" data-act="unblock" data-id="${b.id}">Bỏ chặn</button></div>`).join(''):'<div class="hint" style="margin-top:19px">Chưa có tài khoản bị chặn.</div>'}</section>
@@ -939,7 +939,7 @@ function adminTickets(){const tickets=state.adminData||[];
  `:`<div class="empty" style="margin:auto"><span class="big-emoji">💬</span>Chọn một phiếu hỗ trợ ở bên trái.</div>`}</div></div>`;
 }
 function adminBroadcast(){return `<div class="card" style="max-width:690px"><h2>${icon('announce',20)} Gửi thông báo đồng loạt</h2><p class="hint" style="margin:13px 0 20px">Thông báo xuất hiện ngay với người đang online và được lưu lại để người dùng xem sau.</p>
- <form data-form="admin-broadcast"><div class="field"><label>Nội dung thông báo (tối đa 500 ký tự)</label><textarea class="textarea" name="body" rows="5" maxlength="500" placeholder="Ví dụ: Hệ thống sẽ bảo trì lúc 23:00..." required></textarea></div>
+ <form data-form="admin-broadcast"><div class="field"><label>Nội dung thông báo (tối đa 500 ký tự)</label><textarea class="textarea" name="body" rows="5" maxlength="500" required></textarea></div>
  <button class="btn primary">${icon('send',17)} Gửi đến mọi người dùng</button></form></div>`;}
 function adminSecurity(){
  const configured=!!state.user?.pin_length;
@@ -947,26 +947,26 @@ function adminSecurity(){
    <h2>${icon('shield',20)} PIN quản trị</h2>
    <p class="hint" style="margin:12px 0">PIN đã được bật. Admin phải dùng mật khẩu và PIN khi đăng nhập; không hỗ trợ ghi nhớ thiết bị. Phiên quản trị hết hạn sau 2 giờ.</p>
    <form data-form="admin-pin-change">
-     ${secureSettingsField('PIN hiện tại','old_pin','password','Nhập mã PIN đang dùng','inputmode="numeric" autocomplete="off"')}
+     ${secureSettingsField('PIN hiện tại','old_pin','password','','inputmode="numeric" autocomplete="off"')}
      <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
-     ${secureSettingsField('PIN mới','new_pin','password','PIN mới','inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off"')}
+     ${secureSettingsField('PIN mới','new_pin','password','','inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" autocomplete="off"')}
      <button class="btn primary full" type="submit">${icon('lock',16)} Đổi PIN quản trị</button>
    </form></div>`:
  `<div class="card" style="max-width:650px;margin-top:17px">
    <h2>${icon('shield',20)} Kích hoạt PIN cho admin</h2>
    <p class="hint" style="margin:12px 0">Thiết lập PIN để bảo vệ tài khoản quản trị. Sau đó, mọi lần đăng nhập đều cần mật khẩu và PIN; tính năng ghi nhớ thiết bị không áp dụng với Admin.</p>
    <form data-form="admin-pin-setup">
-     ${secureSettingsField('Mật khẩu admin hiện tại','current_password','password','Xác nhận mật khẩu','autocomplete="current-password"')}
+     ${secureSettingsField('Mật khẩu admin hiện tại','current_password','password','','autocomplete="current-password"')}
      <div class="field"><label>Độ dài PIN</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
-     ${secureSettingsField('Mã PIN quản trị','pin','password','Tạo PIN riêng','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
+     ${secureSettingsField('Mã PIN quản trị','pin','password','','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
      <button class="btn primary full" type="submit">${icon('lock',16)} Kích hoạt PIN quản trị</button>
    </form></div>`;
  return `<div class="admin-security" aria-label="Bảo mật tài khoản quản trị">
    <div class="card" style="max-width:650px"><h2>${icon('lock',20)} Đổi mật khẩu admin</h2>
    <p class="hint" style="margin:15px 0">Dùng mật khẩu riêng mạnh, tối thiểu 12 ký tự. Khi đổi, các phiên khác và thiết bị đã ghi nhớ sẽ bị thu hồi.</p>
-   <form data-form="admin-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','Mật khẩu đang sử dụng')}
-   ${secureSettingsField('Mật khẩu mới','new_password','password','Tối thiểu 12 ký tự','minlength="12"')}
-   ${secureSettingsField('Nhập lại mật khẩu mới','repeat_password','password','Nhập lại mật khẩu','minlength="12"')}
+   <form data-form="admin-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','')}
+   ${secureSettingsField('Mật khẩu mới','new_password','password','','minlength="12"')}
+   ${secureSettingsField('Nhập lại mật khẩu mới','repeat_password','password','','minlength="12"')}
    <button class="btn primary full">${icon('shield',17)} Đổi mật khẩu admin</button></form></div>
    ${pinCard}
    <div class="card" style="max-width:650px;margin-top:17px">
@@ -998,7 +998,7 @@ function showCancelDeletionDialog(){
   description:'Bạn sẽ giữ nguyên tài khoản và dữ liệu. Hãy nhập mật khẩu và PIN hiện tại để xác nhận hủy trước hạn.',
   confirm:'Giữ tài khoản của tôi',
   content:`<div class="field"><label for="cancel-delete-password">Mật khẩu hiện tại</label>
-    <input id="cancel-delete-password" class="input" type="password" autocomplete="off" placeholder="Nhập mật khẩu" required></div>
+    <input id="cancel-delete-password" class="input" type="password" autocomplete="off" required></div>
     <div class="field"><label for="cancel-delete-pin">PIN hiện tại</label>
     <input id="cancel-delete-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="6" required></div>`,
   handler:async host=>{
@@ -1032,13 +1032,13 @@ function showPermanentDeleteDialog(target=null){
   content:`<div class="delete-confirm-form">
     <p class="hint" style="margin:0 0 14px">Nhập đúng tên tài khoản, mật khẩu ${selfDelete?'của bạn':'Admin'}${requirePin?', mã PIN':''} và cụm <b>${phrase}</b>.</p>
     <div class="field"><label for="delete-account-name">Tên tài khoản: <b>${esc(username)}</b></label>
-      <input id="delete-account-name" class="input" autocomplete="off" spellcheck="false" placeholder="Nhập đúng tên tài khoản" maxlength="80"></div>
+      <input id="delete-account-name" class="input" autocomplete="off" spellcheck="false" maxlength="80"></div>
     <div class="field"><label for="delete-account-password">Mật khẩu ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
-      <input id="delete-account-password" class="input" type="password" autocomplete="off" placeholder="Nhập mật khẩu để xác nhận" maxlength="128"></div>
+      <input id="delete-account-password" class="input" type="password" autocomplete="off" maxlength="128"></div>
     ${requirePin?`<div class="field"><label for="delete-account-pin">PIN ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
-      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" placeholder="Nhập PIN" maxlength="6"></div>`:''}
+      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></div>`:''}
     <div class="field"><label for="delete-account-phrase">Nhập <b>${phrase}</b></label>
-      <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" placeholder="${phrase}" maxlength="24"></div>
+      <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" maxlength="24"></div>
     <p class="hint" style="margin-top:12px">${selfDelete?'Bạn có thể tải dữ liệu về trước khi hết hạn xóa.':'Nhóm có thành viên khác sẽ được chuyển quyền chủ nhóm.'}</p>
   </div>`,
   handler:async host=>{
@@ -1067,7 +1067,7 @@ function sanctionDialog(uid,kind){
  modal({title,description:`Áp dụng tức thì cho ${u?.username||'#'+uid}. Người dùng sẽ nhận thông báo và phải rời khỏi tài khoản.`,danger:true,confirm:kind==='ban'?'Cấm ngay':'Khóa ngay',
  content:`<div class="field"><label>Thời gian (phút)</label><input class="input" type="number" id="sanction-minutes" min="1" value="60" placeholder="Bỏ trống nếu cấm vĩnh viễn"></div>
  <div class="hint">${kind==='ban'?'Để trống để cấm vĩnh viễn.':'Khóa tài khoản cần thời hạn cụ thể.'} Ví dụ: 60 = 1 giờ, 1440 = 1 ngày.</div>
- <div class="field"><label>Lý do</label><textarea id="sanction-reason" class="textarea" maxlength="250" placeholder="Lý do gửi tới người dùng..."></textarea></div>`,
+ <div class="field"><label>Lý do</label><textarea id="sanction-reason" class="textarea" maxlength="250"></textarea></div>`,
  handler:async()=>{const raw=$('#sanction-minutes').value.trim(),minutes=raw?Number(raw):null;
   if(kind==='lock'&&!minutes)throw Error('Khóa tài khoản cần thời hạn.');
   await post(`/api/admin/users/${uid}/sanction`,{kind,minutes,reason:$('#sanction-reason').value});toast('Quyết định đã có hiệu lực.','ok');await loadAdmin();}});
@@ -1144,7 +1144,7 @@ async function userMessageLog(uid){
 }
 function grantDialog(tid){
  modal({title:'Cấp mã khôi phục',description:'Xác minh danh tính người yêu cầu bằng kênh độc lập trước khi cấp quyền đặt lại. Mã chỉ hiệu lực 15 phút và được gửi qua cuộc trò chuyện hỗ trợ.',
- confirm:'Cấp mã một lần',content:`<div class="field"><label>Tên tài khoản cần đặt lại</label><input id="grant-username" class="input" placeholder="Tên tài khoản đã xác minh"></div>
+ confirm:'Cấp mã một lần',content:`<div class="field"><label>Tên tài khoản cần đặt lại</label><input id="grant-username" class="input"></div>
  <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>`,
  handler:async()=>{if(!$('#grant-verified').checked)throw Error('Bạn phải hoàn tất xác minh danh tính.');
   const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true});
@@ -1270,7 +1270,7 @@ document.addEventListener('change',event=>{
  if(event.target.id==='pin-length'){
   const n=Number(event.target.value);
   for(const name of ['new-pin','repeat-pin']){
-   const el=$('#'+name);if(el){el.minLength=n;el.maxLength=n;el.pattern=`[0-9]{${n}}`;el.placeholder='•'.repeat(n);}
+   const el=$('#'+name);if(el){el.minLength=n;el.maxLength=n;el.pattern=`[0-9]{${n}}`;el.removeAttribute('placeholder');}
   }
  }
 });
