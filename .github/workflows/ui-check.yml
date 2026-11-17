@@ -5,7 +5,10 @@ on:
     branches: [main]
     paths:
       - static/**
-      - tests/test_premium_ui.py
+      - app.py
+      - features.py
+      - pg_storage.py
+      - tests/**
       - .github/workflows/ui-check.yml
   workflow_dispatch:
 
@@ -32,6 +35,8 @@ jobs:
           h = Path('static/index.html').read_text(encoding='utf-8')
           assert '/static/premium.css' in h
           assert '/static/aurora.css?v=3.0' in h
+          assert '/static/notifications.css?v=4.0' in h
+          assert '/static/app.js?v=4.0' in h
           assert '/static/favicon.svg?v=3.0' in h
           assert '/static/premium.js' in h
           assert '/static/app.js' in h
@@ -47,6 +52,9 @@ jobs:
           assert 'prefers-reduced-motion' in aurora
           assert 'showcase-contact' in aurora and 'showcase-contact' in application
           assert 'brandGlyph' in application and 'class="brand-glyph"' in application
+          assert 'aria-labelledby' in application and 'notify-toast' in application
+          notices = Path('static/notifications.css').read_text(encoding='utf-8')
+          assert 'prefers-reduced-motion' in notices and 'notify-progress' in notices
           assert '<svg' in mark and 'mtunz' in mark
           assert 'KẾT NỐI THEO CÁCH CỦA BẠN' in application
           assert 'aria-invalid' in js
