@@ -156,18 +156,28 @@ def install(core):
     @app.get('/api/me/sessions')
     async def own_sessions(request:Request):
         u=current_user(request)
+        saved=request.cookies.get(core.REMEMBER_COOKIE)
+        saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
         with db() as c:
             rows=many(c,'SELECT token_hash,expires_at,created_at FROM sessions WHERE user_id=? ORDER BY expires_at DESC',(u['id'],))
+            devices=many(c,'''SELECT token_hash,created_at,expires_at FROM trusted_devices
+                              WHERE user_id=? AND expires_at>? ORDER BY created_at DESC''',(u['id'],core.now()))
         for r in rows:
             r['current']=(r.pop('token_hash')==core.digest(request.cookies.get('s','')))
-        return {'sessions':rows}
+        for r in devices:
+            r['current']=(r.pop('token_hash')==saved_hash)
+        return {'sessions':rows,'remembered_devices':devices}
 
     @app.post('/api/me/sessions/revoke-others')
     async def revoke_others(request:Request):
         u=current_user(request)
         current=core.digest(request.cookies.get('s',''))
+        remembered=request.cookies.get(core.REMEMBER_COOKIE)
+        saved_hash=core.digest(remembered) if core.valid_remember_token(remembered) else ''
         with db() as c:
             c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?', (u['id'], current))
+            c.execute('DELETE FROM trusted_devices WHERE user_id=? AND token_hash!=?',
+                      (u['id'],saved_hash))
         await hub.terminate_user(u['id'], except_hash=current)
         return {'ok':True}
 
