@@ -78,6 +78,22 @@ def test_device_is_hashed_and_pin_required_on_explicit_new_visit():
     assert c.get("/api/me").json()["user"]["username"]=="saved_demo"
 
 
+def test_reload_uses_readonly_device_status_without_revoking_session():
+    new_user()
+    client=TestClient(app)
+    login_with_pin(client,remember=True)
+    before=client.get('/api/me')
+    assert before.status_code==200 and before.json()['user']['username']=='saved_demo'
+    device=client.get('/api/auth/remembered/status')
+    assert device.status_code==200
+    assert device.json()=={'remembered':True,'username':'saved_demo','pin_length':6}
+    # The same cookie is still valid after repeated refresh-status reads.
+    assert client.get('/api/me').json()['user']['username']=='saved_demo'
+    assert client.get('/api/auth/remembered/status').json()['remembered'] is True
+    with db() as c:
+        assert one(c,'SELECT count(*) n FROM sessions')['n']==1
+
+
 def test_wrong_pin_is_limited_persistently_even_if_request_buckets_clear():
     new_user()
     c=TestClient(app)
