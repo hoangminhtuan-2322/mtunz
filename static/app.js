@@ -267,10 +267,17 @@ function authArt(){return `<aside class="auth-art art-v3 art-v4">
     <span>${icon('shield',15)} Admin phê duyệt</span>
   </div>
 </aside>`;}
-function inputField(label,name,type='text',placeholder='',attr=''){return `<div class="field"><label for="${name}">${label}</label><input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div>`;}
-function authTabs(){return `<div class="auth-nav" aria-label="Điều hướng tài khoản"><button class="${state.mode==='login'?'active':''}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
-<button class="${state.mode==='register'?'active':''}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
-<button class="${state.mode==='support'?'active':''}" data-act="mode-support">${icon('inbox',16)}<span>Hỗ trợ</span></button></div>`;}
+function inputField(label,name,type='text',placeholder='',attr=''){
+ const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
+ return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
+ <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
+ <input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div></div>`;
+}
+function authTabs(){return `<div class="auth-nav" role="group" aria-label="Điều hướng tài khoản">
+ <button type="button" class="${state.mode==='login'?'active':''}" aria-pressed="${state.mode==='login'}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
+ <button type="button" class="${state.mode==='register'?'active':''}" aria-pressed="${state.mode==='register'}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
+ <button type="button" class="${state.mode==='support'?'active':''}" aria-pressed="${state.mode==='support'}" data-act="mode-support">${icon('inbox',16)}<span>Hỗ trợ</span></button>
+ </div>`;}
 function authLogin(){
  const step=state.step;
  const forms={
