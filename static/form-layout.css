@@ -1,0 +1,108 @@
+/* mtunz Form Layout Guard v8.3
+   Shared inputField() always renders an absolutely positioned leading icon.
+   Inputs must reserve icon space in *all* contexts, not only the auth panel.
+   This also keeps Admin security cards inside the usable content width. */
+
+/* Shared accessible input geometry: prevent icon/placeholder/text collisions
+   on auth, admin, recovery, and every other screen using inputField(). */
+.auth-input-wrap {
+  position:relative;
+  display:flex;
+  align-items:center;
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+.auth-input-wrap > .auth-input-icon {
+  position:absolute;
+  inset-inline-start:15px;
+  inset-inline-end:auto;
+  top:50%;
+  transform:translateY(-50%);
+  display:grid;
+  place-items:center;
+  width:20px;
+  height:20px;
+  z-index:1;
+  pointer-events:none;
+}
+.auth-input-wrap > input.input {
+  box-sizing:border-box;
+  display:block;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  padding-inline-start:48px;
+  padding-inline-end:16px;
+  text-overflow:ellipsis;
+}
+/* Keep password toggles clear when a field has an eye button. */
+.auth-input-wrap:has(> .password-toggle) > input.input {
+  padding-inline-end:53px;
+}
+
+/* Admin security is a single fluid column, never wider than available space. */
+.admin-shell > .admin-page {
+  min-width:0;
+  max-width:100%;
+  overflow-x:hidden;
+}
+.admin-security {
+  display:block;
+  width:100%;
+  min-width:0;
+  max-width:690px;
+}
+.admin-security > .card {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  max-width:100%!important;
+  overflow-wrap:break-word;
+}
+.admin-security > .card h2,
+.admin-security > .card h3 {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:9px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+.admin-security > .card h2 > svg,
+.admin-security > .card h3 > svg {
+  flex:none;
+}
+.admin-security form,
+.admin-security .field,
+.admin-security .auth-input-wrap,
+.admin-security .select,
+.admin-security .btn.full {
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+  width:100%;
+}
+.admin-security .field > label {
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.admin-security .auth-input-wrap > input.input {
+  min-height:50px;
+  padding-inline-start:48px!important;
+}
+.admin-security form .btn.full {
+  white-space:normal;
+  height:auto;
+  min-height:46px;
+  justify-content:center;
+}
+@media(max-width:800px) {
+  .admin-security {max-width:100%}
+  .admin-shell > .admin-page {min-width:0}
+}
+@media(max-width:520px) {
+  .admin-security > .card {padding:16px}
+  .admin-security > .card h2 {font-size:17px}
+  .admin-security .auth-input-wrap > input.input {font-size:13px}
+}
