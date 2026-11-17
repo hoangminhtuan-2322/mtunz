@@ -32,7 +32,7 @@ const brandGlyph=()=>`<img class="brand-glyph" src="/static/favicon.svg?v=8.0" a
 
 const avatar=(name,online=false,size='')=>`<div class="avatar ${size} ${online?'online':''}">${esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
- savedDevice:false,rememberedDevice:false,
+ savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
  regName:'',regStatus:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminQuery:'',accountDeletion:null,typing:false};
@@ -244,7 +244,7 @@ function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
- state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;
+ state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
  state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();
 }
 async function logout(){
@@ -370,7 +370,7 @@ function authLogin(){
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
  <form data-form="login-pin">${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
- <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Mỗi lần mở lại website vẫn phải nhập mã PIN. Chỉ bật trên thiết bị cá nhân.</small></span></label>
+${state.loginIsAdmin?`<p class="hint">Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị. Mỗi lần đăng nhập cần mật khẩu và PIN; phiên quản trị hết hạn sau 2 giờ.</p>`:` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Mỗi lần mở lại website vẫn phải nhập mã PIN. Chỉ bật trên thiết bị cá nhân.</small></span></label>`}
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đăng nhập lại</button>`
  };
@@ -781,7 +781,7 @@ function adminSecurity(){
  const configured=!!state.user?.pin_length;
  const pinCard=configured?`<div class="card" style="max-width:650px;margin-top:17px">
    <h2>${icon('shield',20)} PIN quản trị</h2>
-   <p class="hint" style="margin:12px 0">PIN đã được bật. Tài khoản admin giờ cần xác minh PIN sau mật khẩu và có thể ghi nhớ thiết bị.</p>
+   <p class="hint" style="margin:12px 0">PIN đã được bật. Admin phải dùng mật khẩu và PIN khi đăng nhập; không hỗ trợ ghi nhớ thiết bị. Phiên quản trị hết hạn sau 2 giờ.</p>
    <form data-form="admin-pin-change">
      ${secureSettingsField('PIN hiện tại','old_pin','password','Nhập mã PIN đang dùng','inputmode="numeric" autocomplete="off"')}
      <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
@@ -790,7 +790,7 @@ function adminSecurity(){
    </form></div>`:
  `<div class="card" style="max-width:650px;margin-top:17px">
    <h2>${icon('shield',20)} Kích hoạt PIN cho admin</h2>
-   <p class="hint" style="margin:12px 0">Thiết lập PIN để lần sau có thể chọn “Ghi nhớ thiết bị 30 ngày”. Tài khoản quản trị sẽ cần cả mật khẩu và PIN khi đăng nhập trên thiết bị mới.</p>
+   <p class="hint" style="margin:12px 0">Thiết lập PIN để bảo vệ tài khoản quản trị. Sau đó, mọi lần đăng nhập đều cần mật khẩu và PIN; tính năng ghi nhớ thiết bị không áp dụng với Admin.</p>
    <form data-form="admin-pin-setup">
      ${secureSettingsField('Mật khẩu admin hiện tại','current_password','password','Xác nhận mật khẩu','autocomplete="current-password"')}
      <div class="field"><label>Độ dài PIN</label><select class="select" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6" selected>6 chữ số</option></select></div>
@@ -1054,7 +1054,7 @@ document.addEventListener('submit',async event=>{
   switch(key){
    case 'login-username':{
     const r=await post('/api/auth/start',{username:val('username')});
-    state.username=r.username;state.step='password';renderAuth();break;
+    state.username=r.username;state.loginIsAdmin=!!r.is_admin;state.step='password';renderAuth();break;
    }
    case 'login-password':{
     const passwordField=form.querySelector('input[data-manual-password]');
