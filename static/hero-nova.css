@@ -1,0 +1,418 @@
+/* mtunz Aurora Nova v7 · Brand-first immersive auth hero
+   Deliberately scoped to the LEFT column. Form interactions do not affect it.
+   Animation uses only opacity/transform; no particles/canvas/video/large JS libraries. */
+
+.auth-art.art-v5 {
+  --nova-ink:#eff3ff; --nova-mist:#aec0df;
+  --nova-purple:#b5a0ff; --nova-cyan:#75e6ec;
+  --nova-ease:cubic-bezier(.22,1,.36,1);
+  isolation:isolate;
+  display:flex;flex-direction:column;justify-content:space-between;
+  gap:0;
+  padding:clamp(26px,3.8vw,58px) clamp(25px,5vw,85px) clamp(20px,2.4vw,34px);
+  background:
+    radial-gradient(ellipse at 105% 40%,rgba(62,85,162,.35) 0%,transparent 57%),
+    radial-gradient(ellipse at 4% 100%,rgba(79,52,147,.44) 0%,transparent 52%),
+    linear-gradient(152deg,#101a33 1%,#121c3a 47%,#0c142d 100%);
+  border-right:1px solid #a8baf32c;
+  box-shadow:inset -1px 0 #02081750;
+}
+.auth-art.art-v5:before,.auth-art.art-v5:after{display:none}
+.auth-art.art-v5>.art-aurora{opacity:.23;filter:blur(80px);animation:none!important}
+.auth-art.art-v5>.art-aurora-a{width:390px;height:390px;top:32%;right:-190px}
+.auth-art.art-v5>.art-aurora-b{width:420px;height:420px;bottom:-140px;left:-160px}
+.auth-art.art-v5>.art-stars{
+ opacity:.22;background-size:33px 33px;
+ -webkit-mask-image:linear-gradient(110deg,transparent 7%,#000 64%,transparent 99%);
+ mask-image:linear-gradient(110deg,transparent 7%,#000 64%,transparent 99%)
+}
+.auth-art.art-v5>.nova-mesh{
+ position:absolute;z-index:0;pointer-events:none;inset:0;
+ background:linear-gradient(to right,transparent 32px,#95bbff0a 33px,transparent 34px),
+ linear-gradient(to bottom,transparent 32px,#95bbff0a 33px,transparent 34px);
+ background-size:80px 80px;opacity:.36;
+ -webkit-mask-image:radial-gradient(ellipse at 56% 48%,black 3%,transparent 80%);
+ mask-image:radial-gradient(ellipse at 56% 48%,black 3%,transparent 80%)
+}
+.auth-art.art-v5>.nova-ambient-light{
+ position:absolute;z-index:0;left:0;top:0;
+ width:420px;height:420px;border-radius:50%;pointer-events:none;
+ background:radial-gradient(circle,#9b9cff20 0%,#648ce511 35%,transparent 72%);
+ transform:translate3d(calc(var(--nova-pointer-x,0px) - 210px),calc(var(--nova-pointer-y,0px) - 210px),0);
+ opacity:0;will-change:transform;
+ transition:opacity .24s ease
+}
+.auth-art.art-v5.nova-pointer-active>.nova-ambient-light{opacity:1}
+.auth-art.art-v5>.nova-fine-line{
+ position:absolute;z-index:0;left:0;right:0;top:0;height:1px;
+ background:linear-gradient(90deg,transparent,#acb1ff72,#8be1e369,transparent);
+ pointer-events:none
+}
+
+/* Identity */
+.auth-art.art-v5>.nova-brand{
+ flex:0 0 auto;align-self:stretch;
+ gap:14px;min-height:44px;
+ animation:nova-in .7s var(--nova-ease) both
+}
+.nova-brand .nova-brand-mark{
+ width:48px;height:48px;flex-basis:48px;border-radius:15px;
+ box-shadow:0 12px 33px #7771f55b,0 1px #ffffff99 inset,0 0 0 1px #c3baff50;
+ transition:transform .38s var(--nova-ease),box-shadow .38s ease
+}
+.nova-brand .nova-brand-mark .brand-glyph{width:30px;height:30px}
+.nova-brand .nova-brand-name{font-size:26px;letter-spacing:-1.45px;font-weight:860;color:#f8faff}
+.nova-brand .nova-brand-byline{
+ margin-left:auto;display:inline-flex!important;align-items:center;gap:9px;
+ padding:9px 12px;border-radius:9px;
+ border:1px solid #afbeed36;color:#b9c9ef;
+ background:linear-gradient(120deg,#a7b0ff0c,#53a8e109);
+ letter-spacing:1.9px;font-size:8px;white-space:nowrap;
+ box-shadow:inset 0 1px #ffffff0b
+}
+.nova-byline-dot{
+ width:6px;height:6px;border-radius:50%;background:#91eace;
+ box-shadow:0 0 0 4px #91eace15,0 0 10px #91eace8a
+}
+@media(hover:hover) and (pointer:fine){
+ .auth-art.art-v5 .nova-brand-mark:hover{
+  transform:translateY(-3px) rotate(-3deg);
+  box-shadow:0 17px 43px #7771f575,inset 0 1px #fff9,0 0 0 1px #c4b6ff85
+ }
+}
+
+/* Editorial typography and small details */
+.auth-art.art-v5>.art-content.nova-content{
+ position:relative;max-width:635px;width:100%;
+ margin:clamp(24px,5vh,66px) 0 auto;align-self:flex-start;z-index:2
+}
+.nova-section-meta{
+ display:flex;justify-content:space-between;align-items:center;gap:18px;
+ width:min(100%,525px);
+ color:#879ac1;font-size:8px;font-weight:850;
+ letter-spacing:2px;line-height:1.5;margin-bottom:18px;
+ animation:nova-in .62s var(--nova-ease) .05s both
+}
+.nova-section-meta span:last-child{color:#718aaf;letter-spacing:1.45px}
+.auth-art.art-v5 .art-kicker.nova-kicker{
+ display:inline-flex;align-items:center;gap:11px;max-width:100%;
+ margin:0 0 22px;padding:8px 13px 8px 12px;
+ background:linear-gradient(110deg,#485a8f3a,#364b7e22);
+ border:1px solid #8aabdf61;
+ color:#c5deff;box-shadow:0 4px 14px #030b2922,inset 0 1px #ffffff15;
+ font-size:9px;letter-spacing:1.55px;font-weight:850;
+ animation:nova-in .68s var(--nova-ease) .11s both
+}
+.nova-kicker .live-spark{width:7px;height:7px;background:#88f4d3;box-shadow:0 0 0 4px #88f4d321,0 0 13px #89ffd6a1}
+.nova-kicker-line{width:17px;height:1px;background:#adc1fc69}
+.auth-art.art-v5 .art-content h1.nova-headline{
+ max-width:100%;margin:0;
+ font-size:clamp(30px,2.85vw,53px);
+ font-weight:870;line-height:1.19;
+ letter-spacing:-2.1px;text-wrap:balance;
+ color:#f3f5ff;
+ text-shadow:0 11px 26px #08102735;
+ animation:nova-in .75s var(--nova-ease) .16s both
+}
+.auth-art.art-v5 .nova-headline .gradient-text{
+ display:inline;
+ background:linear-gradient(100deg,#c2a6ff 4%,#a29eff 23%,#8fb6ff 55%,#6ce7df 100%);
+ -webkit-background-clip:text;background-clip:text;
+ filter:drop-shadow(0 7px 17px #8586ed16)
+}
+.auth-art.art-v5 .art-content>p.nova-description{
+ max-width:505px;margin:19px 0 0;
+ color:#b6c5e1;font-size:clamp(12px,1vw,14px);
+ line-height:1.9;font-weight:450;letter-spacing:.05px;
+ animation:nova-in .75s var(--nova-ease) .23s both
+}
+.nova-proof-row{
+ display:flex;align-items:center;gap:14px;
+ flex-wrap:wrap;margin-top:17px;
+ font-size:10px;font-weight:650;color:#9eb6db;
+ animation:nova-in .8s var(--nova-ease) .3s both
+}
+.nova-proof-row>span{display:inline-flex;align-items:center;gap:7px}
+.nova-proof-row svg{color:#9bc5f9}
+.nova-proof-dot{
+ display:inline-block;width:6px;height:6px;border-radius:50%;
+ background:#7eecc6;box-shadow:0 0 0 3px #79dbbc1a,0 0 9px #7fe4c98c
+}
+.nova-proof-separator{width:1px;height:12px;background:#8ca2cc5a}
+
+/* Premium connection field */
+.auth-art.art-v5 .signal-stage.nova-stage{
+ position:relative;isolation:isolate;
+ width:100%;max-width:585px;height:330px;
+ border-radius:27px;margin:28px auto 0;
+ overflow:hidden;
+ border:1px solid #a6b8fb3a;
+ background:
+  radial-gradient(ellipse at 50% 50%,#7263cf27 0%,transparent 48%),
+  radial-gradient(ellipse at 50% 82%,#496baf17 0%,transparent 65%),
+  linear-gradient(145deg,#192543db,#141f3dcc);
+ box-shadow:0 27px 65px #050b2780,0 1px 0 #ffffff1a inset,
+            0 -1px 0 #1b2d53 inset;
+ animation:nova-stage-enter .85s var(--nova-ease) .35s both;
+ transform:translateZ(0);
+}
+.nova-stage .signal-grid{
+ opacity:.47;background-size:23px 23px;
+ -webkit-mask-image:radial-gradient(ellipse at 50% 54%,#000 12%,transparent 81%);
+ mask-image:radial-gradient(ellipse at 50% 54%,#000 12%,transparent 81%)
+}
+.nova-stage-sheen{
+ position:absolute;z-index:0;pointer-events:none;inset:0;
+ background:linear-gradient(112deg,transparent 4%,#ffffff09 45%,transparent 59%);
+ opacity:.55
+}
+.nova-stage-head{
+ position:absolute;z-index:3;left:21px;right:21px;top:17px;
+ display:flex;justify-content:space-between;align-items:center;gap:10px;
+ pointer-events:none
+}
+.nova-stage-identifier{
+ display:flex;align-items:center;gap:7px;
+ color:#aebfea;font-size:8px;letter-spacing:1.25px;font-weight:820
+}
+.nova-stage-identifier>span:nth-child(2){color:#6f84b1}
+.nova-head-led{
+ display:inline-block;width:6px;height:6px;border-radius:50%;
+ background:#80eacc;box-shadow:0 0 10px #7fecccab
+}
+.nova-stage-bars{display:flex;align-items:end;height:15px;gap:3px}
+.nova-stage-bars i{
+ width:3px;height:6px;border-radius:8px;background:#8caddf7a;
+ transform-origin:center bottom;
+ animation:nova-wave 2.7s ease-in-out infinite
+}
+.nova-stage-bars i:nth-child(2){height:12px;animation-delay:-.45s}
+.nova-stage-bars i:nth-child(3){height:8px;animation-delay:-.9s}
+.nova-stage-bars i:nth-child(4){height:14px;animation-delay:-1.35s}
+.nova-stage-bars i:nth-child(5){height:7px;animation-delay:-1.8s}
+.nova-stage-field{
+ position:absolute;inset:50% auto auto 50%;
+ width:215px;height:215px;border-radius:50%;
+ transform:translate(-50%,-50%);
+ background:radial-gradient(circle,#8a84f22b,transparent 67%);
+ box-shadow:0 0 80px #655acb21;
+ pointer-events:none
+}
+.nova-stage .signal-halo{
+ left:50%;top:51%;border-color:#8fa5fa29;box-shadow:0 0 36px #9394e009
+}
+.nova-stage .halo-one{width:196px;height:196px}
+.nova-stage .halo-two{width:288px;height:288px}
+.nova-stage .nova-halo.halo-three{
+ position:absolute;left:50%;top:51%;
+ width:366px;height:366px;border:1px dashed #8da0f622;
+ border-radius:50%;transform:translate(-50%,-50%);
+ pointer-events:none
+}
+.nova-stage .nova-orbit{
+ position:absolute;z-index:1;left:50%;top:51%;
+ width:228px;height:228px;
+ border-radius:50%;pointer-events:none;
+ margin-left:-114px;margin-top:-114px;
+ animation:nova-orbit-spin 34s linear infinite
+}
+.nova-stage .nova-orbit-two{
+ width:328px;height:328px;margin:-164px 0 0 -164px;
+ animation-duration:52s;animation-direction:reverse
+}
+.nova-stage .nova-orbit i{
+ position:absolute;top:10px;left:35px;width:6px;height:6px;
+ border-radius:50%;background:#9fc0ff;
+ box-shadow:0 0 0 4px #9db7ff19,0 0 14px #b5c8ff
+}
+.nova-stage .nova-orbit-two i{
+ left:auto;right:30px;top:45px;width:4px;height:4px;
+ background:#7ce7d6;box-shadow:0 0 0 4px #83e7d619,0 0 13px #82f2d8
+}
+.nova-connect-line{
+ position:absolute;z-index:0;height:1px;pointer-events:none;
+ background:linear-gradient(90deg,transparent,#a0b7ff80,transparent);
+ transform-origin:50% 50%;opacity:.48
+}
+.nova-connect-line-one{width:150px;top:42%;left:16%;transform:rotate(28deg)}
+.nova-connect-line-two{width:145px;top:54%;right:15%;transform:rotate(-27deg)}
+.nova-connect-line-three{width:140px;top:69%;left:17%;transform:rotate(-22deg)}
+.auth-art.art-v5 .signal-nucleus.nova-nucleus{
+ position:absolute;z-index:2;left:50%;top:51%;
+ width:112px;height:112px;border-radius:31px;
+ background:linear-gradient(145deg,#9c89fd 0%,#7777f4 49%,#51bcdf 100%);
+ box-shadow:0 17px 42px #625cde80,inset 0 2px 0 #ffffff80,
+            0 0 0 1px #d8d3ff56,0 0 0 10px #8c91ed16,0 0 0 25px #7f8bf009;
+ transform:translate(-50%,-50%) rotate(-8deg);
+ animation:none!important
+}
+.nova-nucleus .nova-nucleus-inner{display:grid;place-items:center;transform:rotate(8deg)}
+.nova-nucleus .brand-glyph{width:62px;height:62px;filter:drop-shadow(0 2px 3px #4a55a942)}
+.nova-nucleus .signal-nucleus-glow{background:#8888ff;filter:blur(22px);bottom:-5px;opacity:.6}
+.auth-art.art-v5 .signal-feature.nova-feature{
+ position:absolute;z-index:4;
+ display:flex;align-items:center;gap:9px;
+ width:clamp(175px,46%,242px);
+ min-height:68px;padding:11px 13px;
+ border-radius:16px;
+ border:1px solid #9aafe273;
+ background:linear-gradient(130deg,#263756fa,#202b49f8);
+ box-shadow:0 14px 32px #080f2e9c,inset 0 1px #ffffff1d;
+ -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+ animation:none!important;
+ transform:translate3d(0,0,0);
+ transition:transform .28s var(--nova-ease),border-color .24s ease,
+            box-shadow .28s ease,background-color .24s ease
+}
+.nova-feature .nova-feature-content{display:flex;flex:1;flex-direction:column;min-width:0;gap:3px}
+.nova-feature .nova-feature-content strong{color:#f4f7ff;font-size:11px;font-weight:850}
+.nova-feature .nova-feature-content small{font-size:9.2px;line-height:1.4;color:#abbddd}
+.auth-art.art-v5 .signal-feature-icon{
+ flex:0 0 37px;width:37px;height:37px;display:grid;place-items:center;
+ border-radius:12px;background:#9c8cfe24;
+ border:1px solid #a29afc3f;color:#d1c4ff
+}
+.auth-art.art-v5 .feature-privacy .signal-feature-icon{
+ background:#60d4b31b;border-color:#86e3c44a;color:#8dedd1
+}
+.auth-art.art-v5 .feature-members .signal-feature-icon{
+ background:#73aaf522;border-color:#94c9fd45;color:#a4d0ff
+}
+.auth-art.art-v5 .feature-realtime{top:22%;left:5%}
+.auth-art.art-v5 .feature-privacy{top:45%;right:4%}
+.auth-art.art-v5 .feature-members{bottom:15%;left:8%}
+.nova-feature .signal-feature-pulse{width:6px;height:6px;flex-basis:6px}
+.nova-feature .feature-check{color:#98efcf}
+@media(hover:hover) and (pointer:fine){
+ .auth-art.art-v5 .signal-feature.nova-feature:hover{
+  transform:translate3d(0,-5px,0);
+  border-color:#b7c6ffbd;
+  box-shadow:0 23px 43px #060d2ab5,inset 0 1px #ffffff31,0 0 27px #7586dd16
+ }
+ .auth-art.art-v5 .feature-privacy.nova-feature:hover{border-color:#79e5d2a3}
+ .auth-art.art-v5 .feature-members.nova-feature:hover{border-color:#86c8fda3}
+}
+.nova-stage-base{
+ position:absolute;z-index:3;bottom:14px;left:22px;right:22px;
+ display:flex;align-items:center;justify-content:space-between;gap:12px;
+ font-size:8px;font-weight:780;letter-spacing:1.35px;color:#758cb6;
+ pointer-events:none
+}
+.nova-stage-base-icon{display:flex;align-items:center;gap:5px;color:#84bbca}
+
+/* Footer chips: responsive, deliberately no repeated floating motion */
+.auth-art.art-v5 .auth-art-footer.nova-footer{
+ position:relative;flex:0 0 auto;align-items:center;display:flex;
+ flex-wrap:wrap;gap:9px;margin-top:25px;padding-top:16px;
+ border-top:1px solid #b7caff18;z-index:2;
+ animation:nova-in .8s var(--nova-ease) .4s both
+}
+.auth-art.art-v5 .nova-footer span{
+ display:inline-flex;align-items:center;gap:7px;
+ font-size:9px;color:#b4c6ef;padding:8px 11px;border-radius:10px;
+ border:1px solid #9db0de3f;background:linear-gradient(120deg,#6678b41c,#6c68a218);
+ box-shadow:0 1px 0 #ffffff09 inset;
+ transition:background .24s ease,border-color .24s ease,color .24s ease,
+            transform .24s var(--nova-ease)
+}
+.auth-art.art-v5 .nova-footer svg{color:#91d6ea}
+@media(hover:hover) and (pointer:fine){
+ .auth-art.art-v5 .nova-footer span:hover{
+  transform:translateY(-2px);
+  background:#7182cf24;border-color:#a3b8f880;color:#f2f4ff
+ }
+}
+@keyframes nova-in{
+ from{opacity:0;transform:translate3d(0,13px,0)}
+ to{opacity:1;transform:translate3d(0,0,0)}
+}
+@keyframes nova-stage-enter{
+ from{opacity:0;transform:translate3d(0,17px,0) scale(.985)}
+ to{opacity:1;transform:translate3d(0,0,0) scale(1)}
+}
+@keyframes nova-orbit-spin{to{transform:rotate(360deg)}}
+@keyframes nova-wave{
+ 0%,100%{transform:scaleY(.7);opacity:.62}
+ 50%{transform:scaleY(1.2);opacity:1}
+}
+
+/* Keep auth columns physically independent even for lengthy forms. */
+@media(min-width:801px){
+ .auth-art.art-v5{height:100%;min-height:0;overflow-x:hidden;overflow-y:auto;
+  overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#8194c830 transparent}
+}
+@media(max-width:1500px){
+ .auth-art.art-v5{padding-left:clamp(28px,4vw,58px);padding-right:clamp(28px,4vw,58px)}
+ .auth-art.art-v5 .art-content h1.nova-headline{font-size:clamp(29px,3vw,46px)}
+ .auth-art.art-v5 .signal-stage.nova-stage{height:314px}
+}
+@media(max-width:1200px){
+ .auth-art.art-v5{padding-left:26px;padding-right:26px}
+ .auth-art.art-v5 .art-content h1.nova-headline{
+  font-size:clamp(27px,3.1vw,39px);letter-spacing:-1.45px
+ }
+ .nova-brand .nova-brand-byline{font-size:7px;letter-spacing:1px;padding:7px 8px}
+ .nova-section-meta{font-size:7px;letter-spacing:1.2px}
+ .auth-art.art-v5 .signal-stage.nova-stage{height:294px;margin-top:22px}
+ .auth-art.art-v5 .signal-feature.nova-feature{min-height:62px;padding:9px;width:50%}
+ .nova-feature .nova-feature-content strong{font-size:10px}
+ .nova-feature .nova-feature-content small{font-size:8.5px}
+ .auth-art.art-v5 .signal-feature-icon{width:33px;height:33px;flex-basis:33px}
+ .nova-stage .nova-halo.halo-three{width:320px;height:320px}
+ .auth-art.art-v5 .signal-nucleus.nova-nucleus{width:94px;height:94px;border-radius:29px}
+ .nova-nucleus .brand-glyph{width:54px;height:54px}
+ .auth-art.art-v5 .nova-footer span{padding:7px 9px;font-size:8px}
+}
+@media(min-width:801px) and (max-width:1030px){
+ .auth-art.art-v5{padding:27px 20px 20px}
+ .nova-brand .nova-brand-mark{width:43px;height:43px;flex-basis:43px}
+ .nova-brand .nova-brand-name{font-size:23px}
+ .nova-brand .nova-brand-byline{display:none!important}
+ .auth-art.art-v5>.art-content.nova-content{margin-top:29px}
+ .auth-art.art-v5 .art-content h1.nova-headline{font-size:29px;letter-spacing:-1.05px}
+ .auth-art.art-v5 .nova-description{line-height:1.75}
+ .nova-proof-row{font-size:9px;gap:8px}
+ .auth-art.art-v5 .signal-stage.nova-stage{height:264px}
+ .auth-art.art-v5 .signal-feature.nova-feature{width:56%;min-height:58px;gap:6px}
+ .nova-stage-head{left:12px;right:12px;top:12px}
+ .nova-stage-base{left:12px;right:12px;bottom:11px;font-size:7px}
+ .auth-art.art-v5 .feature-realtime{left:2%}
+ .auth-art.art-v5 .feature-privacy{right:2%}
+ .auth-art.art-v5 .feature-members{left:4%}
+ .nova-feature .nova-feature-content small{font-size:8px}
+ .nova-proof-row .nova-proof-separator{display:none}
+}
+@media(min-width:801px) and (max-height:760px){
+ .auth-art.art-v5{min-height:0!important}
+ .auth-art.art-v5>.art-content.nova-content{margin-top:20px}
+ .nova-section-meta{margin-bottom:10px}
+ .auth-art.art-v5 .art-kicker.nova-kicker{margin-bottom:14px}
+ .auth-art.art-v5 .art-content>p.nova-description{margin-top:11px}
+ .nova-proof-row{margin-top:10px}
+ .auth-art.art-v5 .signal-stage.nova-stage{height:250px;margin-top:16px}
+ .auth-art.art-v5 .signal-feature.nova-feature{min-height:53px}
+ .auth-art.art-v5 .signal-nucleus.nova-nucleus{width:83px;height:83px;border-radius:26px}
+ .nova-nucleus .brand-glyph{width:44px;height:44px}
+ .auth-art.art-v5 .auth-art-footer.nova-footer{margin-top:14px;padding-top:10px}
+}
+@media(max-width:800px){
+ .auth-art.art-v5{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+ .auth-art.art-v5 .nova-brand,
+ .auth-art.art-v5 .nova-section-meta,
+ .auth-art.art-v5 .nova-kicker,
+ .auth-art.art-v5 .nova-headline,
+ .auth-art.art-v5 .nova-description,
+ .auth-art.art-v5 .nova-proof-row,
+ .auth-art.art-v5 .nova-stage,
+ .auth-art.art-v5 .nova-footer,
+ .auth-art.art-v5 .nova-orbit,
+ .auth-art.art-v5 .nova-stage-bars i{
+   animation:none!important
+ }
+ .auth-art.art-v5 .nova-ambient-light{display:none!important}
+ .auth-art.art-v5 .signal-feature.nova-feature,
+ .auth-art.art-v5 .nova-footer span,
+ .auth-art.art-v5 .nova-brand-mark{transition:none!important}
+}
