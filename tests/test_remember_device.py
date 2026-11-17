@@ -50,7 +50,7 @@ def login_with_pin(client, username="saved_demo", pin="543210", remember=True):
     return verified
 
 
-def test_device_is_hashed_and_pin_is_required_on_reload():
+def test_device_is_hashed_and_pin_required_on_explicit_new_visit():
     new_user()
     c=TestClient(app)
     result=login_with_pin(c)
@@ -65,8 +65,8 @@ def test_device_is_hashed_and_pin_is_required_on_reload():
         assert row["failed_attempts"]==0
     assert c.get("/api/me").json()["user"]["username"]=="saved_demo"
 
-    # The browser startup calls this BEFORE /api/me. It invalidates the
-    # previous active access session, leaving only PIN unlock.
+    # A NEW tab without a tab-scoped marker invokes this flow, invalidating
+    # stale cookie access while preserving optional PIN-only device unlock.
     status=c.post("/api/auth/remembered")
     assert status.status_code==200
     assert status.json()=={"remembered":True,"username":"saved_demo","pin_length":6}
@@ -138,7 +138,7 @@ def test_admin_enrollment_requires_password_then_pin_on_following_signin():
     assert c.post("/api/me/pin/setup",json={
         "current_password":"mtunz7","pin":"123456","pin_length":6}).status_code==409
 
-    # Fresh navigation forces an admin with a PIN to authenticate again.
+    # A new tab (not a normal reload) forces admin authentication again.
     c.post("/api/auth/remembered")
     assert c.get("/api/me").json()["user"] is None
     c.post("/api/auth/start",json={"username":"admin"})
