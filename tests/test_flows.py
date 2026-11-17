@@ -36,7 +36,7 @@ def logged_admin():
 def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     guest=TestClient(app)
     guest.get('/')
-    assert guest.post('/api/registration/request',json={'username':name}).json()['status']=='pending'
+    assert guest.post('/api/registration/request',json={'username':name,'phone':'0912345678','email':'demo@example.com'}).json()['status']=='pending'
     assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)}).status_code==403
     pending=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']==name][0]
     assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True}).status_code==200
@@ -94,7 +94,7 @@ def test_permissions_and_capacity():
     assert guest.post('/api/auth/password',json={'username':'admin','password':'wrong'}).status_code==401
     assert admin.post('/api/admin/capacity',json={'max_users':1}).status_code==200
     first=register_user(admin,'first_one')
-    guest.post('/api/registration/request',json={'username':'second_one'})
+    guest.post('/api/registration/request',json={'username':'second_one','phone':'0912345678'})
     rid=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']=='second_one'][0]['id']
     assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True}).status_code==409
     assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':False}).status_code==200
