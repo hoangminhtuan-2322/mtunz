@@ -50,7 +50,7 @@ Trên Render: **tuyệt đối không đưa `.env` hoặc `DATABASE_URL` lên Gi
 python -m pytest -q
 ```
 
-**11/11 bài kiểm thử đạt** gồm 8 bài chức năng SQLite và 3 bài cấu hình/giả lập adapter PostgreSQL. Kiểm tra với PostgreSQL/Render thật cần tài khoản Neon và Render; chưa triển khai thay người dùng.
+CI chạy kiểm thử Python, cấu hình PostgreSQL và các bài kiểm tra giao diện JavaScript. Các bài kiểm thử xóa tài khoản còn kiểm tra khoảng chờ 30 ngày, hủy yêu cầu, quá hạn, xóa vĩnh viễn bởi admin và bảo vệ tài khoản admin.
 
 ## Quản lý phiên & thiết bị
 
@@ -67,3 +67,44 @@ triển khai đã chuẩn bị tệp GeoLite2-City `.mmdb` hợp lệ và khai b
 mtunz hiển thị **Không xác định** và vẫn có thể xem IP đã che bớt. Vị trí IP
 có thể sai do VPN, mạng di động và proxy. Đối với thiết bị đăng nhập trước bản
 cập nhật, các trường nhận diện được hiển thị **Chưa có dữ liệu** thay vì suy đoán.
+
+
+## Tài khoản chờ xóa 30 ngày
+
+Trong **Cài đặt → Xóa tài khoản và dữ liệu**, người dùng nhập lại tên tài khoản,
+mật khẩu, PIN và cụm `XOA SAU 30 NGAY` để tạo yêu cầu xóa. Dữ liệu **không bị xóa
+ngay**: thời điểm `purge_at = requested_at + 30 × 24 giờ` được lưu bền vững
+trong bảng `account_deletion_requests` (Neon ở môi trường public). Người dùng
+có thể hủy trước hạn bằng mật khẩu và PIN hiện tại. Yêu cầu trùng không gia hạn
+ngầm mốc xóa. Sau hạn, hủy không còn hiệu lực.
+
+Hệ thống tự xử lý tài khoản đến hạn khi ứng dụng khởi động và mỗi 60 phút trong
+thời gian chạy. Workflow `.github/workflows/deletion-retention.yml` gọi
+`/health` mỗi 6 giờ để đánh thức ứng dụng Render Free ngay cả khi ngủ.
+Đặt GitHub Actions variable `MTUNZ_HEALTH_URL` nếu địa chỉ triển khai không
+phải `https://mtunz.onrender.com/health`. GitHub Actions hoặc Render bị
+gián đoạn có thể khiến xóa thực tế diễn ra **muộn hơn 30 ngày**, không bao giờ
+được xóa trước thời điểm đã đặt. Đây là lịch xử lý best-effort, không phải cam
+kết chạy chính xác đến từng phút. Cần theo dõi các workflow thất bại để đảm
+bảo xóa đúng hạn.
+
+Admin thấy yêu cầu và hạn xử lý tại **Chờ xóa 30 ngày**, và vẫn có thể
+**xóa vĩnh viễn ngay** từ danh sách này hoặc quản lý người dùng. Xóa ngay
+yêu cầu admin đã kích hoạt PIN và xác minh lại bằng mật khẩu, PIN, tên tài khoản
+đích và `XOA VINH VIEN`. Thao tác được ghi nhật ký; không có khôi phục dữ liệu
+sau khi hệ thống đã xóa tài khoản.
+
+## Bảo mật phiên quản trị
+
+- Phiên Admin tối đa 2 giờ, thay vì 7 ngày của thành viên thông thường.
+- Admin không thể dùng cookie ghi nhớ thiết bị trong 30 ngày để bỏ qua bước
+  mật khẩu; đăng nhập trên thiết bị mới yêu cầu mật khẩu và PIN sau khi kích hoạt PIN.
+- Xóa vĩnh viễn ngay bị khóa cho đến khi Admin thiết lập PIN.
+- Trang **Bảo mật Admin** cho phép xem phiên đăng nhập và thu hồi các phiên khác;
+  nhật ký thao tác xuất hiện tại trang tổng quan. Middleware chặn yêu cầu cross-site,
+  kiểm tra Origin/Referer và sử dụng HTTPS/Secure cookies trên môi trường public.
+
+**Khuyến nghị:** Đổi mật khẩu Admin mạnh, riêng biệt sau khi cập nhật. PIN là
+một bước xác minh bổ sung, không thay thế MFA độc lập như passkey hoặc TOTP;
+đối với hệ thống production có dữ liệu nhạy cảm, cần triển khai MFA mạnh và
+đánh giá bảo mật độc lập.
