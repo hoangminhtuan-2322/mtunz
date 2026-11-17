@@ -242,39 +242,74 @@ async function enterApp(){
 async function logout(){try{await post('/api/auth/logout');}catch{}state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();}
 
 // ==== Onboarding and anonymous support ====
-function authArt(){return `<aside class="auth-art art-v3 art-v4">
+function authArt(){return `<aside class="auth-art art-v3 art-v4 art-v5" aria-label="Giới thiệu mtunz">
   <div class="art-aurora art-aurora-a" aria-hidden="true"></div>
   <div class="art-aurora art-aurora-b" aria-hidden="true"></div>
   <div class="art-stars" aria-hidden="true"></div>
-  <div class="logo brand-lockup"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span class="brand-dot">.</span></span><span class="brand-byline">PRIVATE CONNECTIONS</span></div>
-  <div class="art-content">
-    <div class="art-kicker"><span class="live-spark"></span> MỘT KHÔNG GIAN, NHIỀU KẾT NỐI</div>
-    <h1 class="auth-headline-copy">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>
-    <p>Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>
-    <div class="signal-stage" aria-label="Những tính năng nổi bật của mtunz">
+  <div class="nova-mesh" aria-hidden="true"></div>
+  <div class="nova-ambient-light" aria-hidden="true"></div>
+  <div class="nova-fine-line" aria-hidden="true"></div>
+
+  <div class="logo brand-lockup nova-brand">
+    <span class="logo-mark nova-brand-mark" aria-hidden="true">${brandGlyph()}</span>
+    <span class="nova-brand-name">mtunz<span class="brand-dot">.</span></span>
+    <span class="brand-byline nova-brand-byline"><span class="nova-byline-dot"></span>PRIVATE CONNECTIONS</span>
+  </div>
+
+  <div class="art-content nova-content">
+    <div class="nova-section-meta" aria-hidden="true"><span>MTUNZ / 01</span><span>YOUR SPACE TO CONNECT</span></div>
+    <div class="art-kicker nova-kicker"><span class="live-spark"></span> MỘT KHÔNG GIAN, NHIỀU KẾT NỐI <span class="nova-kicker-line"></span></div>
+    <h1 class="auth-headline-copy nova-headline">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>
+    <p class="nova-description">Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>
+    <div class="nova-proof-row" aria-label="Điểm nổi bật">
+      <span><i class="nova-proof-dot"></i> Nhắn tin thời gian thực</span>
+      <span class="nova-proof-separator" aria-hidden="true"></span>
+      <span>${icon('shield',14)} Không gian riêng tư</span>
+    </div>
+
+    <div class="signal-stage nova-stage" aria-label="Ba tính năng: nhắn tin tức thì, quyền riêng tư, kết nối nhóm">
       <div class="signal-grid" aria-hidden="true"></div>
+      <div class="nova-stage-sheen" aria-hidden="true"></div>
+      <div class="nova-stage-head">
+        <div class="nova-stage-identifier"><span class="nova-head-led"></span> MTUNZ <span>/</span> CONNECTION SYSTEM</div>
+        <div class="nova-stage-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+      <div class="nova-stage-field" aria-hidden="true"></div>
       <div class="signal-halo halo-one" aria-hidden="true"></div>
       <div class="signal-halo halo-two" aria-hidden="true"></div>
-      <div class="signal-nucleus" aria-hidden="true"><span class="signal-nucleus-icon">${brandGlyph()}</span><span class="signal-nucleus-glow"></span></div>
-      <article class="signal-feature feature-realtime">
+      <div class="nova-halo halo-three" aria-hidden="true"></div>
+      <div class="nova-orbit nova-orbit-one" aria-hidden="true"><i></i></div>
+      <div class="nova-orbit nova-orbit-two" aria-hidden="true"><i></i></div>
+      <div class="nova-connect-line nova-connect-line-one" aria-hidden="true"></div>
+      <div class="nova-connect-line nova-connect-line-two" aria-hidden="true"></div>
+      <div class="nova-connect-line nova-connect-line-three" aria-hidden="true"></div>
+      <div class="signal-nucleus nova-nucleus" aria-hidden="true">
+        <span class="nova-nucleus-inner">${brandGlyph()}</span>
+        <span class="signal-nucleus-glow"></span>
+      </div>
+      <article class="signal-feature feature-realtime nova-feature">
         <span class="signal-feature-icon">${icon('chat',20)}</span>
-        <span><strong>Realtime</strong><small>Tin nhắn đến tức thì</small></span>
+        <span class="nova-feature-content"><strong>Nhắn tin tức thì</strong><small>Gần nhau trong từng khoảnh khắc</small></span>
         <i class="signal-feature-pulse" aria-hidden="true"></i>
       </article>
-      <article class="signal-feature feature-privacy">
+      <article class="signal-feature feature-privacy nova-feature">
         <span class="signal-feature-icon">${icon('shield',20)}</span>
-        <span><strong>Quyền riêng tư</strong><small>Kiểm soát kết nối của bạn</small></span>
-        <span class="feature-check">${icon('check',15)}</span>
+        <span class="nova-feature-content"><strong>Quyền riêng tư</strong><small>Chủ động kiểm soát kết nối</small></span>
+        <span class="feature-check" aria-hidden="true">${icon('check',15)}</span>
       </article>
-      <article class="signal-feature feature-members">
+      <article class="signal-feature feature-members nova-feature">
         <span class="signal-feature-icon">${icon('users',20)}</span>
-        <span><strong>Nhóm của bạn</strong><small>Kết nối theo cách riêng</small></span>
-        <span class="feature-check">${icon('check',15)}</span>
+        <span class="nova-feature-content"><strong>Cộng đồng của bạn</strong><small>Trò chuyện theo cách riêng</small></span>
+        <span class="feature-check" aria-hidden="true">${icon('check',15)}</span>
       </article>
+      <div class="nova-stage-base">
+        <span>DESIGNED FOR CONNECTION</span>
+        <span class="nova-stage-base-icon" aria-hidden="true">${icon('shield',12)} PRIVATE BY DESIGN</span>
+      </div>
     </div>
   </div>
-  <div class="auth-art-footer" aria-label="Tính năng">
-    <span>${icon('chat',15)} Trò chuyện tức thì</span>
+  <div class="auth-art-footer nova-footer" aria-label="Các đặc điểm của mtunz">
+    <span>${icon('chat',15)} Nhắn tin tức thì</span>
     <span>${icon('lock',15)} Đăng nhập nhiều lớp</span>
     <span>${icon('shield',15)} Admin phê duyệt</span>
   </div>
@@ -371,6 +406,34 @@ function authSupport(){
  <button class="btn ghost full">Xác nhận đặt lại</button></form>`;
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
+function initializeHeroMotion(hero){
+ // Pointer effects are scoped to the left hero only: tab and form interaction
+ // cannot move the brand, orbit or feature cards on the opposite side.
+ if(!hero || hero.dataset.motionReady || !window.matchMedia ||
+    !window.matchMedia('(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)').matches) return;
+ hero.dataset.motionReady='1';
+ let frame=0, rect=null, pointer=null;
+ hero.addEventListener('pointerenter',()=>{
+   rect=hero.getBoundingClientRect();
+   hero.classList.add('nova-pointer-active');
+ },{passive:true});
+ hero.addEventListener('pointermove',event=>{
+   if(!rect)rect=hero.getBoundingClientRect();
+   pointer={x:event.clientX-rect.left,y:event.clientY-rect.top};
+   if(frame)return;
+   frame=requestAnimationFrame(()=>{
+     frame=0;
+     if(!pointer || !hero.isConnected)return;
+     hero.style.setProperty('--nova-pointer-x',pointer.x+'px');
+     hero.style.setProperty('--nova-pointer-y',pointer.y+'px');
+   });
+ },{passive:true});
+ hero.addEventListener('pointerleave',()=>{
+   hero.classList.remove('nova-pointer-active');
+   pointer=null;rect=null;
+   if(frame){cancelAnimationFrame(frame);frame=0;}
+ },{passive:true});
+}
 function renderAuth(){
  // Keep the left-side hero DOM mounted across login/register/support transitions.
  // Rebuilding #app here restarted every decorative animation in the opposite column.
@@ -386,6 +449,7 @@ function renderAuth(){
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
    </main></div>`;
+   if(typeof initializeHeroMotion==='function')initializeHeroMotion(host.querySelector('.auth-art.art-v5'));
    return;
  }
  const nav=existing.querySelector('.auth-nav');
