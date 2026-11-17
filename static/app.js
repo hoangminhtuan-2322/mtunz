@@ -230,39 +230,43 @@ async function enterApp(){
 async function logout(){try{await post('/api/auth/logout');}catch{}state.user=null;state.selected=null;state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();}
 
 // ==== Onboarding and anonymous support ====
-function authArt(){return `<aside class="auth-art art-v3">
-  <div class="art-aurora art-aurora-a" aria-hidden="true"></div><div class="art-aurora art-aurora-b" aria-hidden="true"></div>
+function authArt(){return `<aside class="auth-art art-v3 art-v4">
+  <div class="art-aurora art-aurora-a" aria-hidden="true"></div>
+  <div class="art-aurora art-aurora-b" aria-hidden="true"></div>
   <div class="art-stars" aria-hidden="true"></div>
-  <div class="logo brand-lockup"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span class="brand-dot">.</span></span><span class="brand-byline">CHAT REIMAGINED</span></div>
+  <div class="logo brand-lockup"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span class="brand-dot">.</span></span><span class="brand-byline">PRIVATE CONNECTIONS</span></div>
   <div class="art-content">
-    <div class="art-kicker"><span class="live-spark"></span> KẾT NỐI THEO CÁCH CỦA BẠN</div>
-    <h1>Chuyện trò<br><span class="gradient-text">tự nhiên hơn.</span></h1>
-    <p>Một góc nhỏ chỉ dành cho những cuộc trò chuyện quan trọng. Gửi tin nhắn tức thì, chia sẻ khoảnh khắc và luôn gần nhau.</p>
-    <div class="showcase" aria-label="Minh họa trò chuyện trên mtunz">
-      <div class="showcase-chrome">
-        <div class="chrome-dots"><i></i><i></i><i></i></div>
-        <span>Cuộc trò chuyện của bạn</span>
-        <span class="chrome-lock">${icon('lock',13)} Riêng tư</span>
-      </div>
-      <div class="showcase-body">
-        <div class="showcase-contact">
-          <div class="showcase-avatar-wrap"><span class="showcase-avatar">AN</span><i class="showcase-online"></i></div>
-          <div class="showcase-contact-text"><strong>An Nhiên</strong><span>Đang hoạt động</span></div>
-          <span class="showcase-call" aria-hidden="true">${icon('chat',19)}</span>
-        </div>
-        <div class="showcase-day"><span>Hôm nay</span></div>
-        <div class="showcase-bubble showcase-received">Cuối tuần này có hẹn không? <span class="showcase-heart" aria-hidden="true">♡</span></div>
-        <div class="showcase-bubble showcase-sent">Có chứ! Mình đợi ngày đó mãi <span aria-hidden="true">✦</span></div>
-        <div class="showcase-meta">${icon('check',12)} Đã xem · 08:42</div>
-        <div class="showcase-typing"><span class="showcase-typing-dots"><i></i><i></i><i></i></span> An Nhiên đang nhập…</div>
-      </div>
+    <div class="art-kicker"><span class="live-spark"></span> MỘT KHÔNG GIAN, NHIỀU KẾT NỐI</div>
+    <h1>Gần nhau hơn.<br><span class="gradient-text">Theo cách riêng.</span></h1>
+    <p>Một không gian nhắn tin riêng tư, nơi cuộc trò chuyện luôn tức thì, các kết nối được tôn trọng và mỗi khoảnh khắc đều đáng nhớ.</p>
+    <div class="signal-stage" aria-label="Những tính năng nổi bật của mtunz">
+      <div class="signal-grid" aria-hidden="true"></div>
+      <div class="signal-halo halo-one" aria-hidden="true"></div>
+      <div class="signal-halo halo-two" aria-hidden="true"></div>
+      <div class="signal-nucleus" aria-hidden="true"><span class="signal-nucleus-icon">${brandGlyph()}</span><span class="signal-nucleus-glow"></span></div>
+      <article class="signal-feature feature-realtime">
+        <span class="signal-feature-icon">${icon('chat',20)}</span>
+        <span><strong>Realtime</strong><small>Tin nhắn đến tức thì</small></span>
+        <i class="signal-feature-pulse" aria-hidden="true"></i>
+      </article>
+      <article class="signal-feature feature-privacy">
+        <span class="signal-feature-icon">${icon('shield',20)}</span>
+        <span><strong>Quyền riêng tư</strong><small>Kiểm soát kết nối của bạn</small></span>
+        <span class="feature-check">${icon('check',15)}</span>
+      </article>
+      <article class="signal-feature feature-members">
+        <span class="signal-feature-icon">${icon('users',20)}</span>
+        <span><strong>Nhóm của bạn</strong><small>Kết nối theo cách riêng</small></span>
+        <span class="feature-check">${icon('check',15)}</span>
+      </article>
     </div>
-    <div class="showcase-note"><span class="note-symbol">${icon('shield',17)}</span><span><strong>Không gian của riêng bạn</strong><small>Đăng nhập nhiều lớp, kết nối an tâm</small></span><span class="note-check">${icon('check',16)}</span></div>
   </div>
-  <div class="auth-art-footer" aria-label="Các tính năng nổi bật">
-    <span>${icon('chat',15)} Nhắn tin tức thì</span><span>${icon('users',15)} Bạn bè thân thiết</span><span>${icon('lock',15)} Bảo vệ tài khoản</span>
+  <div class="auth-art-footer" aria-label="Tính năng">
+    <span>${icon('chat',15)} Trò chuyện tức thì</span>
+    <span>${icon('lock',15)} Đăng nhập nhiều lớp</span>
+    <span>${icon('shield',15)} Admin phê duyệt</span>
   </div>
-  </aside>`;}
+</aside>`;}
 function inputField(label,name,type='text',placeholder='',attr=''){return `<div class="field"><label for="${name}">${label}</label><input class="input" id="${name}" name="${name}" type="${type}" placeholder="${esc(placeholder)}" ${attr} required></div>`;}
 function authTabs(){return `<div class="auth-nav" aria-label="Điều hướng tài khoản"><button class="${state.mode==='login'?'active':''}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
 <button class="${state.mode==='register'?'active':''}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
