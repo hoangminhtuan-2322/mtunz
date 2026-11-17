@@ -1,0 +1,29 @@
+name: Wake mtunz for scheduled 30-day account retention
+on:
+  schedule:
+    # Wakes Render Free even after idle; the application purges due accounts
+    # on startup and then once every hour while the web service is awake.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wake the service so due deletions can run
+        env:
+          HEALTH_URL: ${{ vars.MTUNZ_HEALTH_URL || 'https://mtunz.onrender.com/health' }}
+        run: |
+          for attempt in 1 2 3 4; do
+            if curl -fsSL --max-time 80 "$HEALTH_URL" > /dev/null; then
+              echo "mtunz has been woken for retention housekeeping"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::mtunz did not respond; expired deletions will retry on next wake"
+          exit 1
