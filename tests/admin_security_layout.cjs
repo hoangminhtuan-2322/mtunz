@@ -1,5 +1,6 @@
 'use strict';
-/* Admin password + PIN forms must never overlap leading icons or overflow cards. */
+/* Regression: Admin and signed-in Settings use native inputs with NO
+   overlapping decorative icons. Check rendered markup, not just CSS strings. */
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
@@ -8,41 +9,58 @@ const app=fs.readFileSync('static/app.js','utf8');
 const css=fs.readFileSync('static/form-layout.css','utf8');
 const html=fs.readFileSync('static/index.html','utf8');
 const authCss=fs.readFileSync('static/auth-refined.css','utf8');
-const securityStart=app.indexOf('function adminSecurity(){');
-const securityEnd=app.indexOf('\nfunction adminAudit(){',securityStart);
-const fieldStart=app.indexOf('function inputField(');
-const fieldEnd=app.indexOf('\nfunction authTabs(){',fieldStart);
-assert(securityStart>=0&&securityEnd>securityStart,'Admin security builder must exist');
-assert(fieldStart>=0&&fieldEnd>fieldStart,'Shared input builder must exist');
-
+function section(start,end){
+ const a=app.indexOf(start),b=app.indexOf(end,a);
+ assert(a>=0&&b>a,'Missing function section '+start);
+ return app.slice(a,b);
+}
+const inputSrc=section('function inputField(', '\nfunction authTabs(){');
+const settingsSrc=section('function settingsContent(){','\nfunction supportInApp(){');
+const securitySrc=section('function adminSecurity(){','\nfunction adminAudit(){');
+assert(inputSrc.includes('function secureSettingsField('),'Plain secure field builder exists');
+assert(inputSrc.includes('function inputField('),'Original login field builder preserved');
+assert(settingsSrc.includes('secureSettingsField('),'Settings now use native controls');
+assert(securitySrc.includes('secureSettingsField('),'Admin security now uses native controls');
+assert(!settingsSrc.includes('inputField('),'Settings must not reintroduce overlay icons');
+assert(!securitySrc.includes('inputField('),'Admin must not reintroduce overlay icons');
 const context={
- state:{user:{pin_length:null},savedDevice:false},
+ state:{user:{username:'member_one',created_at:0,pin_length:null},savedDevice:false,blocks:[]},
  esc:s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'),
- icon:(type,size)=>'<svg data-icon="'+type+'" width="'+size+'"></svg>'
+ icon:(type,size)=>'<svg data-icon="'+type+'" width="'+size+'"></svg>',
+ avatar:()=>'<span class="avatar"></span>',date:()=> 'now',profileSettings:()=>'<div>profile</div>'
 };
 vm.createContext(context);
-vm.runInContext(app.slice(fieldStart,fieldEnd)+'\n'+app.slice(securityStart,securityEnd),context,{timeout:1000});
-for(const pin_length of [null,6]){
- context.state.user.pin_length=pin_length;
- const markup=context.adminSecurity();
- assert(markup.includes('class="admin-security"'),'Forms must have scoped CSS layout guard');
- assert(markup.includes('data-form="admin-password"'),'Must keep password change form');
- assert(markup.includes(pin_length?'data-form="admin-pin-change"':'data-form="admin-pin-setup"'),'Must keep PIN form');
- const wrappers=markup.match(/class="auth-input-wrap"/g)||[];
- const icons=markup.match(/class="auth-input-icon"/g)||[];
- assert(wrappers.length>=5&&wrappers.length===icons.length,'Every text input reserves a leading icon');
- assert(markup.includes('type="password"'),'Password remains password-type');
+vm.runInContext(inputSrc+'\n'+securitySrc+'\n'+settingsSrc,context,{timeout:1500});
+
+function inspectMarkup(markup, count) {
+ assert(!markup.includes('class="auth-input-icon"'),'No overlay icons may exist inside sensitive forms');
+ assert(!markup.includes('class="auth-input-wrap"'),'No absolute wrapper may surround sensitive inputs');
+ const fields=[...markup.matchAll(/class="field secure-settings-field"/g)];
+ const inputs=[...markup.matchAll(/class="input" id="([^"]+)" name="([^"]+)" type="([^"]+)"/g)];
+ assert.equal(fields.length,count,'Expected one plain field for each input');
+ assert.equal(inputs.length,count,'Every secure input has correct markup');
+ for(const match of inputs){
+  assert.equal(match[1],match[2],'Label id and form name refer to same field');
+  assert.equal(match[3],'password','Secret fields must remain masked');
+ }
 }
-assert(html.includes('/static/form-layout.css?v=8.3'),'Global form fix must load and bust cache');
-assert(html.includes('/static/app.js?v=9.0'),'Security wrapper JavaScript must bust cache');
-assert(html.indexOf('form-layout.css?v=8.3')>html.indexOf('auth-refined.css?v=5.1'),'Geometry fix loads after original auth styles');
-assert(css.includes('.auth-input-wrap > input.input'),'Icon spacing must apply outside auth panels');
-assert(css.includes('padding-inline-start:48px'),'Text reserves at least 48px for icon');
-assert(css.includes('.admin-security .auth-input-wrap > input.input'),'Admin-specific icon spacing is guaranteed');
-assert(css.includes('.admin-security > .card'),'Security cards are responsive');
-assert(css.includes('max-width:100%!important'),'Security cards cannot exceed content width');
-assert(css.includes('min-width:0'),'Grid items and inputs can shrink');
-assert(css.includes('overflow-x:hidden'),'Admin page must not scroll sideways');
-assert(css.includes('@media(max-width:520px)'),'Small screens have dedicated security styles');
-assert(authCss.includes('.auth-panel .auth-input-wrap .input'),'Existing login field style retained');
-console.log('Admin security forms OK: shared icons have padding, password/PIN cards resize without overflow, mobile rules covered.');
+for(const length of [null,6]) {
+ context.state.user.pin_length=length;
+ const markup=context.adminSecurity();
+ inspectMarkup(markup,5);
+ assert(markup.includes('data-form="admin-password"'),'Password form preserved');
+ assert(markup.includes(length?'data-form="admin-pin-change"':'data-form="admin-pin-setup"'),'PIN form preserved');
+}
+context.state.user.pin_length=6;
+inspectMarkup(context.settingsContent(),4);
+const authInput=context.inputField('Password','password','password','Your password');
+assert(authInput.includes('class="auth-input-icon"'),'Only login flow retains input icon');
+assert(html.includes('form-layout.css?v=8.4'),'New geometry CSS is loaded');
+assert(html.includes('app.js?v=9.1'),'New JS bypasses old browser cache');
+assert(html.indexOf('form-layout.css?v=8.4')>html.indexOf('auth-refined.css?v=5.1'),'Fix takes precedence');
+assert(css.includes('.secure-settings-field > .input'),'Native input sizing must exist');
+assert(css.includes('padding:13px 16px !important'),'Native inputs have explicit left/right padding');
+assert(css.includes('box-sizing:border-box'),'Fields have bounded widths');
+assert(css.includes('.admin-security > .card'),'Admin cards remain responsive');
+assert(authCss.includes('.auth-panel .auth-input-wrap .input'),'Login appearance preserved');
+console.log('Admin + Settings native fields OK: no icon/placeholder overlap, PIN flows, responsive widths and login preserved.');
