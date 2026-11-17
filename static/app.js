@@ -28,7 +28,7 @@ const Ipaths = {
   chevron:'<path d="m9 18 6-6-6-6"/>'
 };
 const icon=(name,size=19)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${Ipaths[name]||Ipaths.chat}</svg>`;
-const brandGlyph=()=>`<svg class="brand-glyph" width="25" height="25" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M7.2 22.4V12.3c0-3 1.9-5 4.6-5 2.4 0 4.2 1.6 4.5 3.6.7-2 2.3-3.6 4.6-3.6 2.8 0 4.7 2 4.7 5v10.1" stroke="white" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.3 11v11.4" stroke="white" stroke-width="3.7" stroke-linecap="round"/><circle cx="26" cy="6.4" r="2.5" fill="#B2FFF1"/></svg>`;
+const brandGlyph=()=>`<img class="brand-glyph" src="/static/favicon.svg?v=8.0" alt="" draggable="false" decoding="async">`;
 
 const avatar=(name,online=false,size='')=>`<div class="avatar ${size} ${online?'online':''}">${esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
