@@ -1,0 +1,30 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const js=fs.readFileSync('static/app.js','utf8');
+const css=fs.readFileSync('static/rail-navigation.css','utf8');
+const html=fs.readFileSync('static/index.html','utf8');
+const a=js.indexOf('function appRail(){'),b=js.indexOf('\nfunction sideBar()',a);
+assert(a>=0&&b>a,'Navigation function can be located');
+const state={tab:'messages',user:{username:'test_member'},railMoreOpen:false};
+const ctx={state,brandGlyph:()=>'<img>',avatar:()=>'<avatar>',icon:n=>'<svg data-icon="'+n+'"></svg>',esc:v=>String(v)};
+vm.createContext(ctx);vm.runInContext(js.slice(a,b),ctx);
+const initial=ctx.appRail();
+assert.equal((initial.match(/class="rail-btn (?:active|)"/g)||[]).length,5,'Five primary destinations');
+for(const tab of ['messages','groups','friends','notices','settings'])
+  assert(initial.includes('data-tab="'+tab+'"'),'Primary menu: '+tab);
+assert(initial.includes('aria-current="page" data-act="app-tab" data-tab="messages"'));
+assert(initial.includes('data-act="rail-more"'));
+assert(initial.includes('aria-expanded="false"'));
+assert(initial.includes('id="rail-more-items" class="rail-extra " hidden'));
+state.railMoreOpen=true;
+assert(ctx.appRail().includes('id="rail-more-items" class="rail-extra is-open"'),'Secondary menu expands');
+state.railMoreOpen=false;state.tab='support';
+assert(ctx.appRail().includes('class="rail-extra is-open"'),'Secondary active page remains discoverable');
+assert(js.includes('class="rail-settings-shortcuts"'),'Settings provides fallback shortcuts');
+assert(js.includes('data-tab="restricted"')&&js.includes('data-tab="support"'),'Secondary features preserved');
+assert(css.includes('@media(max-width:800px)')&&css.includes('position:fixed'),'Bottom mobile tab bar');
+assert(css.includes('aria-label')===false); // ARIA is owned by HTML not CSS
+assert(html.includes('/static/rail-navigation.css?v=1.0'));
+console.log('Member navigation: 5 primary actions, accessible secondary actions, bottom navigation, fallback shortcuts OK');
