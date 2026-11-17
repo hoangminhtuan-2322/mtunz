@@ -31,6 +31,7 @@ jobs:
           node --check static/app.js
           node --check static/extras.js
           node --check static/premium.js
+          node --check static/admin-console.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -53,6 +54,8 @@ jobs:
       - name: Verify Admin password and PIN form geometry
         run: |
           node tests/admin_security_layout.cjs
+      - name: Test upgraded Admin console and protected actions
+        run: node tests/admin_console.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
