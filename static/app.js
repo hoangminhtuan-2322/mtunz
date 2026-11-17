@@ -406,34 +406,6 @@ function authSupport(){
  <button class="btn ghost full">Xác nhận đặt lại</button></form>`;
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
-function initializeHeroMotion(hero){
- // Pointer effects are scoped to the left hero only: tab and form interaction
- // cannot move the brand, orbit or feature cards on the opposite side.
- if(!hero || hero.dataset.motionReady || !window.matchMedia ||
-    !window.matchMedia('(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)').matches) return;
- hero.dataset.motionReady='1';
- let frame=0, rect=null, pointer=null;
- hero.addEventListener('pointerenter',()=>{
-   rect=hero.getBoundingClientRect();
-   hero.classList.add('nova-pointer-active');
- },{passive:true});
- hero.addEventListener('pointermove',event=>{
-   if(!rect)rect=hero.getBoundingClientRect();
-   pointer={x:event.clientX-rect.left,y:event.clientY-rect.top};
-   if(frame)return;
-   frame=requestAnimationFrame(()=>{
-     frame=0;
-     if(!pointer || !hero.isConnected)return;
-     hero.style.setProperty('--nova-pointer-x',pointer.x+'px');
-     hero.style.setProperty('--nova-pointer-y',pointer.y+'px');
-   });
- },{passive:true});
- hero.addEventListener('pointerleave',()=>{
-   hero.classList.remove('nova-pointer-active');
-   pointer=null;rect=null;
-   if(frame){cancelAnimationFrame(frame);frame=0;}
- },{passive:true});
-}
 function renderAuth(){
  // Keep the left-side hero DOM mounted across login/register/support transitions.
  // Rebuilding #app here restarted every decorative animation in the opposite column.
@@ -449,7 +421,7 @@ function renderAuth(){
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
    </main></div>`;
-   if(typeof initializeHeroMotion==='function')initializeHeroMotion(host.querySelector('.auth-art.art-v5'));
+   // Brand artwork stays static; no pointer tracking or background motion.
    return;
  }
  const nav=existing.querySelector('.auth-nav');
