@@ -133,6 +133,13 @@ function profileSettings(){
  <label class="profile-check"><input type="checkbox" name="show_online" ${u.show_online?'checked':''}> Hiển thị trạng thái đang hoạt động</label>
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
  <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
+ <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
+ <p class="hint" style="margin:10px 0 14px">Chỉ bạn và quản trị viên được xem số điện thoại, email để quản lý tài khoản. Không xuất hiện trên hồ sơ công khai. Chưa xác minh qua SMS hoặc email.</p>
+ <form data-form="settings-contact">
+  <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" pattern="[+0-9() .-]{8,40}" maxlength="40" required value="${esc(u.phone||'')}" placeholder="09xxxxxxxx hoặc +84..."></div>
+  <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}" placeholder="tenban@gmail.com"></div>
+  <button class="btn primary" type="submit">Lưu thông tin liên hệ</button>
+ </form></section>
  <section class="card"><h3>${icon('shield',17)} Dữ liệu & phiên đăng nhập</h3><p class="hint">Tải dữ liệu tài khoản hoặc đăng xuất toàn bộ thiết bị khác.</p>
  <div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap"><a class="btn ghost sm" href="/api/me/export">${icon('file',15)} Xuất dữ liệu JSON</a>
  <button class="btn ghost sm" data-act="list-sessions">${icon('lock',15)} Phiên đăng nhập</button>
@@ -458,7 +465,7 @@ document.addEventListener('change',async e=>{
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('form[data-form]');if(!form)return;
  const key=form.dataset.form;
- if(!['create-group','send-group-message','settings-profile'].includes(key))return;
+ if(!['create-group','send-group-message','settings-profile','settings-contact'].includes(key))return;
  event.preventDefault();event.stopImmediatePropagation();
  const fd=new FormData(form);
  try{
@@ -483,6 +490,14 @@ document.addEventListener('submit',async event=>{
     show_online:fd.has('show_online'),show_receipts:fd.has('show_receipts')};
    await api('/api/me/profile',{method:'PATCH',data});
    Object.assign(state.user,data);renderApp();toast('Đã lưu hồ sơ.','ok');
+  }
+  if(key==='settings-contact'){
+   const data={display_name:state.user.display_name||'',bio:state.user.bio||'',
+    show_online:!!state.user.show_online,show_receipts:!!state.user.show_receipts,
+    phone:String(fd.get('phone')||'').trim(),email:String(fd.get('email')||'').trim()};
+   await api('/api/me/profile',{method:'PATCH',data});
+   state.user=(await api('/api/me')).user;
+   renderApp();toast('Đã cập nhật thông tin liên hệ riêng tư.','ok');
   }
  }catch(e){toast(e.message,'error');}
 },true);
