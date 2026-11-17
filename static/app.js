@@ -43,6 +43,40 @@ let toastTimer=0,typingTimer=0,socketRetry=null;
 // A tab-scoped marker survives a normal reload, but not a new ordinary tab.
 // Only screen IDs are kept here; never store passwords, PINs or cookies.
 const ACTIVE_TAB_KEY='mtunz.active-tab.v1';
+// A fresh second tab must not revoke an already-open tab's cookie session.
+// BroadcastChannel only shares a boolean presence signal, never account secrets.
+let tabPresenceChannel=null;
+try{
+ if(typeof BroadcastChannel!=='undefined'){
+  tabPresenceChannel=new BroadcastChannel('mtunz.active-presence.v1');
+  tabPresenceChannel.onmessage=event=>{
+   const item=event.data;
+   if(item?.kind==='probe'&&state.user&&readActiveTab()){
+    tabPresenceChannel.postMessage({kind:'alive',nonce:item.nonce});
+   }
+  };
+ }
+}catch{}
+function otherTabIsActive(){
+ if(!tabPresenceChannel)return Promise.resolve(false);
+ return new Promise(resolve=>{
+  const nonce=Math.random().toString(36).slice(2);
+  let finished=false;
+  const previous=tabPresenceChannel.onmessage;
+  const respond=event=>{
+   if(previous)previous(event);
+   if(!finished&&event.data?.kind==='alive'&&event.data.nonce===nonce){
+    finished=true;clearTimeout(timeout);tabPresenceChannel.onmessage=previous;resolve(true);
+   }
+  };
+  tabPresenceChannel.onmessage=respond;
+  const timeout=setTimeout(()=>{
+   if(!finished){finished=true;tabPresenceChannel.onmessage=previous;resolve(false);}
+  },220);
+  tabPresenceChannel.postMessage({kind:'probe',nonce});
+ });
+}
+
 const VIEW_TAB_KEY='mtunz.active-view.v1';
 function readActiveTab(){
  try {
@@ -237,8 +271,11 @@ async function setup(){
   // New tab / previously closed tab: do not silently re-enter old messages.
   // This revokes the stale cookie access while retaining the optional saved
   // device credential, which still requires a PIN on a fresh visit.
-  await post('/api/auth/lock');
-  const remembered=await post('/api/auth/remembered');
+  const activeInOtherTab=await otherTabIsActive();
+  // A second tab starts on the login screen without closing the first tab.
+  // Once the original tab is closed, a new visit revokes its old cookie.
+  if(!activeInOtherTab)await post('/api/auth/lock');
+  const remembered=activeInOtherTab?{remembered:false}:await post('/api/auth/remembered');
   state.user=null;
   state.savedDevice=!!remembered.remembered;
   state.rememberedDevice=state.savedDevice;
