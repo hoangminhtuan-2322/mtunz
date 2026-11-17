@@ -51,3 +51,19 @@ python -m pytest -q
 ```
 
 **11/11 bài kiểm thử đạt** gồm 8 bài chức năng SQLite và 3 bài cấu hình/giả lập adapter PostgreSQL. Kiểm tra với PostgreSQL/Render thật cần tài khoản Neon và Render; chưa triển khai thay người dùng.
+
+## Quản lý phiên & thiết bị
+
+Trong **Cài đặt → Phiên đăng nhập**, người dùng có thể xem loại thiết bị, hệ điều hành,
+trình duyệt, thời điểm đăng nhập/ghi nhớ, thời điểm hoạt động cuối, thời hạn, mạng IP đã
+rút gọn và vị trí gần đúng (nếu có). Có thể đổi tên và thu hồi **từng** phiên/thiết bị;
+không thể xóa nhầm phiên đang dùng (hãy bấm Đăng xuất). Thu hồi quyền ghi nhớ chỉ gỡ
+mở khóa nhanh bằng PIN, không tự đăng xuất một phiên đang hoạt động.
+
+Tên loại thiết bị được suy ra từ User-Agent (không phải tên máy chính xác). **Không có
+theo dõi GPS hay gọi API geolocation bên thứ ba.** Vị trí được tra cứu cục bộ, chỉ khi
+triển khai đã chuẩn bị tệp GeoLite2-City `.mmdb` hợp lệ và khai báo
+`GEOIP_DB_PATH=/đường/dẫn/GeoLite2-City.mmdb`. Không có cơ sở dữ liệu này,
+mtunz hiển thị **Không xác định** và vẫn có thể xem IP đã che bớt. Vị trí IP
+có thể sai do VPN, mạng di động và proxy. Đối với thiết bị đăng nhập trước bản
+cập nhật, các trường nhận diện được hiển thị **Chưa có dữ liệu** thay vì suy đoán.
