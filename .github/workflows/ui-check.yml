@@ -79,7 +79,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=9.4' in h
+          assert '/static/app.js?v=9.5' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
           assert 'data-act="delete-own-account"' in application
@@ -90,7 +90,7 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=10.1' in h
+          assert '/static/extras.js?v=10.2' in h
           assert '/static/device-sessions.css?v=10.0' in h
           assert 'auth-remember-choice' in application
           assert 'showcase-contact' not in application
