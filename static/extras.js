@@ -136,7 +136,7 @@ function profileSettings(){
  <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
  <p class="hint" style="margin:10px 0 14px">Chỉ bạn và quản trị viên được xem số điện thoại, email để quản lý tài khoản. Không xuất hiện trên hồ sơ công khai. Chưa xác minh qua SMS hoặc email.</p>
  <form data-form="settings-contact">
-  <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" pattern="[+0-9() .-]{8,40}" maxlength="40" required value="${esc(u.phone||'')}" placeholder="09xxxxxxxx hoặc +84..."></div>
+  <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}" placeholder="09xxxxxxxx hoặc +84..."></div>
   <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}" placeholder="tenban@gmail.com"></div>
   <button class="btn primary" type="submit">Lưu thông tin liên hệ</button>
  </form></section>
