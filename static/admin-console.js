@@ -109,7 +109,7 @@
    all('thead th',anchor).forEach((th,index)=>{
     th.setAttribute('title','Nhấn để sắp xếp theo cột');
     th.style.cursor='pointer';th.tabIndex=0;th.dataset.sortIndex=String(index);
-    th.setAttribute('role','button');th.setAttribute('aria-label','Sắp xếp theo '+th.textContent.trim());
+    th.setAttribute('aria-label','Nhấn Enter để sắp xếp theo '+th.textContent.trim());
    });
   }
   refreshList();
@@ -195,13 +195,16 @@
    }
    if(!results.childElementCount)results.append(make('p',{class:'admin-muted-note'},'Không tìm thấy mục phù hợp.'));
   }
-  input.addEventListener('input',draw);draw();input.focus();
+  input.addEventListener('input',draw);
+  input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();results.querySelector('button')?.focus();}else if(e.key==='Enter'){e.preventDefault();results.querySelector('button')?.click();}});
+  draw();input.focus();
   overlay.addEventListener('click',e=>{if(e.target===overlay)closeCommands();});
  }
  function exportAudit(){
   if(!adminReady()||activeTab()!=='audit')return;
   const entries=Array.isArray(state.adminData)?state.adminData:[];
   if(!entries.length)return;
+  if(!window.confirm('Nhật ký quản trị có thể chứa dữ liệu nhạy cảm. Chỉ lưu CSV trên thiết bị tin cậy. Bạn có muốn tiếp tục?'))return;
   const safe=v=>{
    let s=String(v??'').replace(/\r?\n/g,' ');
    if(/^[\s]*[=+@\-]/.test(s))s="'"+s;
