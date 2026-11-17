@@ -205,7 +205,7 @@ function connectSocket(){
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
    if(t==='account-sanction'){showSanction(data);return;}
-   if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');state.user=null;await post('/api/auth/logout').catch(()=>{});renderAuth();return;}
+   if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');await post('/api/auth/logout').catch(()=>{});resetAuthAfterLogout();return;}
    if(t==='registration-updated'){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin)loadAdmin();
@@ -239,7 +239,18 @@ async function enterApp(){
  else{await refreshFriends(false);await refreshGroups(false);renderApp();}
  connectSocket();
 }
-async function logout(){try{await post('/api/auth/logout');}catch{}state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();}
+function resetAuthAfterLogout(){
+ // Remove typed or autofilled secrets from live DOM before switching screens.
+ document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
+ state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
+ state.username='';state.challenge='';state.pinLength=4;
+ state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();
+}
+async function logout(){
+ // Never claim that the user is logged out before server-side revocation succeeds.
+ await post('/api/auth/logout');
+ resetAuthAfterLogout();
+}
 
 // ==== Onboarding and anonymous support ====
 function authArt(){return `<aside class="auth-art art-v3 art-v4 art-v5" aria-label="Giới thiệu mtunz">
@@ -351,7 +362,7 @@ function authLogin(){
  password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${esc(state.username)} 👋</h1>
  <p class="hint">Nhập mật khẩu để tiếp tục. Tài khoản có PIN sẽ cần xác minh thêm một bước.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span></span></div>
- <form data-form="login-password">${inputField('Mật khẩu','password','password','Nhập mật khẩu','autocomplete="current-password"')}
+ <form data-form="login-password" autocomplete="off">${inputField('Mật khẩu','password','password','Nhập mật khẩu','autocomplete="off" readonly data-manual-password="1"')}
  <button type="submit" class="btn primary full">Xác nhận mật khẩu ${icon('chevron',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi tên tài khoản</button>`,
  pin:`<span class="eyebrow">BƯỚC 3/3 · XÁC MINH</span><h1>Thêm một lớp an toàn.</h1>
@@ -897,6 +908,21 @@ async function clickAction(button){
   case 'admin-close-ticket':await post(`/api/admin/tickets/${id}/status`,{status:button.dataset.status});toast('Đã cập nhật phiếu hỗ trợ.','ok');await loadAdmin();break;
  }
 }
+// A login password field begins read-only to prevent automatic password restoration.
+// Only an intentional tap or keyboard focus unlocks a clean, empty field.
+function unlockLoginPassword(input){
+ if(!input?.matches?.('form[data-form="login-password"] input[data-manual-password]')||!input.readOnly)return;
+ input.value='';
+ input.readOnly=false;
+ input.dataset.manuallyUnlocked='1';
+}
+document.addEventListener('pointerdown',event=>unlockLoginPassword(event.target),true);
+document.addEventListener('focusin',event=>unlockLoginPassword(event.target));
+window.addEventListener('pageshow',()=>{
+ if(state.user)return;
+ const input=$('form[data-form="login-password"] input[data-manual-password]');
+ if(input){input.value='';input.readOnly=true;delete input.dataset.manuallyUnlocked;}
+});
 document.addEventListener('click',async event=>{
  const btn=event.target.closest('[data-act]');if(!btn||btn.disabled)return;
  try{await clickAction(btn);}catch(e){toast(e.message,'error');}
@@ -935,7 +961,12 @@ document.addEventListener('submit',async event=>{
     state.username=r.username;state.step='password';renderAuth();break;
    }
    case 'login-password':{
-    const r=await post('/api/auth/password',{username:state.username,password:String(fd.get('password')||'')});
+    const passwordField=form.querySelector('input[data-manual-password]');
+     if(!passwordField?.dataset.manuallyUnlocked){
+       if(passwordField)passwordField.value='';
+       throw Error('Vui lòng chọn ô mật khẩu và nhập lại để đăng nhập.');
+     }
+     const r=await post('/api/auth/password',{username:state.username,password:String(fd.get('password')||'')});
     if(r.admin){state.user=(await api('/api/me')).user;toast('Chào mừng quản trị viên!','ok');await enterApp();}
     else{state.challenge=r.challenge;state.pinLength=r.pin_length;state.step='pin';renderAuth();}
     break;
