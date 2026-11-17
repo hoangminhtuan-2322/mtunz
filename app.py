@@ -419,6 +419,23 @@ def require_admin(request):
     return u
 
 
+def verify_admin_stepup(request: Request, admin: dict, password: str, pin: str = ''):
+    """Re-authenticate a privileged change against server-side hashes.
+
+    Never log, persist or echo secrets. The proof is scoped to this request,
+    so stealing an admin session cookie alone cannot perform these actions.
+    """
+    throttle(request, 'admin-stepup', 10, 900, str(admin['id']))
+    password_ok = bool(password) and verify_secret(admin['password_hash'], password)
+    pin_ok = (not admin['pin_hash']) or (
+        bool(pin) and len(pin) == admin['pin_length'] and
+        pin.isascii() and pin.isdigit() and verify_secret(admin['pin_hash'], pin))
+    if not (password_ok and pin_ok):
+        with db() as c:
+            admin_log(c, admin['id'], 'admin_stepup_denied', 'Privileged action rejected')
+        raise HTTPException(401, 'Xác minh bảo mật không đúng. Nhập lại mật khẩu quản trị và PIN.')
+
+
 def public_user(u):
     return {'id': u['id'], 'username': u['username'], 'is_admin': bool(u['is_admin']),
             'pin_length': u['pin_length'], 'created_at': u['created_at'],
@@ -1240,11 +1257,14 @@ async def admin_decision(request:Request,rid:int,body:Decision):
 
 class Capacity(BaseModel):
     max_users:int=Field(ge=1,le=100000)
+    admin_password:str=Field(default='',max_length=128)
+    admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/capacity')
 async def set_capacity(request:Request,body:Capacity):
     admin=require_admin(request)
+    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
     with db() as c:
         total,reserved,_=registration_capacity(c)
         if body.max_users<total+reserved:
@@ -1274,6 +1294,8 @@ class Sanction(BaseModel):
     kind:Literal['ban','lock','unban']
     minutes:int|None=Field(default=None,ge=1,le=5256000)
     reason:str=Field(default='',max_length=250)
+    admin_password:str=Field(default='',max_length=128)
+    admin_pin:str=Field(default='',max_length=6)
 
 
 @app.get('/api/admin/users/{uid}/details')
@@ -1303,9 +1325,10 @@ async def admin_user_details(request:Request,uid:int):
 
 @app.post('/api/admin/users/{uid}/sanction')
 async def admin_sanction(request:Request,uid:int,body:Sanction):
+    admin=require_admin(request)
     if body.kind=='lock' and not body.minutes:
         raise HTTPException(422, 'Khóa tạm thời cần có thời hạn cụ thể.')
-    admin=require_admin(request)
+    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
     with db() as c:
         u=one(c,'SELECT * FROM users WHERE id=? AND is_admin=0',(uid,))
         if not u:raise HTTPException(404,'Không tìm thấy tài khoản.')
@@ -1369,6 +1392,8 @@ async def admin_send_ticket(request:Request,tid:int,body:SupportMessage):
 class RecoveryGrantIn(BaseModel):
     username:str
     verified:bool=False
+    admin_password:str=Field(default='',max_length=128)
+    admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/tickets/{tid}/grant')
@@ -1376,6 +1401,7 @@ async def admin_grant(request:Request,tid:int,body:RecoveryGrantIn):
     admin=require_admin(request)
     if not body.verified:
         raise HTTPException(422,'Admin phải xác nhận đã kiểm tra danh tính qua kênh độc lập.')
+    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
     username=norm_username(body.username)
     with db() as c:
         t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
@@ -1411,11 +1437,14 @@ async def admin_ticket_status(request:Request,tid:int,body:TicketClose):
 
 class Broadcast(BaseModel):
     body:str=Field(min_length=1,max_length=500)
+    admin_password:str=Field(default='',max_length=128)
+    admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/broadcast')
 async def admin_broadcast(request:Request,body:Broadcast):
     admin=require_admin(request)
+    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
     with db() as c:
         ids=[r['id'] for r in c.execute('SELECT id FROM users WHERE is_admin=0')]
         for uid in ids:
