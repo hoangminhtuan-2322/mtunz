@@ -927,18 +927,66 @@ function sanctionDialog(uid,kind){
   if(kind==='lock'&&!minutes)throw Error('Khóa tài khoản cần thời hạn.');
   await post(`/api/admin/users/${uid}/sanction`,{kind,minutes,reason:$('#sanction-reason').value});toast('Quyết định đã có hiệu lực.','ok');await loadAdmin();}});
 }
-function userDetails(uid){const u=(state.adminData||[]).find(x=>x.id===uid);if(!u)return;
- modal({title:`Thông tin: ${u.username}`,confirm:'Đóng',closable:false,
-  content:`<div class="stack" style="margin-top:16px;font-size:12px">
-  <div class="row between"><span class="muted">ID</span><b>#${u.id}</b></div>
-  <div class="row between"><span class="muted">Tên đăng nhập</span><b>${esc(u.username)}</b></div>
-  <div class="row between"><span class="muted">Ngày tạo</span><b>${date(u.created_at)}</b></div>
-  <div class="row between"><span class="muted">Hoạt động cuối</span><b>${date(u.last_seen)}</b></div>
-  <div class="row between"><span class="muted">Số bạn bè</span><b>${u.friend_count}</b></div>
-  <div class="row between"><span class="muted">Số tin nhắn</span><b>${u.message_count}</b></div>
-  <div class="row between"><span class="muted">Trạng thái</span>${userStatus(u)}</div>
-  <div><span class="muted">Lý do giới hạn:</span> ${esc(u.sanction_reason||'—')}</div>
-  <div class="hint">Mật khẩu và PIN gốc không được lưu; không thể xem.</div></div>`});
+function adminDetailRow(label,value){
+ return `<div class="admin-detail-row"><span class="muted">${esc(label)}</span><strong>${value}</strong></div>`;
+}
+async function userDetails(uid){
+ const summary=(state.adminData||[]).find(x=>x.id===uid);
+ modal({
+  title:`Hồ sơ quản trị: ${summary?.username||'#'+uid}`,
+  description:'Thông tin chỉ dành cho quản trị viên. Lượt xem này được ghi vào nhật ký kiểm toán.',
+  confirm:'Đóng',closable:false,
+  content:`<div id="admin-user-details-${uid}" class="admin-detail-loading" role="status" aria-live="polite">
+   <span class="ui-inline-spinner" aria-hidden="true"></span><span>Đang tải thông tin người dùng...</span>
+   <div class="ui-skeleton-line"></div><div class="ui-skeleton-line short"></div><div class="ui-skeleton-line"></div>
+  </div>`
+ });
+ try{
+  const result=await api(`/api/admin/users/${uid}/details`);
+  const u=result.user;
+  const mount=document.getElementById('admin-user-details-'+uid);
+  if(!mount)return;
+  const contact=value=>esc(value||'Chưa cung cấp');
+  const yesno=value=>value?'Bật':'Tắt';
+  mount.outerHTML=`<div class="admin-user-detail">
+   <div class="admin-detail-section">
+     <h3>${icon('users',17)} Thông tin cá nhân</h3>
+     ${adminDetailRow('ID tài khoản','#'+u.id)}
+     ${adminDetailRow('Tên đăng nhập',esc(u.username))}
+     ${adminDetailRow('Tên hiển thị',contact(u.display_name))}
+     ${adminDetailRow('Số điện thoại',contact(u.phone))}
+     ${adminDetailRow('Email / Gmail',contact(u.email))}
+     ${adminDetailRow('Giới thiệu',contact(u.bio))}
+     <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email; không hiển thị trong hồ sơ công khai.</p>
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('shield',17)} Tài khoản & quyền riêng tư</h3>
+     ${adminDetailRow('Ngày tạo',deadlineDate(u.created_at))}
+     ${adminDetailRow('Hoạt động gần nhất',deadlineDate(u.last_seen))}
+     ${adminDetailRow('Hiển thị trực tuyến',yesno(u.show_online))}
+     ${adminDetailRow('Hiển thị đã đọc',yesno(u.show_receipts))}
+     ${adminDetailRow('Trạng thái',u.deletion_purge_at?'<span class="pill warn">Chờ xóa</span>':u.sanction_kind?'<span class="pill bad">'+esc(u.sanction_kind)+'</span>':'<span class="pill good">Hoạt động</span>')}
+     ${u.sanction_reason?adminDetailRow('Lý do hạn chế',esc(u.sanction_reason)):''}
+     ${u.sanction_until?adminDetailRow('Hạn hạn chế',deadlineDate(u.sanction_until)):''}
+     ${u.deletion_requested_at?adminDetailRow('Yêu cầu xóa',deadlineDate(u.deletion_requested_at)):''}
+     ${u.deletion_purge_at?adminDetailRow('Dự kiến xóa',deadlineDate(u.deletion_purge_at)):''}
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('grid',17)} Hoạt động & tài nguyên</h3>
+     ${adminDetailRow('Bạn bè',String(u.friend_count))}
+     ${adminDetailRow('Tin nhắn riêng liên quan',String(u.message_count))}
+     ${adminDetailRow('Nhóm đã tham gia',String(u.group_count))}
+     ${adminDetailRow('Tệp tải lên',String(u.file_count))}
+     ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
+     ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
+   </div>
+   <p class="admin-detail-privacy">${icon('lock',16)} Mật khẩu, PIN và thông tin xác thực bí mật không được cung cấp cho Admin.</p>
+  </div>`;
+ }catch(e){
+  const mount=document.getElementById('admin-user-details-'+uid);
+  if(mount)mount.textContent='Không thể tải thông tin. '+e.message;
+  toast(e.message,'error');
+ }
 }
 async function userMessageLog(uid){
  const resp=await api(`/api/admin/users/${uid}/messages`);
@@ -1029,7 +1077,7 @@ async function clickAction(button){
    if(!candidate)throw Error('Không tìm thấy người dùng được chọn.');
    showPermanentDeleteDialog(candidate);break;
   }
-  case 'admin-user-detail':userDetails(id);break;
+  case 'admin-user-detail':await userDetails(id);break;
   case 'admin-view-messages':await userMessageLog(id);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
   case 'admin-open-ticket':state.adminTicket=id;state.adminTicketMessages=(await api(`/api/admin/tickets/${id}/messages`)).messages;renderAdmin();break;
