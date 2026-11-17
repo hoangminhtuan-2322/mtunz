@@ -42,7 +42,8 @@ jobs:
           assert '/static/premium.css' in h
           assert '/static/aurora.css?v=3.0' in h
           assert '/static/notifications.css?v=4.0' in h
-          assert '/static/favicon.svg?v=3.0' in h
+          assert '/static/favicon.svg?v=8.0' in h
+          assert '/static/orbit-brand.css?v=8.0' in h
           assert '/static/premium.js' in h
           assert '/static/app.js' in h
           assert '/static/extras.js' in h
@@ -62,7 +63,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=7.0' in h
+          assert '/static/app.js?v=8.0' in h
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
@@ -74,7 +75,15 @@ jobs:
           assert 'aria-labelledby' in application and 'notify-toast' in application
           notices = Path('static/notifications.css').read_text(encoding='utf-8')
           assert 'prefers-reduced-motion' in notices and 'notify-progress' in notices
-          assert '<svg' in mark and 'mtunz' in mark
+          assert '<svg' in mark and 'mtunz Orbit' in mark
+          assert 'orbit-front' in mark and 'star-glow' in mark
+          assert 'src="/static/favicon.svg?v=8.0"' in application
+          orbit = Path('static/orbit-brand.css').read_text(encoding='utf-8')
+          assert '.logo-mark' in orbit and '.nova-nucleus' in orbit
+          assert '.boot-screen .loading-logo' in orbit and 'prefers-reduced-motion' in orbit
+          import json
+          manifest = json.loads(Path('static/manifest.webmanifest').read_text(encoding='utf-8'))
+          assert manifest['icons'][0]['src'] == '/static/favicon.svg?v=8.0'
           assert 'MỘT KHÔNG GIAN, NHIỀU KẾT NỐI' in application
           assert '<h1 class="auth-headline-copy nova-headline">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>' in application
           assert '<p class="nova-description">Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>' in application
