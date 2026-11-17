@@ -12,3 +12,13 @@
 8. Gọi thoại/video 1–1 bằng WebRTC là bản cơ bản, không có máy chủ TURN đi kèm. Cần dịch vụ TURN cho một số mạng khó và có thể có chi phí riêng.
 9. Khôi phục tài khoản do admin duyệt thủ công; cần xác minh chủ sở hữu ngoài kênh chat, không cấp lại thông tin chỉ dựa trên lời tự khai của người yêu cầu.
 10. Không đưa website vào sản xuất quy mô lớn nếu chưa kiểm tra quyền truy cập, thử nghiệm PostgreSQL thực tế, chống lạm dụng, chính sách quyền riêng tư, xóa dữ liệu và phương án khôi phục sau sự cố.
+
+## Gia cố giao diện và bảo mật tháng 11/2026
+
+- Giao diện có toast riêng theo loại thông báo, thanh thời gian tự đóng, đóng thủ công, popup thao tác nguy hiểm và hỗ trợ bàn phím/focus.
+- Middleware từ chối nguồn ghi dữ liệu sai Origin/Referer và trình duyệt gửi `Sec-Fetch-Site: cross-site`. Yêu cầu API thông thường giới hạn nội dung JSON ở 64 KiB; upload có giới hạn yêu cầu 3 MiB và giới hạn tệp thực ở 2 MiB trên Render Free.
+- WebSocket từ chối thông điệp JSON không hợp lệ, thông điệp lớn hơn 16 KiB và tần suất sự kiện bất thường. Các giới hạn này vẫn là bảo vệ cấp ứng dụng, không thay thế WAF hay rate limiter tập trung.
+- Đã bổ sung COOP/CORP, `X-Content-Type-Options`, `X-Frame-Options`, CSP và giới hạn kiểm tra tài khoản/đổi mật khẩu/PIN. Khi chạy `PUBLIC_MODE=1`, **mật khẩu mới** phải từ 10 đến 128 ký tự và không dùng các mật khẩu phổ biến đã liệt kê; tài khoản cũ không tự đổi mật khẩu.
+- Trên máy chủ production, cookie đăng nhập dùng `HttpOnly`, `Secure`, `SameSite=Lax`. PIN là lớp xác minh bổ sung kiểu *knowledge factor*, không phải xác thực đa yếu tố bằng thiết bị độc lập. Admin vẫn được xét duyệt thủ công theo thiết kế hiện tại.
+- **Chưa có E2EE, quét virus đầy đủ, bảo vệ chống tấn công phân tán, xác thực TOTP/hardware key hay kiểm thử thâm nhập độc lập**. Không khẳng định hệ thống đạt chuẩn bảo mật doanh nghiệp.
+- Mật khẩu admin được thiết lập trước đây có thể đã xuất hiện trong cuộc hội thoại. Nên đổi mật khẩu admin **trong ứng dụng** qua mục bảo mật, vì sửa riêng biến `ADMIN_PASSWORD` trên Render sẽ không đổi hash đã lưu trong Neon. Không chia sẻ mật khẩu, API key, cookie hoặc chuỗi kết nối database.
