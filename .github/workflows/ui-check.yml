@@ -34,12 +34,15 @@ jobs:
       - name: Verify left-side hero motion scope
         run: |
           node tests/hero_motion_isolation.cjs
+      - name: Verify Admin full-width layout across breakpoints
+        run: |
+          node tests/admin_layout.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
           from pathlib import Path
           h = Path('static/index.html').read_text(encoding='utf-8')
-          assert '/static/premium.css' in h
+          assert '/static/premium.css?v=2.2' in h
           assert '/static/aurora.css?v=3.0' in h
           assert '/static/notifications.css?v=4.0' in h
           assert '/static/favicon.svg?v=8.0' in h
