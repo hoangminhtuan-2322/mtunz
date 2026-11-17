@@ -408,7 +408,7 @@ function authRegister(){
      ${inputField('Nhập lại PIN','repeat-pin','password','Xác nhận mã PIN','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6" autocomplete="off"')}
    </section>
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
-     ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40" pattern="[+0-9() .-]{8,40}"')}
+     ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
    <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý cung cấp số điện thoại và email (nếu có) cho quản trị viên để quản lý tài khoản. Thông tin liên hệ không hiển thị công khai; mật khẩu và PIN không thể xem được.</span></label>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
@@ -419,7 +419,7 @@ function authRegister(){
  <div class="auth-step"><span class="active"></span><span></span><span></span></div>
  <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','Ví dụ: hanh_uyen','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
  <div class="hint" style="margin:0 0 13px">3–24 ký tự, bắt đầu bằng chữ; chỉ dùng a-z, 0-9 và dấu gạch dưới.</div>
- ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40" pattern="[+0-9() .-]{8,40}"')}
+ ${inputField('Số điện thoại (bắt buộc)','phone','tel','09xxxxxxxx hoặc +84...','autocomplete="tel" inputmode="tel" maxlength="40"')}
  <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254" placeholder="tenban@gmail.com"></div></div>
  <p class="hint" style="margin:0 0 16px">Số điện thoại chưa được xác minh bằng SMS. Chỉ admin được xem thông tin liên hệ khi quản lý tài khoản.</p>
  <button class="btn primary full" type="submit">Gửi yêu cầu phê duyệt ${icon('chevron',17)}</button></form>
