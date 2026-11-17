@@ -1,0 +1,23 @@
+# Deploy mtunz as a single Render Free web service. Persistent user data lives
+# on Neon PostgreSQL, NOT on Render's temporary disk.
+services:
+  - type: web
+    name: mtunz
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PUBLIC_MODE
+        value: '1'
+      - key: COOKIE_SECURE
+        value: '1'
+      - key: REQUIRE_POSTGRES
+        value: '1'
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
