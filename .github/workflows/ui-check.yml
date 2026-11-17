@@ -28,6 +28,9 @@ jobs:
           node --check static/app.js
           node --check static/extras.js
           node --check static/premium.js
+      - name: Check isolated auth animation and keyboard tab state
+        run: |
+          node tests/auth_isolation.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
@@ -52,7 +55,8 @@ jobs:
           signals = Path('static/signals.css').read_text(encoding='utf-8')
           assert 'signal-stage' in signals and 'signal-feature' in application
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=4.2' in h
+          assert '/static/app.js?v=5.0' in h
+          assert '/static/auth-refined.css?v=5.0' in h
           assert 'showcase-contact' not in application
           assert 'tối thiểu 10 ký tự' in application
           assert 'brandGlyph' in application and 'class="brand-glyph"' in application
