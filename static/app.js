@@ -32,6 +32,7 @@ const brandGlyph=()=>`<svg class="brand-glyph" width="25" height="25" viewBox="0
 
 const avatar=(name,online=false,size='')=>`<div class="avatar ${size} ${online?'online':''}">${esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
+ savedDevice:false,rememberedDevice:false,
  regName:'',regStatus:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminQuery:'',typing:false};
@@ -174,6 +175,17 @@ function showSanction(d){
 }
 async function setup(){
  try{
+   // Revoke any prior access session before inspecting the remembered device.
+   // A browser refresh must never open messages without a fresh PIN verification.
+   const remembered=await post('/api/auth/remembered');
+   if(remembered.remembered){
+     state.user=null;state.mode='login';state.step='remembered';
+     state.username=remembered.username;state.pinLength=remembered.pin_length;
+     state.savedDevice=true;state.rememberedDevice=true;
+     renderAuth();
+     return;
+   }
+   state.savedDevice=false;state.rememberedDevice=false;
    const res=await api('/api/me');state.user=res.user;
    if(state.user){await enterApp();}
    else{
@@ -227,7 +239,7 @@ async function enterApp(){
  else{await refreshFriends(false);await refreshGroups(false);renderApp();}
  connectSocket();
 }
-async function logout(){try{await post('/api/auth/logout');}catch{}state.user=null;state.selected=null;state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();}
+async function logout(){try{await post('/api/auth/logout');}catch{}state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();}
 
 // ==== Onboarding and anonymous support ====
 function authArt(){return `<aside class="auth-art art-v3 art-v4">
@@ -280,21 +292,32 @@ function authTabs(){return `<div class="auth-nav" role="group" aria-label="Đi�
  </div>`;}
 function authLogin(){
  const step=state.step;
+ if(step==='remembered')return `<span class="eyebrow">THIẾT BỊ ĐƯỢC GHI NHỚ</span>
+ <h1>Chào mừng trở lại, ${esc(state.username)}!</h1>
+ <p class="hint">Thiết bị này đã được ghi nhớ. Nhập PIN ${state.pinLength} chữ số để mở khóa — không cần nhập lại mật khẩu.</p>
+ <div class="auth-remember-summary">${icon('shield',18)}<span>Phiên truy cập đang khóa. Chỉ mở sau khi xác minh PIN.</span></div>
+ <form data-form="login-remembered">
+ ${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),
+ `inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="off"`)}
+ <button class="btn primary full" type="submit">${icon('lock',17)} Mở khóa bằng PIN</button></form>
+ <div class="auth-remember-actions"><button class="linkbtn" type="button" data-act="forget-remembered">Quên thiết bị · Đăng nhập tài khoản khác</button></div>`;
+
  const forms={
  username:`<span class="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h1>Tiếp tục cuộc trò chuyện.</h1>
  <p class="hint">Nhập tên tài khoản duy nhất để bắt đầu.</p><div class="auth-step"><span class="active"></span><span></span><span></span></div>
  <form data-form="login-username">${inputField('Tên tài khoản','username','text','Ví dụ: minh_anh','autocomplete="username" value="'+esc(state.username)+'"')}
  <button class="btn primary full" type="submit">Tiếp tục ${icon('chevron',17)}</button></form>`,
- password:`<span class="eyebrow">BƯỚC ${state.username==='admin'?'1/1':'2/3'}</span><h1>Chào ${esc(state.username)} 👋</h1>
- <p class="hint">Nhập mật khẩu để ${state.username==='admin'?'mở trang quản trị.':'chuyển sang lớp xác minh PIN.'}</p>
+ password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${esc(state.username)} 👋</h1>
+ <p class="hint">Nhập mật khẩu để tiếp tục. Tài khoản có PIN sẽ cần xác minh thêm một bước.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span></span></div>
  <form data-form="login-password">${inputField('Mật khẩu','password','password','Nhập mật khẩu','autocomplete="current-password"')}
- <button type="submit" class="btn primary full">${state.username==='admin'?'Vào trang quản trị':'Xác nhận mật khẩu'} ${icon('chevron',17)}</button></form>
+ <button type="submit" class="btn primary full">Xác nhận mật khẩu ${icon('chevron',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi tên tài khoản</button>`,
  pin:`<span class="eyebrow">BƯỚC 3/3 · XÁC MINH</span><h1>Thêm một lớp an toàn.</h1>
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
  <form data-form="login-pin">${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
+ <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Mỗi lần mở lại website vẫn phải nhập mã PIN. Chỉ bật trên thiết bị cá nhân.</small></span></label>
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đăng nhập lại</button>`
  };
@@ -699,6 +722,21 @@ async function clickAction(button){
   case 'forgot-username':case 'forgot-password':case 'forgot-pin':
    state.supportKind=act.slice(7);state.mode='support';state.supportTicket=null;await loadTickets();renderAuth();break;
   case 'back-login':state.step='username';state.challenge='';renderAuth();break;
+  case 'forget-remembered':{
+   await post('/api/auth/remembered/forget');
+   state.savedDevice=false;state.rememberedDevice=false;
+   state.mode='login';state.step='username';state.username='';renderAuth();
+   toast('Đã xóa ghi nhớ thiết bị này.','ok');break;
+  }
+  case 'lock-device':{
+   await post('/api/auth/lock');
+   state.user=null;state.ws?.close();state.selected=null;
+   const remembered=await post('/api/auth/remembered');
+   state.savedDevice=!!remembered.remembered;
+   state.mode='login';state.step=remembered.remembered?'remembered':'username';
+   if(remembered.remembered){state.username=remembered.username;state.pinLength=remembered.pin_length;}
+   renderAuth();break;
+  }
   case 'refresh-registration':await refreshRegistration();break;
   case 'retry-registration':state.regStatus='';state.regName='';renderAuth();break;
   case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
@@ -779,8 +817,19 @@ document.addEventListener('submit',async event=>{
     break;
    }
    case 'login-pin':{
-    await post('/api/auth/pin',{challenge:state.challenge,pin:val('pin')});
-    state.user=(await api('/api/me')).user;toast('Đăng nhập thành công!','ok');await enterApp();break;
+    const unlocked=await post('/api/auth/pin',{challenge:state.challenge,pin:val('pin'),
+      remember_device:fd.get('remember_device')==='on'});
+    state.savedDevice=!!unlocked.remembered;
+    state.rememberedDevice=state.savedDevice;
+    state.user=(await api('/api/me')).user;
+    toast(state.savedDevice?'Đã ghi nhớ thiết bị. Lần sau chỉ cần PIN.':'Đăng nhập thành công!','ok');
+    await enterApp();break;
+   }
+   case 'login-remembered':{
+    await post('/api/auth/remembered/unlock',{pin:val('pin')});
+    state.savedDevice=true;state.rememberedDevice=true;
+    state.user=(await api('/api/me')).user;
+    toast('Đã mở khóa bằng mã PIN.','ok');await enterApp();break;
    }
    case 'register-request':{
     const r=await post('/api/registration/request',{username:val('username')});
