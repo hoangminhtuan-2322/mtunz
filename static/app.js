@@ -206,6 +206,7 @@ function connectSocket(){
    const t=data.type;
    if(t==='account-sanction'){showSanction(data);return;}
    if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');await post('/api/auth/logout').catch(()=>{});resetAuthAfterLogout();return;}
+   if(t==='account-deletion-updated'&&state.user?.is_admin){await loadAdmin();return;}
    if(t==='registration-updated'){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin)loadAdmin();
@@ -816,42 +817,67 @@ function renderAdmin(){
  root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
+function showCancelDeletionDialog(){
+ if(!state.accountDeletion?.pending)return;
+ modal({
+  title:'Hủy yêu cầu xóa tài khoản',
+  description:'Bạn sẽ giữ nguyên tài khoản và dữ liệu. Hãy nhập mật khẩu và PIN hiện tại để xác nhận hủy trước hạn.',
+  confirm:'Giữ tài khoản của tôi',
+  content:`<div class="field"><label for="cancel-delete-password">Mật khẩu hiện tại</label>
+    <input id="cancel-delete-password" class="input" type="password" autocomplete="off" placeholder="Nhập mật khẩu" required></div>
+    <div class="field"><label for="cancel-delete-pin">PIN hiện tại</label>
+    <input id="cancel-delete-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="6" required></div>`,
+  handler:async host=>{
+   const password=host.querySelector('#cancel-delete-password')?.value||'';
+   const pin=host.querySelector('#cancel-delete-pin')?.value||'';
+   if(!password||!pin)throw Error('Vui lòng nhập đủ mật khẩu và mã PIN.');
+   await post('/api/me/delete/cancel',{password,pin});
+   state.accountDeletion={pending:false,requested_at:null,purge_at:null};
+   renderApp();
+   toast('Đã hủy yêu cầu xóa. Tài khoản được giữ nguyên.','ok');
+  }
+ });
+}
 function showPermanentDeleteDialog(target=null){
  const selfDelete=!target;
  const account=selfDelete?state.user:target;
  if(!account)return;
+ if(!selfDelete&&!state.user?.pin_length){
+  toast('Hãy bật PIN quản trị trong mục Bảo mật Admin trước khi xóa ngay.','warning');
+  return;
+ }
  const username=account.username;
  const requirePin=!!state.user?.pin_length;
+ const phrase=selfDelete?'XOA SAU 30 NGAY':'XOA VINH VIEN';
  modal({
-  title:selfDelete?'Xóa tài khoản của tôi':'Xóa tài khoản người dùng',
-  description:`Đây là hành động KHÔNG THỂ HOÀN TÁC. Tài khoản ${username}, tin nhắn riêng, tin nhắn nhóm đã gửi, tệp đính kèm và các liên kết liên quan sẽ bị xóa vĩnh viễn. Nhóm còn thành viên được chuyển trưởng nhóm.`,
-  danger:true,confirm:'Xóa vĩnh viễn',
+  title:selfDelete?'Yêu cầu xóa sau 30 ngày':'Xóa vĩnh viễn ngay (Admin)',
+  description:selfDelete?
+   `Tài khoản ${username} sẽ được lên lịch xóa sau 30 ngày. Trước hạn, bạn có thể hủy tại Cài đặt. Sau thời hạn, tài khoản, tin nhắn và dữ liệu liên quan bị xóa vĩnh viễn.`:
+   `Hành động này KHÔNG THỂ HOÀN TÁC. Toàn bộ dữ liệu và tài khoản ${username} sẽ bị xóa ngay. Bạn cần xác nhận bằng mật khẩu và PIN quản trị.`,
+  danger:true,confirm:selfDelete?'Lên lịch xóa 30 ngày':'Xóa vĩnh viễn ngay',
   content:`<div class="delete-confirm-form">
-    <p class="hint" style="margin:0 0 14px">Để xác nhận, nhập chính xác tên tài khoản, mật khẩu ${selfDelete?'của bạn':'Admin'}${requirePin?', mã PIN':''} và cụm chữ <b>XOA VINH VIEN</b>.</p>
-    <div class="field"><label for="delete-account-name">Nhập tên tài khoản cần xóa: <b>${esc(username)}</b></label>
+    <p class="hint" style="margin:0 0 14px">Nhập đúng tên tài khoản, mật khẩu ${selfDelete?'của bạn':'Admin'}${requirePin?', mã PIN':''} và cụm <b>${phrase}</b>.</p>
+    <div class="field"><label for="delete-account-name">Tên tài khoản: <b>${esc(username)}</b></label>
       <input id="delete-account-name" class="input" autocomplete="off" spellcheck="false" placeholder="Nhập đúng tên tài khoản" maxlength="80"></div>
     <div class="field"><label for="delete-account-password">Mật khẩu ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
-      <input id="delete-account-password" class="input" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu để xác nhận" maxlength="128"></div>
-    ${requirePin?`<div class="field"><label for="delete-account-pin">Mã PIN ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
-      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" placeholder="Nhập PIN để xác nhận" maxlength="6"></div>`:''}
-    <div class="field"><label for="delete-account-phrase">Nhập <b>XOA VINH VIEN</b></label>
-      <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" placeholder="XOA VINH VIEN" maxlength="14"></div>
-    <p class="hint" style="margin-top:12px">Bạn nên tải bản sao dữ liệu trước nếu muốn lưu giữ. Sau khi xóa, mọi thiết bị sẽ bị đăng xuất.</p>
+      <input id="delete-account-password" class="input" type="password" autocomplete="off" placeholder="Nhập mật khẩu để xác nhận" maxlength="128"></div>
+    ${requirePin?`<div class="field"><label for="delete-account-pin">PIN ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
+      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" placeholder="Nhập PIN" maxlength="6"></div>`:''}
+    <div class="field"><label for="delete-account-phrase">Nhập <b>${phrase}</b></label>
+      <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" placeholder="${phrase}" maxlength="24"></div>
+    <p class="hint" style="margin-top:12px">${selfDelete?'Bạn có thể tải dữ liệu về trước khi hết hạn xóa.':'Nhóm có thành viên khác sẽ được chuyển quyền chủ nhóm.'}</p>
   </div>`,
   handler:async host=>{
    const val=name=>String(host.querySelector('#delete-account-'+name)?.value||'').trim();
    if(val('name')!==username)throw Error('Tên tài khoản xác nhận không khớp.');
-   if(val('phrase')!=='XOA VINH VIEN')throw Error('Hãy nhập chính xác XOA VINH VIEN.');
+   if(val('phrase')!==phrase)throw Error('Hãy nhập chính xác '+phrase+'.');
    if(!val('password'))throw Error('Bạn cần nhập mật khẩu hiện tại.');
    if(requirePin&&!val('pin'))throw Error('Bạn cần nhập mã PIN hiện tại.');
-   const payload={username,password:val('password'),pin:requirePin?val('pin'):null,confirm:'XOA VINH VIEN'};
+   const payload={username,password:val('password'),pin:requirePin?val('pin'):null,confirm:phrase};
    if(selfDelete){
-    await post('/api/me/delete',payload);
-    state.user=null;state.selected=null;state.friends=[];state.blocks=[];
-    state.savedDevice=false;state.rememberedDevice=false;
-    state.ws?.close();state.mode='login';state.step='username';state.username='';
-    renderAuth();connectSocket();
-    toast('Tài khoản đã được xóa vĩnh viễn.','ok');
+    state.accountDeletion=await post('/api/me/delete',payload);
+    renderApp();
+    toast('Đã lên lịch xóa sau 30 ngày. Bạn có thể hủy trước hạn trong Cài đặt.','ok');
    }else{
     await post(`/api/admin/users/${account.id}/delete`,payload);
     toast(`Đã xóa vĩnh viễn tài khoản ${username}.`,'ok');
@@ -934,6 +960,7 @@ async function clickAction(button){
   case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
+  case 'cancel-own-deletion':showCancelDeletionDialog();break;
   case 'logout':await logout();break;
   case 'app-tab':await goTab(button.dataset.tab);break;
   case 'rail-more':state.railMoreOpen=!state.railMoreOpen;renderApp();break;
@@ -958,6 +985,11 @@ async function clickAction(button){
    const op=async()=>{await post(`/api/admin/registrations/${id}/decision`,{approve});toast(approve?'Đã duyệt! Người dùng có thể tạo mật khẩu/PIN.':'Đã từ chối yêu cầu.','ok');await loadAdmin();};
    if(approve)await op();else ask('Từ chối yêu cầu','Người dùng sẽ được thông báo rằng yêu cầu đăng ký chưa được chấp thuận.',op,'Từ chối',true);
    break;
+  }
+  case 'admin-delete-pending':{
+   const candidate=(state.adminData||[]).find(x=>x.user_id===id);
+   if(!candidate)throw Error('Không tìm thấy yêu cầu xóa.');
+   showPermanentDeleteDialog({id:candidate.user_id,username:candidate.username});break;
   }
   case 'admin-delete-user':{
    const candidate=(state.adminData||[]).find(x=>x.id===id);
