@@ -33,4 +33,5 @@ assert(css.includes('.registration-consent input[type="checkbox"]'), 'Consent ch
 assert(css.includes('overflow-y:auto'), 'Mobile visitors can reach content below the fold');
 assert(css.includes('@media (min-width:801px)'), 'Desktop scrolling and centering remain supported');
 assert(css.includes('@media (max-width:800px)'), 'Mobile page flow remains supported');
+assert(!app.includes('Bước đầu tiên là đăng ký tên tài khoản riêng'), 'Remove redundant signup instruction paragraph');
 console.log('Approved registration layout integrity checks passed.');
