@@ -34,6 +34,7 @@ const context={sessionStorage,JSON,Number,state,calls,setTimeout,clearTimeout,
   calls.push('GET '+path);
   if(failNetwork)throw Error('network unavailable');
   if(path==='/api/me')return {user:current};
+  if(path==='/api/auth/remembered/status')return {remembered:false};
   if(path==='/api/registration/status')return {requests:[]};
   if(path==='/api/me/deletion')return {pending:false};
   if(path==='/api/friends')return {friends:[]};
@@ -95,7 +96,7 @@ vm.runInContext(enter+boot,context);
  state.user=null;
  current={id:17,is_admin:false};
  await context.setup();
- assert.deepEqual(calls.slice(0,2),['GET /api/me','GET /api/me/deletion']);
+ assert.deepEqual(calls.slice(0,2),['GET /api/me','GET /api/auth/remembered/status']);
  assert(calls.includes('renderApp'),'Authenticated tab must restore the app');
  assert(!calls.includes('POST /api/auth/lock'),'Reload must never revoke session');
  assert(!calls.includes('POST /api/auth/remembered'),'Reload must not request PIN');
