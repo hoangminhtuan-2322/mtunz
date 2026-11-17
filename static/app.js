@@ -303,8 +303,8 @@ function authRegister(){
  if(state.regStatus==='approved')return `<span class="eyebrow">ĐÃ ĐƯỢC ADMIN DUYỆT</span><h1>Hoàn tất tài khoản.</h1>
  <p class="hint">Tên <b>${esc(state.regName)}</b> đã được giữ chỗ. Thiết lập mật khẩu và chọn PIN 4–6 số.</p>
  <div class="info-strip">✓ Được phép tạo tài khoản · Mật khẩu và PIN được lưu bằng mã băm, không hiển thị cho admin.</div>
- <form data-form="register-complete">${inputField('Mật khẩu (tối thiểu 8 ký tự)','new-password','password','Tạo mật khẩu mạnh','minlength="8" autocomplete="new-password"')}
- ${inputField('Nhập lại mật khẩu','repeat-password','password','Nhập lại mật khẩu','minlength="8"')}
+ <form data-form="register-complete">${inputField('Mật khẩu (tối thiểu 10 ký tự)','new-password','password','Tạo mật khẩu mạnh','minlength="10" autocomplete="new-password"')}
+ ${inputField('Nhập lại mật khẩu','repeat-password','password','Nhập lại mật khẩu','minlength="10"')}
  <div class="field"><label>Độ dài mã PIN</label><select class="select" id="pin-length" name="pin_length"><option value="4">4 chữ số</option><option value="5">5 chữ số</option><option value="6">6 chữ số</option></select></div>
  ${inputField('Mã PIN','new-pin','password','Chỉ dùng chữ số','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6"')}
  ${inputField('Nhập lại PIN','repeat-pin','password','Nhập lại PIN','inputmode="numeric" pattern="[0-9]{4,6}" minlength="4" maxlength="6"')}
@@ -478,7 +478,7 @@ function settingsContent(){
  <button class="btn primary full">Cập nhật mã PIN</button></form></section>
  <section class="card"><h3>${icon('shield',17)} Đổi mật khẩu</h3><p class="hint">Mật khẩu mới nên khác hoàn toàn mật khẩu cũ.</p>
  <form data-form="settings-password">${inputField('Mật khẩu hiện tại','old_password','password','Mật khẩu cũ')}
- ${inputField('Mật khẩu mới','new_password','password','Ít nhất 8 ký tự','minlength="8"')}
+ ${inputField('Mật khẩu mới','new_password','password','Ít nhất 10 ký tự','minlength="10"')}
  <button class="btn primary full">Đổi mật khẩu</button></form></section>
  <section class="card"><h3>${icon('ban',17)} Danh sách đã chặn</h3><p class="hint">Người bị chặn không thể kết bạn hoặc nhắn tin với bạn.</p>
  ${state.blocks.length?state.blocks.map(b=>`<div class="row between" style="margin:12px 0"><b>${esc(b.username)}</b><button class="btn ghost sm" data-act="unblock" data-id="${b.id}">Bỏ chặn</button></div>`).join(''):'<div class="hint" style="margin-top:19px">Chưa có tài khoản bị chặn.</div>'}</section>
