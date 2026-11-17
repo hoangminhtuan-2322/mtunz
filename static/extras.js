@@ -278,16 +278,33 @@ async function extraAction(btn){
   toast(act==='mute-chat'?(muted?'Đã tắt thông báo hội thoại.':'Đã bật thông báo.'):(archived?'Đã lưu trữ hội thoại.':'Đã bỏ lưu trữ.'),'ok');break;
  }
  case 'revoke-sessions':ask('Đăng xuất các thiết bị khác','Tất cả phiên khác sẽ bị thu hồi ngay lập tức. Thiết bị này vẫn tiếp tục sử dụng.',async()=>{await post('/api/me/sessions/revoke-others');toast('Đã đăng xuất các phiên và thu hồi thiết bị ghi nhớ khác.','ok');},'Thu hồi',true);break;
- case 'list-sessions':{
-  const r=await api('/api/me/sessions');
-  modal({title:'Phiên & thiết bị được ghi nhớ',
-   description:'Bạn có thể thu hồi thiết bị khác trong phần Cài đặt. Thiết bị ghi nhớ không thể đọc tin nhắn trước khi nhập PIN.',
-   content:`<div class="stack" style="margin-top:12px">
-   <strong class="small">Phiên đang truy cập (${r.sessions.length})</strong>
-   ${r.sessions.map(s=>`<div class="people-row"><div class="grow"><b>${s.current?'Thiết bị hiện tại':'Phiên khác'}</b><div class="hint">Hết hạn: ${date(s.expires_at)}</div></div>${s.current?'<span class="pill good">Đang dùng</span>':''}</div>`).join('')}
-   <strong class="small" style="margin-top:12px">Thiết bị ghi nhớ (${(r.remembered_devices||[]).length})</strong>
-   ${(r.remembered_devices||[]).map(device=>`<div class="people-row"><div class="grow"><b>${device.current?'Thiết bị đang sử dụng':'Thiết bị khác'}</b><div class="hint">Ghi nhớ tới: ${date(device.expires_at)}</div></div>${device.current?'<span class="pill good">Đã lưu</span>':''}</div>`).join('')||'<p class="hint">Chưa ghi nhớ thiết bị nào.</p>'}</div>`,
-   confirm:'Đóng'});break;
+ case 'list-sessions':await showSessionsDialog();break;
+ case 'device-rename':{
+  const kind=btn.dataset.kind,device=btn.dataset.device;
+  modal({title:'Đặt tên thiết bị',description:'Đặt tên dễ nhận biết, ví dụ: Laptop của tôi hoặc Điện thoại cá nhân.',
+   content:`<div class="field"><label for="device-label-input">Tên thiết bị (tối đa 40 ký tự)</label><input class="input" id="device-label-input" maxlength="40" value="${esc(btn.dataset.label||'')}" autocomplete="off" placeholder="Nhập tên thiết bị"></div>`,
+   confirm:'Lưu tên',handler:async()=>{
+    const label=$('#device-label-input')?.value?.trim()||'';
+    if(!label)throw Error('Vui lòng nhập tên thiết bị.');
+    await api('/api/me/sessions/'+kind+'/'+device+'/label',{method:'PATCH',data:{label}});
+    toast('Đã cập nhật tên thiết bị.','ok');
+    await showSessionsDialog();return false;
+   }});
+  break;
+ }
+ case 'device-revoke':{
+  const kind=btn.dataset.kind,device=btn.dataset.device;
+  const current=btn.dataset.current==='true';
+  ask('Thu hồi quyền thiết bị',
+   kind==='session'?'Phiên này sẽ bị đăng xuất ngay và không thể truy cập tin nhắn nữa.':
+      'Thiết bị sẽ không thể mở khóa nhanh bằng PIN ở lần sau. Phiên đã đăng nhập (nếu có) không bị ảnh hưởng.',
+   async()=>{
+    await del('/api/me/sessions/'+kind+'/'+device);
+    if(kind==='remembered'&&current){state.savedDevice=false;state.rememberedDevice=false;}
+    toast(kind==='session'?'Đã thu hồi phiên đăng nhập.':'Đã xóa thiết bị ghi nhớ.','ok');
+    await showSessionsDialog();return false;
+   },'Thu hồi',true);
+  break;
  }
  case 'admin-group-messages':{
   const data=await api(`/api/admin/groups/${id}/messages`);
@@ -430,7 +447,7 @@ document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
  'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-permission',
- 'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','admin-group-messages',
+ 'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}
 });
