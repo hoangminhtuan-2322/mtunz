@@ -1255,6 +1255,31 @@ class Sanction(BaseModel):
     reason:str=Field(default='',max_length=250)
 
 
+@app.get('/api/admin/users/{uid}/details')
+async def admin_user_details(request:Request,uid:int):
+    admin=require_admin(request)
+    throttle(request,'admin-user-details',90,3600,str(admin['id']))
+    with db() as c:
+        user=one(c,'''SELECT u.id,u.username,u.display_name,u.bio,u.phone,u.email,
+                     u.created_at,u.last_seen,u.show_online,u.show_receipts,
+                     u.sanction_kind,u.sanction_until,u.sanction_reason,
+                     d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
+                     FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
+                     WHERE u.id=? AND u.is_admin=0''',(uid,))
+        if not user:
+            raise HTTPException(404,'Không tìm thấy tài khoản người dùng.')
+        detail=dict(user)
+        detail['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid))['n']
+        detail['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(uid,uid))['n']
+        detail['group_count']=one(c,'SELECT count(*) n FROM group_members WHERE user_id=?',(uid,))['n']
+        detail['file_count']=one(c,'SELECT count(*) n FROM attachments WHERE owner_id=?',(uid,))['n']
+        detail['session_count']=one(c,'SELECT count(*) n FROM sessions WHERE user_id=? AND expires_at>?',(uid,now()))['n']
+        detail['remembered_count']=one(c,'SELECT count(*) n FROM trusted_devices WHERE user_id=? AND expires_at>?',(uid,now()))['n']
+        # Never expose passwords, PIN, secret hashes, or session/recovery tokens.
+        admin_log(c,admin['id'],'admin_view_user_details',f'user_id={uid}')
+    return {'user':detail}
+
+
 @app.post('/api/admin/users/{uid}/sanction')
 async def admin_sanction(request:Request,uid:int,body:Sanction):
     if body.kind=='lock' and not body.minutes:
