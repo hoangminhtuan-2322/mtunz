@@ -1,0 +1,77 @@
+/* Lightweight, purposeful interactions. No infinite decorative background animations. */
+@keyframes mtunz-soft-enter {
+  from { opacity:0; transform:translate3d(0,9px,0); }
+  to { opacity:1; transform:translate3d(0,0,0); }
+}
+@keyframes mtunz-modal-enter {
+  from { opacity:0; transform:translate3d(0,12px,0) scale(.985); }
+  to { opacity:1; transform:translate3d(0,0,0) scale(1); }
+}
+@keyframes mtunz-spin { to { transform:rotate(360deg); } }
+@keyframes mtunz-skeleton { to { transform:translate3d(180%,0,0); } }
+@keyframes mtunz-backdrop { from {opacity:0} to {opacity:1} }
+
+/* Auth steps and admin page data animate once when their DOM is replaced. */
+.auth-screen-content { animation:mtunz-soft-enter .27s cubic-bezier(.2,.7,.2,1) both; }
+.admin-page .admin-header { animation:mtunz-soft-enter .25s ease-out both; }
+.admin-page .stats-grid > * { animation:mtunz-soft-enter .26s ease-out both; }
+.admin-page .stats-grid > :nth-child(2) { animation-delay:35ms; }
+.admin-page .stats-grid > :nth-child(3) { animation-delay:70ms; }
+.admin-page .stats-grid > :nth-child(4) { animation-delay:105ms; }
+.admin-page .stats-grid > :nth-child(5) { animation-delay:140ms; }
+.admin-page .stats-grid > :nth-child(6) { animation-delay:175ms; }
+.admin-page .admin-panels > .card,
+.admin-page > .admin-user-detail { animation:mtunz-soft-enter .24s ease-out both; }
+
+.modal-backdrop { animation:mtunz-backdrop .17s ease-out both; }
+.modal-backdrop .premium-dialog { animation:mtunz-modal-enter .25s cubic-bezier(.18,.7,.22,1) both; }
+.btn, .rail-btn, .admin-nav button {
+  transition:transform .17s ease, background-color .18s ease,
+   border-color .18s ease, box-shadow .18s ease, color .18s ease;
+}
+.btn:not(:disabled):active, .rail-btn:not(:disabled):active,
+.admin-nav button:not(:disabled):active { transform:scale(.985); }
+.btn:focus-visible, .rail-btn:focus-visible, .admin-nav button:focus-visible {
+ outline:2px solid #b5a6ff; outline-offset:3px;
+}
+.btn.is-loading { cursor:progress; }
+.btn.is-loading::before { flex:none; display:inline-block; vertical-align:middle; }
+
+.admin-detail-loading { display:flex; flex-direction:column; gap:12px; padding:16px 0; color:var(--muted,#9caac6); }
+.admin-detail-loading .ui-inline-spinner { align-self:center; }
+.ui-inline-spinner {
+ display:inline-block;width:25px;height:25px;border-radius:50%;
+ border:3px solid #a3a1f543;border-top-color:#a9a0ff;
+ animation:mtunz-spin .82s linear infinite;
+}
+.ui-skeleton-line {
+ position:relative;overflow:hidden;height:14px;width:100%;border-radius:8px;
+ background:#a2b1dc21;
+}
+.ui-skeleton-line.short { width:58%; }
+.ui-skeleton-line::after {
+ content:'';position:absolute;inset:0;transform:translate3d(-120%,0,0);
+ background:linear-gradient(90deg,transparent,#a9b9e12a,transparent);
+ animation:mtunz-skeleton 1.45s ease-in-out infinite;
+}
+.admin-user-detail {display:flex;flex-direction:column;gap:16px;max-height:min(60vh,610px);overflow:auto;padding-right:3px;}
+.admin-detail-section { padding:14px 16px; border:1px solid #8191bf37; border-radius:16px; background:#151e33a1;}
+.admin-detail-section h3 {display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:14px;}
+.admin-detail-row {display:flex;justify-content:space-between;gap:20px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #8494bd20;font-size:12px;}
+.admin-detail-row:last-of-type {border-bottom:0;}
+.admin-detail-row .muted {flex:0 0 38%;}
+.admin-detail-row strong {font-weight:600;min-width:0;text-align:right;overflow-wrap:anywhere;white-space:pre-wrap;}
+.admin-detail-privacy {display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#a5b3d5;margin:0;}
+.admin-detail-section .hint {margin:12px 0 0;font-size:11px;line-height:1.5;}
+@media(max-width:540px){
+ .admin-user-detail {max-height:57vh;}
+ .admin-detail-row {gap:10px;}
+ .admin-detail-row .muted {flex-basis:36%;}
+}
+@media(prefers-reduced-motion:reduce){
+ .auth-screen-content,.admin-page .admin-header,.admin-page .stats-grid > *,
+ .admin-page .admin-panels > .card,.admin-page > .admin-user-detail,
+ .modal-backdrop,.modal-backdrop .premium-dialog,
+ .ui-inline-spinner,.ui-skeleton-line::after { animation:none!important; }
+ .btn,.rail-btn,.admin-nav button {transition:none!important;}
+}
