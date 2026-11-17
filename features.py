@@ -202,7 +202,7 @@ def install(core):
         # Blob bytes are removed atomically from Neon. Local development uploads
         # are cleaned only by safe generated filenames, after DB commit.
         for filename in names:
-            if not re.fullmatch(r'[a-f0-9]{40}\\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip)',filename or ''):
+            if not re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip)',filename or ''):
                 continue
             try:
                 (upload_dir/filename).unlink(missing_ok=True)
