@@ -23,7 +23,7 @@ state.railMoreOpen=true;
 assert(ctx.appRail().includes('id="rail-more-items" class="rail-extra is-open"'),'Secondary menu expands');
 state.railMoreOpen=false;state.tab='support';
 assert(ctx.appRail().includes('class="rail-extra is-open"'),'Secondary active page remains discoverable');
-assert(js.includes('class="rail-settings-shortcuts"'),'Settings provides fallback shortcuts');
+assert(js.includes('class="card rail-settings-shortcuts"'),'Settings provides fallback shortcuts');
 assert(js.includes('data-tab="restricted"')&&js.includes('data-tab="support"'),'Secondary features preserved');
 assert(css.includes('@media(max-width:800px)')&&css.includes('position:fixed'),'Bottom mobile tab bar');
 assert(css.includes('aria-label')===false); // ARIA is owned by HTML not CSS
