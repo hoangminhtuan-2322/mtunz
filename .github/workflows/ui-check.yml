@@ -37,6 +37,9 @@ jobs:
       - name: Verify left-side hero motion scope
         run: |
           node tests/hero_motion_isolation.cjs
+      - name: Verify approved registration content flow and consent layout
+        run: |
+          node tests/registration_layout.cjs
       - name: Verify Admin full-width layout across breakpoints
         run: |
           node tests/admin_layout.cjs
