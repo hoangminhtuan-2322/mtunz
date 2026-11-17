@@ -164,7 +164,7 @@ button:disabled{cursor:wait;transform:none!important}
 .username-status.bad{color:#ff9eaa}
 .username-status.checking{color:#b8b1ff}
 .username-status .status-dot{width:7px;height:7px;flex-shrink:0;border-radius:50%;
- background:currentColor;box-shadow:0 0 0 3px currentColor 1a
+ background:currentColor;box-shadow:0 0 0 3px #7ce5bd23
 }
 .password-strength{margin:11px 0 0}
 .password-strength-track{
