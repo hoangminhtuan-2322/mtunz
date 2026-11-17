@@ -425,12 +425,13 @@ def verify_admin_stepup(request: Request, admin: dict, password: str, pin: str =
     Never log, persist or echo secrets. The proof is scoped to this request,
     so stealing an admin session cookie alone cannot perform these actions.
     """
-    throttle(request, 'admin-stepup', 10, 900, str(admin['id']))
+    throttle(request, 'admin-stepup', 100, 900, str(admin['id']))
     password_ok = bool(password) and verify_secret(admin['password_hash'], password)
     pin_ok = (not admin['pin_hash']) or (
         bool(pin) and len(pin) == admin['pin_length'] and
         pin.isascii() and pin.isdigit() and verify_secret(admin['pin_hash'], pin))
     if not (password_ok and pin_ok):
+        throttle(request, 'admin-stepup-failure', 5, 900, str(admin['id']))
         with db() as c:
             admin_log(c, admin['id'], 'admin_stepup_denied', 'Privileged action rejected')
         raise HTTPException(401, 'Xác minh bảo mật không đúng. Nhập lại mật khẩu quản trị và PIN.')
