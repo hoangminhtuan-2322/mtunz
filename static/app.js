@@ -1102,7 +1102,12 @@ window.addEventListener('pageshow',()=>{
 });
 document.addEventListener('click',async event=>{
  const btn=event.target.closest('[data-act]');if(!btn||btn.disabled)return;
+ // Only potentially slow navigation/actions show a spinner. No continuous animations.
+ const busy=btn.tagName==='BUTTON'&&['app-tab','admin-tab','admin-refresh',
+   'admin-user-detail','admin-view-messages','refresh-registration','admin-decision'].includes(btn.dataset.act);
+ if(busy){btn.disabled=true;btn.classList.add('is-loading');btn.setAttribute('aria-busy','true');}
  try{await clickAction(btn);}catch(e){toast(e.message,'error');}
+ finally{if(busy&&btn.isConnected){btn.disabled=false;btn.classList.remove('is-loading');btn.removeAttribute('aria-busy');}}
 });
 document.addEventListener('input',event=>{
  if(event.target.id==='side-filter'){state.sideFilter=event.target.value.trim();renderSideItems();}
@@ -1253,6 +1258,10 @@ document.addEventListener('submit',async event=>{
    }
   }
  }catch(e){toast(e.message,'error');}
- finally{if(button&&button.isConnected)button.disabled=false;}
+ finally{
+   if(button&&button.isConnected){
+    button.disabled=false;button.classList.remove('is-loading');button.removeAttribute('aria-busy');
+   }
+  }
 });
 document.addEventListener('DOMContentLoaded', setup);
