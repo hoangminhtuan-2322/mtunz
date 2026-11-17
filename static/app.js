@@ -40,6 +40,50 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  adminTicket:null,adminTicketMessages:[],adminQuery:'',accountDeletion:null,typing:false};
 let toastTimer=0,typingTimer=0,socketRetry=null;
 
+// A tab-scoped marker survives a normal reload, but not a new ordinary tab.
+// Only screen IDs are kept here; never store passwords, PINs or cookies.
+const ACTIVE_TAB_KEY='mtunz.active-tab.v1';
+const VIEW_TAB_KEY='mtunz.active-view.v1';
+function readActiveTab(){
+ try {
+  const value=JSON.parse(sessionStorage.getItem(ACTIVE_TAB_KEY)||'null');
+  return Number.isSafeInteger(value?.uid)&&value.uid>0?value:null;
+ }catch{return null;}
+}
+function clearActiveTab(){
+ try{sessionStorage.removeItem(ACTIVE_TAB_KEY);sessionStorage.removeItem(VIEW_TAB_KEY);}catch{}
+}
+function activateCurrentTab(){
+ if(!state.user)return;
+ try{sessionStorage.setItem(ACTIVE_TAB_KEY,JSON.stringify({uid:state.user.id}));}catch{}
+}
+function readSavedView(){
+ try{
+  const data=JSON.parse(sessionStorage.getItem(VIEW_TAB_KEY)||'null');
+  return data&&data.uid===state.user?.id?data:null;
+ }catch{return null;}
+}
+function saveCurrentView(){
+ if(!state.user||!readActiveTab())return;
+ const view={
+  uid:state.user.id,tab:state.tab,
+  selected:state.selected,groupSelected:state.groupSelected||null,
+  supportTicket:state.supportTicket||null,
+  adminTab:state.adminTab,adminTicket:state.adminTicket||null
+ };
+ try{sessionStorage.setItem(VIEW_TAB_KEY,JSON.stringify(view));}catch{}
+}
+function renderReconnect(){
+ const host=root();
+ if(!host)return;
+ host.innerHTML=`<div class="boot-screen" role="status" aria-live="polite">
+  <div class="loading-logo">m</div>
+  <div class="boot-title">Tạm mất kết nối với mtunz</div>
+  <div class="boot-subtitle">Phiên của tab vẫn được giữ. Hãy kiểm tra kết nối mạng rồi thử lại.</div>
+  <button class="btn primary" type="button" data-act="retry-startup">Thử kết nối lại</button></div>`;
+}
+
+
 async function api(url,{method='GET',data}={}){
   let response, payload;
   try{
@@ -176,27 +220,52 @@ function showSanction(d){
   $('#sanction-ack').onclick=async()=>{try{await post('/api/auth/logout')}catch{}location.reload();};
 }
 async function setup(){
+ const previous=readActiveTab();
  try{
-   // Revoke any prior access session before inspecting the remembered device.
-   // A browser refresh must never open messages without a fresh PIN verification.
-   const remembered=await post('/api/auth/remembered');
-   if(remembered.remembered){
-     state.user=null;state.mode='login';state.step='remembered';
-     state.username=remembered.username;state.pinLength=remembered.pin_length;
-     state.savedDevice=true;state.rememberedDevice=true;
-     renderAuth();
-     return;
+  // A normal refresh keeps sessionStorage and the HttpOnly session cookie.
+  // Read the existing session FIRST: /api/auth/remembered used to revoke it.
+  if(previous){
+   const current=await api('/api/me');
+   if(current.user&&current.user.id===previous.uid){
+    state.user=current.user;
+    await enterApp(true);
+    return;
    }
-   state.savedDevice=false;state.rememberedDevice=false;
-   const res=await api('/api/me');state.user=res.user;
-   if(state.user){await enterApp();}
-   else{
-      const r=await api('/api/registration/status');
-      const active=r.requests.find(v=>['pending','approved'].includes(v.status));
-      if(active){state.mode='register';state.regName=active.username;state.regStatus=active.status;state.regPhone=active.phone||'';state.regEmail=active.email||'';}
-      renderAuth();connectSocket();
+   clearActiveTab();
+  }
+
+  // New tab / previously closed tab: do not silently re-enter old messages.
+  // This revokes the stale cookie access while retaining the optional saved
+  // device credential, which still requires a PIN on a fresh visit.
+  await post('/api/auth/lock');
+  const remembered=await post('/api/auth/remembered');
+  state.user=null;
+  state.savedDevice=!!remembered.remembered;
+  state.rememberedDevice=state.savedDevice;
+  state.mode='login';
+  state.step=remembered.remembered?'remembered':'username';
+  if(remembered.remembered){
+   state.username=remembered.username;
+   state.pinLength=remembered.pin_length;
+  }else{
+   const r=await api('/api/registration/status');
+   const active=r.requests.find(v=>['pending','approved'].includes(v.status));
+   if(active){
+    state.mode='register';
+    state.regName=active.username;state.regStatus=active.status;
+    state.regPhone=active.phone||'';state.regEmail=active.email||'';
    }
- }catch(e){toast(e.message,'error');renderAuth();connectSocket();}
+  }
+  renderAuth();
+  connectSocket();
+ }catch(e){
+  if(previous&&readActiveTab()){
+   // A temporary network failure must never look like a forced logout.
+   renderReconnect();
+  }else{
+   toast(e.message,'error');renderAuth();connectSocket();
+  }
+ }
 }
 function connectSocket(){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
@@ -235,11 +304,42 @@ function connectSocket(){
  };
  socket.onclose=()=>{if(state.ws===socket)socketRetry=setTimeout(()=>connectSocket(),2500);};
 }
-async function enterApp(){
+async function enterApp(resume=false){
  if(!state.user)return;
- state.selected=null;state.tab='messages';
- if(state.user.is_admin){await loadAdmin();}
- else{state.accountDeletion=await api('/api/me/deletion');await refreshFriends(false);await refreshGroups(false);renderApp();}
+ const previous=resume?readSavedView():null;
+ activateCurrentTab();
+ state.selected=null;state.groupSelected=null;state.tab='messages';
+ if(state.user.is_admin){
+  state.adminTab=previous&&adminTabs.some(([tab])=>tab===previous.adminTab)?
+   previous.adminTab:'overview';
+  state.adminTicket=Number.isSafeInteger(previous?.adminTicket)?previous.adminTicket:null;
+  await loadAdmin();
+ }else{
+  state.accountDeletion=await api('/api/me/deletion');
+  await refreshFriends(false);
+  await refreshGroups(false);
+  const allowed=['messages','groups','friends','notices','settings','restricted','support'];
+  if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
+  if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
+   state.friends.some(f=>f.other_id===previous.selected&&f.state==='accepted')){
+   state.selected=previous.selected;
+  }
+  if(state.tab==='groups'&&Number.isSafeInteger(previous?.groupSelected)&&
+   state.groups.some(g=>g.id===previous.groupSelected)){
+   state.groupSelected=previous.groupSelected;
+  }
+  if(state.tab==='notices')await loadNotices();
+  if(state.tab==='support'){
+   state.mode='support';
+   state.supportTicket=Number.isSafeInteger(previous?.supportTicket)?previous.supportTicket:null;
+   await loadTickets();
+   if(state.supportTicket)await loadTicketMessages();
+  }
+  renderApp();
+  if(state.tab==='messages'&&state.selected)await loadMessages();
+  if(state.tab==='groups'&&state.groupSelected)await loadGroupMessages();
+ }
+ saveCurrentView();
  connectSocket();
 }
 function resetAuthAfterLogout(){
@@ -247,6 +347,7 @@ function resetAuthAfterLogout(){
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
+ clearActiveTab();
  state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();
 }
 async function logout(){
@@ -673,6 +774,7 @@ function renderApp(){
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ saveCurrentView();
  $('#chat-messages')?.scrollTo(0,1e7);
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
@@ -844,6 +946,7 @@ function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
  root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
+ saveCurrentView();
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
 function showCancelDeletionDialog(){
@@ -1024,6 +1127,7 @@ async function clickAction(button){
   }
   case 'lock-device':{
    await post('/api/auth/lock');
+   clearActiveTab();
    state.user=null;state.ws?.close();state.selected=null;
    const remembered=await post('/api/auth/remembered');
    state.savedDevice=!!remembered.remembered;
@@ -1037,6 +1141,7 @@ async function clickAction(button){
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
   case 'cancel-own-deletion':showCancelDeletionDialog();break;
+  case 'retry-startup':await setup();break;
   case 'logout':{
    ask('Xác nhận đăng xuất','Bạn muốn kết thúc phiên đăng nhập hiện tại? Mọi thao tác đang thực hiện chưa lưu có thể bị mất.',
     async()=>{await logout();toast('Bạn đã đăng xuất an toàn.','ok');},
