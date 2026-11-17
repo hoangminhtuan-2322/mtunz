@@ -55,10 +55,14 @@ jobs:
           from pathlib import Path
           blueprint = Path('render.yaml')
           text = blueprint.read_text(encoding='utf-8')
-          old = 'buildCommand: python unpack_source.py && pip install -r requirements.txt'
-          if old not in text:
+          commands = [
+              'buildCommand: python unpack_source.py && pip install -r requirements.txt',
+              'buildCommand: pip install -r requirements.txt',
+          ]
+          if not any(cmd in text for cmd in commands):
               raise SystemExit("Unexpected Render build command; refusing to change configuration")
-          blueprint.write_text(text.replace(old, 'buildCommand: pip install -r requirements.txt'), encoding='utf-8')
+          text = text.replace(commands[0], commands[1])
+          blueprint.write_text(text, encoding='utf-8')
           Path('mtunz-source.tar.xz').unlink()
           Path('unpack_source.py').unlink()
           PY
