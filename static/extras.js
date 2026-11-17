@@ -468,6 +468,8 @@ document.addEventListener('submit',async event=>{
  if(!['create-group','send-group-message','settings-profile','settings-contact'].includes(key))return;
  event.preventDefault();event.stopImmediatePropagation();
  const fd=new FormData(form);
+ const button=form.querySelector('button[type="submit"],button:not([type])');
+ if(button){button.disabled=true;button.classList.add('is-loading');button.setAttribute('aria-busy','true');}
  try{
   if(key==='create-group'){
     const ids=fd.getAll('member_ids').map(Number);if(!ids.length)throw Error('Chọn ít nhất một người bạn.');
@@ -500,6 +502,7 @@ document.addEventListener('submit',async event=>{
    renderApp();toast('Đã cập nhật thông tin liên hệ riêng tư.','ok');
   }
  }catch(e){toast(e.message,'error');}
+ finally{if(button&&button.isConnected){button.disabled=false;button.classList.remove('is-loading');button.removeAttribute('aria-busy');}}
 },true);
 function adminGroupsContent(){
  const rows=state.adminData||[];
