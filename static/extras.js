@@ -229,10 +229,17 @@ async function extraAction(btn){
   await post(`/api/chats/${id}/preferences`,{muted,archived});await refreshFriends(true);
   toast(act==='mute-chat'?(muted?'Đã tắt thông báo hội thoại.':'Đã bật thông báo.'):(archived?'Đã lưu trữ hội thoại.':'Đã bỏ lưu trữ.'),'ok');break;
  }
- case 'revoke-sessions':ask('Đăng xuất các thiết bị khác','Tất cả phiên khác sẽ bị thu hồi ngay lập tức. Thiết bị này vẫn tiếp tục sử dụng.',async()=>{await post('/api/me/sessions/revoke-others');toast('Đã đăng xuất các phiên khác.','ok');},'Thu hồi',true);break;
+ case 'revoke-sessions':ask('Đăng xuất các thiết bị khác','Tất cả phiên khác sẽ bị thu hồi ngay lập tức. Thiết bị này vẫn tiếp tục sử dụng.',async()=>{await post('/api/me/sessions/revoke-others');toast('Đã đăng xuất các phiên và thu hồi thiết bị ghi nhớ khác.','ok');},'Thu hồi',true);break;
  case 'list-sessions':{
   const r=await api('/api/me/sessions');
-  modal({title:'Phiên đăng nhập',content:`<div class="stack" style="margin-top:16px">${r.sessions.map(s=>`<div class="people-row"><div class="grow"><b>${s.current?'Thiết bị hiện tại':'Thiết bị khác'}</b><div class="hint">Hết hạn: ${date(s.expires_at)}</div></div>${s.current?'<span class="pill good">Đang sử dụng</span>':''}</div>`).join('')}</div>`,confirm:'Đóng'});break;
+  modal({title:'Phiên & thiết bị được ghi nhớ',
+   description:'Bạn có thể thu hồi thiết bị khác trong phần Cài đặt. Thiết bị ghi nhớ không thể đọc tin nhắn trước khi nhập PIN.',
+   content:`<div class="stack" style="margin-top:12px">
+   <strong class="small">Phiên đang truy cập (${r.sessions.length})</strong>
+   ${r.sessions.map(s=>`<div class="people-row"><div class="grow"><b>${s.current?'Thiết bị hiện tại':'Phiên khác'}</b><div class="hint">Hết hạn: ${date(s.expires_at)}</div></div>${s.current?'<span class="pill good">Đang dùng</span>':''}</div>`).join('')}
+   <strong class="small" style="margin-top:12px">Thiết bị ghi nhớ (${(r.remembered_devices||[]).length})</strong>
+   ${(r.remembered_devices||[]).map(device=>`<div class="people-row"><div class="grow"><b>${device.current?'Thiết bị đang sử dụng':'Thiết bị khác'}</b><div class="hint">Ghi nhớ tới: ${date(device.expires_at)}</div></div>${device.current?'<span class="pill good">Đã lưu</span>':''}</div>`).join('')||'<p class="hint">Chưa ghi nhớ thiết bị nào.</p>'}</div>`,
+   confirm:'Đóng'});break;
  }
  case 'admin-group-messages':{
   const data=await api(`/api/admin/groups/${id}/messages`);
