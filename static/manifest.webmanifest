@@ -1,0 +1,11 @@
+{
+  "name": "mtunz",
+  "short_name": "mtunz",
+  "description": "Nhắn tin và kết nối realtime trên mtunz",
+  "start_url": "/",
+  "display": "standalone",
+  "lang": "vi",
+  "background_color": "#0e1423",
+  "theme_color": "#0e1423",
+  "icons": [{"src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}
