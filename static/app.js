@@ -510,7 +510,7 @@ function authLogin(){
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
  <form data-form="login-pin">${inputField('Mã PIN','pin','password','•'.repeat(state.pinLength),`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
-${state.loginIsAdmin?`<p class="hint">Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị. Mỗi lần đăng nhập cần mật khẩu và PIN; phiên quản trị hết hạn sau 2 giờ.</p>`:` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Mỗi lần mở lại website vẫn phải nhập mã PIN. Chỉ bật trên thiết bị cá nhân.</small></span></label>`}
+${state.loginIsAdmin?`<p class="hint">Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị. Mỗi lần đăng nhập cần mật khẩu và PIN; phiên quản trị hết hạn sau 2 giờ.</p>`:` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Sau khi đóng tab, lần mở phiên mới có thể dùng PIN. Tải lại tab đang mở không cần xác thực lại.</small></span></label>`}
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đăng nhập lại</button>`
  };
@@ -1369,7 +1369,7 @@ document.addEventListener('submit',async event=>{
     if(pin.length!==n)throw Error(`PIN phải có đúng ${n} chữ số.`);
     await post('/api/me/pin/setup',{current_password:String(fd.get('current_password')||''),pin,pin_length:n});
     state.user.pin_length=n;
-    toast('Đã bật PIN quản trị. Lần sau có thể ghi nhớ thiết bị.','ok');await loadAdmin();break;
+    toast('Đã bật PIN quản trị. Các lần đăng nhập mới cần mật khẩu và PIN.','ok');await loadAdmin();break;
    }
    case 'admin-pin-change':{
     const n=Number(fd.get('pin_length')),pin=val('new_pin');
