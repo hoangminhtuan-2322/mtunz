@@ -91,6 +91,7 @@ vm.runInContext(enter+boot,context);
   calls.push('friends');
   state.friends=[{other_id:42,state:'accepted'}];
  };
+ storage.set('mtunz.active-view.v1',JSON.stringify({uid:17,tab:'messages',selected:42}));
  state.user=null;
  await context.setup();
  assert.equal(state.tab,'messages');
