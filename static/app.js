@@ -237,8 +237,8 @@ function authArt(){return `<aside class="auth-art art-v3 art-v4">
   <div class="logo brand-lockup"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span class="brand-dot">.</span></span><span class="brand-byline">PRIVATE CONNECTIONS</span></div>
   <div class="art-content">
     <div class="art-kicker"><span class="live-spark"></span> MỘT KHÔNG GIAN, NHIỀU KẾT NỐI</div>
-    <h1>Gần nhau hơn.<br><span class="gradient-text">Theo cách riêng.</span></h1>
-    <p>Một không gian nhắn tin riêng tư, nơi cuộc trò chuyện luôn tức thì, các kết nối được tôn trọng và mỗi khoảnh khắc đều đáng nhớ.</p>
+    <h1 class="auth-headline-copy">Kết nối không giới hạn.<br><span class="gradient-text">Trò chuyện theo cách bạn.</span></h1>
+    <p>Gửi đi cảm xúc. Giữ lại kết nối. Tạo nên những câu chuyện của riêng bạn.</p>
     <div class="signal-stage" aria-label="Những tính năng nổi bật của mtunz">
       <div class="signal-grid" aria-hidden="true"></div>
       <div class="signal-halo halo-one" aria-hidden="true"></div>
