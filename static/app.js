@@ -35,7 +35,7 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  savedDevice:false,rememberedDevice:false,
  regName:'',regStatus:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
- adminTicket:null,adminTicketMessages:[],adminQuery:'',typing:false};
+ adminTicket:null,adminTicketMessages:[],adminQuery:'',accountDeletion:null,typing:false};
 let toastTimer=0,typingTimer=0,socketRetry=null;
 
 async function api(url,{method='GET',data}={}){
@@ -236,14 +236,14 @@ async function enterApp(){
  if(!state.user)return;
  state.selected=null;state.tab='messages';
  if(state.user.is_admin){await loadAdmin();}
- else{await refreshFriends(false);await refreshGroups(false);renderApp();}
+ else{state.accountDeletion=await api('/api/me/deletion');await refreshFriends(false);await refreshGroups(false);renderApp();}
  connectSocket();
 }
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
- state.username='';state.challenge='';state.pinLength=4;
+ state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;
  state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();
 }
 async function logout(){
@@ -641,10 +641,14 @@ function settingsContent(){
  ${state.blocks.length?state.blocks.map(b=>`<div class="row between" style="margin:12px 0"><b>${esc(b.username)}</b><button class="btn ghost sm" data-act="unblock" data-id="${b.id}">Bỏ chặn</button></div>`).join(''):'<div class="hint" style="margin-top:19px">Chưa có tài khoản bị chặn.</div>'}</section>
  <section class="card"><h3>${icon('announce',17)} Thông báo hệ thống</h3><div id="notifications-list"><div class="hint" style="margin-top:15px">Chọn mục này để xem thông báo.</div></div><button class="btn ghost sm" data-act="load-notifications" style="margin-top:15px">Xem thông báo</button></section>
  </div>
- <section class="card account-delete-zone" aria-label="Xóa tài khoản vĩnh viễn">
-   <div><h3>${icon('ban',18)} Xóa tài khoản vĩnh viễn</h3>
-   <p class="hint" style="margin:12px 0">Khi không còn sử dụng mtunz, bạn có thể yêu cầu xóa tài khoản của chính mình. Thao tác này xóa tin nhắn, tệp tải lên, kết nối và dữ liệu cá nhân liên quan, không thể hoàn tác. Nhóm còn thành viên sẽ được chuyển quyền trưởng nhóm.</p></div>
-   <button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Xóa tài khoản của tôi</button>
+ <section class="card account-delete-zone" aria-label="Lịch xóa tài khoản">
+   <div><h3>${icon('ban',18)} Xóa tài khoản và dữ liệu</h3>
+   ${state.accountDeletion?.pending?`<p class="hint" style="margin:12px 0">Yêu cầu xóa đã được ghi nhận. Dữ liệu sẽ bị xóa vĩnh viễn sau <b>${date(state.accountDeletion.purge_at)}</b> (giờ hiển thị theo máy bạn). Bạn có thể hủy trước thời điểm này.</p>
+     <span class="pill warn">Đang trong thời gian 30 ngày cân nhắc</span>`:
+   `<p class="hint" style="margin:12px 0">Bạn có thể yêu cầu xóa tài khoản. Hệ thống giữ dữ liệu thêm <b>30 ngày</b> để bạn suy nghĩ và hủy yêu cầu nếu cần. Sau hạn, tài khoản, tin nhắn và tệp của bạn sẽ được xóa vĩnh viễn. Admin vẫn có thể xóa ngay theo quyền quản trị.</p>`}</div>
+   ${state.accountDeletion?.pending?
+     `<button class="btn success" type="button" data-act="cancel-own-deletion">${icon('check',16)} Hủy yêu cầu xóa tài khoản</button>`:
+     `<button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Yêu cầu xóa sau 30 ngày</button>`}
  </section>
  <div class="info-strip" style="margin-top:20px">Minh bạch dữ liệu: admin có thể xem thông tin tài khoản và lịch sử trò chuyện để thực hiện kiểm duyệt. Mật khẩu và PIN chỉ lưu dưới dạng mã băm; không thể xem trực tiếp.</div></div>`;
 }
@@ -665,6 +669,7 @@ function renderApp(){
 }
 async function goTab(tab){
  state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
+ if(tab==='settings')state.accountDeletion=await api('/api/me/deletion');
  if(tab==='groups')await refreshGroups(false);
  if(tab==='notices')await loadNotices();
  if(tab==='support'){state.mode='support';await loadTickets();}
