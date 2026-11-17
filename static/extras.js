@@ -39,7 +39,7 @@ function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
  return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">MTUNZ CỘNG ĐỒNG</span><h1 class="section-title">Nhóm trò chuyện</h1><p class="section-lead">Tạo nhóm riêng, thêm bạn bè, chia sẻ hình ảnh và tệp tức thời.</p>
  <div class="card"><h3>${icon('add',18)} Tạo nhóm mới</h3><form data-form="create-group" class="stack" style="margin-top:15px">
- ${inputField('Tên nhóm','title','text','Ví dụ: Team cuối tuần','maxlength="70" minlength="2"')}
+ ${inputField('Tên nhóm','title','text','','maxlength="70" minlength="2"')}
  <div class="field"><label>Chọn bạn bè tham gia (ít nhất một người)</label><div class="group-pick">${members.length?members.map(f=>`<label class="group-pick-row"><input type="checkbox" name="member_ids" value="${f.other_id}">${avatar(f.username,false,'sm')} ${esc(f.display_name||f.username)}</label>`).join(''):'<div class="hint">Bạn cần kết bạn với ít nhất một người trước.</div>'}</div></div>
  <button class="btn primary" ${members.length?'':'disabled'}>${icon('group',16)} Tạo nhóm</button></form></div>
  <h3 style="margin:27px 0 12px">Nhóm bạn đang tham gia (${state.groups.length})</h3>
@@ -128,16 +128,16 @@ async function loadNotices(){if(!state.user||state.user.is_admin)return;state.no
 function profileSettings(){
  const u=state.user;
  return `<section class="card" style="margin-bottom:18px"><h3>${icon('users',17)} Hồ sơ công khai</h3><form data-form="settings-profile" style="margin-top:14px">
- <div class="field"><label>Tên hiển thị</label><input class="input" name="display_name" value="${esc(u.display_name||'')}" maxlength="50" placeholder="Tên mọi người nhìn thấy"></div>
- <div class="field"><label>Giới thiệu</label><textarea class="input" name="bio" maxlength="220" rows="2" placeholder="Viết vài dòng về bạn…">${esc(u.bio||'')}</textarea></div>
+ <div class="field"><label>Tên hiển thị</label><input class="input" name="display_name" value="${esc(u.display_name||'')}" maxlength="50"></div>
+ <div class="field"><label>Giới thiệu</label><textarea class="input" name="bio" maxlength="220" rows="2">${esc(u.bio||'')}</textarea></div>
  <label class="profile-check"><input type="checkbox" name="show_online" ${u.show_online?'checked':''}> Hiển thị trạng thái đang hoạt động</label>
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
  <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
  <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
  <p class="hint" style="margin:10px 0 14px">Chỉ bạn và quản trị viên được xem số điện thoại, email để quản lý tài khoản. Không xuất hiện trên hồ sơ công khai. Chưa xác minh qua SMS hoặc email.</p>
  <form data-form="settings-contact">
-  <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}" placeholder="09xxxxxxxx hoặc +84..."></div>
-  <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}" placeholder="tenban@gmail.com"></div>
+  <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
+  <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}"></div>
   <button class="btn primary" type="submit">Lưu thông tin liên hệ</button>
  </form></section>
  <section class="card"><h3>${icon('shield',17)} Dữ liệu & phiên đăng nhập</h3><p class="hint">Tải dữ liệu tài khoản hoặc đăng xuất toàn bộ thiết bị khác.</p>
@@ -289,7 +289,7 @@ async function extraAction(btn){
  case 'device-rename':{
   const kind=btn.dataset.kind,device=btn.dataset.device;
   modal({title:'Đặt tên thiết bị',description:'Đặt tên dễ nhận biết, ví dụ: Laptop của tôi hoặc Điện thoại cá nhân.',
-   content:`<div class="field"><label for="device-label-input">Tên thiết bị (tối đa 40 ký tự)</label><input class="input" id="device-label-input" maxlength="40" value="${esc(btn.dataset.label||'')}" autocomplete="off" placeholder="Nhập tên thiết bị"></div>`,
+   content:`<div class="field"><label for="device-label-input">Tên thiết bị (tối đa 40 ký tự)</label><input class="input" id="device-label-input" maxlength="40" value="${esc(btn.dataset.label||'')}" autocomplete="off"></div>`,
    confirm:'Lưu tên',handler:async()=>{
     const label=$('#device-label-input')?.value?.trim()||'';
     if(!label)throw Error('Vui lòng nhập tên thiết bị.');
