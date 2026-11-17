@@ -75,8 +75,12 @@ def norm_username(name: str):
 
 
 def ensure_password(v: str):
-    if len(v) < 8 or len(v) > 128:
-        raise HTTPException(422, 'Mật khẩu phải dài từ 8 đến 128 ký tự.')
+    minimum = 10 if PUBLIC_MODE else 8
+    if len(v) < minimum or len(v) > 128:
+        raise HTTPException(422, f'Mật khẩu phải dài từ {minimum} đến 128 ký tự.')
+    if v.casefold().strip() in {'password123', '1234567890', '12345678',
+                               'qwerty123', 'admin123456', 'password1234'}:
+        raise HTTPException(422, 'Mật khẩu này quá phổ biến. Vui lòng chọn mật khẩu khác.')
 
 
 def ensure_pin(v: str, length: int):
@@ -275,7 +279,10 @@ def throttle(request: Request, scope: str, limit: int, window: int, identity: st
             if not timestamps or timestamps[-1] < current - 3600:
                 RATE_BUCKETS.pop(stale_key, None)
         if len(RATE_BUCKETS) > 5000:
-            RATE_BUCKETS.clear()
+            # Evict the least-recently-used keys; don't reset active login throttles.
+            oldest = sorted(RATE_BUCKETS, key=lambda k: RATE_BUCKETS[k][-1] if RATE_BUCKETS[k] else 0)
+            for stale_key in oldest[:len(RATE_BUCKETS)-4000]:
+                RATE_BUCKETS.pop(stale_key, None)
     hits = [t for t in RATE_BUCKETS[key] if current-t < window]
     if len(hits) >= limit:
         raise HTTPException(429, 'Thao tác quá nhanh. Vui lòng thử lại sau.', headers={'Retry-After': str(max(1, window - (current - hits[0])))})
