@@ -1,1 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="t"><title id="t">mtunz</title><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#B08DFE"/><stop offset=".52" stop-color="#7676F8"/><stop offset="1" stop-color="#55D6D9"/></linearGradient><linearGradient id="b" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#FFFFFF" stop-opacity=".42"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient></defs><rect width="64" height="64" rx="18" fill="url(#g)"/><rect x="1.5" y="1.5" width="61" height="61" rx="16.5" fill="none" stroke="url(#b)" stroke-width="2"/><path d="M14 46V25c0-6.1 3.9-10 9.5-10 5 0 8.8 3.3 9.4 7.5C34.4 18.3 37.9 15 42.7 15 48.5 15 52 19 52 25v21M32.9 22.5V46" fill="none" stroke="#fff" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="53" cy="13" r="4.3" fill="#C3FFF2"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="mtunzTitle mtunzDesc">
+<title id="mtunzTitle">mtunz Orbit</title><desc id="mtunzDesc">Chữ m nổi bật trên nền tím, vòng quỹ đạo xanh tím cùng ngôi sao phát sáng</desc>
+<defs>
+  <linearGradient id="orbit-tile" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#be70ff"/><stop offset=".32" stop-color="#8241e5"/><stop offset=".72" stop-color="#632bd7"/><stop offset="1" stop-color="#4b25a4"/></linearGradient>
+  <linearGradient id="tile-sheen" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff" stop-opacity=".36"/><stop offset=".42" stop-color="#ffffff" stop-opacity=".06"/><stop offset="1" stop-color="#260e6a" stop-opacity=".12"/></linearGradient>
+  <linearGradient id="letter" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset=".55" stop-color="#eef2ff"/><stop offset="1" stop-color="#bccbff"/></linearGradient>
+  <linearGradient id="orbit-back" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#895df7"/><stop offset=".52" stop-color="#a4a0ff"/><stop offset="1" stop-color="#6e65f3"/></linearGradient>
+  <linearGradient id="orbit-front" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#a864ff"/><stop offset=".38" stop-color="#6e5bf3"/><stop offset=".78" stop-color="#789cff"/><stop offset="1" stop-color="#b8c6ff"/></linearGradient>
+  <radialGradient id="tile-bloom" cx=".24" cy=".12" r=".92"><stop stop-color="#f6b7ff" stop-opacity=".48"/><stop offset=".50" stop-color="#f3b8ff" stop-opacity=".06"/><stop offset="1" stop-color="#331264" stop-opacity="0"/></radialGradient>
+  <filter id="shadow" x="-65%" y="-65%" width="230%" height="230%"><feGaussianBlur stdDeviation="5"/></filter>
+  <filter id="star-glow" x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation="2.2"/></filter>
+  <filter id="letter-shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="1.3" flood-color="#30116f" flood-opacity=".55"/></filter>
+</defs>
+<ellipse cx="65" cy="70" rx="58" ry="25" transform="rotate(-23 65 70)" fill="none" stroke="#7d68d8" stroke-width="9" opacity=".18" filter="url(#shadow)"/>
+<path d="M11 82C8 71 15 56 33 45C54 33 81 27 98 32C110 36 116 42 116 51" fill="none" stroke="url(#orbit-back)" stroke-width="9" stroke-linecap="round" opacity=".86"/>
+<path d="M17 83C17 80 17 77 18 74" fill="none" stroke="#bca0ff" stroke-width="2.5" stroke-linecap="round" opacity=".55"/>
+<rect x="21" y="19" width="89" height="91" rx="25" fill="#140a46" opacity=".65" filter="url(#shadow)"/>
+<rect x="19" y="17" width="90" height="91" rx="24" fill="url(#orbit-tile)"/>
+<rect x="19" y="17" width="90" height="91" rx="24" fill="url(#tile-bloom)"/>
+<rect x="19.7" y="17.7" width="88.6" height="89.6" rx="23.3" fill="none" stroke="url(#tile-sheen)" stroke-width="1.5"/>
+<path d="M30 33C42 24 64 22 87 29" fill="none" stroke="#e0b8ff" opacity=".27" stroke-width="2" stroke-linecap="round"/>
+<path d="M40 81V59C40 51.5 44.1 47 51.2 47C58.3 47 63 51.8 63 59V81 M63 59C63 51.5 68.3 47 75.3 47C82.6 47 87.8 52 87.8 60V81" fill="none" stroke="#432191" stroke-width="12.2" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 1.6)" opacity=".35"/>
+<path d="M40 81V59C40 51.5 44.1 47 51.2 47C58.3 47 63 51.8 63 59V81 M63 59C63 51.5 68.3 47 75.3 47C82.6 47 87.8 52 87.8 60V81" fill="none" stroke="url(#letter)" stroke-width="10.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#letter-shadow)"/>
+<path d="M12 81C10 101 39 106 65 99C89 93 110 78 116 61" fill="none" stroke="#5136b7" stroke-width="12" stroke-linecap="round" opacity=".38" filter="url(#shadow)"/>
+<path d="M11 81C10 100 38 105 65 98C90 91 111 77 117 60" fill="none" stroke="url(#orbit-front)" stroke-width="9" stroke-linecap="round"/>
+<path d="M13.5 81C14 95 42 98 66 93C87 88 103 75 111 65" fill="none" stroke="#d9caff" stroke-opacity=".65" stroke-width="2" stroke-linecap="round"/>
+<path d="M103 9C105.8 20.8 109 23.8 120.5 26C109.2 28.3 106 31.2 103 43C100.4 31.5 97.2 28.3 85.5 26C97.2 23.8 100.4 20.8 103 9Z" fill="#a1a2ff" opacity=".55" filter="url(#star-glow)"/>
+<path d="M103 13C105.6 22.5 108 24.6 117 26C108.1 27.6 105.5 30 103 39C100.8 30.1 98.5 27.5 89 26C98.5 24.5 100.8 22.1 103 13Z" fill="#f7f5ff"/>
+<path d="M116 37C117.3 40.7 118.6 42 122 43C118.6 44 117.3 45.3 116 49C115 45.3 113.7 44 110 43C113.7 42 115 40.7 116 37Z" fill="#dccfff"/>
+</svg>
