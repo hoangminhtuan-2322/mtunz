@@ -88,5 +88,5 @@ assert(theme.includes('prefers-reduced-motion'));
 assert(theme.includes('.auth-input-wrap:focus-within'));
 const html=fs.readFileSync('static/index.html','utf8');
 assert(html.includes('auth-refined.css?v=5.1'));
-assert(html.includes('app.js?v=6.0'));
+assert(html.includes('app.js?v=6.1'));
 console.log('Auth isolation OK: 1 hero mount, 3 isolated form changes, no page-wide scroll, accessible nav and motion controls.');
