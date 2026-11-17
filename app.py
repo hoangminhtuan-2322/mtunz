@@ -352,6 +352,7 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
     result.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     result.headers['Cache-Control'] = 'no-store'
+    result.headers['X-Robots-Tag'] = 'noindex, nofollow'
     result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
          "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
@@ -408,10 +409,12 @@ def issue_session(c, uid, request):
     raw = token()
     info = device_metadata(request)
     created = now()
+    is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(uid,))['is_admin'])
+    expires = created + (2 * 3600 if is_admin else 7 * 86400)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
                  device_name,device_type,browser,os_name,location_hint,network_hint)
                  VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
-              (digest(raw), uid, created + 7*86400, created, created,
+              (digest(raw), uid, expires, created, created,
                info['device_name'], info['device_type'], info['browser'], info['os_name'],
                info['location_hint'], info['network_hint']))
     return raw
@@ -617,7 +620,9 @@ async def auth_pin(request: Request, body: PinLogin):
         previous = request.cookies.get(REMEMBER_COOKIE)
         if valid_remember_token(previous):
             c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(previous),))
-        saved = token() if body.remember_device else None
+        is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
+        # Admins never receive a PIN-only long-lived browser credential.
+        saved = token() if body.remember_device and not is_admin else None
         if saved:
             info = device_metadata(request)
             created = now()
@@ -627,7 +632,6 @@ async def auth_pin(request: Request, body: PinLogin):
                       (digest(saved),r['user_id'],created+REMEMBER_SECONDS,created,created,
                        info['device_name'],info['device_type'],info['browser'],info['os_name'],
                        info['location_hint'],info['network_hint']))
-        is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
     response = session_response({'ok':True,'admin':is_admin,'remembered':bool(saved)},raw)
     if saved: remember_cookie(response,saved)
     elif request.cookies.get(REMEMBER_COOKIE):
@@ -654,11 +658,11 @@ async def remembered_status(request: Request):
                 lock_hash = digest(session_raw)
         if valid_remember_token(saved):
             saved_user = one(c, '''SELECT d.token_hash,d.expires_at,u.username,u.pin_length,
-                               u.pin_hash,u.sanction_kind,u.sanction_until
+                               u.pin_hash,u.is_admin,u.sanction_kind,u.sanction_until
                                FROM trusted_devices d JOIN users u ON u.id=d.user_id
                                WHERE d.token_hash=?''',(digest(saved),))
             if saved_user:
-                if (saved_user['expires_at'] <= now() or not saved_user['pin_hash']
+                if (saved_user['is_admin'] or saved_user['expires_at'] <= now() or not saved_user['pin_hash']
                         or (saved_user['sanction_kind'] and
                             (not saved_user['sanction_until'] or saved_user['sanction_until'] > now()))):
                     c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(saved),))
@@ -695,6 +699,8 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
                       WHERE d.token_hash=?''',(digest(saved),))
         if not r or r['expires_at'] <= now() or not r['pin_hash']:
             error = HTTPException(401,'Thiết bị hết hạn hoặc đã bị thu hồi. Hãy đăng nhập lại.')
+        elif r['is_admin']:
+            error = HTTPException(401,'Admin phải đăng nhập bằng mật khẩu và PIN; ghi nhớ nhanh đã tắt.')
         elif r['sanction_kind'] and (not r['sanction_until'] or r['sanction_until']>now()):
             error = HTTPException(403,'Tài khoản đang bị hạn chế.')
         elif r['locked_until'] > now():
@@ -1137,7 +1143,9 @@ async def admin_stats(request:Request):
     require_admin(request)
     with db() as c:
         total,reserved,maximum=registration_capacity(c)
+        deletion_pending = one(c,'SELECT count(*) n FROM account_deletion_requests')['n']
         return {'total_users':total,'reserved_slots':reserved,'max_users':maximum,
+          'deletion_pending':deletion_pending,
           'pending':one(c,"SELECT count(*) n FROM registrations WHERE status='pending'")['n'],
           'tickets':one(c,"SELECT count(*) n FROM tickets WHERE status='open'")['n'],
           'messages':one(c,'SELECT count(*) n FROM messages')['n']+one(c,'SELECT count(*) n FROM group_messages')['n'],
@@ -1193,8 +1201,11 @@ async def set_capacity(request:Request,body:Capacity):
 async def admin_users(request:Request,q:str=''):
     require_admin(request)
     with db() as c:
-        rows=many(c,'''SELECT id,username,created_at,last_seen,pin_length,sanction_kind,sanction_until,sanction_reason
-                       FROM users WHERE is_admin=0 AND username LIKE ? ORDER BY id DESC LIMIT 200''',
+        rows=many(c,'''SELECT u.id,u.username,u.created_at,u.last_seen,u.pin_length,
+                              u.sanction_kind,u.sanction_until,u.sanction_reason,
+                              d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
+                       FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
+                       WHERE u.is_admin=0 AND u.username LIKE ? ORDER BY u.id DESC LIMIT 200''',
                   ('%'+q.strip()[:24]+'%',))
         for r in rows:
             r['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(r['id'],r['id']))['n']
