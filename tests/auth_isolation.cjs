@@ -99,7 +99,7 @@ assert(theme.includes('.auth-input-wrap:focus-within'));
 const html=fs.readFileSync('static/index.html','utf8');
 assert(html.includes('auth-refined.css?v=5.1'));
 assert(html.includes('auth-neon.css?v=14.0'));
-assert(html.includes('app.js?v=10.3'));
+assert(html.includes('app.js?v=15.0'));
 assert(html.includes('orbit-brand.css?v=8.0'));
 assert(html.includes('hero-nova.css?v=7.0'));
 assert(!code.includes('Thiết bị này đã được ghi nhớ. Nhập PIN'), 'Remove redundant remembered-device PIN paragraph');
