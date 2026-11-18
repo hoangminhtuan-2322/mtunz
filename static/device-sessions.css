@@ -1,31 +1,147 @@
-/* mtunz device & session manager: responsive details without location tracking. */
-.premium-dialog:has(.device-session-manager){width:min(720px,100%);max-height:92dvh}
-.device-session-manager{display:flex;flex-direction:column;gap:12px;max-height:min(65dvh,660px);overflow-y:auto;overflow-x:hidden;padding:2px 4px 4px 0;scrollbar-width:thin}
-.device-session-privacy{font-size:12px!important;line-height:1.6!important;color:#aebdd7!important;margin:2px 0 8px!important}
-.device-session-section-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:18px 0 2px;font-size:13px;color:#e8ecff}
-.device-session-section-title:first-of-type{margin-top:2px}
-.device-session-section-title span{min-width:26px;padding:3px 8px;border-radius:99px;background:#344464;color:#c9d6ee;font-size:11px;text-align:center}
-.device-session-card{border:1px solid #405477;border-radius:16px;padding:16px;background:linear-gradient(140deg,#1a2a46,#131f35);box-shadow:inset 0 1px 0 #ffffff0b}
-.device-session-heading{display:flex;align-items:center;gap:11px;margin-bottom:15px}
-.device-session-icon{display:grid;place-items:center;background:#2b3b5f;border:1px solid #4e638b;border-radius:13px;width:45px;height:45px;flex-shrink:0;font-size:23px}
-.device-session-identity{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
-.device-session-identity b{font-size:14px;color:#f4f7ff;overflow-wrap:anywhere}
-.device-session-identity span{font-size:11.5px;color:#aebbd3}
-.device-session-current{font-size:10px;color:#65eed1;background:#1c4348;border:1px solid #315b67;padding:5px 8px;border-radius:99px;white-space:nowrap;flex-shrink:0}
-.device-session-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:18px;row-gap:12px;margin:0;padding:12px 0 15px;border-top:1px solid #344965;border-bottom:1px solid #344965}
-.device-session-facts div{min-width:0}
-.device-session-facts dt{font-size:10.5px;color:#9facc5;margin-bottom:3px}
-.device-session-facts dd{margin:0;font-size:12px;color:#e6edff;overflow-wrap:anywhere;line-height:1.5}
-.device-session-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:14px}
-.device-session-help{font-size:11px;color:#9caeca}
-.device-session-actions .btn{font-size:11px}
+/* mtunz device manager v11: one clean scroll area, restrained premium layout. */
+.premium-dialog:has(.device-session-manager){
+ width:min(740px,100%);max-height:min(92dvh,860px);
+ display:flex;flex-direction:column;overflow:hidden;
+}
+.premium-dialog:has(.device-session-manager) .dialog-top,
+.premium-dialog:has(.device-session-manager) .dialog-description,
+.premium-dialog:has(.device-session-manager) .modal-actions{flex:none}
+.premium-dialog:has(.device-session-manager) .dialog-content{
+ min-height:0;max-height:none;flex:1 1 auto;overflow-y:auto;
+ overflow-x:hidden;padding-bottom:12px;overscroll-behavior:contain;
+ scrollbar-width:thin;
+}
+.premium-dialog:has(.device-session-manager) .modal-actions{
+ margin-top:0;
+}
+.device-session-manager{
+ display:flex;flex-direction:column;gap:11px;min-height:0;
+ max-height:none;overflow:visible;padding:1px 2px 11px 0;
+}
+.device-session-intro{
+ color:#b1c2dc;font-size:11.5px;line-height:1.7;
+ margin:0 0 4px;padding:10px 12px;background:#17273f85;
+ border-radius:11px;border:1px solid #43547666;
+}
+.device-session-section-title{
+ display:flex;align-items:center;justify-content:space-between;
+ gap:12px;margin:12px 0 0;color:#eaf0ff;font-size:13px;
+}
+.device-session-section-title b{
+ display:inline-flex;align-items:center;gap:8px;min-width:0;
+}
+.device-session-section-title b svg{color:#b5a8ff;flex:none}
+.device-session-section-title>span{
+ display:grid;place-items:center;min-width:28px;min-height:27px;
+ padding:4px 9px;border-radius:999px;
+ background:#35496b;color:#e6eeff;font-size:11px;
+}
+.device-session-card{
+ min-width:0;padding:17px;border-radius:17px;
+ border:1px solid #506489;
+ background:linear-gradient(135deg,#1b2e4c,#13213a);
+ box-shadow:inset 0 1px 0 #ffffff0d;
+}
+.device-session-heading{
+ display:flex;align-items:center;gap:11px;margin-bottom:14px;
+}
+.device-session-icon{
+ display:grid;place-items:center;flex:0 0 46px;
+ height:46px;width:46px;font-size:22px;border-radius:13px;
+ border:1px solid #7180b17a;background:#35477685;
+}
+.device-session-identity{
+ display:flex;flex:1;flex-direction:column;gap:5px;min-width:0;
+}
+.device-session-identity b{
+ color:#f5f8ff;font-size:14px;font-weight:800;line-height:1.42;
+ overflow-wrap:anywhere;
+}
+.device-session-identity span{
+ color:#acbfdb;font-size:11px;line-height:1.5;
+}
+.device-session-current,.device-session-other{
+ flex:none;white-space:nowrap;padding:6px 9px;border-radius:99px;
+ font-size:10px;font-weight:750;
+}
+.device-session-current{
+ color:#75e7cd;border:1px solid #398276;background:#1b4842;
+}
+.device-session-other{
+ color:#b6c7e4;border:1px solid #546884;background:#293e59;
+}
+.device-session-facts{
+ display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+ column-gap:20px;row-gap:14px;margin:0;padding:16px 0;
+ border-top:1px solid #405674;border-bottom:1px solid #405674;
+}
+.device-session-facts>div{min-width:0;position:relative;padding-left:12px}
+.device-session-facts>div:before{
+ content:'';position:absolute;left:0;top:4px;width:3px;height:25px;
+ border-radius:3px;background:#827df458;
+}
+.device-session-facts dt{
+ color:#a1b4d0;font-size:10.5px;margin-bottom:5px;line-height:1.5;
+}
+.device-session-facts dd{
+ color:#edf3ff;font-size:12px;font-weight:650;line-height:1.6;
+ margin:0;overflow-wrap:anywhere;
+}
+.device-session-actions{
+ display:flex;align-items:center;justify-content:space-between;
+ flex-wrap:wrap;gap:12px;margin-top:14px;
+}
+.device-session-actions .btn{
+ flex:none;border-radius:10px;font-size:11px;min-height:36px;
+}
+.device-session-help{
+ flex:1;min-width:170px;color:#a8bbd6;font-size:11px;line-height:1.6;
+}
+.device-session-help-note{
+ margin:5px 0 0;color:#aebed6;font-size:11px;
+ line-height:1.75;border:1px solid #485a78;
+ border-radius:12px;background:#202e4780;padding:12px 14px;
+}
+.device-session-empty{
+ color:#a1b5d2;font-size:11.5px;line-height:1.65;
+ padding:14px;border-radius:12px;background:#192944;
+ border:1px dashed #526688;
+}
+.admin-device-security-view{display:flex;flex-direction:column;gap:11px}
+.admin-device-security-view h3{
+ margin:9px 0 0;color:#e7ecff;font-size:13px;
+}
+.admin-device-security-entry{
+ display:flex;flex-direction:column;gap:7px;padding:13px;
+ border:1px solid #506285;border-radius:13px;background:#17253d;
+}
+.admin-device-security-entry>strong{color:#f3f5ff;font-size:13px}
+.admin-device-security-entry>small{color:#b3c2de;font-size:11px}
+.admin-device-security-entry .admin-detail-row{padding:6px 0}
 @media(max-width:540px){
- .modal-backdrop{padding:12px}
- .premium-dialog:has(.device-session-manager){padding:18px 15px;width:100%;border-radius:17px}
- .device-session-manager{max-height:60dvh}
- .device-session-card{padding:12px}
- .device-session-icon{width:38px;height:38px;font-size:19px}
- .device-session-current{font-size:9px;padding:5px 6px}
- .device-session-facts{grid-template-columns:1fr 1fr;column-gap:9px;row-gap:10px}
+ .modal-backdrop{padding:10px}
+ .premium-dialog:has(.device-session-manager){
+  width:100%;max-height:94dvh;border-radius:17px;
+ }
+ .premium-dialog:has(.device-session-manager) .dialog-top{padding:17px 15px 0}
+ .premium-dialog:has(.device-session-manager) .dialog-description{margin:12px 15px 0}
+ .premium-dialog:has(.device-session-manager) .dialog-content{padding:13px 15px 10px}
+ .premium-dialog:has(.device-session-manager) .modal-actions{padding:12px 15px 14px}
+ .device-session-card{padding:13px}
+ .device-session-icon{width:39px;height:39px;flex-basis:39px;font-size:18px}
+ .device-session-identity b{font-size:12.5px}
+ .device-session-current,.device-session-other{font-size:9px;padding:5px 7px}
+ .device-session-facts{gap:12px 9px}
+ .device-session-facts>div{padding-left:9px}
  .device-session-facts dd{font-size:11px}
+ .device-session-help{min-width:100%}
+}
+@media(max-width:360px){
+ .device-session-facts{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+ .premium-dialog:has(.device-session-manager),
+ .premium-dialog:has(.device-session-manager) *{
+  scroll-behavior:auto!important;
+ }
 }
