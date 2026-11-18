@@ -127,7 +127,9 @@ async function api(url,{method='GET',data}={}){
   if(!response.ok){
     const detail=payload?.detail;
     if(detail&&typeof detail==='object'&&detail.code==='sanction')showSanction(detail);
-    throw Error(typeof detail==='string'?detail:detail?.reason||'Yêu cầu không thành công.');
+    const error=new Error(typeof detail==='string'?detail:detail?.reason||'Yêu cầu không thành công.');
+    error.status=response.status;
+    throw error;
   }
   return payload;
 }
@@ -140,15 +142,21 @@ function toast(message,type='info'){
   const kind=type==='ok'||type==='success'?'ok':type==='error'?'error':type==='warning'?'warning':'info';
   const symbols={ok:'check',error:'ban',warning:'shield',info:'bell'};
   const names={ok:'Thành công',error:'Có lỗi xảy ra',warning:'Lưu ý',info:'Thông báo'};
+  const messageText=String(message??'');
+  const duplicate=[...host.querySelectorAll('.notify-toast')].some(item=>
+    item.dataset.kind===kind&&item.dataset.message===messageText);
+  if(duplicate)return;
   const el=document.createElement('div');
   el.className='toast notify-toast '+kind;
+  el.dataset.kind=kind;
+  el.dataset.message=messageText;
   el.setAttribute('role',kind==='error'?'alert':'status');
   const accent=document.createElement('span');
   accent.className='notify-icon';accent.innerHTML=icon(symbols[kind],19);
   const content=document.createElement('span');
   content.className='notify-content';
   const title=document.createElement('strong');title.textContent=names[kind];
-  const body=document.createElement('span');body.textContent=String(message??'');
+  const body=document.createElement('span');body.textContent=messageText;
   content.append(title,body);
   const close=document.createElement('button');
   close.className='notify-close';close.type='button';close.setAttribute('aria-label','Đóng thông báo');
@@ -156,7 +164,7 @@ function toast(message,type='info'){
   const track=document.createElement('span');track.className='notify-progress';
   el.append(accent,content,close,track);
   const visible=[...host.querySelectorAll('.notify-toast')];
-  if(visible.length>=4)visible[0].remove();
+  if(visible.length>=2)visible[0].remove();
   host.append(el);
   let timer,started=0,remaining=kind==='error'?6500:4400,done=false;
   function dismiss(){
@@ -473,6 +481,43 @@ function authArt(){return `<aside class="auth-art art-v3 art-v4 art-v5" aria-lab
     <span>${icon('shield',15)} Admin phê duyệt</span>
   </div>
 </aside>`;}
+// Contextual authentication feedback: do not put secrets or credentials in toasts.
+function authFailureText(step,error){
+ const text=String(error?.message||'Không thể xác minh lúc này. Vui lòng thử lại.');
+ if(step==='login-username'&&error?.status===404)
+   return 'Không tìm thấy tài khoản này. Vui lòng kiểm tra tên đăng nhập.';
+ if(step==='login-password'&&error?.status===401)
+   return 'Mật khẩu không chính xác. Vui lòng thử lại.';
+ if((step==='login-pin'||step==='login-remembered')&&error?.status===401){
+   if(/hết hạn|đăng nhập lại|thu hồi|chưa được ghi nhớ/i.test(text))return text;
+   return 'Mã PIN không chính xác. Vui lòng thử lại.';
+ }
+ return text;
+}
+function showAuthFieldError(form,fieldName,message){
+ const input=form?.querySelector('[name="'+fieldName+'"]');
+ const holder=input?.closest('.field');
+ if(!input||!holder||!form.isConnected)return false;
+ let error=holder.querySelector('.field-error');
+ if(!error){
+   error=document.createElement('div');
+   error.className='field-error auth-context-error';
+   holder.append(error);
+ }
+ error.setAttribute('role','alert');
+ error.textContent=String(message||'Vui lòng kiểm tra lại thông tin.');
+ holder.classList.add('has-error');
+ input.setAttribute('aria-invalid','true');
+ if(input.id){
+   error.id=input.id+'-error';
+   const described=(input.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean);
+   if(!described.includes(error.id))input.setAttribute('aria-describedby',[...described,error.id].join(' '));
+ }
+ // Leave the username available for correction, but clear rejected secrets.
+ if(fieldName==='password'||fieldName==='pin')input.value='';
+ input.focus({preventScroll:true});
+ return true;
+}
 function inputField(label,name,type='text',placeholder='',attr=''){
  const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
  return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
@@ -1434,7 +1479,12 @@ document.addEventListener('submit',async event=>{
     break;
    }
   }
- }catch(e){toast(e.message,'error');}
+ }catch(e){
+  const authField={'login-username':'username','login-password':'password',
+    'login-pin':'pin','login-remembered':'pin'}[key];
+  if(!authField||!showAuthFieldError(form,authField,authFailureText(key,e)))
+   toast(e.message,'error');
+ }
  finally{
    if(button&&button.isConnected){
     button.disabled=false;button.classList.remove('is-loading');button.removeAttribute('aria-busy');
