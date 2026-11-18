@@ -1915,3 +1915,5 @@ async def websocket_events(ws:WebSocket):
 import sys as _sys
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
+from world_chat import install as _install_world_chat
+_install_world_chat(_sys.modules[__name__])

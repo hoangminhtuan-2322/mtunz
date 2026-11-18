@@ -397,7 +397,8 @@ def install(core):
                           (reporter['id'],body.target_id,body.reason,desc,body.scope,
                            body.message_id,body.group_id,evidence,at))
             report_id=cur.lastrowid
-            admin_log(c,None,'member_report_submitted',f'report_id={report_id}; reason={body.reason}; target_id={body.target_id}')
+            # The report row is a durable audit record. Do not impersonate an
+            # administrator in the privileged admin-audit table.
         await hub.admins('world-report-new',report_id=report_id)
         return {'ok':True,'report_id':report_id,'status':'pending'}
 
