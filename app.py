@@ -1564,7 +1564,7 @@ async def admin_broadcast(request:Request,body:Broadcast):
 # Security events are intentionally append-only. A privileged administrator can
 # inspect/export them, but cannot alter or erase evidence through the web API.
 AUDIT_HIGH_RISK = {
-    'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
+    'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
     'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin',
     'sanction_ban', 'sanction_lock', 'admin_password_change',
 }
