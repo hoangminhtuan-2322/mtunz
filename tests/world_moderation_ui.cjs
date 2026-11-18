@@ -36,7 +36,7 @@ assert(server.includes('class WorldConfig(BaseModel)'));
 assert(server.includes("verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)"));
 assert(server.includes('UPDATE world_penalties SET window_count=window_count'),'Persistent row lock protects rate rule');
 assert(server.includes('scope:Literal'), 'Evidence scope is validated');
-assert(server.includes('status:Literal'), 'Report state must be validated');
+assert(server.includes("decision:Literal['reviewed','dismissed']"), 'Report decision must be validated');
 assert(pg.includes("'world_messages', 'user_reports'"),'PostgreSQL inserts get generated IDs');
 assert(css.includes('.world-live-shell')&&css.includes('.world-report-card'));
 assert(css.includes('@media(max-width:650px)'),'Mobile World Chat works');
