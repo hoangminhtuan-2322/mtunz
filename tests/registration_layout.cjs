@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const app = fs.readFileSync('static/app.js','utf8');
 const html = fs.readFileSync('static/index.html','utf8');
 const css = fs.readFileSync('static/registration-layout.css','utf8');
+const extras = fs.readFileSync('static/extras.js','utf8');
 const beginning = app.indexOf("if(state.regStatus==='approved')return");
 const ending = app.indexOf('return `<span class="eyebrow">THAM GIA MTUNZ', beginning);
 assert(beginning > 0 && ending > beginning, 'Approved registration markup exists');
@@ -41,4 +42,13 @@ assert(css.includes('.auth-panel:has(form[data-form="register-request"]) .auth-s
 assert(css.includes('.auth-panel:has(form[data-form="register-request"]) .auth-footer'), 'Footer stays inside the card');
 assert(css.includes('Never clip controls on short viewports'), 'Short-height fallback remains scrollable');
 assert(!css.includes('overflow-y:hidden!important'), 'Do not hide scrolling for clipped controls');
-console.log('Approved registration layout integrity checks passed.');
+// Public screens must not explain privileged controls or duplicate contact notes.
+assert(!app.includes('Số điện thoại chưa được xác minh bằng SMS.'), 'Remove SMS/admin disclaimer beneath signup');
+assert(!app.includes('Thông tin liên hệ được giữ riêng tư và không hiện trong hồ sơ công khai.'), 'Remove redundant registration banner');
+assert(!extras.includes('Chỉ bạn và quản trị viên được xem số điện thoại'), 'Remove technical access note from profile form');
+assert(!app.includes('Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị.'), 'Do not reveal privileged session settings on public login screen');
+assert(!app.includes('Admin vẫn có thể xóa ngay theo quyền quản trị.'), 'Avoid advertising admin privileges in deletion copy');
+assert(app.includes('không công khai nhưng quản trị viên có thể truy cập'), 'Registration consent must still disclose contact-data access');
+assert(app.includes('member-privacy-details'), 'Member must retain access to material privacy disclosure');
+assert(extras.includes('Số điện thoại và email không hiển thị trên hồ sơ công khai.'), 'Contact note is concise');
+console.log('Approved registration and member privacy copy checks passed.');
