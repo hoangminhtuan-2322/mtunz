@@ -44,6 +44,7 @@
    return 'active';
   }
   if(tab==='tickets')return row.querySelector('.pill')?.textContent.trim().toLowerCase()==='mở'?'open':'closed';
+  if(tab==='audit')return row.dataset.level||'info';
   return 'all';
  }
  function refreshList(){
@@ -88,6 +89,7 @@
   if(tab==='registrations')choices=[['all','Tất cả trạng thái'],['pending','Chờ duyệt'],['approved','Đã duyệt'],['denied','Từ chối']];
   if(tab==='users')choices=[['all','Tất cả tài khoản'],['active','Hoạt động'],['restricted','Đã khóa / cấm'],['pending','Chờ xóa']];
   if(tab==='tickets')choices=[['all','Tất cả phiếu'],['open','Đang mở'],['closed','Đã đóng']];
+  if(tab==='audit')choices=[['all','Mọi mức độ'],['high','Quan trọng'],['medium','Cần theo dõi'],['info','Thông thường']];
   if(choices){
    const select=make('select',{class:'select','aria-label':'Lọc trạng thái','data-admin-filter':'status'});
    for(const [val,label]of choices){const option=make('option',{value:val},label);select.append(option);}
