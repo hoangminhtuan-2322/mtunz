@@ -1118,28 +1118,54 @@ async def people_search(request: Request,q: str=''):
 async def get_friends(request: Request):
     u=current_user(request)
     with db() as c:
-        allrows=many(c, '''SELECT f.*,u.id other_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM friendships f
+        # One joined query avoids multiple Neon roundtrips per friend on every
+        # realtime sidebar refresh. Preserve the existing response format.
+        allrows=many(c, '''
+          SELECT f.*,u.id AS other_id,
+                 COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,
+                 u.display_name,u.show_online,u.last_seen,u.public_id,
+                 u.avatar_attachment_id,u.profile_visibility,
+                 COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
+                 CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
+                 (SELECT body FROM messages
+                   WHERE (sender_id=? AND recipient_id=u.id) OR
+                         (sender_id=u.id AND recipient_id=?)
+                   ORDER BY id DESC LIMIT 1) AS last_body,
+                 (SELECT created_at FROM messages
+                   WHERE (sender_id=? AND recipient_id=u.id) OR
+                         (sender_id=u.id AND recipient_id=?)
+                   ORDER BY id DESC LIMIT 1) AS last_created,
+                 (SELECT sender_id FROM messages
+                   WHERE (sender_id=? AND recipient_id=u.id) OR
+                         (sender_id=u.id AND recipient_id=?)
+                   ORDER BY id DESC LIMIT 1) AS last_sender,
+                 (SELECT count(*) FROM messages
+                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL) AS unread
+          FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
-          WHERE f.u1=? OR f.u2=? ORDER BY f.created_at DESC''',(u['id'],u['id'],u['id']))
+          LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
+          LEFT JOIN restrictions r ON r.owner_id=? AND r.other_id=u.id
+          WHERE f.u1=? OR f.u2=?
+          ORDER BY f.created_at DESC
+        ''',(u['id'],u['id'],u['id'],u['id'],u['id'],u['id'],u['id'],
+             u['id'],u['id'],u['id'],u['id'],u['id']))
         for r in allrows:
-            other_user = one(c,'SELECT show_online,display_name,public_id,avatar_attachment_id,profile_visibility FROM users WHERE id=?',(r['other_id'],))
-            r['online'] = bool(hub.users.get(r['other_id'])) and bool(other_user['show_online']) and not is_restricted(c,r['other_id'],u['id'])
-            r['display_name'] = other_user['display_name'] or ''
-            r['public_id'] = other_user['public_id']
-            r['avatar_url'] = (f'/api/profile/{r["other_id"]}/avatar' if other_user['avatar_attachment_id'] and
-                               other_user['profile_visibility']!='only_me' else None)
-            pref=one(c,'SELECT muted,archived FROM chat_preferences WHERE user_id=? AND other_id=?',(u['id'],r['other_id']))
-            r['muted'] = bool(pref['muted']) if pref else False
-            r['archived'] = bool(pref['archived']) if pref else False
-            r['restricted'] = is_restricted(c,u['id'],r['other_id'])
-            r['last_seen'] = one(c,'SELECT last_seen FROM users WHERE id=?',(r['other_id'],))['last_seen']
-            msg = one(c, '''SELECT body,created_at,sender_id FROM messages
-                            WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?)
-                            ORDER BY id DESC LIMIT 1''', (u['id'],r['other_id'],r['other_id'],u['id']))
-            r['last_message']=dict(msg) if msg else None
-            r['unread']=one(c,'SELECT count(*) n FROM messages WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
-                            (u['id'],r['other_id']))['n']
-        allrows.sort(key=lambda a:a['last_message']['created_at'] if a['last_message'] else a['created_at'],reverse=True)
+            r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(one(
+                c,'SELECT 1 FROM restrictions WHERE owner_id=? AND other_id=?',
+                (r['other_id'],u['id'])))
+            r['muted']=bool(r['muted'])
+            r['archived']=bool(r['archived'])
+            r['restricted']=bool(r['restricted'])
+            r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
+                             if r['avatar_attachment_id'] and r['profile_visibility']!='only_me' else None)
+            r.pop('avatar_attachment_id',None)
+            r.pop('profile_visibility',None)
+            r.pop('show_online',None)
+            last_created=r.pop('last_created')
+            last_body=r.pop('last_body')
+            last_sender=r.pop('last_sender')
+            r['last_message']={'body':last_body,'created_at':last_created,'sender_id':last_sender} if last_created else None
+        allrows.sort(key=lambda row:row['last_message']['created_at'] if row['last_message'] else row['created_at'],reverse=True)
     return {'friends':allrows}
 
 
