@@ -356,8 +356,59 @@ function connectSocket(){
  };
  socket.onclose=()=>{if(state.ws===socket)socketRetry=setTimeout(()=>connectSocket(),2500);};
 }
+function showRequiredDisplayName(){
+ // Newly approved accounts must choose a public display name once.
+ // Without it, the API blocks chats, contacts and account settings.
+ modal({
+  title:'Đặt tên hiển thị để bắt đầu',
+  description:'Tên này sẽ xuất hiện khi kết bạn và nhắn tin. Tên đăng nhập chỉ dùng riêng để đăng nhập.',
+  content:'<div class="onboarding-name-box">'+
+   '<label for="onboarding-display-name">Tên mọi người sẽ nhìn thấy</label>'+
+   '<input id="onboarding-display-name" class="input" type="text" minlength="2" maxlength="50" autocomplete="nickname" placeholder="Ví dụ: Minh Anh" aria-describedby="onboarding-name-hint">'+
+   '<p id="onboarding-name-hint" class="hint">Nhập 2–50 ký tự và chọn tên khác tên đăng nhập. Bạn có thể đổi sau trong Cài đặt.</p>'+
+   '<div class="onboarding-name-security">'+icon('shield',16)+
+   '<span>Tên hiển thị dùng khi trò chuyện. Tên đăng nhập và số điện thoại không xuất hiện trong hồ sơ công khai.</span></div>'+
+   '<button type="button" class="linkbtn onboarding-relogin" id="onboarding-relogin">'+icon('logout',15)+' Đăng xuất và đăng nhập lại</button>'+
+   '</div>',
+  confirm:'Lưu tên và bắt đầu',
+  cancel:null,
+  closable:false,
+  handler:async host=>{
+   const input=host.querySelector('#onboarding-display-name');
+   const name=String(input?.value||'').trim();
+   if(name.length<2||name.length>50){
+    input?.focus();throw Error('Tên hiển thị cần từ 2 đến 50 ký tự.');
+   }
+   await post('/api/me/display-name',{display_name:name});
+   state.user=(await api('/api/me')).user;
+   await enterApp();
+   toast('Đã lưu tên hiển thị. Chào mừng bạn đến mtunz!','ok');
+  }
+ });
+ const root=$('#modal-root');
+ root.querySelector('#onboarding-relogin')?.addEventListener('click',async(event)=>{
+  const button=event.currentTarget;
+  if(button.disabled)return;
+  button.disabled=true;
+  try{
+   await logout();
+   root.replaceChildren();
+   toast('Đã đăng xuất. Bạn chỉ cần đăng nhập lại, không phải xin admin duyệt lần nữa.','info');
+  }catch(error){button.disabled=false;toast(error.message||'Không thể đăng xuất.','error');}
+ });
+ root.querySelector('#onboarding-display-name')?.addEventListener('keydown',(event)=>{
+  if(event.key==='Enter'){
+   event.preventDefault();
+   root.querySelector('#modal-confirm')?.click();
+  }
+ });
+ requestAnimationFrame(()=>root.querySelector('#onboarding-display-name')?.focus({preventScroll:true}));
+}
 async function enterApp(resume=false){
  if(!state.user)return;
+ if(!state.user.is_admin&&state.user.onboarding_required){
+  showRequiredDisplayName();return;
+ }
  const previous=resume?readSavedView():null;
  activateCurrentTab();
  state.selected=null;state.groupSelected=null;state.tab='messages';
@@ -485,7 +536,7 @@ function authArt(){return `<aside class="auth-art art-v3 art-v4 art-v5" aria-lab
 function authFailureText(step,error){
  const text=String(error?.message||'Không thể xác minh lúc này. Vui lòng thử lại.');
  if(step==='login-username'&&error?.status===404)
-   return 'Không tìm thấy tài khoản này. Vui lòng kiểm tra tên đăng nhập.';
+   return 'Không tìm thấy tài khoản. Hãy kiểm tra tên đăng nhập hoặc số điện thoại.';
  if(step==='login-password'&&error?.status===401)
    return 'Mật khẩu không chính xác. Vui lòng thử lại.';
  if((step==='login-pin'||step==='login-remembered')&&error?.status===401){
@@ -548,15 +599,15 @@ function authLogin(){
 
  const forms={
  username:`<span class="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h1>Tiếp tục cuộc trò chuyện.</h1>
- <p class="hint">Nhập tên tài khoản duy nhất để bắt đầu.</p><div class="auth-step"><span class="active"></span><span></span><span></span></div>
- <form data-form="login-username">${inputField('Tên tài khoản','username','text','','autocomplete="username" value="'+esc(state.username)+'"')}
+ <p class="hint">Dùng tên đăng nhập hoặc số điện thoại đã liên kết với tài khoản.</p><div class="auth-step"><span class="active"></span><span></span><span></span></div>
+ <form data-form="login-username">${inputField('Tên đăng nhập hoặc số điện thoại','username','text','','autocomplete="username" maxlength="40" value="'+esc(state.username)+'"')}
  <button class="btn primary full" type="submit">Tiếp tục ${icon('chevron',17)}</button></form>`,
- password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${esc(state.username)} 👋</h1>
+ password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${state.username.startsWith('+')?'bạn':esc(state.username)} 👋</h1>
  <p class="hint">Nhập mật khẩu để tiếp tục. Tài khoản có PIN sẽ cần xác minh thêm một bước.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span></span></div>
  <form data-form="login-password" autocomplete="off">${inputField('Mật khẩu','password','password','','autocomplete="off" readonly data-manual-password="1"')}
  <button type="submit" class="btn primary full">Xác nhận mật khẩu ${icon('chevron',17)}</button></form>
- <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi tên tài khoản</button>`,
+ <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi cách đăng nhập</button>`,
  pin:`<span class="eyebrow">BƯỚC 3/3 · XÁC MINH</span><h1>Thêm một lớp an toàn.</h1>
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
@@ -736,7 +787,7 @@ function appRail(){
       </div>
     </nav>
     <div class="rail-foot">
-      <div class="rail-account">${avatar(state.user.username,false,'sm')}<span class="rail-account-name" title="${esc(state.user.username)}">${esc(state.user.username)}</span></div>
+      <div class="rail-account">${avatar(state.user.display_name||state.user.username,false,'sm')}<span class="rail-account-name" title="${esc(state.user.display_name||'Tài khoản của bạn')}">${esc(state.user.display_name||'Tài khoản của bạn')}</span></div>
       <button type="button" class="rail-btn rail-logout" data-act="logout" title="Đăng xuất tài khoản" aria-label="Đăng xuất tài khoản">
         <span class="rail-icon" aria-hidden="true">${icon('logout',19)}</span><span class="rail-text">Đăng xuất</span></button>
     </div>
@@ -824,7 +875,7 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
  <p class="section-lead">Kiểm soát thông tin đăng nhập và cách bạn tương tác trên mtunz.</p>
- <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
+ <div class="row card" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Những chức năng ít dùng được sắp xếp tại đây để thanh điều hướng gọn gàng hơn.</p>

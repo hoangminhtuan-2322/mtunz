@@ -1,0 +1,11 @@
+/* mtunz: first authenticated session must finish public-name onboarding. */
+.onboarding-name-box{display:grid;gap:10px;padding:2px 0 7px}
+.onboarding-name-box>label{font-size:12px;color:#dbe6fc;font-weight:800}
+.onboarding-name-box .input{min-height:49px;border:1px solid #60779c;border-radius:12px;background:#101e32;color:#f5f7ff;font-size:14px;padding:11px 14px}
+.onboarding-name-box .input:focus{border-color:#aa9bf9;box-shadow:0 0 0 3px #9889f226;outline:0}
+.onboarding-name-box .hint{font-size:11px;line-height:1.75;color:#abbfdb}
+.onboarding-name-security{display:flex;align-items:flex-start;gap:9px;border:1px solid #716caa57;background:#21274787;border-radius:12px;padding:12px;font-size:11px;line-height:1.65;color:#d2d3ef}
+.onboarding-name-security svg{flex:none;color:#b9aeff}
+.onboarding-relogin{justify-self:start;margin-top:6px;color:#aabbdb!important;font-size:11px!important}
+.onboarding-relogin:hover{color:#fff!important}
+@media(max-width:600px){.onboarding-name-box{gap:8px}.onboarding-name-security{padding:11px}.premium-dialog:has(.onboarding-name-box){max-height:calc(100dvh - 22px);overflow-y:auto}}
