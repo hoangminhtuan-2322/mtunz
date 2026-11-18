@@ -55,7 +55,9 @@ assert(!app.includes('Thông tin liên hệ được giữ riêng tư và không
 assert(!extras.includes('Chỉ bạn và quản trị viên được xem số điện thoại'), 'Remove technical access note from profile form');
 assert(!app.includes('Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị.'), 'Do not reveal privileged session settings on public login screen');
 assert(!app.includes('Admin vẫn có thể xóa ngay theo quyền quản trị.'), 'Avoid advertising admin privileges in deletion copy');
-assert(app.includes('không công khai nhưng quản trị viên có thể truy cập'), 'Registration consent must still disclose contact-data access');
+assert(approved.includes('Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư của mtunz.'), 'Consent must use concise Terms and Privacy agreement');
+assert(!approved.includes('Tôi đồng ý cung cấp số điện thoại và email'), 'Remove overly long contact disclaimer from checkbox');
+assert(app.includes('member-privacy-details'), 'Material privacy disclosure stays available in user settings');
 assert(app.includes('member-privacy-details'), 'Member must retain access to material privacy disclosure');
 assert(extras.includes('Số điện thoại và email không hiển thị trên hồ sơ công khai.'), 'Contact note is concise');
 console.log('Approved registration and member privacy copy checks passed.');

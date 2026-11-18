@@ -599,7 +599,7 @@ function authRegister(){
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
      ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
-   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý cung cấp số điện thoại và email (nếu có) để quản lý và hỗ trợ tài khoản. Thông tin này không công khai nhưng quản trị viên có thể truy cập khi xử lý tài khoản. Mật khẩu và PIN không thể xem ở dạng gốc.</span></label>
+   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư của mtunz.</span></label>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
