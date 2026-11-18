@@ -226,7 +226,6 @@ function upgradeSettings(){
  if(!page||page.classList.contains('mt-settings-upgraded'))return;
  page.classList.add('mt-settings-upgraded');
  const map=[
-  ['Hồ sơ','settings-profile'],['Liên hệ','settings-contact'],
   ['Mã PIN','settings-pin'],['Mật khẩu','settings-password']
  ];
  const jump=el('nav','mt-settings-jump');jump.setAttribute('aria-label','Điều hướng cài đặt');
@@ -245,7 +244,7 @@ function upgradeSettings(){
  hero.append(el('div','mt-settings-health-icon','✦'));
  const copy=el('div','mt-settings-health-copy');
  copy.append(el('strong','','Trung tâm tài khoản'));
- copy.append(el('p','','Quản lý hồ sơ, bảo mật và quyền riêng tư tại một nơi.'));
+ copy.append(el('p','','Quản lý mật khẩu, PIN, phiên đăng nhập và quyền truy cập ở một nơi.'));
  const stats=el('div','mt-settings-health-pills');
  stats.append(el('span','','🔒 PIN '+(state.user.pin_length||'chưa bật')));
  stats.append(el('span','',state.user.show_online?'● Hiển thị online':'◌ Ẩn trạng thái online'));

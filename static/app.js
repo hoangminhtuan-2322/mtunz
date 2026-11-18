@@ -421,7 +421,7 @@ async function enterApp(resume=false){
   state.accountDeletion=await api('/api/me/deletion');
   await refreshFriends(false);
   await refreshGroups(false);
-  const allowed=['messages','groups','friends','notices','settings','restricted','support'];
+  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','support'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
    state.friends.some(f=>f.other_id===previous.selected&&f.state==='accepted')){
@@ -787,7 +787,9 @@ function appRail(){
       </div>
     </nav>
     <div class="rail-foot">
-      <div class="rail-account">${avatar(state.user.display_name||state.user.username,false,'sm')}<span class="rail-account-name" title="${esc(state.user.display_name||'Tài khoản của bạn')}">${esc(state.user.display_name||'Tài khoản của bạn')}</span></div>
+      <button type="button" class="rail-account rail-profile-button ${state.tab==='profile'?'active':''}" data-act="app-tab" data-tab="profile" aria-label="Hồ sơ cá nhân">
+        ${avatar(state.user.display_name||state.user.username,false,'sm')}<span class="rail-account-name"><strong>${esc(state.user.display_name||'Tài khoản của bạn')}</strong><small>Hồ sơ cá nhân</small></span>${icon('chevron',15)}
+      </button>
       <button type="button" class="rail-btn rail-logout" data-act="logout" title="Đăng xuất tài khoản" aria-label="Đăng xuất tài khoản">
         <span class="rail-icon" aria-hidden="true">${icon('logout',19)}</span><span class="rail-text">Đăng xuất</span></button>
     </div>
@@ -872,21 +874,26 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
  <p class="section-lead">Các cuộc trò chuyện bị hạn chế sẽ được ẩn khỏi hộp thư chính; trạng thái trực tuyến và xác nhận đã xem của bạn không hiển thị với họ.</p>
  ${rs.length?rs.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Cuộc trò chuyện đã được ẩn</div></div>
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">Xem tin nhắn</button><button class="btn success sm" data-act="chat-restrict" data-id="${f.other_id}">Bỏ hạn chế</button></div>`).join(''):'<div class="empty">Chưa có người dùng nào bị hạn chế.</div>'}</div>`;}
+function profileContent(){
+ return `<div class="section-wrap profile-page"><span class="eyebrow">DANH TÍNH CỘNG ĐỒNG</span><h1 class="section-title">Hồ sơ cá nhân</h1>
+ <p class="section-lead">Chỉnh sửa tên hiển thị, giới thiệu và thông tin liên hệ tại đây. Các tùy chọn mật khẩu, PIN và thiết bị nằm trong Cài đặt.</p>
+ <div class="row card" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
+ <div class="profile-panel-grid">${profileSettings()}</div></div>`;
+}
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
- <p class="section-lead">Kiểm soát thông tin đăng nhập và cách bạn tương tác trên mtunz.</p>
- <div class="row card" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
+ <p class="section-lead">Chỉ quản lý bảo mật, thiết bị và quyền truy cập. Hồ sơ công khai và liên hệ đã được chuyển sang mục riêng.</p>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
-   <p class="hint">Những chức năng ít dùng được sắp xếp tại đây để thanh điều hướng gọn gàng hơn.</p>
+   <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>
    <div class="rail-settings-actions">
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
-     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Chat thế giới · Sắp ra mắt</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Chat thế giới</button>
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>
- ${profileSettings()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
+ <div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
  <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
  ${secureSettingsField('PIN mới','new_pin','password','','inputmode="numeric" minlength="4" maxlength="6"')}
@@ -982,7 +989,8 @@ function renderApp(){
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='friends'?`${memberHeader('Bạn bè','Quản lý các kết nối của bạn') }<div class="main-body">${friendsContent()}</div>`:
   state.tab==='restricted'?`${memberHeader('Danh sách hạn chế','Ưu tiên sự riêng tư') }<div class="main-body">${restrictedContent()}</div>`:
-  state.tab==='settings'?`${memberHeader('Cài đặt','Tùy chỉnh tài khoản') }<div class="main-body">${settingsContent()}</div>`:
+  state.tab==='profile'?`${memberHeader('Hồ sơ cá nhân','Thông tin của bạn') }<div class="main-body">${profileContent()}</div>`:
+  state.tab==='settings'?`${memberHeader('Cài đặt','Bảo mật và tùy chọn hệ thống') }<div class="main-body">${settingsContent()}</div>`:
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;

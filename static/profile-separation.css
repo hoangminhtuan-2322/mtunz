@@ -1,0 +1,13 @@
+/* Member profile is a separate workspace, directly above Sign out. */
+.rail-profile-button{display:flex;align-items:center;gap:9px;border:1px solid transparent;border-radius:12px;background:transparent;color:inherit;width:100%;text-align:left;cursor:pointer;padding:10px;transition:background .15s,border-color .15s}
+.rail-profile-button:hover,.rail-profile-button.active{background:#7977d51e;border-color:#8f85df59}
+.rail-profile-button .rail-account-name{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}
+.rail-profile-button .rail-account-name strong{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rail-profile-button .rail-account-name small{font-size:10px;color:#9dafce}
+.rail-profile-button>svg{flex:none;color:#a7b0db}
+.profile-page>.row.card{margin-bottom:22px!important}
+.profile-page .profile-panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.profile-page .profile-panel-grid>.card{margin:0!important;min-width:0}
+.profile-page .profile-panel-grid>.card:last-child{grid-column:1 / -1}
+@media(max-width:900px){.profile-page .profile-panel-grid{grid-template-columns:1fr}.profile-page .profile-panel-grid>.card:last-child{grid-column:auto}}
+@media(max-width:630px){.rail-profile-button{padding:9px 8px}.profile-page .row.card{flex-wrap:wrap;gap:12px}.profile-page .section-wrap{padding-left:10px;padding-right:10px}}
