@@ -202,6 +202,16 @@
  background:#243653;border:1px solid #54688b;padding:9px 12px;border-radius:12px;
  color:#d8e4fa;font-size:11px;
 }
+.shell:not(.admin-shell) .chat-photo-preparing{
+ display:inline-flex;align-items:center;gap:8px;margin-top:8px;
+ font-size:11px;color:#c5d9f6;padding:7px 10px;
+ border-radius:10px;background:#283c587d;border:1px solid #445a7a;
+}
+.shell:not(.admin-shell) .chat-photo-preparing:before{
+ content:'';width:11px;height:11px;border:2px solid #9a9fe55b;
+ border-top-color:#c3bcff;border-radius:50%;animation:chat-upload-spin .9s linear infinite;
+}
+@keyframes chat-upload-spin{to{transform:rotate(360deg)}}
 .shell:not(.admin-shell) .chat-attachment-thumbnail{
  flex:none;width:55px;height:48px;object-fit:cover;
  border-radius:8px;border:1px solid #647594;
@@ -323,6 +333,7 @@
  .shell:not(.admin-shell) .bubble-wrap .bubble-actions{opacity:1}
 }
 @media(prefers-reduced-motion:reduce){
+ .shell:not(.admin-shell) .chat-photo-preparing:before{animation:none!important}
  .shell:not(.admin-shell) .chat-compose-tool,
  .shell:not(.admin-shell) .chat-compose-main,
  .shell:not(.admin-shell) .chat-compose-main .send,
