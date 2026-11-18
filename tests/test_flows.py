@@ -122,3 +122,30 @@ def test_realtime_message_and_immediate_admin_sanction():
         event=alice_ws.receive_json()
         assert event['type']=='account-sanction' and event['kind']=='ban'
     assert alice.get('/api/me').json()['user'] is None
+
+
+def test_new_member_ids_are_random_numeric_unique_and_searchable(monkeypatch):
+    import app as core
+    admin=logged_admin()
+    original_admin=admin.get('/api/me').json()['user']['id']
+    first=register_user(admin,'id_first')
+    second=register_user(admin,'id_second')
+    first_id=first.get('/api/me').json()['user']['id']
+    second_id=second.get('/api/me').json()['user']['id']
+    assert original_admin < core.MEMBER_ID_MIN
+    assert all(isinstance(v,int) and core.MEMBER_ID_MIN<=v<=core.MEMBER_ID_MAX
+               for v in (first_id,second_id))
+    assert first_id!=second_id
+    assert first.get('/api/me').json()['user']['id']==first_id
+    assert second.get(f'/api/people/search?q={first_id}').json()['users'][0]['id']==first_id
+    assert admin.get(f'/api/admin/users?q={first_id}').json()['users'][0]['id']==first_id
+    assert not second.get('/api/people/search?q=1').json()['users'] or all(
+        u['username']!='admin' for u in second.get('/api/people/search?q=1').json()['users'])
+
+    # Force two real key collisions to confirm safe retries on both SQLite and PG.
+    unused = next(n for n in range(1000,1100) if n not in (first_id,second_id))
+    ids=iter((first_id,second_id,unused))
+    monkeypatch.setattr(core,'random_member_id',lambda: next(ids))
+    third=register_user(admin,'id_collision')
+    assert third.get('/api/me').json()['user']['id']==unused
+    assert admin.get('/api/me').json()['user']['id']==original_admin
