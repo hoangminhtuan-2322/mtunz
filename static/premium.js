@@ -92,7 +92,7 @@
     if (input.name === 'username' && input.form?.dataset.form === 'register-request') {
       if (availability.value === input.value.trim().toLowerCase() &&
           ['exists', 'reserved'].includes(availability.state)) {
-        return 'Tên này đã được sử dụng hoặc đang chờ phê duyệt. Hãy chọn tên khác.';
+        return 'Tên đã có người sử dụng hoặc đang được phê duyệt.';
       }
     }
     return '';
@@ -164,7 +164,7 @@
         } else if (data.state === 'available') {
           updateAvailability('Tên này đang có thể sử dụng', 'good');
         } else {
-          updateAvailability('Tên đã có người sử dụng hoặc đang được giữ chỗ', 'bad');
+          updateAvailability('Tên đã có người sử dụng hoặc đang được phê duyệt.', 'bad');
         }
       } catch {
         if (seq === availabilitySequence) updateAvailability('Mạng chưa ổn định; hãy thử lại.', '');
