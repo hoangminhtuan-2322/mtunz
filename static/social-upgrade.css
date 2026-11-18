@@ -152,8 +152,7 @@
 .shell:not(.admin-shell) .mt-settings-jump-btn:hover{background:#35466b;border-color:#a196fa}
 .shell:not(.admin-shell) .mt-settings-jump-btn.danger{color:#ffb6c2}
 .shell:not(.admin-shell) .mt-settings-upgraded>.card,
-.shell:not(.admin-shell) .mt-settings-upgraded .setting-grid>.card,
-.shell:not(.admin-shell) .mt-settings-upgraded .member-privacy-details{
+.shell:not(.admin-shell) .mt-settings-upgraded .setting-grid>.card{
  border-radius:17px;border-color:#364b67;background:linear-gradient(155deg,#19283d,#121e31);
  box-shadow:none;
 }

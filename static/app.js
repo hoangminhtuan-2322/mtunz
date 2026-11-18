@@ -908,7 +908,7 @@ function settingsContent(){
      `<button class="btn success" type="button" data-act="cancel-own-deletion">${icon('check',16)} Hủy yêu cầu xóa tài khoản</button>`:
      `<button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Yêu cầu xóa sau 30 ngày</button>`}
  </section>
- <details class="member-privacy-details" style="margin-top:18px"><summary>Quyền riêng tư và xử lý dữ liệu</summary><p>Quản trị viên có thể truy cập thông tin tài khoản và lịch sử trò chuyện khi hỗ trợ hoặc kiểm duyệt. Mật khẩu và PIN chỉ được lưu dưới dạng mã băm, không thể xem ở dạng gốc.</p></details></div>`;
+ </div>`;
 }
 function supportInApp(){return `<div class="section-wrap"><span class="eyebrow">LIÊN HỆ HỖ TRỢ</span><h1 class="section-title">Trò chuyện với admin</h1><p class="section-lead">Gửi câu hỏi và nhận phản hồi realtime từ quản trị viên.</p><div class="card" style="max-width:620px">${authSupport()}</div></div>`;}
 function worldComingSoon(){

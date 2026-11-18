@@ -57,7 +57,8 @@ assert(!app.includes('Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị
 assert(!app.includes('Admin vẫn có thể xóa ngay theo quyền quản trị.'), 'Avoid advertising admin privileges in deletion copy');
 assert(approved.includes('Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư của mtunz.'), 'Consent must use concise Terms and Privacy agreement');
 assert(!approved.includes('Tôi đồng ý cung cấp số điện thoại và email'), 'Remove overly long contact disclaimer from checkbox');
-assert(app.includes('member-privacy-details'), 'Material privacy disclosure stays available in user settings');
-assert(app.includes('member-privacy-details'), 'Member must retain access to material privacy disclosure');
+assert(!app.includes('member-privacy-details'), 'Removed settings privacy accordion must not return');
+assert(!app.includes('Quyền riêng tư và xử lý dữ liệu'), 'Removed privacy accordion title must not return');
+assert(!fs.readFileSync('static/social-upgrade.css','utf8').includes('.member-privacy-details'), 'Do not retain orphaned accordion styling');
 assert(extras.includes('Số điện thoại và email không hiển thị trên hồ sơ công khai.'), 'Contact note is concise');
 console.log('Approved registration and member privacy copy checks passed.');
