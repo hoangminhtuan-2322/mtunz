@@ -1044,10 +1044,10 @@ async def people_search(request: Request,q: str=''):
         numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
         rows = many(c, '''SELECT id,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
                           FROM users WHERE is_admin=0 AND id!=? AND needs_display_name=0
-                          AND (display_name LIKE ? OR id=?)
+                          AND (display_name LIKE ? OR username LIKE ? OR id=?)
                           AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
                           AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id=?)
-                          LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
+                          LIMIT 20''', (u['id'], '%'+search+'%', '%'+search+'%', numeric_id,u['id'],u['id']))
         for r in rows:
             fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
             r['friend_state'] = fr['state'] if fr else 'none'
