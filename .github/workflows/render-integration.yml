@@ -36,5 +36,7 @@ jobs:
           python-version: '3.12'
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Verify upgrade of preexisting Neon-style schema (CI database only)
+        run: python tests/smoke_legacy_upgrade.py
       - name: Test Python imports and SQL against PostgreSQL
         run: python tests/smoke_postgres.py
