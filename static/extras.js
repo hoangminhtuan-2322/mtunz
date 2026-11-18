@@ -39,10 +39,11 @@ function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
  return `<div class="main-body"><div class="section-wrap group-lobby"><span class="eyebrow">MTUNZ CỘNG ĐỒNG</span><h1 class="section-title">Nhóm trò chuyện</h1><p class="section-lead">Tạo nhóm riêng, thêm bạn bè, chia sẻ hình ảnh và tệp tức thời.</p>
  <div class="group-lobby-panels">
- <div class="group-lobby-teaser" role="note" aria-label="Chat thế giới: Coming soon">
+ <button type="button" class="group-lobby-teaser world-lobby-entrance" data-act="app-tab" data-tab="world"
+  aria-label="Mở Chat thế giới hoặc xem lại lịch sử">
   <span class="group-lobby-teaser-icon" aria-hidden="true">${icon('users',20)}</span>
-  <strong>Chat thế giới</strong><span class="group-lobby-teaser-badge">Coming soon</span>
- </div>
+  <strong>Chat thế giới</strong><span class="group-lobby-teaser-badge">${state.worldData?.status?.open?'Đang mở':'Xem lịch sử'}</span>
+ </button>
  <div class="card group-create-card"><h3>${icon('add',18)} Tạo nhóm mới</h3><form data-form="create-group" class="stack" style="margin-top:15px">
  ${inputField('Tên nhóm','title','text','','maxlength="70" minlength="2"')}
  <div class="field"><label>Chọn bạn bè tham gia (ít nhất một người)</label><div class="group-pick">${members.length?members.map(f=>`<label class="group-pick-row"><input type="checkbox" name="member_ids" value="${f.other_id}">${avatar(f.username,false,'sm')} ${esc(f.display_name||f.username)}</label>`).join(''):'<div class="hint">Bạn cần kết bạn với ít nhất một người trước.</div>'}</div></div>
@@ -314,11 +315,17 @@ async function extraAction(btn){
    <button class="btn ghost sm" type="button" data-world-report-user="${Number(r.id)}">${icon('shield',15)} Báo cáo người dùng</button>
    </div>`,confirm:'Đóng'});break;
  }
- case 'mute-chat':case 'archive-chat':{
+ case 'mute-chat':case 'archive-chat':case 'pin-chat':{
   const f=state.friends.find(x=>x.other_id===id);if(!f)return;
-  const muted=act==='mute-chat'?!f.muted:f.muted,archived=act==='archive-chat'?!f.archived:f.archived;
-  await post(`/api/chats/${id}/preferences`,{muted,archived});await refreshFriends(true);
-  toast(act==='mute-chat'?(muted?'Đã tắt thông báo hội thoại.':'Đã bật thông báo.'):(archived?'Đã lưu trữ hội thoại.':'Đã bỏ lưu trữ.'),'ok');break;
+  const muted=act==='mute-chat'?!f.muted:f.muted;
+  const archived=act==='archive-chat'?!f.archived:f.archived;
+  const pinned=act==='pin-chat'?!f.pinned:f.pinned;
+  await post(`/api/chats/${id}/preferences`,{muted,archived,pinned});
+  await refreshFriends(true);
+  toast(act==='pin-chat'?(pinned?'Đã ghim hội thoại lên đầu danh sách.':'Đã bỏ ghim hội thoại.'):
+   act==='mute-chat'?(muted?'Đã tắt thông báo hội thoại.':'Đã bật thông báo.'):
+   (archived?'Đã lưu trữ hội thoại.':'Đã bỏ lưu trữ.'),'ok');
+  break;
  }
  case 'revoke-sessions':ask('Đăng xuất các thiết bị khác','Tất cả phiên khác sẽ bị thu hồi ngay lập tức. Thiết bị này vẫn tiếp tục sử dụng.',async()=>{await post('/api/me/sessions/revoke-others');toast('Đã đăng xuất các phiên và thu hồi thiết bị ghi nhớ khác.','ok');},'Thu hồi',true);break;
  case 'list-sessions':await showSessionsDialog();break;
