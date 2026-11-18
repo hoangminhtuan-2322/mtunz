@@ -254,11 +254,11 @@ function worldAdminMuteDialog(uid){
   confirm:'Áp dụng quyết định',cancel:'Hủy',
   content:'<div class="world-report-form"><label>Thời hạn</label><select id="world-admin-mute-minutes" class="select"><option value="60">1 giờ</option><option value="720">12 giờ</option><option value="1440">1 ngày</option><option value="4320">3 ngày</option><option value="10080">7 ngày</option></select>'+
   '<label>Lý do</label><input id="world-admin-mute-reason" class="input" maxlength="250" placeholder="Vi phạm nội quy cộng đồng" value="Cần kiểm tra báo cáo vi phạm"></div>'+
-  adminProofFields(),
+  adminV3PinFields(),
   handler:async host=>{
    const reason=host.querySelector('#world-admin-mute-reason').value.trim();
    if(reason.length<5)throw Error('Cần nhập lý do từ 5 ký tự.');
-   await post('/api/admin/world/mute',{user_id:uid,minutes:Number(host.querySelector('#world-admin-mute-minutes').value),reason,...adminProofValue(host)});
+   await post('/api/admin/world/mute',{user_id:uid,minutes:Number(host.querySelector('#world-admin-mute-minutes').value),reason,...adminV3PinPayload(host)});
    toast('Đã áp dụng hạn chế Chat thế giới.','ok');await loadAdmin();
   }
  });
@@ -280,8 +280,8 @@ document.addEventListener('click',async event=>{
   if(action==='admin-reset'){
    const uid=Number(target.dataset.worldUser);
    modal({title:'Đặt lại án spam Chat thế giới',description:'Chỉ đặt lại 5 cấp phạt tự động, không bỏ các lệnh khóa tài khoản khác.',danger:true,confirm:'Đặt lại',
-    content:'<p class="hint">Thành viên #'+uid+'</p>'+adminProofFields(),
-    handler:async host=>{await post('/api/admin/world/reset',{user_id:uid,reason:'Admin xác minh và đặt lại cảnh cáo',...adminProofValue(host)});toast('Đã đặt lại án spam.','ok');await loadAdmin();}});
+    content:'<p class="hint">Thành viên #'+uid+'</p>'+adminV3PinFields(),
+    handler:async host=>{await post('/api/admin/world/reset',{user_id:uid,reason:'Admin xác minh và đặt lại cảnh cáo',...adminV3PinPayload(host)});toast('Đã đặt lại án spam.','ok');await loadAdmin();}});
    return;
   }
   if(action==='admin-remove'){
@@ -333,8 +333,8 @@ document.addEventListener('submit',async event=>{
    if(!Number.isSafeInteger(uid)||uid<=0||reason.length<5)throw Error('Kiểm tra ID người dùng và lý do.');
    modal({title:minutes?'Hạn chế Chat thế giới':'Bỏ hạn chế thủ công',
     description:'Không ảnh hưởng hội thoại riêng hoặc nhóm.',confirm:'Xác nhận',
-    content:adminProofFields(),
-    handler:async host=>{await post('/api/admin/world/mute',{user_id:uid,minutes,reason,...adminProofValue(host)});
+    content:adminV3PinFields(),
+    handler:async host=>{await post('/api/admin/world/mute',{user_id:uid,minutes,reason,...adminV3PinPayload(host)});
      toast('Đã cập nhật giới hạn gửi tin.','ok');await loadAdmin();}});
   }
  }catch(err){toast(err.message||'Không thể cập nhật.','error');}
