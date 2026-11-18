@@ -46,10 +46,14 @@ function worldV3TimerTick(){
  if(!closeAt){
   worldV3ClosingKey=0;worldV3Notified.clear();worldV3LastRemaining=Infinity;return;
  }
- if(closeAt!==worldV3ClosingKey){
-  worldV3ClosingKey=closeAt;worldV3Notified.clear();worldV3LastRemaining=Infinity;
- }
  const remaining=Math.max(0,closeAt-nowSec);
+ if(closeAt!==worldV3ClosingKey){
+  worldV3ClosingKey=closeAt;worldV3Notified.clear();worldV3LastRemaining=remaining;
+  // Do not replay old milestone notices when joining a room mid-session.
+  for(const threshold of worldV3Milestones){
+   if(remaining<threshold)worldV3Notified.add(threshold);
+  }
+ }
  if(remaining<=0){
   if(worldV3ChangeHandled!==closeAt){
    worldV3ChangeHandled=closeAt;worldV3RefreshStatus();
