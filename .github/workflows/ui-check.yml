@@ -28,6 +28,7 @@ jobs:
           node --check static/admin-console.js
           node --check static/member-experience.js
           node --check static/social-upgrade.js
+          node --check static/social-v2.js
           node --check static/world-moderation.js
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
