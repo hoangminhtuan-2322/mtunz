@@ -197,3 +197,14 @@ bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạ
 - Tệp `render.yaml` có `healthCheckPath: /health`, nhưng **dịch vụ Render tạo thủ công không tự đồng bộ cấu hình Blueprint**. Cần xác minh `serviceDetails.healthCheckPath` thực tế trên Render; chỉ coi HTTP health check đã kích hoạt khi trường đó bằng `/health`.
 - Workflow đánh thức dịch vụ mỗi 6 giờ vẫn gọi `/health`; nếu database gián đoạn, workflow sẽ báo lỗi thay vì coi dịch vụ khỏe sai.
 - Chạy `python -m pytest -q tests/test_readiness.py` để kiểm tra cả đường thành công và lỗi cơ sở dữ liệu; PostgreSQL smoke test dùng database thử nghiệm, tuyệt đối không chạy vào production.
+
+## Kiểm tra phát hành production (GO/NO-GO)
+
+1. GitHub: mọi commit `main` phải có hai workflow xanh: `Verify mtunz premium UI` (pytest và giao diện), `Render PostgreSQL integration` (smoke trên PostgreSQL **thử nghiệm**, không chứa dữ liệu người dùng).
+2. Render: dịch vụ có thể không tự triển khai khi repo được liên kết qua URL công khai. Đối chiếu **deploy LIVE SHA** với GitHub `main`; không suy diễn từ CI xanh. Cấu hình thực tế tại Render Settings → Health Checks phải là `/health` (tệp `render.yaml` không tự cập nhật cấu hình dịch vụ tạo thủ công).
+3. Sau khi deploy đúng commit, chạy workflow GitHub Actions `Verify deployed mtunz release` bằng `workflow_dispatch`. Bài kiểm tra read-only xác nhận `/health` báo database sẵn sàng, `commit` từ `RENDER_GIT_COMMIT` khớp GitHub và `/terms`, `/privacy` có mặt.
+4. Neon: dùng nhánh phụ để thử khôi phục. Gói hiện tại đã báo giới hạn snapshot và protected branch; không coi nhánh copy-on-write là bản sao lưu độc lập bên ngoài nhà cung cấp. Không chạy thử nghiệm ghi/xóa trên nhánh production.
+5. Trước khi public: kiểm tra đăng ký với đồng ý điều khoản, thiết lập tên hiển thị, đăng nhập số điện thoại/PIN, kết bạn, DM/nhóm, ảnh (bao gồm ảnh lớn), emoji, vị trí opt-in, sửa 15 phút, thu hồi, ghim, chuyển tiếp, chặn, quyền Admin và thiết bị bằng **nhiều tài khoản thật trên môi trường thử nghiệm**.
+6. Chưa bật index tìm kiếm hoặc Chat thế giới rộng rãi cho đến khi chủ dự án phê duyệt. Bảo đảm người dùng biết tin nhắn không phải E2EE và có kênh hỗ trợ xử lý sự cố.
+
+**Quy tắc:** GitHub CI xanh là điều kiện cần, **không đủ** để kết luận website production đã cập nhật hoặc an toàn cho tất cả người dùng. Nếu Render chưa đồng bộ, Neon chưa migrate hoặc chưa thử nghiệm hoạt động thực tế, giữ trạng thái **NO-GO PUBLIC**.

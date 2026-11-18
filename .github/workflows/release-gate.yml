@@ -1,0 +1,46 @@
+name: Verify deployed mtunz release
+
+# Run after Render has deployed the intended main commit.
+# Read-only: no authentication, no database writes, no synthetic signups.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check live readiness and public policy pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://mtunz.onrender.com"
+          for path in /health /terms /privacy; do
+            name="${path#/}"
+            # Render Free may cold-start; tolerate startup but fail on HTTP errors.
+            curl --silent --show-error --fail --location \
+              --max-time 90 --retry 3 --retry-delay 10 \
+              "$base$path" -o "/tmp/mtunz-$name"
+          done
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          info=json.loads(Path('/tmp/mtunz-health').read_text())
+          assert info.get('ok') is True and info.get('app')=='mtunz', 'Server not ready'
+          actual=info.get('commit')
+          expected=os.environ['GITHUB_SHA'][:12].lower()
+          assert actual==expected, (
+              'RELEASE DRIFT: Render commit does not match the verified main commit. '
+              f'Expected {expected}; running {actual or "unknown"}'
+          )
+          terms=Path('/tmp/mtunz-terms').read_text()
+          privacy=Path('/tmp/mtunz-privacy').read_text()
+          assert 'Điều khoản sử dụng' in terms, 'Terms page not deployed'
+          assert 'Chính sách quyền riêng tư' in privacy, 'Privacy page not deployed'
+          assert 'không có mã hóa đầu-cuối (E2EE)' in privacy, 'Privacy disclosure missing'
+          print(f'Production read-only checks passed. Git commit {expected}; terms and privacy reachable.')
+          PY
