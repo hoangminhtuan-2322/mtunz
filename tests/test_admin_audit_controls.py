@@ -1,7 +1,7 @@
 """Immutable audit search/details and sensitive admin management authorization."""
 from fastapi.testclient import TestClient
 from app import app, db, RATE_BUCKETS
-from test_flows import logged_admin, register_user
+from test_flows import logged_admin, register_user, clean_database
 
 
 def test_audit_drilldown_filters_and_integrity():
