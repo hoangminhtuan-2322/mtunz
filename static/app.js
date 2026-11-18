@@ -455,6 +455,7 @@ async function enterApp(resume=false){
   state.accountDeletion=await api('/api/me/deletion');
   await refreshFriends(false);
   await refreshGroups(false);
+  if(typeof loadWorldStatus==='function')await loadWorldStatus().catch(()=>{});
   if(typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
   const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
@@ -791,7 +792,7 @@ async function refreshFriends(redraw=true){
   if(state.selected && !state.friends.some(f=>f.other_id===state.selected&&f.state==='accepted')){
     state.selected=null;
   }
-  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings')renderApp();else updateChatHeader();}
+  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
 }
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
