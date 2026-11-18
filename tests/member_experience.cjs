@@ -18,6 +18,9 @@ for(const marker of [
 ].filter(x=>x!=='function compactActions(')){
  assert(member.includes(marker),'Missing chat functionality: '+marker);
 }
+assert(member.includes('function enableFileKeyboard(label)'), 'Photo/file picker must be keyboard accessible');
+assert(member.includes("event.key!=='Enter'&&event.key!==' '"), 'Enter and Space activate upload picker');
+assert(member.includes('enableFileKeyboard(photo)')&&member.includes('enableFileKeyboard(original)'), 'Both upload controls need keyboard support');
 assert(member.includes('photoInput.accept=')&&member.includes('image/jpeg,image/png,image/webp,image/gif'));
 assert(member.includes("new File([blob]"),'Oversize photos are compressed to the supported image format');
 assert(member.includes('1.7*1024*1024'),'Image compression respects Render-hosted 2 MB upload cap');
@@ -49,7 +52,7 @@ assert(css.includes('.chat-shared-location')&&css.includes('.chat-location-dialo
 assert(css.includes('@media(max-width:800px)')&&css.includes('@media(max-width:420px)'));
 assert(css.includes('prefers-reduced-motion:reduce'));
 assert(!css.includes('display:none}\n .shell:not(.admin-shell) .conversation .main-head .btn[data-act="call-video"]'),'Video call must not be hidden on mobile');
-assert(html.includes('member-experience.js?v=1.0')&&html.includes('member-experience.css?v=1.0'));
+assert(html.includes('member-experience.js?v=1.1')&&html.includes('member-experience.css?v=1.0'));
 assert(html.indexOf('member-experience.js')>html.indexOf('extras.js'),'Use existing upload functions before member enhancement');
 const events={};
 let geolocationCalls=0;

@@ -229,6 +229,17 @@ async function uploadPhoto(file){
  }catch(error){toast(error.message||'Không thể đính kèm ảnh.','error');}
  finally{photoPreparing=false;progress.remove();}
 }
+function enableFileKeyboard(label){
+ // File picker labels are clickable with a mouse but not natively keyboard
+ // focusable. Make them usable with Tab, Enter and Space as well.
+ label.tabIndex=0;
+ label.setAttribute('role','button');
+ label.addEventListener('keydown',event=>{
+  if(event.key!=='Enter'&&event.key!==' ')return;
+  event.preventDefault();
+  label.querySelector('input[type="file"]')?.click();
+ });
+}
 function mountComposer(form){
  if(form.classList.contains('chat-compose-enhanced'))return;
  const textarea=q('#chat-text',form),submit=q('button[type="submit"]',form);
@@ -241,6 +252,7 @@ function mountComposer(form){
  const photoInput=document.createElement('input');photoInput.type='file';
  photoInput.className='upload-input';photoInput.accept='image/jpeg,image/png,image/webp,image/gif';
  photoInput.hidden=true;photo.append(photoInput);
+ enableFileKeyboard(photo);
  const emoji=tool('emoji','Emoji','emoji');emoji.setAttribute('aria-expanded','false');
  emoji.setAttribute('aria-controls','chat-emoji-picker');
  const geo=tool('location','Vị trí','map');
@@ -251,6 +263,7 @@ function mountComposer(form){
   original.title='Gửi tệp đính kèm';
   original.setAttribute('aria-label','Chọn tệp đính kèm');
   original.append(make('span','','Tệp'));toolbar.append(original);
+  enableFileKeyboard(original);
  }
  const main=make('div','chat-compose-main');
  main.append(textarea,submit);form.replaceChildren(toolbar,main);
