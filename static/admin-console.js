@@ -77,13 +77,13 @@
   const rows=fieldRows(tab);
   if(!rows.length)return;
   const host=q('.admin-page');
-  const anchor=tab==='tickets'?q('.admin-ticket-layout'):tab==='audit'?q('.admin-page .card'):q('.admin-page .table-scroll');
+  const anchor=tab==='tickets'?q('.admin-ticket-layout'):tab==='audit'?q('.admin-audit-card'):q('.admin-page .table-scroll');
   if(!anchor)return;
   const filter=valueFor(tab),tools=make('section',{class:'admin-list-tools','aria-label':'Tìm kiếm và lọc dữ liệu'});
   const controls=make('div',{class:'filter-controls'});
   const search=make('input',{class:'input',type:'search','aria-label':'Tìm trong danh sách đã tải',placeholder:'Tìm trong danh sách hiện tại...',autocomplete:'off','data-admin-filter':'search'});
   search.value=filter.search;
-  controls.append(search);
+  if(tab!=='audit')controls.append(search); // Audit has server-wide search and date/action filters.
   let choices=null;
   if(tab==='registrations')choices=[['all','Tất cả trạng thái'],['pending','Chờ duyệt'],['approved','Đã duyệt'],['denied','Từ chối']];
   if(tab==='users')choices=[['all','Tất cả tài khoản'],['active','Hoạt động'],['restricted','Đã khóa / cấm'],['pending','Chờ xóa']];
@@ -210,7 +210,7 @@
    if(/^[\s]*[=+@\-]/.test(s))s="'"+s;
    return '"'+s.replace(/"/g,'""')+'"';
   };
-  const lines=[['ID','Thời điểm Unix','Admin ID','Hành động','Chi tiết'],...entries.map(x=>[x.id,x.created_at,x.admin_id,x.action,x.detail])];
+  const lines=[['Mã sự kiện','Thời điểm Unix','ID quản trị','Tên quản trị','Hành động','Mức độ','Chi tiết'],...entries.map(x=>[x.id,x.created_at,x.admin_id,x.admin_username||'',x.action,x.severity||'info',x.detail])];
   const blob=new Blob(['\ufeff'+lines.map(line=>line.map(safe).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=make('a',{href:url,download:'mtunz-admin-audit-'+new Date().toISOString().slice(0,10)+'.csv'});
