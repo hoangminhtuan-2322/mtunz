@@ -1,5 +1,6 @@
 """Functional smoke tests. Run with: pytest -q"""
 import os
+import hashlib
 import sys
 import tempfile
 from pathlib import Path
@@ -36,7 +37,9 @@ def logged_admin():
 def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     guest=TestClient(app)
     guest.get('/')
-    assert guest.post('/api/registration/request',json={'username':name,'phone':'0912345678','email':'demo@example.com'}).json()['status']=='pending'
+    digits=int.from_bytes(hashlib.sha256(name.encode('utf-8')).digest()[:6],'big') % 1_000_000_000
+    phone='0'+str(digits).zfill(9)
+    assert guest.post('/api/registration/request',json={'username':name,'phone':phone,'email':'demo@example.com'}).json()['status']=='pending'
     assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)}).status_code==403
     pending=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']==name][0]
     assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True}).status_code==200
@@ -45,6 +48,9 @@ def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     assert guest.post('/api/auth/start',json={'username':name}).status_code==200
     challenge=guest.post('/api/auth/password',json={'username':name,'password':pw}).json()['challenge']
     assert guest.post('/api/auth/pin',json={'challenge':challenge,'pin':pin}).json()['ok'] is True
+    assert guest.get('/api/me').json()['user']['onboarding_required'] is True
+    named=guest.post('/api/me/display-name',json={'display_name':'Thành viên '+name})
+    assert named.status_code==200,named.text
     return guest
 
 

@@ -50,6 +50,13 @@ def install(core):
                     c.execute(f'ALTER TABLE {table} ADD COLUMN {name} {sqltype}')
             for col, typ in [('display_name','TEXT'),('bio','TEXT'),('phone','TEXT'),('email','TEXT'),('show_online','INTEGER NOT NULL DEFAULT 1'),('show_receipts','INTEGER NOT NULL DEFAULT 1')]:
                 column('users', col, typ)
+            # Legacy accounts remain usable. Only newly completed registrations
+            # require the first-login display-name onboarding step.
+            column('users','needs_display_name','INTEGER NOT NULL DEFAULT 0')
+            # Existing deployments might contain duplicate, unverified phones.
+            # Avoid failing startup; ambiguous phone login will be rejected.
+            if not one(c,"SELECT phone FROM users WHERE phone IS NOT NULL AND phone<>'' GROUP BY phone HAVING COUNT(*)>1 LIMIT 1"):
+                c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users(phone) WHERE phone IS NOT NULL AND phone<>''")
             for col, typ in [('phone','TEXT'),('email','TEXT')]:
                 column('registrations',col,typ)
             for col, typ in [('attachment_id','INTEGER'),('reply_to','INTEGER'),('edited_at','INTEGER'),('deleted_at','INTEGER')]:
@@ -170,10 +177,13 @@ def install(core):
         u=current_user(request)
         phone=core.normalize_phone(body.phone) if body.phone is not None else u['phone']
         email=core.normalize_email(body.email) if body.email is not None else u['email']
+        name=core.validate_display_name(body.display_name,u['username'])
         with db() as c:
+            if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
+                raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
             c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
                           phone=?,email=? WHERE id=?''',
-                      (body.display_name.strip(),body.bio.strip(),int(body.show_online),
+                      (name,body.bio.strip(),int(body.show_online),
                        int(body.show_receipts),phone,email,u['id']))
         return {'ok':True}
 

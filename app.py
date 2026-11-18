@@ -92,8 +92,8 @@ def create_member(c, *, username, password_hash, pin_hash, pin_length, phone, em
     for _ in range(32):
         member_id = random_member_id()
         inserted = c.execute(
-            '''INSERT INTO users(id,username,password_hash,pin_hash,pin_length,created_at,phone,email)
-               VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING RETURNING id''',
+            '''INSERT INTO users(id,username,password_hash,pin_hash,pin_length,created_at,phone,email,needs_display_name)
+               VALUES(?,?,?,?,?,?,?,?,1) ON CONFLICT(id) DO NOTHING RETURNING id''',
             (member_id, username, password_hash, pin_hash, pin_length, now(), phone, email)
         ).fetchone()
         if inserted:
@@ -119,6 +119,33 @@ def normalize_phone(value: str) -> str:
     if not re.fullmatch(r'\+[1-9][0-9]{7,14}',number):
         raise HTTPException(422,'Số điện thoại không hợp lệ.')
     return number
+
+
+def normalize_login(value: str) -> str:
+    """Accept a username or canonical VN/E.164 phone without revealing username."""
+    raw = str(value or '').strip()
+    if raw and (raw[0].isdigit() or raw.startswith('+')):
+        return normalize_phone(raw)
+    return norm_username(raw)
+
+
+def login_user(c, login: str, columns: str = '*'):
+    """Never choose an arbitrary account if legacy contact numbers overlap."""
+    if login.startswith('+'):
+        matches = many(c, f'SELECT {columns} FROM users WHERE phone=? LIMIT 2', (login,))
+        return matches[0] if len(matches) == 1 else None
+    return one(c, f'SELECT {columns} FROM users WHERE username=?', (login,))
+
+
+def validate_display_name(value: str, username: str) -> str:
+    name = ' '.join(str(value or '').strip().split())
+    if len(name) < 2 or len(name) > 50 or not any(ch.isalpha() for ch in name):
+        raise HTTPException(422,'Tên hiển thị cần từ 2 đến 50 ký tự và có ít nhất một chữ cái.')
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        raise HTTPException(422,'Tên hiển thị chứa ký tự không hợp lệ.')
+    if name.casefold() == username.casefold():
+        raise HTTPException(422,'Hãy chọn tên hiển thị khác tên đăng nhập để bảo vệ riêng tư.')
+    return name
 
 
 def normalize_email(value: str | None) -> str:
@@ -453,10 +480,15 @@ def current_user(request: Request, require=True):
             return None
         if row['sanction_kind'] and row['sanction_until'] and row['sanction_until'] <= now():
             c.execute('UPDATE users SET sanction_kind=NULL,sanction_until=NULL,sanction_reason=NULL WHERE id=?', (row['id'],))
-            return current_user_no_sanction(c, row['id'])
+            row = current_user_no_sanction(c, row['id'])
         if row['sanction_kind']:
             raise HTTPException(403, {'code': 'sanction', 'kind': row['sanction_kind'],
                                       'until': row['sanction_until'], 'reason': row['sanction_reason']})
+        # Enforce onboarding in every protected API, not only in the browser.
+        # /api/me may inspect the flag; the named endpoint may complete it.
+        if (not row['is_admin'] and row['needs_display_name'] and
+                request.url.path not in ('/api/me', '/api/me/display-name')):
+            raise HTTPException(403,'Bạn cần đặt tên hiển thị trước khi sử dụng mtunz.')
         return dict(row)
 
 
@@ -493,6 +525,7 @@ def public_user(u):
     return {'id': u['id'], 'username': u['username'], 'is_admin': bool(u['is_admin']),
             'pin_length': u['pin_length'], 'created_at': u['created_at'],
             'display_name':u['display_name'] or '', 'bio':u['bio'] or '',
+            'onboarding_required':bool(u['needs_display_name']),
             'phone':u['phone'] or '', 'email':u['email'] or '',
             'show_online':bool(u['show_online']), 'show_receipts':bool(u['show_receipts'])}
 
@@ -644,6 +677,8 @@ async def register_complete(request: Request, body: RegisterComplete):
             raise HTTPException(403,'Yêu cầu của bạn chưa được admin chấp thuận.')
         phone=normalize_phone(r['phone'] or body.phone)
         email=normalize_email(r['email'])
+        if one(c,'SELECT 1 FROM users WHERE phone=?',(phone,)):
+            raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng liên hệ hỗ trợ.')
         total, reserved, max_users = registration_capacity(c)
         if total >= max_users:
             raise HTTPException(409,'Hệ thống đã đạt giới hạn người dùng.')
@@ -661,12 +696,12 @@ async def register_complete(request: Request, body: RegisterComplete):
 # --- Three-stage login ---
 @app.post('/api/auth/start')
 async def auth_start(request: Request, body: UsernameIn):
-    name = norm_username(body.username)
+    name = normalize_login(body.username)
     throttle(request, 'auth-start', 60, 900)
     with db() as c:
-        u = one(c, 'SELECT id,is_admin FROM users WHERE username=?', (name,))
+        u = login_user(c, name, 'id,is_admin')
     if not u:
-        raise HTTPException(404,'Không tìm thấy tài khoản. Bạn có thể gửi yêu cầu đăng ký.')
+        raise HTTPException(404,'Không tìm thấy tài khoản hoặc số điện thoại chưa liên kết duy nhất.')
     return {'username':name,'is_admin':bool(u['is_admin']),'next':'password'}
 
 
@@ -677,10 +712,10 @@ class PasswordLogin(BaseModel):
 
 @app.post('/api/auth/password')
 async def auth_password(request: Request, body: PasswordLogin):
-    name = norm_username(body.username)
+    name = normalize_login(body.username)
     throttle(request, 'password-login', 15, 900, name)
     with db() as c:
-        u = one(c, 'SELECT * FROM users WHERE username=?', (name,))
+        u = login_user(c, name)
         if not u or not verify_secret(u['password_hash'],body.password):
             raise HTTPException(401,'Tên tài khoản hoặc mật khẩu không đúng.')
         if u['sanction_kind'] and (not u['sanction_until'] or u['sanction_until'] > now()):
@@ -915,6 +950,23 @@ async def setup_admin_pin(request:Request,body:SetupAdminPin):
 async def me(request: Request):
     u = current_user(request, require=False)
     return {'user':public_user(u) if u else None}
+
+
+class SetOnboardingName(BaseModel):
+    display_name: str = Field(min_length=1,max_length=70)
+
+
+@app.post('/api/me/display-name')
+async def complete_display_name(request: Request, body: SetOnboardingName):
+    u = current_user(request)
+    if u['is_admin']:
+        raise HTTPException(403,'Bước này chỉ áp dụng cho tài khoản người dùng.')
+    throttle(request,'complete-display-name',12,900,str(u['id']))
+    name = validate_display_name(body.display_name,u['username'])
+    with db() as c:
+        c.execute('UPDATE users SET display_name=?,needs_display_name=0 WHERE id=?',
+                  (name,u['id']))
+    return {'ok':True,'display_name':name,'onboarding_required':False}
 
 
 @app.post('/api/auth/logout')
@@ -1695,6 +1747,8 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
         user=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
         if not user:
             raise HTTPException(404,'Không tìm thấy người dùng hợp lệ.')
+        if one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,uid)):
+            raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
         c.execute('''UPDATE users SET display_name=?,bio=?,phone=?,email=?
                      WHERE id=? AND is_admin=0''',
                   (body.display_name.strip(),body.bio.strip(),phone,email,uid))
