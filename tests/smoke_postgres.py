@@ -68,8 +68,52 @@ with TestClient(app, base_url="https://testserver") as admin:
         )
         assert pin.status_code == 200, pin.text
         assert guest.get("/api/me").json()["user"]["username"] == "render_ci_user"
+        first_name = guest.post("/api/me/display-name",json={"display_name":"Minh thử nghiệm"})
+        assert first_name.status_code == 200, first_name.text
+
+        config=admin.post("/api/admin/world/config",json={
+            "enabled":True,"schedule_enabled":False,"open_minute":540,"close_minute":1320,
+            "admin_password":os.environ["ADMIN_PASSWORD"]
+        })
+        assert config.status_code==200,config.text
+        sent=guest.post("/api/world/messages",json={"body":"Chào Chat thế giới"})
+        assert sent.status_code==200,sent.text
+        message_id=sent.json()["message"]["id"]
+        assert isinstance(message_id,int) and message_id>0
+        assert guest.get("/api/world/messages").json()["messages"][0]["id"]==message_id
+        assert admin.get("/api/admin/world").json()["total_messages"]==1
+
+        with TestClient(app,base_url="https://testserver") as peer:
+            peer.get("/")
+            req2=peer.post("/api/registration/request",json={
+                "username":"render_ci_peer","phone":"0901234567"})
+            assert req2.status_code==200,req2.text
+            pending2=admin.get("/api/admin/registrations").json()["registrations"]
+            rid2=next(r["id"] for r in pending2 if r["username"]=="render_ci_peer")
+            assert admin.post(f"/api/admin/registrations/{rid2}/decision",
+                              json={"approve":True}).status_code==200
+            complete2=peer.post("/api/registration/complete",json={
+                "username":"render_ci_peer","password":"RenderPeerPassword123!",
+                "pin":"123456","pin_length":6})
+            assert complete2.status_code==200,complete2.text
+            assert peer.post("/api/me/display-name",json={
+                "display_name":"Hội viên phản ánh"}).status_code==200
+            victim=peer.get("/api/me").json()["user"]
+            original=guest.get("/api/me").json()["user"]
+            complaint=peer.post("/api/reports",json={
+                "target_id":original["id"],"scope":"world","message_id":message_id,
+                "reason":"spam","description":"Tin nhắn công cộng cần kiểm tra"})
+            assert complaint.status_code==200,complaint.text
+            report_id=complaint.json()["report_id"]
+            assert report_id>0
+            review=admin.post(f"/api/admin/reports/{report_id}/review",json={
+                "decision":"reviewed","note":"Đã kiểm tra trên PostgreSQL",
+                "admin_password":os.environ["ADMIN_PASSWORD"]})
+            assert review.status_code==200,review.text
 
 with db() as connection:
-    assert connection.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 2
+    assert connection.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 3
     assert connection.execute("SELECT COUNT(*) AS n FROM trusted_devices").fetchone()["n"] == 0
-print("PostgreSQL smoke OK: server boot, health, admin, approval, password and PIN.")
+assert connection.execute("SELECT COUNT(*) AS n FROM world_messages").fetchone()["n"]==1
+    assert connection.execute("SELECT COUNT(*) AS n FROM user_reports").fetchone()["n"]==1
+print("PostgreSQL smoke OK: auth, World Chat, moderation settings and reviewed reports.")

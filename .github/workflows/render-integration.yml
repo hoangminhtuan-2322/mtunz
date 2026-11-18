@@ -6,6 +6,7 @@ on:
     paths:
       - app.py
       - features.py
+      - world_chat.py
       - pg_storage.py
       - requirements.txt
       - tests/smoke_postgres.py
