@@ -32,7 +32,7 @@ const Ipaths = {
 const icon=(name,size=19)=>`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${Ipaths[name]||Ipaths.chat}</svg>`;
 const brandGlyph=()=>`<img class="brand-glyph" src="/static/favicon.svg?v=8.0" alt="" draggable="false" decoding="async">`;
 
-const avatar=(name,online=false,size='')=>`<div class="avatar ${size} ${online?'online':''}">${esc(initials(name))}</div>`;
+const avatar=(name,online=false,size='',photo=null)=>`<div class="avatar ${size} ${online?'online':''}">${photo?`<img class="avatar-photo" src="${esc(photo)}" alt="" loading="lazy" decoding="async">`:esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
  regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
@@ -430,6 +430,7 @@ async function enterApp(resume=false){
   state.accountDeletion=await api('/api/me/deletion');
   await refreshFriends(false);
   await refreshGroups(false);
+  if(typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
   const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','support'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
@@ -764,7 +765,7 @@ async function refreshFriends(redraw=true){
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
   return `<div class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
-   ${avatar(f.username,f.online,'')}<div class="grow"><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
+   ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
    <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></div>`;
 }
 function sideBody(){
@@ -799,7 +800,7 @@ function appRail(){
     </nav>
     <div class="rail-foot">
       <button type="button" class="rail-account rail-profile-button ${state.tab==='profile'?'active':''}" data-act="app-tab" data-tab="profile" aria-label="Hồ sơ cá nhân">
-        ${avatar(state.user.display_name||state.user.username,false,'sm')}<span class="rail-account-name"><strong>${esc(state.user.display_name||'Tài khoản của bạn')}</strong><small>Hồ sơ cá nhân</small></span>${icon('chevron',15)}
+        ${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}<span class="rail-account-name"><strong>${esc(state.user.display_name||'Tài khoản của bạn')}</strong><small>Hồ sơ cá nhân</small></span>${icon('chevron',15)}
       </button>
       <button type="button" class="rail-btn rail-logout" data-act="logout" title="Đăng xuất tài khoản" aria-label="Đăng xuất tài khoản">
         <span class="rail-icon" aria-hidden="true">${icon('logout',19)}</span><span class="rail-text">Đăng xuất</span></button>
@@ -818,7 +819,7 @@ function welcomeEmpty(){return `<div class="hero-empty"><div><div class="illustr
  <button class="btn primary" data-act="app-tab" data-tab="friends">${icon('add')} Tìm bạn bè</button></div></div>`;}
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
- ${avatar(f.username,f.online,'sm')}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
+ ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
  <button class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}" title="Xem hồ sơ">${icon('users',15)}</button>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin">${icon('search',15)}</button>
  <button class="btn ghost sm" data-act="call-audio" data-id="${f.other_id}" title="Gọi thoại">${icon('phone',15)}</button>
@@ -862,10 +863,11 @@ async function loadMessages(scroll=true){
   const item=state.friends.find(x=>x.other_id===friend);if(item){item.unread=0;renderSideItems();}
  }catch(e){toast(e.message,'error');}
 }
-function personResult(r){return `<div class="people-row">${avatar(r.username)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
+function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
  r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}
+ ${r.friend_state==='none'?`<button type="button" class="btn ghost sm" data-social-request="${r.id}" data-social-name="${esc(r.username)}">Nhắn tin chờ</button>`:''}
  <button type="button" class="btn ghost sm" data-world-report-user="${Number(r.id)}" title="Báo cáo tài khoản">${icon('shield',14)} Báo cáo</button></div>`;}
 function friendsContent(){
  const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
@@ -873,6 +875,7 @@ function friendsContent(){
  const accepted=state.friends.filter(f=>f.state==='accepted');
  return `<div class="section-wrap"><span class="eyebrow">CỘNG ĐỒNG CỦA BẠN</span><h1 class="section-title">Bạn bè & kết nối</h1>
  <p class="section-lead">Tìm kiếm tài khoản, quản lý lời mời và bắt đầu nhắn tin.</p>
+ ${typeof messageRequestsPanel==='function'?messageRequestsPanel():''}
  <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Tên tài khoản hoặc UID" required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
  ${(state.peopleResults||[]).map(personResult).join('')||((state.peopleQuery)?'<div class="hint" style="margin-top:16px">Không có kết quả phù hợp.</div>':'')}</div>
  ${pending.length?`<h3 style="margin:28px 0 12px">Lời mời kết bạn (${pending.length})</h3>${pending.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ bạn xác nhận</div></div><button class="btn success sm" data-act="friend-accept" data-id="${f.other_id}">Chấp nhận</button><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Từ chối</button></div>`).join('')}`:''}
@@ -889,8 +892,10 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
 function profileContent(){
  return `<div class="section-wrap profile-page"><span class="eyebrow">DANH TÍNH CỘNG ĐỒNG</span><h1 class="section-title">Hồ sơ cá nhân</h1>
  <p class="section-lead">Chỉnh sửa tên hiển thị, giới thiệu và thông tin liên hệ tại đây. Các tùy chọn mật khẩu, PIN và thiết bị nằm trong Cài đặt.</p>
- <div class="row card" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
- <div class="profile-panel-grid">${profileSettings()}</div></div>`;
+ <div class="social-cover" style="${state.user.cover_url?'background-image:url('+esc(state.user.cover_url)+')':''}"><span>MTUNZ · KHÔNG GIAN CỦA TÔI</span></div>
+ <div class="row card social-profile-hero" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl',state.user.avatar_url)}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.public_id||state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
+ <div class="social-headline">${esc(state.user.headline||'Chào mừng đến với hồ sơ cá nhân của bạn.')}</div>
+ <div class="profile-panel-grid">${typeof socialSettingsPanel==='function'?socialSettingsPanel():''}${profileSettings()}</div></div>`;
 }
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
@@ -1019,6 +1024,7 @@ async function goTab(tab){
   try{await loadWorldStatus();}catch{}
  }
  if(tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
+ if(tab==='friends'&&typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
  if(tab==='groups')await refreshGroups(false);
  if(tab==='notices')await loadNotices();
  if(tab==='support'){state.mode='support';await loadTickets();}
@@ -1650,7 +1656,7 @@ async function clickAction(button){
  switch(act){
   case 'copy-member-id':{
     if(!state.user || state.user.is_admin)return;
-    const accountId=String(state.user.id);
+    const accountId=String(state.user.public_id||state.user.id);
     try{await navigator.clipboard.writeText(accountId);toast('Đã sao chép ID tài khoản: #'+accountId,'ok');}
     catch{toast('ID tài khoản của bạn: #'+accountId,'info');}
     break;
