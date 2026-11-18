@@ -1127,6 +1127,7 @@ async def get_friends(request: Request):
                  u.avatar_attachment_id,u.profile_visibility,
                  COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
+                 CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
                  (SELECT body FROM messages
                    WHERE (sender_id=? AND recipient_id=u.id) OR
                          (sender_id=u.id AND recipient_id=?)
@@ -1145,14 +1146,13 @@ async def get_friends(request: Request):
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
           LEFT JOIN restrictions r ON r.owner_id=? AND r.other_id=u.id
+          LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
           WHERE f.u1=? OR f.u2=?
           ORDER BY f.created_at DESC
         ''',(u['id'],u['id'],u['id'],u['id'],u['id'],u['id'],u['id'],
-             u['id'],u['id'],u['id'],u['id'],u['id']))
+             u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
         for r in allrows:
-            r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(one(
-                c,'SELECT 1 FROM restrictions WHERE owner_id=? AND other_id=?',
-                (r['other_id'],u['id'])))
+            r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
             r['muted']=bool(r['muted'])
             r['archived']=bool(r['archived'])
             r['restricted']=bool(r['restricted'])
@@ -1172,6 +1172,7 @@ async def get_friends(request: Request):
 @app.post('/api/friends/request/{other_id}')
 async def friend_request(request: Request,other_id: int):
     u=current_user(request)
+    if u['is_admin']:raise HTTPException(403,'Admin không thể kết bạn hoặc nhắn tin riêng.')
     with db() as c:
         if u['id']==other_id or not one(c,'SELECT 1 FROM users WHERE id=? AND is_admin=0',(other_id,)):
             raise HTTPException(404,'Người dùng không hợp lệ.')
@@ -1190,6 +1191,7 @@ async def friend_request(request: Request,other_id: int):
 @app.post('/api/friends/accept/{other_id}')
 async def friend_accept(request: Request,other_id: int):
     u=current_user(request)
+    if u['is_admin']:raise HTTPException(403,'Admin không thể kết bạn hoặc nhắn tin riêng.')
     a,b=sorted((u['id'],other_id))
     with db() as c:
         r=one(c,'SELECT * FROM friendships WHERE u1=? AND u2=?',(a,b))
