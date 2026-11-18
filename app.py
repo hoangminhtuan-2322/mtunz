@@ -1457,10 +1457,137 @@ async def admin_broadcast(request:Request,body:Broadcast):
     return {'ok':True,'recipients':len(ids)}
 
 
+# Security events are intentionally append-only. A privileged administrator can
+# inspect/export them, but cannot alter or erase evidence through the web API.
+AUDIT_HIGH_RISK = {
+    'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
+    'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin',
+    'sanction_ban', 'sanction_lock', 'admin_password_change',
+}
+AUDIT_MEDIUM_RISK = {
+    'sanction_unban', 'broadcast', 'capacity', 'registration_denied',
+    'admin_view_user_details', 'moderation_messages', 'moderation_group',
+}
+
+def enrich_audit(row):
+    item = dict(row)
+    action = item['action']
+    item['severity'] = ('high' if action in AUDIT_HIGH_RISK
+                        else 'medium' if action in AUDIT_MEDIUM_RISK else 'info')
+    item['admin_username'] = item.get('admin_username') or 'Tài khoản quản trị đã xóa'
+    return item
+
+
 @app.get('/api/admin/audit')
-async def admin_audit(request:Request):
-    require_admin(request)
-    with db() as c:return {'logs':many(c,'SELECT * FROM audit ORDER BY id DESC LIMIT 100')}
+async def admin_audit(request:Request, limit:int=100, offset:int=0,
+                      q:str='', action:str='', since:int=0, until:int=0):
+    admin=require_admin(request)
+    throttle(request,'admin-audit-list',120,3600,str(admin['id']))
+    if not 1<=limit<=100 or not 0<=offset<=100000 or len(q)>100 or len(action)>80:
+        raise HTTPException(422,'Bộ lọc nhật ký không hợp lệ.')
+    if since<0 or until<0 or (since and until and since>until):
+        raise HTTPException(422,'Khoảng thời gian không hợp lệ.')
+    conditions=['1=1']
+    args=[]
+    if q.strip():
+        conditions.append('(a.action LIKE ? OR a.detail LIKE ? OR u.username LIKE ?)')
+        needle='%'+q.strip()+'%'
+        args.extend((needle,needle,needle))
+    if action.strip():
+        conditions.append('a.action=?')
+        args.append(action.strip())
+    if since:
+        conditions.append('a.created_at>=?')
+        args.append(since)
+    if until:
+        conditions.append('a.created_at<=?')
+        args.append(until)
+    where=' AND '.join(conditions)
+    with db() as c:
+        total=one(c,'''SELECT COUNT(*) n FROM audit a
+                         LEFT JOIN users u ON u.id=a.admin_id
+                         WHERE '''+where,tuple(args))['n']
+        rows=many(c,'''SELECT a.id,a.admin_id,a.action,a.detail,a.created_at,
+                              u.username admin_username
+                       FROM audit a LEFT JOIN users u ON u.id=a.admin_id
+                       WHERE '''+where+''' ORDER BY a.id DESC LIMIT ? OFFSET ?''',
+                  tuple(args)+(limit,offset))
+    return {'logs':[enrich_audit(x) for x in rows],
+            'total':total,'limit':limit,'offset':offset,
+            'has_more':offset+len(rows)<total}
+
+
+@app.get('/api/admin/audit/{event_id}')
+async def admin_audit_detail(request:Request,event_id:int):
+    admin=require_admin(request)
+    throttle(request,'admin-audit-detail',90,3600,str(admin['id']))
+    with db() as c:
+        row=one(c,'''SELECT a.id,a.admin_id,a.action,a.detail,a.created_at,
+                            u.username admin_username
+                     FROM audit a LEFT JOIN users u ON u.id=a.admin_id
+                     WHERE a.id=?''',(event_id,))
+        if not row:
+            raise HTTPException(404,'Không tìm thấy sự kiện quản trị.')
+        result=enrich_audit(row)
+        admin_log(c,admin['id'],'audit_detail_view',f'event_id={event_id}')
+    return {'event':result}
+
+
+class AdminUserEdit(BaseModel):
+    display_name:str=Field(default='',max_length=50)
+    bio:str=Field(default='',max_length=220)
+    phone:str=Field(min_length=8,max_length=40)
+    email:str=Field(default='',max_length=254)
+    reason:str=Field(min_length=5,max_length=250)
+    admin_password:str=Field(min_length=1,max_length=128)
+    admin_pin:str=Field(default='',max_length=6)
+
+
+@app.post('/api/admin/users/{uid}/edit')
+async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
+    admin=require_admin(request)
+    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    throttle(request,'admin-edit-user',30,3600,str(admin['id']))
+    phone=normalize_phone(body.phone)
+    email=normalize_email(body.email)
+    with db() as c:
+        user=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
+        if not user:
+            raise HTTPException(404,'Không tìm thấy người dùng hợp lệ.')
+        c.execute('''UPDATE users SET display_name=?,bio=?,phone=?,email=?
+                     WHERE id=? AND is_admin=0''',
+                  (body.display_name.strip(),body.bio.strip(),phone,email,uid))
+        # Never write phone, email, passwords, PIN or profile content into audit.
+        admin_log(c,admin['id'],'admin_edit_user',
+                  f'user_id={uid}; fields=display_name,bio,phone,email; reason={body.reason.strip()[:100]}')
+    await hub.user(uid,'profile-updated')
+    return {'ok':True,'user_id':uid}
+
+
+class AdminSessionRevoke(BaseModel):
+    reason:str=Field(min_length=5,max_length=250)
+    admin_password:str=Field(min_length=1,max_length=128)
+    admin_pin:str=Field(default='',max_length=6)
+
+
+@app.post('/api/admin/users/{uid}/sessions/revoke')
+async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRevoke):
+    admin=require_admin(request)
+    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    throttle(request,'admin-revoke-user-sessions',15,3600,str(admin['id']))
+    with db() as c:
+        user=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(uid,))
+        if not user:
+            raise HTTPException(404,'Không tìm thấy người dùng hợp lệ.')
+        sessions=one(c,'SELECT COUNT(*) n FROM sessions WHERE user_id=?',(uid,))['n']
+        devices=one(c,'SELECT COUNT(*) n FROM trusted_devices WHERE user_id=?',(uid,))['n']
+        c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
+        c.execute('DELETE FROM trusted_devices WHERE user_id=?',(uid,))
+        admin_log(c,admin['id'],'admin_revoke_user_sessions',
+                  f'user_id={uid}; sessions={sessions}; devices={devices}; reason={body.reason.strip()[:100]}')
+    await hub.user(uid,'session-ended',reason='Các phiên đã được quản trị viên thu hồi.')
+    await hub.terminate_user(uid)
+    return {'ok':True,'sessions_revoked':sessions,'devices_revoked':devices}
 
 
 # --- Presence and event bus ---
