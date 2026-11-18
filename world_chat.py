@@ -42,7 +42,8 @@ def install(core):
           sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           body TEXT NOT NULL,
           created_at INTEGER NOT NULL,
-          deleted_at INTEGER
+          deleted_at INTEGER,
+          anonymous INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS world_messages_recent_idx
           ON world_messages(created_at,id);
@@ -78,6 +79,8 @@ def install(core):
         CREATE INDEX IF NOT EXISTS user_reports_reporter_idx
           ON user_reports(reporter_id,target_id,created_at);
         """)
+        if 'anonymous' not in {v['name'] for v in c.execute('PRAGMA table_info(world_messages)')}:
+            c.execute('ALTER TABLE world_messages ADD COLUMN anonymous INTEGER NOT NULL DEFAULT 0')
         c.execute("""INSERT INTO world_settings(id,enabled,schedule_enabled,open_minute,close_minute,updated_at)
                      VALUES(1,0,0,540,1320,0) ON CONFLICT(id) DO NOTHING""")
 
@@ -133,9 +136,11 @@ def install(core):
             result['can_send']=opened and not bool(result['muted_until'])
         return result
 
-    def world_record(c,row):
-        return {'id':row['id'], 'sender_id':row['sender_id'],
-                'display_name':row['display_name'] or 'Thành viên',
+    def world_record(c,row,viewer_id=None,admin=False):
+        anonymous=bool(row['anonymous'])
+        return {'id':row['id'], 'sender_id':row['sender_id'] if admin or not anonymous else 0,
+                'display_name':('Ẩn danh' if anonymous and not admin else row['display_name'] or 'Thành viên'),
+                'anonymous':anonymous, 'is_mine':viewer_id==row['sender_id'] if viewer_id else False,
                 'body':'' if row['deleted_at'] else row['body'],
                 'created_at':row['created_at'],'deleted':bool(row['deleted_at'])}
 
@@ -154,10 +159,10 @@ def install(core):
             raise HTTPException(403,'Khu vực này dành cho thành viên.')
         with db() as c:
             where='WHERE m.id<?' if before>0 else ''
-            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,u.display_name
+            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,u.display_name
                             FROM world_messages m JOIN users u ON u.id=m.sender_id '''+
                       where+' ORDER BY m.id DESC LIMIT 70', (before,) if before>0 else ())
-            return {'messages':[world_record(c,x) for x in rows[::-1]],
+            return {'messages':[world_record(c,x,viewer_id=user['id']) for x in rows[::-1]],
                     'status':effective_status(c,user['id'])}
 
     class WorldMessage(BaseModel):
@@ -229,12 +234,13 @@ def install(core):
             else:
                 c.execute('UPDATE world_penalties SET window_started=?,window_count=? WHERE user_id=?',
                           (started,count,user['id']))
-                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at) VALUES(?,?,?)',
-                                 (user['id'],content,at))
+                anonymous=bool(user['world_anonymous'])
+                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous) VALUES(?,?,?,?)',
+                                 (user['id'],content,at,int(anonymous)))
                 mid=result.lastrowid
-                saved={'id':mid,'sender_id':user['id'],
-                       'display_name':user['display_name'] or 'Thành viên',
-                       'body':content,'created_at':at,'deleted':False}
+                saved={'id':mid,'sender_id':0 if anonymous else user['id'],
+                       'display_name':'Ẩn danh' if anonymous else user['display_name'] or 'Thành viên',
+                       'anonymous':anonymous,'body':content,'created_at':at,'deleted':False}
         if penalty_event:
             if global_lock:
                 await hub.user(user['id'],'account-sanction',kind='lock',
@@ -243,8 +249,7 @@ def install(core):
             else:
                 await hub.user(user['id'],'world-penalty',**penalty_event)
             return JSONResponse({'detail':penalty_event},status_code=423 if penalty_event['code']!='world_spam_warning' else 429)
-        for uid in list(hub.users):
-            await hub.user(uid,'world-message',message=saved)
+        await hub.broadcast_members('world-message',message=saved)
         return {'message':saved}
 
     class WorldConfig(BaseModel):
@@ -268,12 +273,12 @@ def install(core):
                                  ORDER BY p.last_violation_at DESC LIMIT 50''',(timestamp(),timestamp()))
             pending=one(c,"SELECT count(*) AS n FROM user_reports WHERE status='pending'")['n']
             total=one(c,'SELECT COUNT(*) AS n FROM world_messages')['n']
-            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,u.display_name
+            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,u.display_name
                                 FROM world_messages m JOIN users u ON u.id=m.sender_id
                                 ORDER BY m.id DESC LIMIT 30''')
             return {'config':config,'offenders':offenders,
                     'pending_reports':pending,'total_messages':total,
-                    'recent_messages':[world_record(c,r) for r in messages]}
+                    'recent_messages':[world_record(c,r,admin=True) for r in messages]}
 
     @app.post('/api/admin/world/config')
     async def set_world_config(request:Request,body:WorldConfig):
@@ -356,13 +361,25 @@ def install(core):
     @app.post('/api/reports')
     async def submit_report(request:Request,body:ReportBody):
         reporter=current_user(request)
-        if reporter['is_admin'] or reporter['id']==body.target_id:
+        if reporter['is_admin']:
+            raise HTTPException(403,'Không thể báo cáo tài khoản này.')
+        target_id=body.target_id
+        if target_id==reporter['id']:
             raise HTTPException(403,'Không thể báo cáo tài khoản này.')
         at=timestamp()
         desc=body.description.strip()
         if len(desc)<10:raise HTTPException(422,'Vui lòng mô tả vi phạm từ 10 ký tự.')
         with db() as c:
-            target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(body.target_id,))
+            if body.scope=='world' and body.message_id:
+                source=one(c,'SELECT sender_id FROM world_messages WHERE id=? AND deleted_at IS NULL',(body.message_id,))
+                if not source:
+                    raise HTTPException(404,'Không tìm thấy tin nhắn để báo cáo.')
+                if body.target_id not in (0,source['sender_id']):
+                    raise HTTPException(403,'Tài khoản được báo cáo không khớp nội dung.')
+                target_id=source['sender_id']
+            if target_id==reporter['id']:
+                raise HTTPException(403,'Không thể báo cáo chính mình.')
+            target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(target_id,))
             if not target:raise HTTPException(404,'Không tìm thấy tài khoản cần báo cáo.')
             # Persistent per-user abuse control, surviving process restarts.
             recent_total=one(c,'SELECT COUNT(*) AS n FROM user_reports WHERE reporter_id=? AND created_at>?',
@@ -374,32 +391,32 @@ def install(core):
                 if body.scope=='world':
                     msg=one(c,'SELECT sender_id,body FROM world_messages WHERE id=? AND deleted_at IS NULL',
                             (body.message_id,))
-                    if not msg or msg['sender_id']!=body.target_id:
+                    if not msg or msg['sender_id']!=target_id:
                         raise HTTPException(403,'Tin nhắn không hợp lệ.')
                 elif body.scope=='dm':
                     msg=one(c,'''SELECT sender_id,body FROM messages WHERE id=? AND sender_id=?
                                  AND recipient_id=? AND deleted_at IS NULL''',
-                            (body.message_id,body.target_id,reporter['id']))
+                            (body.message_id,target_id,reporter['id']))
                     if not msg:raise HTTPException(403,'Không thể báo cáo tin nhắn không thuộc cuộc trò chuyện.')
                 elif body.scope=='group':
                     member=one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',
                                (body.group_id,reporter['id']))
                     msg=one(c,'''SELECT sender_id,body FROM group_messages WHERE id=? AND group_id=?
                                  AND deleted_at IS NULL''',(body.message_id,body.group_id))
-                    if not member or not msg or msg['sender_id']!=body.target_id:
+                    if not member or not msg or msg['sender_id']!=target_id:
                         raise HTTPException(403,'Không thể báo cáo tin nhắn nhóm không có quyền xem.')
                 else:
                     raise HTTPException(422,'Hãy chọn nguồn tin nhắn hợp lệ.')
                 evidence=msg['body'][:500]
             recent=one(c,'''SELECT id FROM user_reports WHERE reporter_id=? AND target_id=?
                             AND created_at>? AND status='pending' LIMIT 1''',
-                       (reporter['id'],body.target_id,at-3600))
+                       (reporter['id'],target_id,at-3600))
             if recent:
                 raise HTTPException(429,'Bạn đã gửi báo cáo cho thành viên này. Vui lòng chờ admin xem xét.')
             cur=c.execute('''INSERT INTO user_reports(reporter_id,target_id,reason,description,scope,
                              source_message_id,source_group_id,evidence,created_at)
                              VALUES(?,?,?,?,?,?,?,?,?)''',
-                          (reporter['id'],body.target_id,body.reason,desc,body.scope,
+                          (reporter['id'],target_id,body.reason,desc,body.scope,
                            body.message_id,body.group_id,evidence,at))
             report_id=cur.lastrowid
             # The report row is a durable audit record. Do not impersonate an
