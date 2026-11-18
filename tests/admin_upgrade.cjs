@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const read=p=>fs.readFileSync(p,'utf8');
 const js=read('static/admin-upgrade.js'),css=read('static/admin-upgrade.css'),html=read('static/index.html'),app=read('static/app.js');
 new vm.Script(js,{filename:'admin-upgrade.js'});
-assert(html.includes('admin-upgrade.css?v=1.0')&&html.includes('admin-upgrade.js?v=1.0'));
+assert(html.includes('admin-upgrade.css?v=1.0')&&html.includes('admin-upgrade.js?v=1.1'));
 assert(html.indexOf('admin-upgrade.css')>html.indexOf('admin-console.css'));
 assert(html.indexOf('admin-upgrade.js')>html.indexOf('admin-console.js'));
 for(const f of ['function sidebar(','function priority(','function compactActions(','function clearFilters('])assert(js.includes(f),f);

@@ -8,7 +8,7 @@ const html=read('static/index.html'),features=read('features.py');
 new vm.Script(app,{filename:'app.js'});
 new vm.Script(extras,{filename:'extras.js'});
 new vm.Script(js,{filename:'social-upgrade.js'});
-assert(html.includes('social-upgrade.css?v=1.0')&&html.includes('social-upgrade.js?v=1.1'));
+assert(html.includes('social-upgrade.css?v=1.0')&&html.includes('social-upgrade.js?v=1.2'));
 assert(html.indexOf('social-upgrade.css')>html.indexOf('member-experience.css'));
 assert(html.indexOf('social-upgrade.js')>html.indexOf('member-experience.js'));
 for(const fn of ['function drawFriendPopup(','function checkInvites(','function openForward(','function togglePin(','function upgradeSettings(']){
