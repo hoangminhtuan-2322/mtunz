@@ -208,7 +208,7 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
       <p class="dialog-description" id="${identity}-desc">${esc(description||'Vui lòng kiểm tra thông tin trước khi tiếp tục.')}</p>
       ${content?`<div class="dialog-content">${content}</div>`:''}
       <div class="modal-actions">
-        ${closable?`<button class="btn ghost" id="modal-cancel" type="button">${esc(cancel)}</button>`:''}
+        ${closable&&cancel!==null?`<button class="btn ghost" id="modal-cancel" type="button">${esc(cancel)}</button>`:''}
         <button class="btn ${danger?'danger':'primary'}" id="modal-confirm" type="button">${icon(danger?'shield':'check',16)}<span>${esc(confirm)}</span></button>
       </div>
     </div>
@@ -1054,21 +1054,94 @@ function adminSecurity(){
  </div>`;
 }
 const auditNames={
+ maintenance_member_reset:'Bảo trì: đặt lại dữ liệu thành viên',
  registration_approved:'Phê duyệt đăng ký',registration_denied:'Từ chối đăng ký',
  permanent_user_delete:'Xóa tài khoản vĩnh viễn',sanction_ban:'Cấm tài khoản',
  sanction_lock:'Khóa tài khoản',sanction_unban:'Gỡ hạn chế',
  moderation_messages:'Kiểm tra tin nhắn',moderation_group:'Kiểm duyệt nhóm',
+ moderation_attachment:'Kiểm duyệt tệp đính kèm',
  enable_admin_pin:'Bật PIN quản trị',capacity:'Thay đổi giới hạn tài khoản',
- ticket_status:'Thay đổi trạng thái hỗ trợ',support_reply:'Trả lời yêu cầu hỗ trợ',
- issue_recovery:'Cấp mã khôi phục',broadcast:'Gửi thông báo toàn hệ thống',
- admin_stepup_denied:'Xác minh quyền thất bại',
- admin_view_user_details:'Xem chi tiết người dùng',
- admin_edit_user:'Chỉnh sửa hồ sơ người dùng',
+ ticket_status:'Thay đổi trạng thái hỗ trợ',support_mark_spam:'Đánh dấu yêu cầu spam',
+ support_reply:'Trả lời yêu cầu hỗ trợ',issue_recovery:'Cấp mã khôi phục',
+ broadcast:'Gửi thông báo toàn hệ thống',admin_stepup_denied:'Xác minh quyền thất bại',
+ admin_view_user_details:'Xem chi tiết người dùng',admin_edit_user:'Chỉnh sửa hồ sơ người dùng',
  admin_revoke_user_sessions:'Thu hồi phiên đăng nhập người dùng',
  audit_detail_view:'Xem nhật ký quản trị',remove_group_message:'Gỡ tin nhắn nhóm',
  admin_password_change:'Đổi mật khẩu quản trị'
 };
-function auditLabel(action){return auditNames[action]||String(action||'Hoạt động khác').replace(/_/g,' ');}
+const auditDescriptions={
+ maintenance_member_reset:'Nhật ký ghi nhận một thao tác bảo trì liên quan đến việc đặt lại dữ liệu thành viên.',
+ registration_approved:'Yêu cầu đăng ký tài khoản đã được phê duyệt.',
+ registration_denied:'Yêu cầu đăng ký tài khoản đã bị từ chối.',
+ permanent_user_delete:'Thao tác xóa vĩnh viễn tài khoản người dùng đã được ghi vào nhật ký.',
+ sanction_ban:'Quản trị viên đã áp dụng lệnh cấm tài khoản.',
+ sanction_lock:'Quản trị viên đã áp dụng lệnh khóa tài khoản.',
+ sanction_unban:'Quản trị viên đã gỡ hạn chế tài khoản.',
+ moderation_messages:'Quản trị viên đã truy cập lịch sử tin nhắn để kiểm duyệt.',
+ moderation_group:'Quản trị viên đã thực hiện thao tác kiểm duyệt nhóm.',
+ moderation_attachment:'Đã ghi nhận thao tác kiểm duyệt tệp đính kèm.',
+ enable_admin_pin:'Tài khoản quản trị đã kích hoạt bảo vệ bằng mã PIN.',
+ capacity:'Giới hạn số tài khoản trong hệ thống đã được thay đổi.',
+ ticket_status:'Trạng thái của một phiếu hỗ trợ đã được thay đổi.',
+ support_mark_spam:'Một phiếu hỗ trợ đã được đánh dấu spam để ngăn gửi tin mới.',
+ support_reply:'Quản trị viên đã gửi phản hồi trong phiếu hỗ trợ.',
+ issue_recovery:'Quản trị viên đã cấp mã khôi phục tài khoản.',
+ broadcast:'Quản trị viên đã gửi thông báo toàn hệ thống.',
+ admin_stepup_denied:'Một lần xác minh quyền thực hiện thao tác nhạy cảm đã bị từ chối.',
+ admin_view_user_details:'Quản trị viên đã mở thông tin chi tiết của người dùng.',
+ admin_edit_user:'Quản trị viên đã cập nhật thông tin hồ sơ người dùng.',
+ admin_revoke_user_sessions:'Các phiên đăng nhập hoặc thiết bị ghi nhớ của người dùng đã bị thu hồi.',
+ audit_detail_view:'Quản trị viên đã mở xem một sự kiện trong nhật ký.',
+ remove_group_message:'Quản trị viên đã gỡ một tin nhắn trong nhóm.',
+ admin_password_change:'Mật khẩu của tài khoản quản trị đã được thay đổi.'
+};
+function auditLabel(action){return auditNames[action]||'Hoạt động chưa được phân loại';}
+/* Explain only what the original audit record explicitly supports. */
+function auditMeaning(log){
+ const action=String(log?.action||''),raw=String(log?.detail||'').trim();
+ const facts=[],get=pattern=>(raw.match(pattern)||[])[1]||'';
+ let description=auditDescriptions[action]||'Nhật ký có ghi nhận hành động này nhưng chưa có mô tả tiếng Việt cụ thể.';
+ let note='Thông tin chỉ lấy từ nhật ký. Không suy đoán IP, thiết bị, nguyên nhân hoặc kết quả chưa được ghi.';
+ if(action==='maintenance_member_reset'){
+   if(/non-admin accounts and user-generated data reset/i.test(raw)){
+     description='Theo nội dung lưu trong nhật ký, hệ thống đã đặt lại tài khoản thành viên và dữ liệu do người dùng tạo.';
+     facts.push(['Dữ liệu được ghi nhận là đã đặt lại','Tài khoản không phải quản trị viên và dữ liệu do người dùng tạo']);
+   }
+   if(/administrator and configuration retained/i.test(raw)){
+     facts.push(['Dữ liệu được ghi nhận là đã giữ lại','Tài khoản quản trị và cấu hình hệ thống']);
+   }
+   note='Sự kiện không ghi rõ danh sách tài khoản, các bảng dữ liệu, số lượng bản ghi hoặc khả năng khôi phục. Không thể suy ra các chi tiết đó.';
+ }else{
+   const uid=get(/(?:^|[;,\s])user_id=(\d+)/i);
+   if(uid)facts.push(['Mã người dùng liên quan','#'+uid]);
+   const ticket=get(/(?:^|[;,\s])ticket=(\d+)/i);
+   if(ticket)facts.push(['Phiếu hỗ trợ','#'+ticket]);
+   const eventId=get(/(?:^|[;,\s])event_id=(\d+)/i);
+   if(eventId)facts.push(['Sự kiện được xem','#'+eventId]);
+   const account=get(/(?:^|[;,\s])account=([a-z0-9_]+)/i);
+   if(account)facts.push(['Tài khoản liên quan',account]);
+   const sessions=get(/(?:^|[;,\s])sessions=(\d+)/i);
+   if(sessions)facts.push(['Phiên đăng nhập đã thu hồi',sessions]);
+   const devices=get(/(?:^|[;,\s])devices=(\d+)/i);
+   if(devices)facts.push(['Thiết bị ghi nhớ đã thu hồi',devices]);
+   const fieldList=get(/(?:^|[;,\s])fields=([a-z_,]+)/i);
+   if(fieldList){
+     const names={display_name:'Tên hiển thị',bio:'Giới thiệu',phone:'Số điện thoại',email:'Email'};
+     facts.push(['Các trường được cập nhật',fieldList.split(',').map(field=>names[field]||field).join(', ')]);
+   }
+   const type=get(/(?:^|[;,\s])type=(password|pin|username)/i).toLowerCase();
+   if(type)facts.push(['Loại khôi phục',({password:'Mật khẩu',pin:'Mã PIN',username:'Tên đăng nhập'})[type]]);
+   if(action==='capacity'&&/^\d+$/.test(raw))facts.push(['Giới hạn tài khoản mới',Number(raw).toLocaleString('vi-VN')]);
+   if((action==='registration_approved'||action==='registration_denied')&&/^[a-z][a-z0-9_]{2,23}$/i.test(raw))facts.push(['Tên tài khoản đăng ký',raw]);
+   if(action==='support_reply'&&/^\d+$/.test(raw))facts.push(['Phiếu hỗ trợ','#'+raw]);
+   const ticketStatus=raw.match(/^(\d+):\s*(open|closed|spam)$/);
+   if((action==='ticket_status'||action==='support_mark_spam')&&ticketStatus){
+     facts.push(['Phiếu hỗ trợ','#'+ticketStatus[1]]);
+     facts.push(['Trạng thái sau thao tác',({open:'Đang mở',closed:'Đã đóng',spam:'Đã đánh dấu spam'})[ticketStatus[2]]]);
+   }
+ }
+ return {description,facts,note};
+}
 function auditLevel(log){return log.severity==='high'?['high','Quan trọng']:log.severity==='medium'?['medium','Cần theo dõi']:['info','Thông thường'];}
 function auditDateValue(timestamp){
  if(!timestamp)return '';
@@ -1104,7 +1177,7 @@ function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||
   return `<div class="audit-item admin-audit-entry" data-level="${level}">
     <div class="admin-audit-entry-main">
      <div class="admin-audit-heading"><strong>${esc(auditLabel(l.action))}</strong><span class="audit-severity ${level}">${label}</span></div>
-     <p class="admin-audit-detail">${esc(l.detail||'Không có dữ liệu mô tả')}</p>
+     <p class="admin-audit-detail">${esc(auditMeaning(l).description)}</p>
      <div class="admin-audit-meta"><span>${icon('users',13)} ${esc(l.admin_username||'Quản trị viên')} · #${l.admin_id}</span><span>${icon('clock',13)} ${deadlineDate(l.created_at)}</span><span>#${l.id}</span></div>
     </div>
     <button class="btn ghost sm" type="button" data-act="admin-audit-detail" data-id="${l.id}">${icon('eye',15)} Xem chi tiết</button>
@@ -1115,20 +1188,40 @@ function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||
 }
 async function adminAuditDetail(eventId){
  const r=await api('/api/admin/audit/'+eventId);
- const e=r.event,[level,label]=auditLevel(e);
- modal({title:'Chi tiết sự kiện #'+e.id,description:'Bản ghi kiểm toán không thể chỉnh sửa hoặc xóa trên trang quản trị.',
-  confirm:'Đóng',content:`<div class="admin-audit-modal">
-  ${adminDetailRow('Hành động',esc(auditLabel(e.action)))}
-  ${adminDetailRow('Mã sự kiện','#'+e.id)}
-  ${adminDetailRow('Mã hành động',esc(e.action))}
-  ${adminDetailRow('Mức độ',esc(label))}
-  ${adminDetailRow('Quản trị viên',esc(e.admin_username)+' (#'+e.admin_id+')')}
-  ${adminDetailRow('Thời điểm',deadlineDate(e.created_at))}
-  ${adminDetailRow('Unix timestamp',String(e.created_at))}
-  <div class="admin-audit-raw"><b>Chi tiết đã ghi nhận</b><pre>${esc(e.detail||'Không có dữ liệu')}</pre></div>
-  <p class="hint">Thông tin chỉ gồm dữ liệu thực tế được ghi tại thời điểm xảy ra sự kiện. Không tự suy đoán địa chỉ IP, thiết bị hoặc nội dung chưa được lưu.</p>
-  </div>`});
+ const e=r.event,[level,label]=auditLevel(e),info=auditMeaning(e);
+ const who=e.admin_username||'Không có thông tin',whoId=Number(e.admin_id);
+ const actor=esc(who)+(Number.isSafeInteger(whoId)?' (#'+whoId+')':'');
+ const facts=info.facts.map(([name,value])=>adminDetailRow(name,esc(value))).join('');
+ modal({title:'Sự kiện #'+e.id+' · '+auditLabel(e.action),
+   description:'Giải thích nội dung được hệ thống ghi lại để dễ kiểm tra và đối soát.',
+   confirm:'Đóng',cancel:null,content:`<div class="admin-audit-modal">
+   <section class="admin-audit-explanation" aria-label="Ý nghĩa sự kiện">
+     <span class="admin-audit-kicker">SỰ KIỆN #${Number(e.id)}</span>
+     <h3>${esc(auditLabel(e.action))}</h3>
+     <p>${esc(info.description)}</p>
+   </section>
+   <section class="admin-audit-section" aria-label="Người thực hiện và thời gian">
+     <h4>Ai thực hiện và khi nào?</h4>
+     ${adminDetailRow('Người thực hiện',actor)}
+     ${adminDetailRow('Thời gian',deadlineDate(e.created_at))}
+     ${adminDetailRow('Mức độ hệ thống',esc(label))}
+     <p class="admin-audit-note">Mức độ do hệ thống phân loại, không có nghĩa mọi tác động đã được đánh giá đầy đủ.</p>
+   </section>
+   <section class="admin-audit-section" aria-label="Nội dung được ghi nhận">
+     <h4>Phạm vi và thông tin liên quan</h4>
+     ${facts||'<p class="admin-audit-note">Nhật ký không cung cấp thêm đối tượng hoặc số lượng cụ thể cho sự kiện này.</p>'}
+     <p class="admin-audit-note">${esc(info.note)}</p>
+   </section>
+   <details class="admin-audit-technical">
+     <summary>Thông tin kỹ thuật gốc (dành cho đối soát)</summary>
+     ${adminDetailRow('Mã sự kiện','#'+Number(e.id))}
+     ${adminDetailRow('Mã hành động',esc(e.action||'Không có'))}
+     ${adminDetailRow('Thời gian Unix',String(Number(e.created_at)))}
+     <div class="admin-audit-raw"><b>Nội dung nguyên bản</b><pre>${esc(e.detail||'Không có nội dung được lưu')}</pre></div>
+   </details>
+   </div>`});
 }
+
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();

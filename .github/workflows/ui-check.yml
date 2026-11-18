@@ -62,6 +62,8 @@ jobs:
         run: node tests/support_optional_ui.cjs
       - name: Verify detailed Admin audit and protected account actions
         run: node tests/admin_audit_ui.cjs
+      - name: Verify readable admin audit record explanations
+        run: node tests/audit_readable_details.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
@@ -93,7 +95,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=15.3' in h
+          assert '/static/app.js?v=15.4' in h
           assert '/static/auth-glow.css?v=15.2' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
