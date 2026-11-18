@@ -180,3 +180,13 @@ Bài test: `node tests/tab_session_lifecycle.cjs`. Các kiểm tra gồm nạp l
 không mất phiên, khôi phục cuộc trò chuyện và mục Admin, giữ tab khác không
 bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạng không thành
 đăng xuất.
+
+## Chống spam vào hộp thư hỗ trợ Admin
+
+- Giới hạn ở **máy chủ**, không tin vào đồng hồ hay nút gửi ở trình duyệt.
+- Mỗi phiếu hỗ trợ: cách nhau ít nhất 4 giây, tối đa 6 tin/phút; từ chối nội dung lặp trong 60 giây.
+- Theo trình duyệt/khách: tối đa 25 tin/10 phút và 100 tin/ngày; theo IP kết nối: 90 tin/10 phút, 300 tin/ngày. IP được băm bằng HMAC với khóa ngẫu nhiên lưu trong cấu hình DB, không lưu IP thô vào bảng giới hạn.
+- Tạo phiếu: tối đa 1 phiếu/phút, 3 phiếu/giờ và 2 phiếu đang mở mỗi khách; tối đa 24 phiếu/giờ từ một IP. Giới hạn bộ nhớ sẵn có vẫn là một lớp bổ sung.
+- Bộ đếm lưu trong SQLite (local) hoặc Neon PostgreSQL (Render), dùng UPSERT nguyên tử và không mất khi worker khởi động lại. Khi vượt ngưỡng, máy chủ trả HTTP 429 kèm Retry-After.
+- Admin có thể **Đánh dấu spam** một phiếu, đóng quyền gửi tiếp, ẩn phiếu khỏi danh sách mặc định và xem lại/mở lại bằng **Xem phiếu spam**. Hành động được ghi vào audit. Tin nhắn Admin gửi không chịu giới hạn spam của khách.
+- Giới hạn theo IP có thể ảnh hưởng đến nhiều người dùng cùng mạng (ví dụ Wi-Fi trường học), nên đặt hạn mức IP rộng hơn giới hạn cookie; có thể điều chỉnh các ngưỡng theo lưu lượng thực tế.

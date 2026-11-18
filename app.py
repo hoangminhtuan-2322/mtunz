@@ -6,6 +6,7 @@ Never deploy the bundled demo administrator password to a public server.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -247,6 +248,9 @@ def init_db():
           id INTEGER PRIMARY KEY, ticket_id INTEGER NOT NULL REFERENCES tickets(id),
           from_admin INTEGER NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS support_rate_limits (
+          bucket_key TEXT PRIMARY KEY, window_start INTEGER NOT NULL, hits INTEGER NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS recovery_grants (
           token_hash TEXT PRIMARY KEY, ticket_id INTEGER NOT NULL REFERENCES tickets(id),
           user_id INTEGER NOT NULL REFERENCES users(id), kind TEXT NOT NULL,
@@ -262,6 +266,9 @@ def init_db():
         );
         ''')
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('max_users','100')")
+        # Stable per-installation secret: never store identifiable client IPs in support counters.
+        c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
+                  ('support_rate_salt', token()))
         if not one(c, 'SELECT id FROM users WHERE username=?', ('admin',)):
             c.execute('INSERT INTO users(username,password_hash,is_admin,created_at) VALUES(?,?,1,?)',
                       ('admin', hash_secret(ADMIN_PASSWORD), now()))
@@ -1163,6 +1170,40 @@ async def get_notifications(request:Request):
     with db() as c:return {'notifications':many(c,'SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 80',(u['id'],))}
 
 
+
+# Persistent, atomic rate limiting for guest-to-admin support. Unlike RATE_BUCKETS,
+# these counters survive Render restarts and are shared across workers via Neon.
+def support_limit(c, request: Request, scope: str, identity: str, limit: int, window: int):
+    salt = one(c, "SELECT value FROM settings WHERE key='support_rate_salt'")['value']
+    fingerprint = hmac.new(salt.encode(), identity.encode(), hashlib.sha256).hexdigest()
+    key = f'{scope}:{fingerprint}'
+    current = now()
+    bucket_start = current - current % window
+    # Atomic UPSERT ensures simultaneous requests cannot both pass the final slot.
+    # Rows are reset in the next fixed window without a background scheduler.
+    result = c.execute('''INSERT INTO support_rate_limits(bucket_key,window_start,hits)
+                          VALUES(?,?,1)
+                          ON CONFLICT(bucket_key) DO UPDATE SET
+                            window_start=excluded.window_start,
+                            hits=CASE WHEN support_rate_limits.window_start=excluded.window_start
+                                      THEN support_rate_limits.hits+1 ELSE 1 END
+                          WHERE support_rate_limits.window_start!=excluded.window_start
+                             OR support_rate_limits.hits < ?
+                          RETURNING hits''', (key,bucket_start,limit)).fetchone()
+    if not result:
+        retry = max(1, bucket_start + window - current)
+        raise HTTPException(429, 'Bạn đang gửi quá nhiều yêu cầu tới admin. Vui lòng thử lại sau.',
+                            headers={'Retry-After': str(retry)})
+    # Gradually remove dormant fingerprints; never store the original IP address.
+    if secrets.randbelow(100) == 0:
+        c.execute('DELETE FROM support_rate_limits WHERE window_start < ?', (current-2*86400,))
+
+
+def support_peer(request: Request) -> str:
+    # Use the TCP peer, not untrusted X-Forwarded-For headers supplied by clients.
+    return request.client.host if request.client else 'unknown'
+
+
 # --- Admin-operated guest support & secure one-time resets ---
 class CreateTicket(BaseModel):
     kind:Literal['username','password','pin','other']
@@ -1174,6 +1215,15 @@ async def create_ticket(request:Request,body:CreateTicket):
     throttle(request, 'ticket-new', 8, 3600)
     u=current_user(request,False)
     with db() as c:
+        # Guest IDs are cookie-scoped, so apply a second, wider cap to the network peer.
+        support_limit(c,request,'ticket-create-guest-minute',request.state.gid,1,60)
+        support_limit(c,request,'ticket-create-guest-hour',request.state.gid,3,3600)
+        support_limit(c,request,'ticket-create-peer-hour',support_peer(request),24,3600)
+        open_count=one(c,"SELECT COUNT(*) AS n FROM tickets WHERE guest_id=? AND status='open'",
+                       (request.state.gid,))['n']
+        if open_count>=2:
+            raise HTTPException(429,'Bạn đã có 2 phiếu hỗ trợ đang mở. Vui lòng sử dụng phiếu hiện tại.',
+                                headers={'Retry-After':'300'})
         cursor=c.execute('INSERT INTO tickets(guest_id,owner_id,kind,claim,created_at) VALUES(?,?,?,?,?)',
                          (request.state.gid,u['id'] if u else None,body.kind,body.claim.strip(),now()))
         tid=cursor.lastrowid
@@ -1207,12 +1257,30 @@ class SupportMessage(BaseModel):
 @app.post('/api/support/tickets/{tid}/messages')
 async def send_ticket_message(request:Request,tid:int,body:SupportMessage):
     throttle(request, 'ticket-message', 40, 300)
+    message=body.body.strip()
+    if not message:
+        raise HTTPException(422,'Tin nhắn không được để trống.')
     with db() as c:
         r=ticket_for_guest(c,request,tid)
         if r['status']!='open':raise HTTPException(403,'Yêu cầu đã đóng.')
+        current=now()
+        last=one(c,'''SELECT body,created_at FROM ticket_messages
+                      WHERE ticket_id=? AND from_admin=0 ORDER BY id DESC LIMIT 1''',(tid,))
+        if last and current-last['created_at'] < 4:
+            raise HTTPException(429,'Hãy đợi 4 giây trước khi gửi tin tiếp theo.',
+                                headers={'Retry-After':str(max(1,4-(current-last['created_at'])))})
+        normalized=lambda value: re.sub(r'\s+',' ',value.strip()).casefold()
+        if last and current-last['created_at'] < 60 and normalized(last['body'])==normalized(message):
+            raise HTTPException(429,'Tin nhắn trùng nội dung vừa gửi. Không cần gửi lại.',
+                                headers={'Retry-After':str(max(1,60-(current-last['created_at'])))})
+        support_limit(c,request,'ticket-message-minute',str(tid),6,60)
+        support_limit(c,request,'ticket-message-guest-ten',request.state.gid,25,600)
+        support_limit(c,request,'ticket-message-guest-day',request.state.gid,100,86400)
+        support_limit(c,request,'ticket-message-peer-ten',support_peer(request),90,600)
+        support_limit(c,request,'ticket-message-peer-day',support_peer(request),300,86400)
         cur=c.execute('INSERT INTO ticket_messages(ticket_id,from_admin,body,created_at) VALUES(?,0,?,?)',
-                      (tid,body.body.strip(),now()))
-        msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':0,'body':body.body.strip(),'created_at':now()}
+                      (tid,message,current))
+        msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':0,'body':message,'created_at':current}
     await hub.admins('support-message',ticket_id=tid,message=msg)
     return {'message':msg}
 
@@ -1458,7 +1526,7 @@ async def admin_grant(request:Request,tid:int,body:RecoveryGrantIn):
 
 
 class TicketClose(BaseModel):
-    status:Literal['open','closed']
+    status:Literal['open','closed','spam']
 
 
 @app.post('/api/admin/tickets/{tid}/status')
@@ -1468,7 +1536,7 @@ async def admin_ticket_status(request:Request,tid:int,body:TicketClose):
         t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
         if not t:raise HTTPException(404,'Không tìm thấy yêu cầu.')
         c.execute('UPDATE tickets SET status=? WHERE id=?',(body.status,tid))
-        admin_log(c,admin['id'],'ticket_status',f'{tid}: {body.status}')
+        admin_log(c,admin['id'],'support_mark_spam' if body.status=='spam' else 'ticket_status',f'{tid}: {body.status}')
     await hub.guest(t['guest_id'],'support-updated',ticket_id=tid)
     return {'ok':True}
 
