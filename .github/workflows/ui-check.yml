@@ -116,7 +116,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=17.2' in h
+          assert '/static/app.js?v=18.0' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -128,7 +128,7 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=15.5' in h
+          assert '/static/extras.js?v=16.0' in h
           assert '/static/group-lobby.css?v=1.0' in h
           assert '/static/device-sessions.css?v=11.0' in h
           assert 'auth-remember-choice' in application
