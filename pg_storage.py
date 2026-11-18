@@ -14,7 +14,7 @@ from contextlib import contextmanager
 SERIAL_TABLES = {
     'users', 'registrations', 'messages', 'tickets', 'ticket_messages',
     'notifications', 'audit', 'attachments', 'chat_groups', 'group_messages',
-    'world_messages', 'user_reports',
+    'world_messages', 'user_reports', 'message_requests',
 }
 
 
