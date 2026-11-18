@@ -1125,7 +1125,7 @@ async def friend_remove(request: Request,other_id:int):
 async def get_blocks(request:Request):
     u=current_user(request)
     with db() as c:
-        return {'users':many(c,'SELECT users.id,COALESCE(NULLIF(users.display_name,''),'Thành viên') AS username FROM blocks JOIN users ON users.id=blocks.blocked_id WHERE blocker_id=?',(u['id'],))}
+        return {'users':many(c,"SELECT users.id,COALESCE(NULLIF(users.display_name,''),'Thành viên') AS username FROM blocks JOIN users ON users.id=blocks.blocked_id WHERE blocker_id=?",(u['id'],))}
 
 
 @app.post('/api/blocks/{other_id}')

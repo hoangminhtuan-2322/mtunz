@@ -17,7 +17,7 @@ const context={
 vm.createContext(context);
 vm.runInContext(app.slice(start,end),context,{timeout:1000});
 const map=[
- ['login-username',404,'Không tìm thấy tài khoản này. Vui lòng kiểm tra tên đăng nhập.'],
+ ['login-username',404,'Không tìm thấy tài khoản. Hãy kiểm tra tên đăng nhập hoặc số điện thoại.'],
  ['login-password',401,'Mật khẩu không chính xác. Vui lòng thử lại.'],
  ['login-pin',401,'Mã PIN không chính xác. Vui lòng thử lại.'],
  ['login-remembered',401,'Mã PIN không chính xác. Vui lòng thử lại.'],

@@ -651,7 +651,7 @@ def install(core):
         u=current_user(request)
         with db() as c:
             active_member(c,gid,u['id'])
-            sql='SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?'
+            sql="SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?"
             args=[gid]
             if before>0:sql+=' AND m.id<?';args.append(before)
             messages=many(c,sql+' ORDER BY m.id DESC LIMIT 70',args)
@@ -671,7 +671,7 @@ def install(core):
                 raise HTTPException(404,'Tin nhắn trả lời không tồn tại.')
             cur=c.execute('''INSERT INTO group_messages(group_id,sender_id,body,attachment_id,reply_to,created_at)
                              VALUES(?,?,?,?,?,?)''',(gid,u['id'],text,body.attachment_id,body.reply_to,now()))
-            msg=dict(one(c,'SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?',(cur.lastrowid,)))
+            msg=dict(one(c,"SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?",(cur.lastrowid,)))
             msg=message_dict(c,msg,'group')
             members=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in members:await hub.user(uid,'group-message',group_id=gid,message=msg)
