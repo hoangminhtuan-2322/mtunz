@@ -102,6 +102,7 @@ def test_wrong_pin_is_limited_persistently_even_if_request_buckets_clear():
     for i in range(4):
         response=c.post("/api/auth/remembered/unlock",json={"pin":"000000"})
         assert response.status_code==401, (i,response.text)
+        assert response.json()["detail"]=="Mã PIN không chính xác. Vui lòng thử lại."
     last=c.post("/api/auth/remembered/unlock",json={"pin":"000000"})
     assert last.status_code==429
     with db() as dbconn:
@@ -160,6 +161,14 @@ def test_admin_enrollment_requires_password_then_pin_on_following_signin():
     c.post("/api/auth/start",json={"username":"admin"})
     stage=c.post("/api/auth/password",json={"username":"admin","password":"mtunz7"})
     assert stage.status_code==200 and stage.json()["next"]=="pin"
+    wrong=c.post("/api/auth/pin",json={
+        "challenge":stage.json()["challenge"],"pin":"000000"})
+    assert wrong.status_code==401
+    assert wrong.json()["detail"]=="Mã PIN không chính xác. Vui lòng thử lại."
+    short=c.post("/api/auth/pin",json={
+        "challenge":stage.json()["challenge"],"pin":"12"})
+    assert short.status_code==401
+    assert short.json()["detail"]=="Mã PIN không chính xác. Vui lòng thử lại."
     verified=c.post("/api/auth/pin",json={
         "challenge":stage.json()["challenge"],"pin":"123456","remember_device":True})
     assert verified.status_code==200 and verified.json()["admin"] is True
