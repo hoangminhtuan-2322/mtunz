@@ -314,7 +314,6 @@
 }
 @media(max-width:420px){
  .shell:not(.admin-shell) .conversation .main-head{gap:5px}
- .shell:not(.admin-shell) .conversation .main-head .btn[data-act="call-video"]{display:none}
  .shell:not(.admin-shell) .chat-compose-tool{min-height:33px;padding:6px 8px;gap:5px}
  .shell:not(.admin-shell) .chat-compose-tool span{font-size:10px}
  .shell:not(.admin-shell) .composer>.hint{font-size:9px!important}
