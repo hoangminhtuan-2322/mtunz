@@ -1,0 +1,195 @@
+/* mtunz Social Upgrade v1: controls for pinned/forwarded messages and friend requests. */
+.shell:not(.admin-shell) .bubble-actions button[data-social-action]{
+ display:inline-flex;align-items:center;justify-content:center;min-width:28px;
+ height:25px;border:1px solid #4b6079;border-radius:8px;
+ background:#233653;color:#eff3ff;font-size:12px;cursor:pointer;
+}
+.shell:not(.admin-shell) .bubble-actions button[data-social-action]:hover{
+ background:#4d4480;border-color:#aea3ff;
+}
+.shell:not(.admin-shell) .mt-forwarded-label{
+ display:inline-block;color:#c2b8ff;font-size:10px;font-weight:750;margin-bottom:5px;
+}
+.shell:not(.admin-shell) .mt-pins-bar{
+ display:flex;align-items:center;gap:10px;min-width:0;
+ background:#182840;border-bottom:1px solid #4a5b7b;
+ padding:9px clamp(12px,3vw,44px);position:relative;z-index:6;
+}
+.shell:not(.admin-shell) .mt-pins-heading{
+ flex:none;font-size:10px;color:#c9baff;white-space:nowrap;
+}
+.shell:not(.admin-shell) .mt-pin-chips{
+ display:flex;align-items:center;min-width:0;gap:7px;overflow-x:auto;scrollbar-width:thin;
+}
+.shell:not(.admin-shell) .mt-pin-chip{
+ display:inline-flex;align-items:center;min-width:0;max-width:200px;
+ background:#243854;border:1px solid #506585;border-radius:9px;
+}
+.shell:not(.admin-shell) .mt-pin-jump{
+ max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+ border:0;background:transparent;color:#e3edff;padding:6px 8px;cursor:pointer;
+ font-size:10px;text-align:left;
+}
+.shell:not(.admin-shell) .mt-pin-remove{
+ flex:none;border:0;background:transparent;color:#b4c3e0;
+ padding:4px 8px;cursor:pointer;font-size:15px;
+}
+.shell:not(.admin-shell) .mt-pin-remove:hover{color:#fff;background:#614b70}
+.shell:not(.admin-shell) .mt-highlight-message .bubble{
+ outline:2px solid #b7a3ff;outline-offset:3px;
+}
+.mt-friend-request-pop{
+ position:fixed;bottom:24px;right:24px;z-index:850;
+ width:min(380px,calc(100vw - 24px));max-height:min(560px,calc(100dvh - 28px));
+ overflow-y:auto;padding:20px;background:linear-gradient(145deg,#1c2e47,#151e34);
+ border:1px solid #8174ad;border-radius:19px;color:#f2f5ff;
+ box-shadow:0 25px 70px #040818cc;
+}
+.mt-friend-request-top{display:flex;align-items:center;gap:12px;padding-right:20px}
+.mt-friend-request-icon{
+ display:grid;place-items:center;width:44px;height:44px;flex:none;
+ border-radius:13px;background:#5b4d9a66;font-size:23px;
+}
+.mt-friend-request-title{display:flex;min-width:0;flex-direction:column;gap:5px}
+.mt-friend-request-title small{color:#b2a6ff;font-size:9px;font-weight:850;letter-spacing:.13em}
+.mt-friend-request-title strong{font-size:15px;overflow-wrap:anywhere}
+.mt-friend-request-copy{color:#b6c6df;font-size:12px;line-height:1.65;margin:15px 0}
+.mt-friend-request-actions{display:flex;gap:7px;flex-wrap:wrap}
+.mt-friend-btn{
+ min-height:37px;padding:8px 11px;border:1px solid #596b8f;
+ border-radius:10px;background:#263951;color:#eaf1ff;
+ font-size:11px;font-weight:750;cursor:pointer;
+}
+.mt-friend-btn.primary{background:linear-gradient(110deg,#9180ee,#7376e8);border-color:transparent;color:#fff}
+.mt-friend-btn.reject{color:#ffbcc6}
+.mt-friend-btn:hover:not(:disabled){border-color:#aaa0fe;background:#354d6d}
+.mt-friend-btn:disabled{opacity:.55;cursor:wait}
+.mt-friend-request-profile{
+ margin:0 0 13px;padding:12px;border:1px solid #455d7c;
+ border-radius:11px;background:#101b2e;
+}
+.mt-friend-request-profile[hidden]{display:none}
+.mt-friend-request-profile strong{font-size:13px}
+.mt-friend-request-profile p{font-size:11px;line-height:1.65;color:#c4d3e9;margin:7px 0}
+.mt-friend-request-profile small{font-size:10px;color:#96adcd}
+.mt-close-pop{
+ position:absolute;right:13px;top:12px;display:grid;place-items:center;
+ border:0;border-radius:9px;background:#30415c;color:#d6e2fb;
+ width:33px;height:33px;cursor:pointer;font-size:22px;
+}
+.mt-close-pop:hover{background:#4b5e7d;color:#fff}
+.mt-social-overlay{
+ position:fixed;inset:0;z-index:1100;display:grid;place-items:center;
+ padding:18px;background:#050b19db;
+}
+.mt-forward-dialog{
+ position:relative;width:min(475px,100%);max-height:calc(100dvh - 28px);
+ overflow-y:auto;padding:22px;background:linear-gradient(145deg,#1b2942,#121e31);
+ border:1px solid #65799f;border-radius:18px;color:#f0f5ff;
+ box-shadow:0 25px 80px #030817d6;
+}
+.mt-dialog-head{display:flex;align-items:center;justify-content:space-between;padding-right:38px}
+.mt-dialog-head h2{font-size:19px}
+.mt-forward-description{font-size:11.5px;color:#bacbe4;line-height:1.7;margin:12px 0}
+.mt-forward-search{
+ width:100%;height:44px;padding:11px 13px;border-radius:11px;
+ background:#0e1b30;color:#eaf2ff;border:1px solid #50678a;
+ font-size:12px;outline:0;
+}
+.mt-forward-search:focus{border-color:#ac9cf7;box-shadow:0 0 0 3px #9e8ef32c}
+.mt-forward-list{display:flex;flex-direction:column;gap:5px;max-height:315px;overflow-y:auto;margin-top:13px}
+.mt-forward-destination{
+ display:flex;align-items:center;gap:11px;width:100%;min-height:56px;
+ padding:9px 11px;text-align:left;border-radius:11px;border:1px solid transparent;
+ background:#1d2e48;color:#eef3ff;cursor:pointer;
+}
+.mt-forward-destination:hover{background:#2d4162;border-color:#7778a9}
+.mt-forward-destination:disabled{opacity:.45;cursor:wait}
+.mt-forward-destination-icon{font-size:20px}
+.mt-forward-destination-copy{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.mt-forward-destination-copy strong{font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.mt-forward-destination-copy small{font-size:10px;color:#a1b5d5}
+.mt-forward-destination>span:last-child{font-size:10px;color:#bdb2ff;white-space:nowrap}
+.mt-empty-note{font-size:12px;text-align:center;padding:15px;color:#a9bbd7}
+.mt-friend-request-pop button:focus-visible,
+.mt-forward-dialog button:focus-visible{outline:2px solid #a4e5f2;outline-offset:2px}
+/* User Settings: information hierarchy, shortcut navigation, no form or privacy data changes. */
+.shell:not(.admin-shell) .mt-settings-upgraded{
+ max-width:1120px;padding-bottom:35px;
+}
+.shell:not(.admin-shell) .mt-settings-health{
+ display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+ padding:20px 21px;margin:20px 0 13px;
+ background:linear-gradient(115deg,#2a2852,#1b2b45 78%);
+ border:1px solid #6a649c;border-radius:17px;
+}
+.shell:not(.admin-shell) .mt-settings-health-icon{
+ display:grid;place-items:center;width:52px;height:52px;flex:none;
+ border-radius:16px;background:#7668cf59;color:#e9e0ff;font-size:26px;
+}
+.shell:not(.admin-shell) .mt-settings-health-copy{flex:1;min-width:0}
+.shell:not(.admin-shell) .mt-settings-health-copy strong{font-size:18px;letter-spacing:-.025em}
+.shell:not(.admin-shell) .mt-settings-health-copy p{font-size:11.5px;color:#b3c4dc;margin:5px 0 11px}
+.shell:not(.admin-shell) .mt-settings-health-pills{display:flex;gap:7px;flex-wrap:wrap}
+.shell:not(.admin-shell) .mt-settings-health-pills span{
+ padding:6px 9px;border:1px solid #827dbb55;border-radius:999px;
+ background:#161e3d91;color:#d6d9ff;font-size:10px;
+}
+.shell:not(.admin-shell) .mt-settings-sessions{
+ min-height:38px;padding:9px 12px;cursor:pointer;
+ border:1px solid #786fc5;border-radius:10px;background:#363865;color:#f2f2ff;
+ font-size:11px;font-weight:750;
+}
+.shell:not(.admin-shell) .mt-settings-jump{
+ display:flex;gap:7px;overflow-x:auto;scrollbar-width:thin;
+ margin:0 0 22px;padding:0 0 8px;
+}
+.shell:not(.admin-shell) .mt-settings-jump-btn{
+ flex:none;min-height:36px;padding:8px 12px;
+ background:#1f314b;color:#dbe6f9;border:1px solid #435a7a;border-radius:10px;
+ font-size:11px;font-weight:750;cursor:pointer;
+}
+.shell:not(.admin-shell) .mt-settings-jump-btn:hover{background:#35466b;border-color:#a196fa}
+.shell:not(.admin-shell) .mt-settings-jump-btn.danger{color:#ffb6c2}
+.shell:not(.admin-shell) .mt-settings-upgraded>.card,
+.shell:not(.admin-shell) .mt-settings-upgraded .setting-grid>.card,
+.shell:not(.admin-shell) .mt-settings-upgraded .member-privacy-details{
+ border-radius:17px;border-color:#364b67;background:linear-gradient(155deg,#19283d,#121e31);
+ box-shadow:none;
+}
+.shell:not(.admin-shell) .mt-settings-upgraded .card h3{font-size:15px}
+.shell:not(.admin-shell) .mt-settings-upgraded .setting-grid{
+ grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;
+}
+.shell:not(.admin-shell) .mt-settings-upgraded .card{scroll-margin-top:22px}
+.shell:not(.admin-shell) .mt-settings-upgraded .field label{color:#c4d3e9}
+.shell:not(.admin-shell) .mt-settings-upgraded .input,
+.shell:not(.admin-shell) .mt-settings-upgraded .select{border-radius:11px;background:#101e32;border-color:#456080}
+.shell:not(.admin-shell) .mt-settings-upgraded .card .hint{color:#a6b9d2;line-height:1.7}
+.shell:not(.admin-shell) .mt-settings-upgraded .account-delete-zone{
+ border-color:#ac5e6d7d;background:#3d1e2b3b;
+}
+.world-coming-soon{
+ width:min(650px,100%);margin:clamp(22px,8vh,100px) auto;padding:32px 24px;
+ border-radius:21px;border:1px solid #625b98;
+ background:linear-gradient(135deg,#282847,#15273f);
+ text-align:center;box-shadow:0 24px 75px #0409182e;
+}
+.world-coming-soon-icon{display:grid;place-items:center;margin:0 auto 18px;width:75px;height:75px;border-radius:22px;background:#6755ae55;color:#d8cbff}
+.world-coming-soon-icon svg{height:36px;width:36px}
+.world-coming-soon .world-tag{color:#b8adff;font-size:10px;letter-spacing:.15em;font-weight:850}
+.world-coming-soon h2{font-size:clamp(24px,3vw,33px);letter-spacing:-.055em;margin:10px 0}
+.world-coming-soon p{max-width:440px;margin:0 auto 19px;color:#b4c7e1;font-size:13px;line-height:1.8}
+.world-coming-soon .world-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:16px 0 23px}
+.world-coming-soon .world-chips span{border:1px solid #61628f;border-radius:999px;color:#c5c6ee;font-size:10px;padding:7px 11px}
+@media(max-width:800px){
+ .mt-friend-request-pop{right:12px;bottom:calc(83px + env(safe-area-inset-bottom,0px));width:calc(100vw - 24px)}
+ .shell:not(.admin-shell) .mt-pins-bar{flex-direction:column;align-items:stretch;gap:5px;padding:8px 12px}
+ .shell:not(.admin-shell) .mt-pin-chips{width:100%}
+ .shell:not(.admin-shell) .mt-settings-health{padding:16px}
+ .shell:not(.admin-shell) .mt-settings-upgraded .setting-grid{grid-template-columns:1fr}
+ .mt-forward-dialog{padding:17px}
+}
+@media(prefers-reduced-motion:reduce){
+ .shell:not(.admin-shell) .mt-settings-upgraded *{scroll-behavior:auto!important}
+}
