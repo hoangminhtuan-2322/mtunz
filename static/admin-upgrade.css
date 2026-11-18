@@ -1,0 +1,60 @@
+/* Admin Clarity v1 — elegant, compact, responsive. No costly animations. */
+.admin-shell{grid-template-columns:240px minmax(0,1fr)!important;--admin-border:#354663;--admin-muted:#acbbd4;background:#0b1322}
+.admin-shell .admin-nav{width:240px;padding:20px 12px 15px;background:linear-gradient(180deg,#142035,#101929);border-right-color:#334460}
+.admin-shell .admin-nav .logo{margin:0 7px 10px;padding-bottom:17px}
+.admin-shell .admin-nav-group{margin-bottom:12px}
+.admin-shell .admin-nav-group-label{padding:12px 11px 7px;color:#91a4c7;font-size:9px;letter-spacing:.13em;font-weight:800}
+.admin-shell .admin-nav-group-items{display:grid;gap:3px}
+.admin-shell .admin-nav button[data-act="admin-tab"]{min-height:41px;padding:9px 11px;border-radius:10px;color:#c3cfe7}
+.admin-shell .admin-nav button[data-act="admin-tab"].active{background:#3a3b68;border-color:#8d87e96c;box-shadow:inset 3px 0 #a99dff;color:#fff}
+.admin-shell .admin-page{padding:20px clamp(18px,2.6vw,40px) 54px;background:radial-gradient(ellipse at 84% -12%,#414c8c30,transparent 45%),#0c1627}
+.admin-shell .admin-workspace-top{position:sticky;top:0;z-index:25;padding:10px 14px;margin-bottom:23px;background:#162239;border:1px solid #405271;border-radius:13px;box-shadow:0 9px 26px #050a1722}
+.admin-shell .admin-workspace-top button{background:#22334e;border-color:#4a6080}
+.admin-shell .admin-header{margin-bottom:18px}
+.admin-shell .admin-header h1{font-size:clamp(24px,2.4vw,31px);font-weight:800}
+.admin-shell .admin-header p{max-width:670px;color:#b3c1d7}
+.admin-shell .stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin:16px 0 20px}
+.admin-shell .stat{padding:17px 18px;background:linear-gradient(150deg,#1b2b43,#172239);border:1px solid #354865;border-radius:15px;box-shadow:none}
+.admin-shell .stat .stat-value{font-size:clamp(25px,2.7vw,35px);margin:6px 0;font-variant-numeric:tabular-nums}
+.admin-shell .card{background:linear-gradient(150deg,#19283f,#142033);border-color:#354763;border-radius:16px;box-shadow:none}
+.admin-shell .card h2{font-size:16px}
+.admin-shell .admin-panels{gap:13px}
+.admin-shell .admin-priority-strip{padding:17px 18px;margin:0 0 14px;background:linear-gradient(120deg,#242b49,#1a2842);border:1px solid #4d5681;border-radius:16px}
+.admin-shell .admin-priority-heading{display:flex;align-items:end;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:13px}
+.admin-shell .admin-section-kicker{display:block;color:#b2a6ff;font-size:9px;font-weight:850;letter-spacing:.14em;margin-bottom:3px}
+.admin-shell .admin-priority-heading h2{font-size:17px}
+.admin-shell .admin-priority-summary{margin:0;font-size:11px;color:#b6c5df}
+.admin-shell .admin-priority-items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.admin-shell .admin-priority-card{display:flex;align-items:center;gap:11px;min-height:76px;min-width:0;padding:12px;background:#121f33;border:1px solid #3e5373;border-radius:12px;color:#eef3ff;text-align:left;transition:border-color .15s,background-color .15s}
+.admin-shell .admin-priority-card:hover{background:#20314e;border-color:#a99dff}
+.admin-shell .admin-priority-number{display:grid;place-items:center;min-width:42px;height:42px;padding:0 8px;border-radius:11px;background:#56458e6b;color:#d9ccff;font-size:20px;font-variant-numeric:tabular-nums}
+.admin-shell .admin-priority-card:nth-child(2) .admin-priority-number{background:#195f6866;color:#a4e4e8}
+.admin-shell .admin-priority-card:nth-child(3) .admin-priority-number{background:#8e632c50;color:#ffdfab}
+.admin-shell .admin-priority-copy{display:flex;flex:1;min-width:0;flex-direction:column;gap:4px}
+.admin-shell .admin-priority-copy b{font-size:11.5px}
+.admin-shell .admin-priority-copy small{color:#a0b3d0;font-size:10px;line-height:1.45}
+.admin-shell .admin-priority-arrow{color:#b1a4ff;font-size:22px}
+.admin-shell .admin-quick-links{gap:7px;margin-bottom:15px}
+.admin-shell .admin-quick-links button{border-radius:9px;background:#20304a;padding:8px 10px}
+.admin-shell .admin-list-tools{border-radius:13px;background:#1a2840;border-color:#3b4c68;padding:12px}
+.admin-shell .table-scroll{background:#101b2f;border-color:#354865}
+.admin-shell .data-table th{padding:12px;background:#21324e;color:#cfdbef}
+.admin-shell .data-table td{padding:12px}
+.admin-shell .data-table tbody tr:nth-child(even) td{background:#15223875}
+.admin-shell .data-table tbody tr:hover td{background:#263a58}
+.admin-shell .data-table th[aria-sort="ascending"]:after{content:' ↑';color:#bcacff}
+.admin-shell .data-table th[aria-sort="descending"]:after{content:' ↓';color:#bcacff}
+.admin-shell .admin-action-compact{flex-wrap:wrap;align-items:flex-start}
+.admin-shell .admin-action-details{min-width:115px}
+.admin-shell .admin-action-details summary{list-style:none;cursor:pointer;min-height:30px;padding:6px 9px;border-radius:9px;background:#293d5a;border:1px solid #526787;color:#e0eaff;white-space:nowrap;font-size:10.5px;font-weight:700}
+.admin-shell .admin-action-details summary::-webkit-details-marker{display:none}
+.admin-shell .admin-action-details summary:after{content:' +';color:#c0b3ff}
+.admin-shell .admin-action-details[open] summary:after{content:' −'}
+.admin-shell .admin-action-extra{display:flex;flex-wrap:wrap;gap:6px;min-width:190px;margin-top:8px;padding:9px;border:1px solid #435b7b;border-radius:10px;background:#1a2940}
+.admin-shell .admin-action-details summary:focus-visible{outline:2px solid #86e3ef;outline-offset:3px}
+.admin-shell .admin-reset-filter{min-height:36px;padding:7px 11px;border:1px solid #546688;border-radius:9px;background:#243953;color:#dfe7f8;font-size:11px;font-weight:700}
+.admin-shell .admin-reset-filter[hidden]{display:none!important}
+@media(max-width:1260px){.admin-shell .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.admin-shell .admin-priority-items{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:950px){.admin-shell{grid-template-columns:1fr!important}.admin-shell .admin-nav{width:min(290px,86vw)}.admin-shell .admin-page{padding:16px 16px 36px}.admin-shell .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:630px){.admin-shell .admin-page{padding:12px 12px 30px}.admin-shell .admin-priority-strip{padding:13px}.admin-shell .admin-priority-items{grid-template-columns:1fr}.admin-shell .admin-priority-card{min-height:63px}.admin-shell .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-shell .stat{padding:13px}.admin-shell .stat .stat-value{font-size:24px}.admin-shell .admin-workspace-top{padding:9px}.admin-shell .admin-priority-summary{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.admin-shell .admin-priority-card{transition:none}}

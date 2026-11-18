@@ -64,6 +64,8 @@ jobs:
         run: node tests/admin_audit_ui.cjs
       - name: Verify readable admin audit record explanations
         run: node tests/audit_readable_details.cjs
+      - name: Verify Admin Clarity enhancements
+        run: node tests/admin_upgrade.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'

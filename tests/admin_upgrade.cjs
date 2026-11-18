@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const read=p=>fs.readFileSync(p,'utf8');
+const js=read('static/admin-upgrade.js'),css=read('static/admin-upgrade.css'),html=read('static/index.html'),app=read('static/app.js');
+new vm.Script(js,{filename:'admin-upgrade.js'});
+assert(html.includes('admin-upgrade.css?v=1.0')&&html.includes('admin-upgrade.js?v=1.0'));
+assert(html.indexOf('admin-upgrade.css')>html.indexOf('admin-console.css'));
+assert(html.indexOf('admin-upgrade.js')>html.indexOf('admin-console.js'));
+for(const f of ['function sidebar(','function priority(','function compactActions(','function clearFilters('])assert(js.includes(f),f);
+for(const t of ['overview','registrations','users','groups','tickets','deletions','broadcast','audit','security'])assert(js.includes("'"+t+"'"),t);
+assert(js.includes('state.adminData?.stats'),'Only actual loaded stats should be shown');
+assert(js.includes('for(const b of rest)content.append(b)'),'Existing privileged buttons must be preserved');
+assert(js.includes('stopImmediatePropagation'),'Keyboard shortcut cannot fire twice');
+assert(!/localStorage|sessionStorage|document\.cookie/.test(js),'No storage of sensitive data');
+for(const f of ['.admin-nav-group','.admin-priority-strip','.admin-action-details','@media(max-width:950px)','prefers-reduced-motion:reduce'])assert(css.includes(f),f);
+for(const f of ['admin-user-revoke','admin-delete-user','admin-sanction','admin-decision','admin-audit-detail','admin-broadcast'])assert(app.includes(f),f);
+console.log('Admin Clarity OK: 9 sections, live priorities, compact actions and responsive security-safe UI.');
