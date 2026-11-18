@@ -1,0 +1,101 @@
+/* mtunz auth feedback 13.0 — contextual errors, no floating login toasts */
+.auth-panel .auth-input-field.has-error .auth-input-wrap .input,
+.auth-panel .auth-input-field.has-error .auth-input-wrap .input:focus {
+  border-color:#e68a9e!important;
+  background:#1d2036!important;
+  box-shadow:0 0 0 3px #e7839b1e,inset 0 1px #ffffff09!important;
+}
+.auth-panel .auth-input-field.has-error .auth-input-icon {color:#f5a8b7}
+.auth-panel .auth-input-field .field-error {
+  box-sizing:border-box;
+  position:relative;
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  width:100%;
+  margin:5px 0 0!important;
+  padding:10px 12px;
+  border-radius:11px;
+  border:1px solid #cf73833c;
+  background:linear-gradient(110deg,#a73e5520,#692c4430);
+  color:#ffc6d0;
+  font-size:11.5px;
+  font-weight:600;
+  letter-spacing:0;
+  line-height:1.65;
+  overflow-wrap:anywhere;
+  animation:auth-feedback-appear .2s ease-out both;
+}
+.auth-panel .auth-input-field .field-error:before {
+  content:"!";
+  box-sizing:border-box;
+  display:inline-grid;
+  place-items:center;
+  flex:none;
+  width:17px;
+  height:17px;
+  margin-top:1px;
+  border:1px solid #ef98ac8e;
+  border-radius:50%;
+  background:#a95a6b27;
+  color:#ffc3cf;
+  font-size:10px;
+  font-weight:850;
+  line-height:1;
+}
+.auth-panel .auth-input-field .field-error:empty {display:none}
+.auth-panel .auth-input-field .field-error + .field-error {display:none}
+.auth-panel .auth-input-field:has(.field-error) {gap:7px}
+@keyframes auth-feedback-appear {
+  from{opacity:0;transform:translateY(-4px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* Informational and operational notifications: compact, quiet and deduplicated.
+   Authentication validation never uses these notifications. */
+#toast-root {
+  top:18px!important;
+  bottom:auto!important;
+  right:18px!important;
+  left:auto!important;
+  width:min(355px,calc(100vw - 28px))!important;
+  gap:8px!important;
+}
+#toast-root .notify-toast {
+  padding:12px 39px 12px 12px!important;
+  border-radius:13px!important;
+  border:1px solid #7283a14d!important;
+  border-left:3px solid #9b96ff!important;
+  background:#18263ef6!important;
+  box-shadow:0 10px 26px #050a1e77!important;
+  backdrop-filter:none!important;
+  gap:10px!important;
+  min-width:0!important;
+}
+#toast-root .notify-toast.error{border-left-color:#ef849b!important}
+#toast-root .notify-toast.warning{border-left-color:#efc281!important}
+#toast-root .notify-toast.ok{border-left-color:#72d9bb!important}
+#toast-root .notify-icon {
+  flex:0 0 27px!important;
+  width:27px!important;
+  height:27px!important;
+  border:0!important;
+  border-radius:8px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+#toast-root .notify-icon svg{width:18px;height:18px}
+#toast-root .notify-content{gap:2px!important}
+#toast-root .notify-content strong{font-size:11.5px}
+#toast-root .notify-content>span{font-size:11px;line-height:1.6}
+#toast-root .notify-close{top:9px;right:8px}
+#toast-root .notify-progress{display:none!important}
+@media(max-width:640px){
+  #toast-root{top:10px!important;right:10px!important;left:10px!important;width:auto!important}
+  #toast-root .notify-toast{width:100%;box-sizing:border-box}
+  .auth-panel .auth-input-field .field-error{font-size:11px;padding:9px 10px}
+}
+@media(prefers-reduced-motion:reduce){
+  .auth-panel .auth-input-field .field-error{animation:none!important}
+  #toast-root .notify-toast{animation:none!important}
+}
