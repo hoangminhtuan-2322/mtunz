@@ -328,6 +328,9 @@ function connectSocket(){
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
    if(t==='account-sanction'){showSanction(data);return;}
+   if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
+     await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
+   }
    if((t==='world-message'||t==='world-status'||t==='world-penalty'||t==='world-message-removed')&&state.tab==='world'&&state.user&&!state.user.is_admin){
      await loadWorld(true).catch(()=>{});return;
    }
@@ -439,6 +442,7 @@ async function enterApp(resume=false){
   }
   if(state.tab==='notices')await loadNotices();
   if(state.tab==='world')await loadWorld(false);
+  if(state.tab==='settings'){try{await loadWorldStatus();}catch{}}
   if(state.tab==='support'){
    state.mode='support';
    state.supportTicket=Number.isSafeInteger(previous?.supportTicket)?previous.supportTicket:null;
