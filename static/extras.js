@@ -38,6 +38,7 @@ function groupSideItems(){
 function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
  return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">MTUNZ CỘNG ĐỒNG</span><h1 class="section-title">Nhóm trò chuyện</h1><p class="section-lead">Tạo nhóm riêng, thêm bạn bè, chia sẻ hình ảnh và tệp tức thời.</p>
+ <div class="card world-teaser"><div><b>${icon('group',17)} Chat thế giới</b><p class="hint">Coming soon · Chúng ta sẽ thiết kế không gian cộng đồng sau.</p></div><button type="button" class="btn ghost sm" data-act="app-tab" data-tab="world">Xem trước</button></div>
  <div class="card"><h3>${icon('add',18)} Tạo nhóm mới</h3><form data-form="create-group" class="stack" style="margin-top:15px">
  ${inputField('Tên nhóm','title','text','','maxlength="70" minlength="2"')}
  <div class="field"><label>Chọn bạn bè tham gia (ít nhất một người)</label><div class="group-pick">${members.length?members.map(f=>`<label class="group-pick-row"><input type="checkbox" name="member_ids" value="${f.other_id}">${avatar(f.username,false,'sm')} ${esc(f.display_name||f.username)}</label>`).join(''):'<div class="hint">Bạn cần kết bạn với ít nhất một người trước.</div>'}</div></div>
