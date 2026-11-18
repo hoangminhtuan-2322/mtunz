@@ -56,6 +56,8 @@ jobs:
           node tests/admin_security_layout.cjs
       - name: Test upgraded Admin console and protected actions
         run: node tests/admin_console.cjs
+      - name: Verify contextual login error feedback
+        run: node tests/auth_feedback.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
