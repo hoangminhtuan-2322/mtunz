@@ -1098,7 +1098,7 @@ async def people_search(request: Request,q: str=''):
     with db() as c:
         search = q.strip()[:24]
         numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
-        rows = many(c, '''SELECT id,public_id,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
+        rows = many(c, '''SELECT id,public_id,avatar_attachment_id,profile_visibility,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
                           FROM users WHERE is_admin=0 AND id!=? AND needs_display_name=0
                           AND (display_name LIKE ? OR public_id=?)
                           AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
@@ -1106,6 +1106,9 @@ async def people_search(request: Request,q: str=''):
                           LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
         for r in rows:
             fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
+            r['avatar_url'] = f'/api/profile/{r["id"]}/avatar' if r['avatar_attachment_id'] and r['profile_visibility']=='everyone' else None
+            r.pop('avatar_attachment_id',None)
+            r.pop('profile_visibility',None)
             r['friend_state'] = fr['state'] if fr else 'none'
             r['requested_by_me'] = bool(fr and fr['requested_by']==u['id'])
     return {'users':rows}
@@ -1119,9 +1122,12 @@ async def get_friends(request: Request):
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           WHERE f.u1=? OR f.u2=? ORDER BY f.created_at DESC''',(u['id'],u['id'],u['id']))
         for r in allrows:
-            other_user = one(c,'SELECT show_online,display_name FROM users WHERE id=?',(r['other_id'],))
+            other_user = one(c,'SELECT show_online,display_name,public_id,avatar_attachment_id,profile_visibility FROM users WHERE id=?',(r['other_id'],))
             r['online'] = bool(hub.users.get(r['other_id'])) and bool(other_user['show_online']) and not is_restricted(c,r['other_id'],u['id'])
             r['display_name'] = other_user['display_name'] or ''
+            r['public_id'] = other_user['public_id']
+            r['avatar_url'] = (f'/api/profile/{r["other_id"]}/avatar' if other_user['avatar_attachment_id'] and
+                               other_user['profile_visibility']!='only_me' else None)
             pref=one(c,'SELECT muted,archived FROM chat_preferences WHERE user_id=? AND other_id=?',(u['id'],r['other_id']))
             r['muted'] = bool(pref['muted']) if pref else False
             r['archived'] = bool(pref['archived']) if pref else False
