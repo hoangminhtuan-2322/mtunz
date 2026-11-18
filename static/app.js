@@ -799,7 +799,7 @@ async function loadMessages(scroll=true){
   const item=state.friends.find(x=>x.other_id===friend);if(item){item.unread=0;renderSideItems();}
  }catch(e){toast(e.message,'error');}
 }
-function personResult(r){return `<div class="people-row">${avatar(r.username)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
+function personResult(r){return `<div class="people-row">${avatar(r.username)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
  r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}</div>`;}
@@ -809,7 +809,7 @@ function friendsContent(){
  const accepted=state.friends.filter(f=>f.state==='accepted');
  return `<div class="section-wrap"><span class="eyebrow">CỘNG ĐỒNG CỦA BẠN</span><h1 class="section-title">Bạn bè & kết nối</h1>
  <p class="section-lead">Tìm kiếm tài khoản, quản lý lời mời và bắt đầu nhắn tin.</p>
- <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Nhập tên tài khoản..." required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
+ <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Tên tài khoản hoặc ID (từ 1000)..." required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
  ${(state.peopleResults||[]).map(personResult).join('')||((state.peopleQuery)?'<div class="hint" style="margin-top:16px">Không có kết quả phù hợp.</div>':'')}</div>
  ${pending.length?`<h3 style="margin:28px 0 12px">Lời mời kết bạn (${pending.length})</h3>${pending.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ bạn xác nhận</div></div><button class="btn success sm" data-act="friend-accept" data-id="${f.other_id}">Chấp nhận</button><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Từ chối</button></div>`).join('')}`:''}
  ${sent.length?`<h3 style="margin:28px 0 12px">Lời mời đã gửi (${sent.length})</h3>${sent.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ phản hồi</div></div><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Thu hồi</button></div>`).join('')}`:''}
@@ -825,7 +825,7 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
  <p class="section-lead">Kiểm soát thông tin đăng nhập và cách bạn tương tác trên mtunz.</p>
- <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div></div><span class="pill good">Đã xác thực</span></div>
+ <div class="row card" style="margin-bottom:20px">${avatar(state.user.username,false,'xl')}<div class="grow"><h2>${esc(state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Những chức năng ít dùng được sắp xếp tại đây để thanh điều hướng gọn gàng hơn.</p>
@@ -1374,7 +1374,14 @@ function grantDialog(tid){
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
-  case 'mode-login':state.mode='login';state.step='username';renderAuth();break;
+  case 'copy-member-id':{
+    if(!state.user || state.user.is_admin)return;
+    const accountId=String(state.user.id);
+    try{await navigator.clipboard.writeText(accountId);toast('Đã sao chép ID tài khoản: #'+accountId,'ok');}
+    catch{toast('ID tài khoản của bạn: #'+accountId,'info');}
+    break;
+   }
+   case 'mode-login':state.mode='login';state.step='username';renderAuth();break;
   case 'mode-register':state.mode='register';renderAuth();break;
   case 'mode-support':state.mode='support';state.supportTicket=null;await loadTickets();renderAuth();break;
   case 'forgot-username':case 'forgot-password':case 'forgot-pin':
