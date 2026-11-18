@@ -211,3 +211,43 @@ def test_member_reports_are_permission_checked_and_admin_reviews_are_logged():
             c.execute("UPDATE user_reports SET status='dismissed' WHERE id=?",
                       (again.json()['report_id'],))
     assert alice.post('/api/reports',json=payload).status_code==429
+
+
+def test_reports_from_private_and_group_messages_verify_read_access():
+    admin=logged_admin()
+    alice=register_user(admin,'report_dm_alice')
+    bob=register_user(admin,'report_dm_bob')
+    outsider=register_user(admin,'report_outsider')
+    a=alice.get('/api/me').json()['user']['id']
+    b=bob.get('/api/me').json()['user']['id']
+    assert alice.post(f'/api/friends/request/{b}').status_code==200
+    assert bob.post(f'/api/friends/accept/{a}').status_code==200
+    direct=bob.post('/api/messages',json={'recipient_id':a,'body':'Tin nhắn cần xem xét'})
+    assert direct.status_code==200,direct.text
+    mid=direct.json()['message']['id']
+    dm_payload={'target_id':b,'scope':'dm','message_id':mid,'reason':'harassment',
+                'description':'Người gửi thường xuyên quấy rối'}
+    dm=alice.post('/api/reports',json=dm_payload)
+    assert dm.status_code==200,dm.text
+    assert outsider.post('/api/reports',json=dm_payload).status_code==403
+    # Admin has resolved the first case. Another message in a group is
+    # independently reportable, with group membership verified server-side.
+    with db() as c:
+        c.execute("UPDATE user_reports SET status='reviewed' WHERE id=?",
+                  (dm.json()['report_id'],))
+    group=alice.post('/api/groups',json={'title':'Cộng đồng nhỏ','member_ids':[b]})
+    assert group.status_code==200,group.text
+    gid=group.json()['id']
+    posted=bob.post(f'/api/groups/{gid}/messages',json={'body':'Tin nhắn nhóm cần kiểm tra'})
+    assert posted.status_code==200,posted.text
+    group_mid=posted.json()['message']['id']
+    group_payload={'target_id':b,'scope':'group','group_id':gid,'message_id':group_mid,
+                   'reason':'spam','description':'Spam vào phòng nhóm liên tục'}
+    ok=alice.post('/api/reports',json=group_payload)
+    assert ok.status_code==200,ok.text
+    bad=outsider.post('/api/reports',json=group_payload)
+    assert bad.status_code==403,bad.text
+    reports=admin.get('/api/admin/reports?status=all').json()['reports']
+    found=next(x for x in reports if x['id']==ok.json()['report_id'])
+    assert found['evidence']=='Tin nhắn nhóm cần kiểm tra'
+    assert found['scope']=='group' and found['source_group_id']==gid
