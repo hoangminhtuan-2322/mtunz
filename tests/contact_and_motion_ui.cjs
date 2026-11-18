@@ -27,7 +27,7 @@ assert(!app.includes("case 'logout':await logout()"), 'Logout must be confirmed'
 assert(extras.includes('data-form="settings-contact"'), 'Settings need private contact editing');
 assert(extras.includes("if(key==='settings-contact')"), 'Contact form must save via API');
 assert(core.includes("class RegistrationRequest(BaseModel)"));
-assert(core.includes("phone: str = Field(min_length=8,max_length=40)"));
+assert(core.includes("phone: str = Field(min_length=0,max_length=40)"));
 assert(core.includes("admin_view_user_details"), 'Admin detail lookup must be audited');
 assert(features.includes("column('registrations',col,typ)"), 'Existing database must migrate');
 assert(html.includes('ui-interactions.css?v=1.0'), 'New motion stylesheet must load');
