@@ -518,11 +518,11 @@ function showAuthFieldError(form,fieldName,message){
  input.focus({preventScroll:true});
  return true;
 }
-function inputField(label,name,type='text',placeholder='',attr=''){
+function inputField(label,name,type='text',placeholder='',attr='',required=true){
  const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
  return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
  <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
- <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required></div></div>`;
+ <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':'' }></div></div>`;
 }
 /* Plain form control for account settings/admin: no absolutely positioned icon.
    Do not use the decorative auth-input component outside the sign-in flow. */
@@ -622,7 +622,7 @@ function authSupport(){
  <option value="password" ${state.supportKind==='password'?'selected':''}>Quên mật khẩu</option>
  <option value="pin" ${state.supportKind==='pin'?'selected':''}>Quên mã PIN</option>
  <option value="other" ${state.supportKind==='other'?'selected':''}>Vấn đề khác</option></select></div>
- ${inputField('Thông tin gợi nhớ (không bắt buộc)','claim','text','','maxlength="160"')}
+ ${inputField('Thông tin gợi nhớ (không bắt buộc)','claim','text','','maxlength="160"',false)}
  <button class="btn primary full">Bắt đầu trò chuyện ${icon('chat',17)}</button></form>
  ${state.tickets.length?`<div class="sep"></div><span class="eyebrow">CUỘC TRÒ CHUYỆN GẦN ĐÂY</span><div class="stack" style="margin-top:12px">${state.tickets.slice(0,5).map(t=>`<button class="btn ghost full" style="justify-content:space-between" data-act="support-open" data-id="${t.id}">#${t.id} · ${esc(t.kind)} <span class="pill">${esc(t.status)}</span></button>`).join('')}</div>`:''}`;
  return `<div class="row between" style="margin-bottom:17px"><button class="linkbtn" data-act="support-back">${icon('back',15)} Các yêu cầu</button><span class="pill">Phiếu hỗ trợ #${state.supportTicket}</span></div>
