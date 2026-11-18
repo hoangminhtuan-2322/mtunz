@@ -30,7 +30,7 @@ function worldV3TimerTick(){
  if(!state.user||state.user.is_admin)return;
  const nowSec=worldClock();
  const current=state.worldData?.status;
- const interval=document.hidden?30:15;
+ const interval=document.hidden?180:60;
  if(nowSec-worldV3LastPoll>=interval && !worldV3Busy){
   worldV3LastPoll=nowSec;worldV3RefreshStatus();
  }
