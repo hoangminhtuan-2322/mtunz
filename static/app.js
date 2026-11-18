@@ -1396,6 +1396,11 @@ async function userDetails(uid){
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
      ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
    </div>
+   <div class="admin-detail-section">
+     <h3>${icon('shield',17)} Kiểm tra bảo mật thiết bị</h3>
+     <p class="hint">IP rút gọn và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
+     <button type="button" class="btn ghost sm" data-act="admin-device-security" data-id="${u.id}">${icon('lock',15)} Xem thông tin bảo mật phiên</button>
+   </div>
    <div class="admin-user-actions">
  <button type="button" class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',15)} Chỉnh sửa hồ sơ</button>
  <button type="button" class="btn danger sm" data-act="admin-user-revoke" data-id="${u.id}">${icon('lock',15)} Thu hồi tất cả phiên</button></div>
@@ -1433,6 +1438,31 @@ async function editUserAsAdmin(uid){
    await post(`/api/admin/users/${uid}/edit`,payload);
    toast('Đã cập nhật hồ sơ người dùng.','ok');await loadAdmin();
   }});
+}
+async function showAdminSessionSecurity(uid){
+ const data=await api('/api/admin/users/'+uid+'/session-security');
+ const summary=(entries,kind)=>{
+  if(!entries?.length)return '<div class="device-session-empty">Không có thiết bị còn hiệu lực.</div>';
+  return entries.map(s=>`<article class="admin-device-security-entry">
+   <strong>${esc(s.device_label||s.device_name||'Thiết bị chưa đặt tên')}</strong>
+   <small>${esc(kind)} · ${esc(s.os_name||'Không rõ hệ điều hành')} · ${esc(s.browser||'Không rõ trình duyệt')}</small>
+   ${adminDetailRow('Mạng (IP rút gọn)',esc(s.network_hint||'Không có dữ liệu'))}
+   ${adminDetailRow('Vị trí ước tính',esc(s.location_hint||'Không xác định'))}
+   ${adminDetailRow('Hoạt động gần nhất',deadlineDate(s.last_seen))}
+   ${adminDetailRow('Hết hạn',deadlineDate(s.expires_at))}
+  </article>`).join('');
+ };
+ modal({
+  title:'Bảo mật phiên · '+data.username,
+  description:'Chỉ Admin có quyền truy cập. Dữ liệu mạng đã rút gọn, vị trí GeoIP có thể không xác định. Lượt xem được ghi nhật ký.',
+  content:`<div class="admin-device-security-view">
+   <h3>Phiên đăng nhập (${data.sessions.length})</h3>
+   ${summary(data.sessions,'Phiên đăng nhập')}
+   <h3>Thiết bị ghi nhớ (${data.remembered_devices.length})</h3>
+   ${summary(data.remembered_devices,'Thiết bị ghi nhớ')}
+   <p class="hint">Hệ thống không lưu IP đầy đủ, vị trí GPS hay token đăng nhập trong phần này.</p>
+  </div>`,confirm:'Đóng',cancel:null
+ });
 }
 function revokeUserSessionsAsAdmin(uid){
  const u=(state.adminData||[]).find(x=>x.id===uid);
@@ -1556,6 +1586,7 @@ async function clickAction(button){
    state.adminAuditMeta={total:result.total,has_more:result.has_more,offset:state.adminData.length};
    renderAdmin();break;
   }
+  case 'admin-device-security':await showAdminSessionSecurity(id);break;
   case 'admin-user-edit':await editUserAsAdmin(id);break;
   case 'admin-user-revoke':revokeUserSessionsAsAdmin(id);break;
   case 'admin-registration-detail':registrationDetails(id);break;
