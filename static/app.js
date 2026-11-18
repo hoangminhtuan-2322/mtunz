@@ -1062,6 +1062,12 @@ const auditNames={
 };
 function auditLabel(action){return auditNames[action]||String(action||'Hoạt động khác').replace(/_/g,' ');}
 function auditLevel(log){return log.severity==='high'?['high','Quan trọng']:log.severity==='medium'?['medium','Cần theo dõi']:['info','Thông thường'];}
+function auditDateValue(timestamp){
+ if(!timestamp)return '';
+ const d=new Date(timestamp*1000);
+ const pad=n=>String(n).padStart(2,'0');
+ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+}
 function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||{};
  const f=state.adminAuditFilter;
  const summary=logs.reduce((a,l)=>{a[l.severity||'info']=(a[l.severity||'info']||0)+1;return a;},{});
@@ -1077,8 +1083,8 @@ function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||
    <option value="">Tất cả hành động</option>
    ${Object.keys(auditNames).map(action=>`<option value="${esc(action)}" ${f.action===action?'selected':''}>${esc(auditLabel(action))}</option>`).join('')}
   </select></label>
-  <label>Từ ngày<input class="input" type="date" name="since" value="${f.since?new Date(f.since*1000).toLocaleDateString('en-CA'):''}"></label>
-  <label>Đến ngày<input class="input" type="date" name="until" value="${f.until?new Date(f.until*1000).toLocaleDateString('en-CA'):''}"></label>
+  <label>Từ ngày<input class="input" type="date" name="since" value="${f.since?auditDateValue(f.since):''}"></label>
+  <label>Đến ngày<input class="input" type="date" name="until" value="${f.until?auditDateValue(f.until):''}"></label>
   <button class="btn primary" type="submit">${icon('search',16)} Áp dụng bộ lọc</button>
   <button class="btn ghost" type="button" data-act="admin-audit-clear">Xóa bộ lọc</button>
  </form>
