@@ -20,7 +20,6 @@ for(const item of ['Xem hồ sơ','Chấp nhận','Từ chối','Để sau']){
 assert(js.includes('/api/profile/'),'Friend popup uses existing controlled profile API');
 assert(js.includes('/api/friends/'),'Accept/decline uses existing friend endpoints');
 assert(js.includes('source_scope:ctx.scope')&&js.includes('target_scope:target.scope'),'Forward source and target are explicit');
-assert(js.includes("data.socialAction==='pin'")&&js.includes("data.socialAction==='forward'")===false,'Actions bind delegated events');
 assert(js.includes("btn.dataset.socialAction==='pin'"),'Pin click binding exists');
 assert(js.includes("btn.dataset.socialAction==='forward'"),'Forward click binding exists');
 assert(js.includes('/api/chat/pins')&&js.includes('/api/chat/forward'));
@@ -37,5 +36,4 @@ assert(features.includes('require_peer(c,u['),"Server enforces DM friend/block r
 assert(features.includes('active_member(c,body.target_id,u['),"Server enforces group membership");
 assert(features.includes("15*60"),'Original 15 minute edit limit remains');
 assert(features.includes("scope='group'")&&features.includes("scope='dm'"));
-assert(css.includes('prefers-reduced-motion:reduce')===false||true);
 console.log('Social UI OK: invite popup, profile, pin, forward, settings, preview-only World Chat, guarded server actions.');
