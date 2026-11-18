@@ -404,7 +404,7 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['X-Content-Type-Options'] = 'nosniff'
     if COOKIE_SECURE:
         result.headers['Strict-Transport-Security'] = 'max-age=31536000'
-    result.headers['Permissions-Policy'] = 'geolocation=(), payment=()'
+    result.headers['Permissions-Policy'] = 'geolocation=(self), payment=()'
     result.headers['Referrer-Policy'] = 'no-referrer'
     result.headers['X-Frame-Options'] = 'DENY'
     result.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
