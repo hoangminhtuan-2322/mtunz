@@ -79,7 +79,8 @@ function bubblesFor(messages,isGroup=false){
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
-   ${mine?`<button type="button" data-act="message-delete" data-id="${m.id}" data-scope="${scope}" title="Thu hồi">${icon('trash',13)}</button>`:''}</div>`:'';
+   ${mine?`<button type="button" data-act="message-delete" data-id="${m.id}" data-scope="${scope}" title="Thu hồi">${icon('trash',13)}</button>`:''}
+   ${!mine?`<button type="button" data-world-report-user="${Number(m.sender_id)}" data-world-message="${Number(m.id)}" data-world-scope="${scope}" ${isGroup?`data-world-group="${Number(state.groupSelected)}"`:''} title="Báo cáo tin nhắn">${icon('shield',13)}</button>`:''}</div>`:'';
   html+=`<div class="bubble-wrap ${mine?'mine':''}" id="msg-${scope}-${m.id}">
     ${isGroup&&!mine?`<div class="group-sender">${esc(m.username||'Thành viên')}</div>`:''}
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
@@ -227,6 +228,7 @@ function groupManageDialog(){
   const owner=group.role==='owner';
   const friendsToAdd=state.friends.filter(f=>f.state==='accepted'&&!members.some(m=>m.user_id===f.other_id));
   const html=`<div class="group-members">${members.map(m=>`<div class="people-row">${avatar(m.username,false,'sm')}<div class="grow"><b>${esc(m.display_name||m.username)}</b><div class="hint">${m.role==='owner'?'Trưởng nhóm':'Thành viên'}</div></div>
+   ${m.user_id!==state.user.id?`<button type="button" class="btn ghost sm" data-world-report-user="${Number(m.user_id)}" title="Báo cáo thành viên">${icon('shield',14)} Báo cáo</button>`:''}
    ${owner&&m.user_id!==state.user.id?`<button class="btn danger sm" data-act="group-kick" data-id="${m.user_id}">Xóa</button>`:''}</div>`).join('')}</div>
    ${owner?`<div class="sep"></div><label class="hint">Tên nhóm</label><input id="group-title" class="input" maxlength="70" value="${esc(group.title)}"><label class="hint">Giới thiệu nhóm</label><textarea id="group-description" class="input" maxlength="350">${esc(group.description||'')}</textarea>
    <div class="sep"></div><h3>Thêm bạn bè</h3><div class="group-pick" id="group-add-members">${friendsToAdd.map(f=>`<label class="group-pick-row"><input type="checkbox" value="${f.other_id}">${esc(f.username)}</label>`).join('')||'<div class="hint">Không còn bạn bè để thêm.</div>'}</div>`:''}`;
