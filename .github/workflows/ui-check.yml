@@ -3,16 +3,10 @@ name: Verify mtunz premium UI
 on:
   pull_request:
     branches: [main]
+  # Always evaluate every main commit; Render checksPass must never skip a
+  # backend-only or policy-only change because it missed a path filter.
   push:
     branches: [main]
-    paths:
-      - static/**
-      - app.py
-      - features.py
-      - pg_storage.py
-      - render.yaml
-      - tests/**
-      - .github/workflows/ui-check.yml
   workflow_dispatch:
 
 permissions:
@@ -34,6 +28,9 @@ jobs:
           node --check static/admin-console.js
           node --check static/member-experience.js
           node --check static/social-upgrade.js
+          node --check static/world-moderation.js
+          node --check static/admin-upgrade.js
+          node --check static/motion-lite.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -76,6 +73,8 @@ jobs:
         run: node tests/world_preview.cjs
       - name: Verify group lobby spacing and simple Coming soon
         run: node tests/group_lobby_ui.cjs
+      - name: Verify public release policy pages, image security and consent
+        run: node tests/public_release_ui.cjs
       - name: Verify first-login name and phone sign-in interface
         run: node tests/first_login_ui.cjs
       - name: Verify World Chat, reports, and separate Profile
@@ -113,7 +112,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=17.1' in h
+          assert '/static/app.js?v=17.2' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h

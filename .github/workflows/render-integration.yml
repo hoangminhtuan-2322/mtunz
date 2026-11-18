@@ -1,16 +1,10 @@
 name: Render PostgreSQL integration
 
 on:
+  # PostgreSQL smoke runs on every main commit, not only selected file paths.
+  # Guard Render's checksPass deployment against front/back-end drift.
   push:
     branches: [main]
-    paths:
-      - app.py
-      - features.py
-      - world_chat.py
-      - pg_storage.py
-      - requirements.txt
-      - tests/smoke_postgres.py
-      - .github/workflows/render-integration.yml
   workflow_dispatch:
 
 permissions:

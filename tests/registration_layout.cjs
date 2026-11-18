@@ -24,7 +24,7 @@ for (const fragment of [
 ]) assert(approved.includes(fragment), 'Missing registration structure: '+fragment);
 assert(approved.indexOf('class="registration-consent"') < approved.indexOf('type="submit">Tạo tài khoản'), 'Consent must precede the submit button');
 assert(!approved.includes('style="align-items:flex-start'), 'Legacy consent must not float into footer');
-assert(html.includes('/static/registration-layout.css?v=11.1'), 'Final stylesheet is loaded with cache busting');
+assert(html.includes('/static/registration-layout.css?v=11.2'), 'Final stylesheet is loaded with cache busting');
 assert(html.indexOf('registration-layout.css') > html.indexOf('form-layout.css'), 'Registration geometry overrides previous form themes');
 assert(css.includes('.auth-main > .auth-panel'), 'The auth card must never shrink');
 assert(css.includes('flex-shrink:0'), 'Auth card shrink guard is required');
@@ -55,7 +55,9 @@ assert(!app.includes('Thông tin liên hệ được giữ riêng tư và không
 assert(!extras.includes('Chỉ bạn và quản trị viên được xem số điện thoại'), 'Remove technical access note from profile form');
 assert(!app.includes('Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị.'), 'Do not reveal privileged session settings on public login screen');
 assert(!app.includes('Admin vẫn có thể xóa ngay theo quyền quản trị.'), 'Avoid advertising admin privileges in deletion copy');
-assert(approved.includes('Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư của mtunz.'), 'Consent must use concise Terms and Privacy agreement');
+assert(approved.includes('Tôi đã đọc và đồng ý với'), 'Consent text must remain explicit');
+assert(approved.includes('href="/terms"')&&approved.includes('href="/privacy"'), 'Terms and Privacy must be readable before account creation');
+assert(approved.includes('for="accepted-terms"'), 'Consent checkbox has an accessible label');
 assert(!approved.includes('Tôi đồng ý cung cấp số điện thoại và email'), 'Remove overly long contact disclaimer from checkbox');
 assert(!app.includes('member-privacy-details'), 'Removed settings privacy accordion must not return');
 assert(!app.includes('Quyền riêng tư và xử lý dữ liệu'), 'Removed privacy accordion title must not return');
