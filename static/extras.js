@@ -37,12 +37,17 @@ function groupSideItems(){
 }
 function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
- return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">MTUNZ CỘNG ĐỒNG</span><h1 class="section-title">Nhóm trò chuyện</h1><p class="section-lead">Tạo nhóm riêng, thêm bạn bè, chia sẻ hình ảnh và tệp tức thời.</p>
- <div class="card world-teaser"><div><b>${icon('group',17)} Chat thế giới</b><p class="hint">Coming soon · Chúng ta sẽ thiết kế không gian cộng đồng sau.</p></div><button type="button" class="btn ghost sm" data-act="app-tab" data-tab="world">Xem trước</button></div>
- <div class="card"><h3>${icon('add',18)} Tạo nhóm mới</h3><form data-form="create-group" class="stack" style="margin-top:15px">
+ return `<div class="main-body"><div class="section-wrap group-lobby"><span class="eyebrow">MTUNZ CỘNG ĐỒNG</span><h1 class="section-title">Nhóm trò chuyện</h1><p class="section-lead">Tạo nhóm riêng, thêm bạn bè, chia sẻ hình ảnh và tệp tức thời.</p>
+ <div class="group-lobby-panels">
+ <div class="group-lobby-teaser" role="note" aria-label="Chat thế giới: Coming soon">
+  <span class="group-lobby-teaser-icon" aria-hidden="true">${icon('users',20)}</span>
+  <strong>Chat thế giới</strong><span class="group-lobby-teaser-badge">Coming soon</span>
+ </div>
+ <div class="card group-create-card"><h3>${icon('add',18)} Tạo nhóm mới</h3><form data-form="create-group" class="stack" style="margin-top:15px">
  ${inputField('Tên nhóm','title','text','','maxlength="70" minlength="2"')}
  <div class="field"><label>Chọn bạn bè tham gia (ít nhất một người)</label><div class="group-pick">${members.length?members.map(f=>`<label class="group-pick-row"><input type="checkbox" name="member_ids" value="${f.other_id}">${avatar(f.username,false,'sm')} ${esc(f.display_name||f.username)}</label>`).join(''):'<div class="hint">Bạn cần kết bạn với ít nhất một người trước.</div>'}</div></div>
  <button class="btn primary" ${members.length?'':'disabled'}>${icon('group',16)} Tạo nhóm</button></form></div>
+ </div>
  <h3 style="margin:27px 0 12px">Nhóm bạn đang tham gia (${state.groups.length})</h3>
  ${state.groups.length?state.groups.map(g=>`<div class="people-row">${avatar(g.title)}<div class="grow"><b>${esc(g.title)}</b><div class="hint">${g.member_count} thành viên · ${g.unread} tin chưa đọc</div></div><button class="btn ghost sm" data-act="open-group" data-id="${g.id}">Mở nhóm</button></div>`).join(''):'<div class="empty">Bạn chưa tham gia nhóm nào.</div>'}</div></div>`;
 }
