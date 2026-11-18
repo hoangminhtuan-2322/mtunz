@@ -3,8 +3,6 @@
 All member identities are stable internal DB keys; new public IDs use CSPRNG
 seven-digit identifiers. Existing foreign-key references are never rewritten.
 """
-from __future__ import annotations
-
 import re
 import secrets
 from typing import Literal
@@ -113,7 +111,6 @@ def install(core):
     async def update_social(request:Request,body:SocialUpdate):
         u=member(request)
         with db() as c:
-            row=one(c,'SELECT * FROM users WHERE id=?',(u['id'],))
             updates={}
             if body.headline is not None:
                 updates['headline']=' '.join(body.headline.split())
