@@ -117,7 +117,7 @@ def normalize_phone(value: str) -> str:
     if re.fullmatch(r'0[0-9]{9}',number):
         number='+84'+number[1:]
     if not re.fullmatch(r'\+[1-9][0-9]{7,14}',number):
-        raise HTTPException(422,'Số điện thoại phải gồm 10 chữ số (Việt Nam) hoặc dạng +mã quốc gia.')
+        raise HTTPException(422,'Số điện thoại không hợp lệ.')
     return number
 
 
@@ -574,7 +574,7 @@ async def username_check(request: Request, body: UsernameIn):
 
 class RegistrationRequest(BaseModel):
     username: str
-    phone: str = Field(min_length=8,max_length=40)
+    phone: str = Field(min_length=0,max_length=40)
     email: str = Field(default='',max_length=254)
 
 
@@ -1640,7 +1640,7 @@ async def admin_audit_detail(request:Request,event_id:int):
 class AdminUserEdit(BaseModel):
     display_name:str=Field(default='',max_length=50)
     bio:str=Field(default='',max_length=220)
-    phone:str=Field(min_length=8,max_length=40)
+    phone:str=Field(min_length=0,max_length=40)
     email:str=Field(default='',max_length=254)
     reason:str=Field(min_length=5,max_length=250)
     admin_password:str=Field(min_length=1,max_length=128)
