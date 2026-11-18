@@ -37,7 +37,7 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
  regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
- adminTicket:null,adminTicketMessages:[],adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false};
+ adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false};
 let toastTimer=0,typingTimer=0,socketRetry=null;
 
 // A tab-scoped marker survives a normal reload, but not a new ordinary tab.
@@ -988,14 +988,20 @@ function adminDeletionQueue(){
   </tbody></table></div></div>`;
 }
 function adminTickets(){const tickets=state.adminData||[];
- const chosen=tickets.find(t=>t.id===state.adminTicket);
+ const spamCount=tickets.filter(t=>t.status==='spam').length;
+ const visible=tickets.filter(t=>state.adminShowSpam||t.status!=='spam');
+ const chosen=visible.find(t=>t.id===state.adminTicket);
  return `<div class="admin-ticket-layout"><div class="card" style="padding:0;overflow:hidden"><div class="row between" style="padding:17px;border-bottom:1px solid var(--line)"><b>Cuộc trò chuyện (${tickets.length})</b><button class="btn sm ghost" data-act="admin-refresh">${icon('refresh',15)}</button></div>
- <div class="ticket-list">${tickets.length?tickets.map(t=>`<div class="ticket-item ${t.id===state.adminTicket?'selected':''}" data-act="admin-open-ticket" data-id="${t.id}">
- <div class="row between"><b>#${t.id} · ${esc(t.kind)}</b><span class="pill ${t.status==='open'?'good':'bad'}">${t.status==='open'?'Mở':'Đóng'}</span></div>
+ <div style="padding:9px 14px;border-bottom:1px solid var(--line)"><button class="btn ghost sm" type="button" data-act="admin-show-spam">${state.adminShowSpam?'Ẩn phiếu spam':'Xem phiếu spam'} (${spamCount})</button></div>
+ <div class="ticket-list">${visible.length?visible.map(t=>`<div class="ticket-item ${t.id===state.adminTicket?'selected':''}" data-act="admin-open-ticket" data-id="${t.id}">
+ <div class="row between"><b>#${t.id} · ${esc(t.kind)}</b><span class="pill ${t.status==='open'?'good':'bad'}">${t.status==='open'?'Mở':t.status==='spam'?'Spam':'Đóng'}</span></div>
  <div class="hint truncate" style="margin-top:7px">${esc(t.claim)||'Không có mô tả'}</div><div class="hint">${date(t.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có yêu cầu hỗ trợ.</div>'}</div></div>
  <div class="card" style="display:flex;flex-direction:column;gap:15px;min-height:520px">${chosen?`
  <div class="row between"><div><h2>Phiếu hỗ trợ #${chosen.id}</h2><div class="hint">Loại: ${esc(chosen.kind)} · ${esc(chosen.claim)}</div></div>
- <button class="btn ghost sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="${chosen.status==='open'?'closed':'open'}">${chosen.status==='open'?'Đóng':'Mở lại'}</button></div>
+ <div class="row" style="gap:7px;flex-wrap:wrap">
+ <button class="btn ghost sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="${chosen.status==='open'?'closed':'open'}">${chosen.status==='open'?'Đóng':'Mở lại'}</button>
+ ${chosen.status==='spam'?'':`<button class="btn danger sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="spam">${icon('ban',14)} Đánh dấu spam</button>`}
+ </div></div>
  <div class="support-list grow" id="admin-ticket-messages" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
  <form data-form="admin-ticket-reply"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>
  ${['password','pin'].includes(chosen.kind)?`<div class="info-strip" style="margin:0">Chỉ cấp mã đặt lại khi đã <b>xác minh danh tính bằng kênh độc lập</b>. Không dựa đơn thuần vào thông tin mà người lạ tự khai trong chat.</div>
@@ -1470,9 +1476,16 @@ async function clickAction(button){
   case 'admin-user-detail':await userDetails(id);break;
   case 'admin-view-messages':await userMessageLog(id);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
-  case 'admin-open-ticket':state.adminTicket=id;state.adminTicketMessages=(await api(`/api/admin/tickets/${id}/messages`)).messages;renderAdmin();break;
+  case 'admin-show-spam':state.adminShowSpam=!state.adminShowSpam;renderAdmin();break;
+   case 'admin-open-ticket':state.adminTicket=id;state.adminTicketMessages=(await api(`/api/admin/tickets/${id}/messages`)).messages;renderAdmin();break;
   case 'admin-recovery-grant':grantDialog(id);break;
-  case 'admin-close-ticket':await post(`/api/admin/tickets/${id}/status`,{status:button.dataset.status});toast('Đã cập nhật phiếu hỗ trợ.','ok');await loadAdmin();break;
+  case 'admin-close-ticket':{
+    const status=button.dataset.status;
+    await post(`/api/admin/tickets/${id}/status`,{status});
+    if(status==='spam'&&!state.adminShowSpam)state.adminTicket=null;
+    toast(status==='spam'?'Đã chặn tin nhắn của phiếu spam.':'Đã cập nhật phiếu hỗ trợ.','ok');
+    await loadAdmin();break;
+   }
  }
 }
 // A login password field begins read-only to prevent automatic password restoration.
