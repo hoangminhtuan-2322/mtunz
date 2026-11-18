@@ -33,6 +33,7 @@ jobs:
           node --check static/premium.js
           node --check static/admin-console.js
           node --check static/member-experience.js
+          node --check static/social-upgrade.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -69,6 +70,8 @@ jobs:
         run: node tests/admin_upgrade.cjs
       - name: Verify modern member messaging experience
         run: node tests/member_experience.cjs
+      - name: Verify friendship, pin, forwarding and settings UI
+        run: node tests/social_upgrade.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
