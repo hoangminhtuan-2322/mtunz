@@ -55,7 +55,7 @@
         : 'Vui lòng nhập thông tin này trước khi tiếp tục.';
     }
     if (!input.validity.valid) {
-      if (input.name === 'username') return 'Tên tài khoản cần 3–24 ký tự, bắt đầu bằng chữ và chỉ chứa a–z, 0–9 hoặc _.';
+      if (input.name === 'username') return 'Tên tài khoản không hợp lệ.';
       if (input.name.includes('pin')) {
         if (['login-pin', 'login-remembered'].includes(input.form?.dataset.form)) {
           return 'Mã PIN không chính xác. Vui lòng thử lại.';
@@ -125,7 +125,9 @@
     const target = input && fieldOf(input)?.querySelector('.username-status');
     if (!target) return;
     target.className = 'username-status ' + (kind || '');
-    target.innerHTML = '';
+    target.textContent = '';
+    target.style.display = text ? '' : 'none';
+    if (!text) return;
     const dot = document.createElement('span');
     dot.className = 'status-dot';
     const label = document.createElement('span');
@@ -140,11 +142,11 @@
     availability.value = value;
     availability.state = '';
     if (!value) {
-      updateAvailability('Chọn một tên để bắt đầu', '');
+      updateAvailability('', '');
       return;
     }
     if (!usernamePattern.test(value)) {
-      updateAvailability('Dùng 3–24 ký tự, chữ cái, số và dấu _', '');
+      updateAvailability('', '');
       return;
     }
     availability.checking = true;
