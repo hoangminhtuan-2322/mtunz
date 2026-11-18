@@ -1,0 +1,83 @@
+/* mtunz Neon Trace v14 — a single, self-contained LED loop on the shared auth card.
+   The SVG follows the real rounded rectangle when the card changes height.
+   No JS frame loop, animated blur, large repainting backgrounds or layout movement. */
+
+.auth-panel{--auth-neon-speed:8.5s}
+.auth-panel > .auth-neon-perimeter{
+  position:absolute;
+  inset:0;
+  display:block;
+  width:100%;
+  height:100%;
+  z-index:0;
+  overflow:visible;
+  pointer-events:none;
+  user-select:none;
+  flex:none;
+  /* Keep the decorative ring out of layout and hit testing. */
+}
+.auth-panel > .auth-neon-perimeter rect{
+  x:2px;
+  y:2px;
+  width:calc(100% - 4px);
+  height:calc(100% - 4px);
+  rx:24px;
+  ry:24px;
+  fill:none;
+  vector-effect:non-scaling-stroke;
+}
+.auth-panel > .auth-neon-perimeter .auth-neon-track{
+  stroke:#867ce9;
+  stroke-opacity:.23;
+  stroke-width:1;
+}
+.auth-panel > .auth-neon-perimeter .auth-neon-halo,
+.auth-panel > .auth-neon-perimeter .auth-neon-runner{
+  stroke-dasharray:8 92;
+  stroke-dashoffset:0;
+  stroke-linecap:round;
+  animation:auth-neon-lap var(--auth-neon-speed) linear infinite;
+}
+.auth-panel > .auth-neon-perimeter .auth-neon-halo{
+  stroke:#8e82ff;
+  stroke-width:5;
+  stroke-opacity:.23;
+}
+.auth-panel > .auth-neon-perimeter .auth-neon-runner{
+  stroke:url(#auth-neon-glow-gradient);
+  stroke-width:2.4;
+  stroke-opacity:.98;
+}
+/* Ensure inputs and tabs remain above the noninteractive border decoration. */
+.auth-panel > .auth-nav,
+.auth-panel > .auth-screen,
+.auth-panel > .auth-footer{
+  position:relative;
+  z-index:1;
+}
+@keyframes auth-neon-lap{
+  from{stroke-dashoffset:0}
+  to{stroke-dashoffset:-100}
+}
+/* Card radius is smaller on phones, while the trace still follows its perimeter. */
+@media(max-width:520px){
+  .auth-panel > .auth-neon-perimeter rect{rx:19px;ry:19px}
+}
+/* Respect platform energy and motion choices; keep a subtle static accent. */
+html.mtunz-motion-paused .auth-neon-perimeter .auth-neon-halo,
+html.mtunz-motion-paused .auth-neon-perimeter .auth-neon-runner{
+  animation-play-state:paused!important;
+}
+html.mtunz-save-data .auth-neon-perimeter .auth-neon-halo{display:none}
+html.mtunz-save-data .auth-neon-perimeter .auth-neon-runner{
+  animation:none!important;
+  stroke-dasharray:12 88;
+}
+@media(prefers-reduced-motion:reduce){
+  .auth-panel > .auth-neon-perimeter .auth-neon-halo{display:none}
+  .auth-panel > .auth-neon-perimeter .auth-neon-runner{
+    animation:none!important;
+    stroke-dasharray:12 88;
+    stroke-opacity:.65;
+  }
+}
