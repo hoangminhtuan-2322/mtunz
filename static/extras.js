@@ -276,7 +276,7 @@ async function extraAction(btn){
  }
  case 'profile-view':{
   const r=(await api(`/api/profile/${id}`)).profile;
-  modal({title:'Hồ sơ người dùng',content:`<div class="row">${avatar(r.username,false,'xl')}<div><h3>${esc(r.display_name||r.username)}</h3><div class="hint">@${esc(r.username)}</div></div></div><p>${esc(r.bio||'Chưa có lời giới thiệu.')}</p><p>Tham gia: ${date(r.created_at)}</p>`,confirm:'Đóng'});break;
+  modal({title:'Hồ sơ người dùng',content:`<div class="row">${avatar(r.username,false,'xl')}<div><h3>${esc(r.display_name||r.username)}</h3><div class="hint">@${esc(r.username)} · ID #${Number(r.id)}</div></div></div><p>${esc(r.bio||'Chưa có lời giới thiệu.')}</p><p>Tham gia: ${date(r.created_at)}</p>`,confirm:'Đóng'});break;
  }
  case 'mute-chat':case 'archive-chat':{
   const f=state.friends.find(x=>x.other_id===id);if(!f)return;
