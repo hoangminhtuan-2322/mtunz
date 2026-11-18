@@ -35,5 +35,5 @@ assert(lobby.includes('disabled'),'Create group remains blocked until friend is 
 assert(css.includes('.group-lobby-panels')&&css.includes('gap:24px'),'Desktop blocks must be visibly separated');
 assert(css.includes('@media(max-width:600px)')&&css.includes('gap:18px'),'Mobile gap must be deliberate');
 assert(css.includes('.group-create-card')&&css.includes('.group-lobby-teaser'));
-assert(app.includes("['world','group','Chat thế giới · Sắp ra mắt']"),'World page remains accessible from app navigation');
+assert(app.includes("['world','group','Chat thế giới']"),'World page remains accessible from app navigation');
 console.log('Group lobby OK: concise Coming soon, separated cards, working group form and mobile spacing.');
