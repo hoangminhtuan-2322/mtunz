@@ -787,6 +787,12 @@ async def auth_password(request: Request, body: PasswordLogin):
             raise HTTPException(403, {'code':'sanction','kind':u['sanction_kind'],
                                       'until':u['sanction_until'],'reason':u['sanction_reason']})
         if u['is_admin'] and not u['pin_hash']:
+            # Prevent concurrent password-only Admin logins from each observing
+            # zero active sessions before either creates its own session.
+            if POSTGRES_MODE:
+                c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(u['id'],))
+            if one(c,'SELECT 1 FROM sessions WHERE user_id=? AND expires_at>?',(u['id'],now())):
+                raise HTTPException(409,'Phiên Admin đã hoạt động. Hãy bật PIN tại phiên hiện tại để phê duyệt thiết bị thứ hai.')
             old_device = request.cookies.get(REMEMBER_COOKIE)
             if valid_remember_token(old_device):
                 c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(old_device),))
@@ -823,11 +829,12 @@ async def auth_pin(request: Request, body: PinLogin):
         if r['sanction_kind'] and (not r['sanction_until'] or r['sanction_until'] > now()):
             raise HTTPException(403,'Tài khoản đang bị hạn chế.')
         c.execute('DELETE FROM login_challenges WHERE token_hash=?',(digest(body.challenge),))
-        raw = issue_session(c,r['user_id'],request)
+        is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
+        pending=admin_login_gate(c,r['user_id'],request) if is_admin else None
+        raw=issue_session(c,r['user_id'],request) if not pending else None
         previous = request.cookies.get(REMEMBER_COOKIE)
         if valid_remember_token(previous):
             c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(previous),))
-        is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
         # Admins never receive a PIN-only long-lived browser credential.
         saved = token() if body.remember_device and not is_admin and not r['needs_display_name'] else None
         if saved:
@@ -839,6 +846,9 @@ async def auth_pin(request: Request, body: PinLogin):
                       (digest(saved),r['user_id'],created+REMEMBER_SECONDS,created,created,
                        info['device_name'],info['device_type'],info['browser'],info['os_name'],
                        info['location_hint'],info['network_hint']))
+    if pending:
+        await hub.admins('admin-approval-request')
+        return pending
     response = session_response({'ok':True,'admin':is_admin,'remembered':bool(saved)},raw)
     if saved: remember_cookie(response,saved)
     elif request.cookies.get(REMEMBER_COOKIE):
@@ -1129,6 +1139,7 @@ async def get_friends(request: Request):
                  u.display_name,u.show_online,u.last_seen,u.public_id,
                  u.avatar_attachment_id,u.profile_visibility,
                  COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
+                 COALESCE(p.pinned,0) AS pinned,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
                  (SELECT body FROM messages
@@ -1158,6 +1169,7 @@ async def get_friends(request: Request):
             r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
             r['muted']=bool(r['muted'])
             r['archived']=bool(r['archived'])
+            r['pinned']=bool(r['pinned'])
             r['restricted']=bool(r['restricted'])
             r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
                              if r['avatar_attachment_id'] and r['profile_visibility']!='only_me' else None)
@@ -1168,7 +1180,8 @@ async def get_friends(request: Request):
             last_body=r.pop('last_body')
             last_sender=r.pop('last_sender')
             r['last_message']={'body':last_body,'created_at':last_created,'sender_id':last_sender} if last_created else None
-        allrows.sort(key=lambda row:row['last_message']['created_at'] if row['last_message'] else row['created_at'],reverse=True)
+        allrows.sort(key=lambda row:(int(row['pinned']),
+             row['last_message']['created_at'] if row['last_message'] else row['created_at']),reverse=True)
     return {'friends':allrows}
 
 
@@ -1565,6 +1578,7 @@ async def admin_users(request:Request,q:str=''):
 class Sanction(BaseModel):
     kind:Literal['ban','lock','unban']
     minutes:int|None=Field(default=None,ge=1,le=5256000)
+    seconds:int|None=Field(default=None,ge=1,le=157680000)
     reason:str=Field(default='',max_length=250)
     admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
@@ -1621,20 +1635,26 @@ async def admin_user_session_security(request:Request,uid:int):
 @app.post('/api/admin/users/{uid}/sanction')
 async def admin_sanction(request:Request,uid:int,body:Sanction):
     admin=require_admin(request)
-    if body.kind=='lock' and not body.minutes:
+    if body.kind=='lock' and not (body.seconds or body.minutes):
         raise HTTPException(422, 'Khóa tạm thời cần có thời hạn cụ thể.')
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    if body.kind!='unban' and len(body.reason.strip())<5:
+        raise HTTPException(422,'Phải ghi rõ lý do xử lý tối thiểu 5 ký tự.')
+    if admin['pin_hash']:
+        verify_admin_pin_stepup(request,admin,body.admin_pin)
+    else:
+        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
     with db() as c:
         u=one(c,'SELECT * FROM users WHERE id=? AND is_admin=0',(uid,))
         if not u:raise HTTPException(404,'Không tìm thấy tài khoản.')
         kind=None if body.kind=='unban' else body.kind
-        expiry=(now()+body.minutes*60) if kind and body.minutes else None
+        duration=body.seconds if body.seconds is not None else body.minutes*60 if body.minutes else None
+        expiry=(now()+duration) if kind and duration else None
         c.execute('UPDATE users SET sanction_kind=?,sanction_until=?,sanction_reason=? WHERE id=?',
                   (kind,expiry,body.reason.strip() if kind else None,uid))
         if kind:
             c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
             c.execute('DELETE FROM trusted_devices WHERE user_id=?',(uid,))
-        admin_log(c,admin['id'],'sanction_'+body.kind,f"{u['username']}: {body.reason}; mins={body.minutes}")
+        admin_log(c,admin['id'],'sanction_'+body.kind,f"user_id={uid}; reason={body.reason.strip()[:180]}; seconds={duration}")
     if kind:
         await hub.user(uid,'account-sanction',kind=kind,until=expiry,reason=body.reason)
         await hub.terminate_user(uid)
@@ -2012,3 +2032,5 @@ from world_chat import install as _install_world_chat
 _install_world_chat(_sys.modules[__name__])
 from social_profile import install as _install_social_profile
 _install_social_profile(_sys.modules[__name__])
+from admin_hardening import install as _install_admin_hardening
+_install_admin_hardening(_sys.modules[__name__])

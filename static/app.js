@@ -37,7 +37,7 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
  regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
- adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false};
+ adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false,adminApprovalToken:null,adminApprovalData:null};
 let toastTimer=0,typingTimer=0,socketRetry=null,typingLastSent=0,typingContext='';
 
 // A tab-scoped marker survives a normal reload, but not a new ordinary tab.
@@ -343,6 +343,20 @@ function connectSocket(){
    }
    if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');await post('/api/auth/logout').catch(()=>{});resetAuthAfterLogout();return;}
    if(t==='account-deletion-updated'&&state.user?.is_admin){await loadAdmin();return;}
+   if(t==='admin-approval-request'&&state.user?.is_admin){
+     toast('🔐 Có thiết bị đang yêu cầu phê duyệt đăng nhập Admin.','info');
+     if(state.adminTab==='security'){
+       state.adminApprovalData=await api('/api/admin/login-approvals').catch(()=>null);
+       renderAdmin();
+     }
+     return;
+   }
+   if(t==='world-status'&&state.user&&!state.user.is_admin){
+     await loadWorldStatus().catch(()=>{});
+     if(state.tab==='world')await loadWorld(true).catch(()=>{});
+     else renderApp();
+     return;
+   }
    if(t==='registration-updated'){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin)loadAdmin();
@@ -441,8 +455,9 @@ async function enterApp(resume=false){
   state.accountDeletion=await api('/api/me/deletion');
   await refreshFriends(false);
   await refreshGroups(false);
+  if(typeof loadWorldStatus==='function')await loadWorldStatus().catch(()=>{});
   if(typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
-  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','support'];
+  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
    state.friends.some(f=>f.other_id===previous.selected&&f.state==='accepted')){
@@ -611,6 +626,7 @@ function authTabs(){return `<div class="auth-nav" role="group" aria-label="Đi�
  </div>`;}
 function authLogin(){
  const step=state.step;
+ if(step==='approval')return adminApprovalWaiting();
  if(step==='remembered')return `<span class="eyebrow">THIẾT BỊ ĐƯỢC GHI NHỚ</span>
  <h1>Chào mừng trở lại, ${esc(state.username)}!</h1>
  <div class="auth-remember-summary">${icon('shield',18)}<span>Phiên truy cập đang khóa. Chỉ mở sau khi xác minh PIN.</span></div>
@@ -776,12 +792,12 @@ async function refreshFriends(redraw=true){
   if(state.selected && !state.friends.some(f=>f.other_id===state.selected&&f.state==='accepted')){
     state.selected=null;
   }
-  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings')renderApp();else updateChatHeader();}
+  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
 }
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
   return `<div class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
-   ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
+   ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
    <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></div>`;
 }
 function sideBody(){
@@ -792,12 +808,15 @@ function sideBody(){
   return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
   <div class="side-label">Cuộc trò chuyện · ${filtered.length}</div>
   ${filtered.length?filtered.map(friendItem).join(''):`<div class="empty" style="padding:35px 12px;font-size:12px">${q?'Không tìm thấy hội thoại.':'Chưa có bạn bè nào. Hãy tìm và kết bạn!'}</div>`}
+  ${state.friends.some(f=>f.archived&&f.state==='accepted')?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${state.friends.filter(f=>f.archived&&f.state==='accepted').length}</button>`:''}
   ${groupSideItems()}`;
 }
 function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
-  const secondary=[['restricted','shield','Danh sách hạn chế'],['support','inbox','Hỗ trợ'],['world','group','Chat thế giới']];
+  const secondary=[['restricted','shield','Danh sách hạn chế'],
+    ['archive','archive','Đã lưu trữ'],['support','inbox','Hỗ trợ'],
+    ...(state.worldData?.status?.open?[['world','group','Chat thế giới']]:[])];
   const moreOpen=!!state.railMoreOpen || secondary.some(([tab])=>state.tab===tab);
   const item=([tab,ic,label])=>`<button type="button" class="rail-btn ${state.tab===tab?'active':''}" title="${label}" aria-label="${label}" aria-current="${state.tab===tab?'page':'false'}" data-act="app-tab" data-tab="${tab}">
     <span class="rail-icon" aria-hidden="true">${icon(ic,20)}</span><span class="rail-text">${label}</span></button>`;
@@ -841,7 +860,8 @@ function convoHeader(f){if(!f)return '';
  <button class="btn ghost sm" data-act="call-audio" data-id="${f.other_id}" title="Gọi thoại">${icon('phone',15)}</button>
  <button class="btn ghost sm" data-act="call-video" data-id="${f.other_id}" title="Gọi video">${icon('video',15)}</button>
  <button class="btn ghost sm" data-act="mute-chat" data-id="${f.other_id}" title="${f.muted?'Bật':'Tắt'} thông báo">${icon('mute',15)}</button>
- <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}" title="Lưu trữ hội thoại">${icon('archive',15)}</button>
+ <button class="btn ghost sm" data-act="pin-chat" data-id="${f.other_id}" title="${f.pinned?'Bỏ ghim':'Ghim'} hội thoại">${icon('check',15)} <span class="button-word">${f.pinned?'Bỏ ghim':'Ghim'}</span></button>
+ <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}" title="${f.archived?'Bỏ lưu trữ':'Lưu trữ'} hội thoại">${icon('archive',15)}</button>
  <button class="btn ghost sm" data-act="chat-restrict" data-id="${f.other_id}" title="Hạn chế / bỏ hạn chế">${icon('shield',15)} <span class="button-word">${f.restricted?'Bỏ hạn chế':'Hạn chế'}</span></button>
  <button class="btn danger sm" data-act="chat-block" data-id="${f.other_id}" title="Chặn tài khoản">${icon('ban',15)} <span class="button-word">Chặn</span></button></header>`;}
 function updateChatHeader(){
@@ -953,6 +973,17 @@ function friendsContent(){
  ${accepted.length?accepted.map(f=>`<div class="people-row">${avatar(f.username,f.online)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">${f.restricted?'Đang ở danh sách hạn chế':f.online?'Đang hoạt động':'Ngoại tuyến'}</div></div>
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
 }
+function archiveContent(){
+ const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived);
+ return `<div class="section-wrap"><span class="eyebrow">TIN NHẮN ĐÃ CẤT GIỮ</span>
+ <h1 class="section-title">Hội thoại lưu trữ</h1>
+ <p class="section-lead">Ẩn cuộc trò chuyện khỏi hộp thư chính nhưng không xóa tin nhắn. Có thể mở lại bất cứ lúc nào.</p>
+ ${archived.length?archived.map(f=>`<div class="people-row">${avatar(f.username,false,'sm',f.avatar_url)}
+ <div class="grow"><strong>${esc(f.display_name||f.username)}</strong>
+ <div class="hint">${f.last_message?esc(short(f.last_message.body||'Tin nhắn đính kèm',70)):'Chưa có tin nhắn'} ${f.pinned?'· 📌 Đã ghim':''}</div></div>
+ <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">Xem</button>
+ <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}">Bỏ lưu trữ</button></div>`).join(''):'<div class="empty">Chưa có hội thoại nào được lưu trữ.</div>'}</div>`;
+}
 function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepted'&&f.restricted);
  return `<div class="section-wrap"><span class="eyebrow">KHÔNG GIAN RIÊNG</span><h1 class="section-title">Người dùng bị hạn chế</h1>
  <p class="section-lead">Các cuộc trò chuyện bị hạn chế sẽ được ẩn khỏi hộp thư chính; trạng thái trực tuyến và xác nhận đã xem của bạn không hiển thị với họ.</p>
@@ -975,6 +1006,8 @@ function settingsContent(){
    <div class="rail-settings-actions">
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Lịch sử Chat thế giới</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="archive">${icon('archive',16)} Hội thoại đã lưu trữ</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Chat thế giới</button>
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
@@ -1075,6 +1108,7 @@ function renderApp(){
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
   state.tab==='world'?`${memberHeader('Chat thế giới','Không gian chung · Quy tắc cộng đồng')}${typeof worldPage==='function'?worldPage():worldComingSoon()}`:
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
+  state.tab==='archive'?`${memberHeader('Lưu trữ','Tin nhắn được cất giữ an toàn')}<div class="main-body">${archiveContent()}</div>`:
   state.tab==='friends'?`${memberHeader('Bạn bè','Quản lý các kết nối của bạn') }<div class="main-body">${friendsContent()}</div>`:
   state.tab==='restricted'?`${memberHeader('Danh sách hạn chế','Ưu tiên sự riêng tư') }<div class="main-body">${restrictedContent()}</div>`:
   state.tab==='profile'?`${memberHeader('Hồ sơ cá nhân','Thông tin của bạn') }<div class="main-body">${profileContent()}</div>`:
@@ -1132,6 +1166,10 @@ async function loadAdmin(){
     if(state.adminTicket&&!state.adminData.some(t=>t.id===state.adminTicket))state.adminTicket=null;
     if(state.adminTicket){state.adminTicketMessages=(await api(`/api/admin/tickets/${state.adminTicket}/messages`)).messages;}
     break;
+   }
+   case 'security':{
+    state.adminApprovalData=await api('/api/admin/login-approvals');
+    state.adminData=null;break;
    }
    case 'audit':{
     const f=state.adminAuditFilter;
@@ -1268,6 +1306,7 @@ function adminSecurity(){
      </div>
      ${!configured?'<p class="hint" style="margin-top:12px">Cần bật PIN để có quyền xóa vĩnh viễn tức thì.</p>':''}
    </div>
+   ${typeof adminV3SecurityPanel==='function'?adminV3SecurityPanel():''}
    ${state.savedDevice?`<div class="card" style="max-width:650px;margin-top:17px"><h3>${icon('lock',18)} Khóa phiên hiện tại</h3><p class="hint" style="margin:11px 0">Quay về màn hình PIN mà không xóa thiết bị được ghi nhớ.</p><button class="btn ghost" type="button" data-act="lock-device">${icon('lock',16)} Khóa ngay</button></div>`:''}
  </div>`;
 }
@@ -1387,12 +1426,14 @@ function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||
   <button class="btn primary" type="submit">${icon('search',16)} Áp dụng bộ lọc</button>
   <button class="btn ghost" type="button" data-act="admin-audit-clear">Xóa bộ lọc</button>
  </form>
- <p class="admin-muted-note">Nhật ký là bằng chứng kiểm toán: chỉ được xem, lọc và xuất; không cho sửa hoặc xóa dữ liệu gốc.</p>
+ <p class="admin-muted-note">Nhật ký có thể được chọn xóa sau khi Admin nhập PIN. Hệ thống lưu lại dấu xác nhận tối thiểu.</p>
+ ${typeof adminV3AuditControls==='function'?adminV3AuditControls():''}
  <section class="card admin-audit-card" aria-label="Danh sách sự kiện quản trị">
  <div class="admin-audit-header"><b>${logs.length.toLocaleString('vi-VN')} sự kiện đã tải / ${Number(meta.total||0).toLocaleString('vi-VN')} kết quả</b><span>Thời gian hiển thị theo thiết bị của bạn</span></div>
  ${logs.length?logs.map(l=>{
   const [level,label]=auditLevel(l);
   return `<div class="audit-item admin-audit-entry" data-level="${level}">
+    <label class="admin-v3-audit-select" title="Chọn nhật ký #${l.id}"><input type="checkbox" data-admin-audit-select value="${l.id}" aria-label="Chọn nhật ký #${l.id}"></label>
     <div class="admin-audit-entry-main">
      <div class="admin-audit-heading"><strong>${esc(auditLabel(l.action))}</strong><span class="audit-severity ${level}">${label}</span></div>
      <p class="admin-audit-detail">${esc(auditMeaning(l).description)}</p>
@@ -1910,6 +1951,12 @@ document.addEventListener('submit',async event=>{
    case 'login-pin':{
     const unlocked=await post('/api/auth/pin',{challenge:state.challenge,pin:val('pin'),
       remember_device:fd.get('remember_device')==='on'});
+    if(unlocked.next==='admin-approval'){
+      state.adminApprovalToken=unlocked.approval_token;state.step='approval';
+      renderAuth();startAdminApprovalPolling();
+      toast('Thiết bị thứ hai đang chờ phiên Admin hiện tại phê duyệt.','info');
+      break;
+    }
     state.savedDevice=!!unlocked.remembered;
     state.rememberedDevice=state.savedDevice;
     state.user=(await api('/api/me')).user;

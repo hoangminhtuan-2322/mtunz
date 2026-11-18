@@ -43,7 +43,8 @@ def install(core):
           body TEXT NOT NULL,
           created_at INTEGER NOT NULL,
           deleted_at INTEGER,
-          anonymous INTEGER NOT NULL DEFAULT 0
+          anonymous INTEGER NOT NULL DEFAULT 0,
+          attachment_id INTEGER REFERENCES attachments(id)
         );
         CREATE INDEX IF NOT EXISTS world_messages_recent_idx
           ON world_messages(created_at,id);
@@ -79,8 +80,11 @@ def install(core):
         CREATE INDEX IF NOT EXISTS user_reports_reporter_idx
           ON user_reports(reporter_id,target_id,created_at);
         """)
-        if 'anonymous' not in {v['name'] for v in c.execute('PRAGMA table_info(world_messages)')}:
+        message_fields={v['name'] for v in c.execute('PRAGMA table_info(world_messages)')}
+        if 'anonymous' not in message_fields:
             c.execute('ALTER TABLE world_messages ADD COLUMN anonymous INTEGER NOT NULL DEFAULT 0')
+        if 'attachment_id' not in message_fields:
+            c.execute('ALTER TABLE world_messages ADD COLUMN attachment_id INTEGER')
         c.execute("""INSERT INTO world_settings(id,enabled,schedule_enabled,open_minute,close_minute,updated_at)
                      VALUES(1,0,0,540,1320,0) ON CONFLICT(id) DO NOTHING""")
 
@@ -142,7 +146,12 @@ def install(core):
                 'display_name':('Ẩn danh' if anonymous and not admin else row['display_name'] or 'Thành viên'),
                 'anonymous':anonymous, 'is_mine':viewer_id==row['sender_id'] if viewer_id else False,
                 'body':'' if row['deleted_at'] else row['body'],
-                'created_at':row['created_at'],'deleted':bool(row['deleted_at'])}
+                'created_at':row['created_at'],'deleted':bool(row['deleted_at']),
+                'attachment':(
+                    {'id':row['attachment_id'],'name':row['attachment_name'],
+                     'mime':row['attachment_mime'],'size':row['attachment_size'],
+                     'url':f'/api/attachments/{row["attachment_id"]}'}
+                    if row.get('attachment_id') and not row['deleted_at'] else None)}
 
     @app.get('/api/world/status')
     async def world_status(request:Request):
@@ -159,14 +168,18 @@ def install(core):
             raise HTTPException(403,'Khu vực này dành cho thành viên.')
         with db() as c:
             where='WHERE m.id<?' if before>0 else ''
-            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,u.display_name
-                            FROM world_messages m JOIN users u ON u.id=m.sender_id '''+
+            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,
+                                   m.attachment_id,a.original_name AS attachment_name,
+                                   a.mime AS attachment_mime,a.size AS attachment_size,u.display_name
+                            FROM world_messages m JOIN users u ON u.id=m.sender_id
+                            LEFT JOIN attachments a ON a.id=m.attachment_id '''+
                       where+' ORDER BY m.id DESC LIMIT 70', (before,) if before>0 else ())
             return {'messages':[world_record(c,x,viewer_id=user['id']) for x in rows[::-1]],
                     'status':effective_status(c,user['id'])}
 
     class WorldMessage(BaseModel):
-        body:str=Field(min_length=1,max_length=1200)
+        body:str=Field(default='',max_length=1200)
+        attachment_id:int|None=None
 
     @app.post('/api/world/messages')
     async def world_send(request:Request,body:WorldMessage):
@@ -174,8 +187,8 @@ def install(core):
         if user['is_admin']:
             raise HTTPException(403,'Quản trị viên không gửi tin bằng tài khoản quản trị.')
         content=body.body.strip()
-        if not content:
-            raise HTTPException(422,'Hãy nhập nội dung tin nhắn.')
+        if not content and not body.attachment_id:
+            raise HTTPException(422,'Hãy nhập tin nhắn hoặc chọn tệp đính kèm.')
         at=timestamp()
         penalty_event=None
         global_lock=False
@@ -187,6 +200,8 @@ def install(core):
             if state['muted_until']>at:
                 raise HTTPException(423,{'code':'world_muted','muted_until':state['muted_until'],
                                          'strikes':state['strikes'],'warnings':state['warnings']})
+            if body.attachment_id is not None:
+                core.file_for_message(c,body.attachment_id,user['id'])
             c.execute('INSERT INTO world_penalties(user_id) VALUES(?) ON CONFLICT(user_id) DO NOTHING',(user['id'],))
             # Acquire a row-level lock on PostgreSQL. Concurrent submits cannot
             # escape the 5-in-3s rule by racing on different API connections.
@@ -235,12 +250,19 @@ def install(core):
                 c.execute('UPDATE world_penalties SET window_started=?,window_count=? WHERE user_id=?',
                           (started,count,user['id']))
                 anonymous=bool(user['world_anonymous'])
-                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous) VALUES(?,?,?,?)',
-                                 (user['id'],content,at,int(anonymous)))
+                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous,attachment_id) VALUES(?,?,?,?,?)',
+                                 (user['id'],content,at,int(anonymous),body.attachment_id))
                 mid=result.lastrowid
                 saved={'id':mid,'sender_id':0 if anonymous else user['id'],
                        'display_name':'Ẩn danh' if anonymous else user['display_name'] or 'Thành viên',
-                       'anonymous':anonymous,'body':content,'created_at':at,'deleted':False}
+                       'anonymous':anonymous,'body':content,'created_at':at,'deleted':False,
+                       'attachment':None}
+                if body.attachment_id:
+                    file=one(c,'SELECT id,original_name,mime,size FROM attachments WHERE id=?',
+                             (body.attachment_id,))
+                    saved['attachment']={'id':file['id'],'name':file['original_name'],
+                                         'mime':file['mime'],'size':file['size'],
+                                         'url':f'/api/attachments/{file["id"]}'}
         if penalty_event:
             if global_lock:
                 await hub.user(user['id'],'account-sanction',kind='lock',
@@ -273,8 +295,11 @@ def install(core):
                                  ORDER BY p.last_violation_at DESC LIMIT 50''',(timestamp(),timestamp()))
             pending=one(c,"SELECT count(*) AS n FROM user_reports WHERE status='pending'")['n']
             total=one(c,'SELECT COUNT(*) AS n FROM world_messages')['n']
-            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,u.display_name
+            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,
+                                   m.attachment_id,a.original_name AS attachment_name,
+                                   a.mime AS attachment_mime,a.size AS attachment_size,u.display_name
                                 FROM world_messages m JOIN users u ON u.id=m.sender_id
+                                LEFT JOIN attachments a ON a.id=m.attachment_id
                                 ORDER BY m.id DESC LIMIT 30''')
             return {'config':config,'offenders':offenders,
                     'pending_reports':pending,'total_messages':total,
@@ -302,13 +327,14 @@ def install(core):
         user_id:int
         minutes:int=Field(ge=0,le=43200)  # 0 = remove manual mute
         reason:str=Field(min_length=5,max_length=250)
-        admin_password:str=Field(min_length=1,max_length=128)
+        admin_password:str=Field(default='',max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.post('/api/admin/world/mute')
     async def admin_world_mute(request:Request,body:WorldMute):
         admin=require_admin(request)
-        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        if admin['pin_hash']:core.verify_admin_pin_stepup(request,admin,body.admin_pin)
+        else:verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
         at=timestamp()
         with db() as c:
             target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(body.user_id,))
@@ -330,13 +356,14 @@ def install(core):
     class WorldReset(BaseModel):
         user_id:int
         reason:str=Field(min_length=5,max_length=250)
-        admin_password:str=Field(min_length=1,max_length=128)
+        admin_password:str=Field(default='',max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.post('/api/admin/world/reset')
     async def admin_world_reset(request:Request,body:WorldReset):
         admin=require_admin(request)
-        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        if admin['pin_hash']:core.verify_admin_pin_stepup(request,admin,body.admin_pin)
+        else:verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
         with db() as c:
             target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(body.user_id,))
             if not target:raise HTTPException(404,'Không tìm thấy thành viên.')
