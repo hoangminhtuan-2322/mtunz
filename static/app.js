@@ -208,7 +208,7 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
       <p class="dialog-description" id="${identity}-desc">${esc(description||'Vui lòng kiểm tra thông tin trước khi tiếp tục.')}</p>
       ${content?`<div class="dialog-content">${content}</div>`:''}
       <div class="modal-actions">
-        ${closable?`<button class="btn ghost" id="modal-cancel" type="button">${esc(cancel)}</button>`:''}
+        ${closable&&cancel!==null?`<button class="btn ghost" id="modal-cancel" type="button">${esc(cancel)}</button>`:''}
         <button class="btn ${danger?'danger':'primary'}" id="modal-confirm" type="button">${icon(danger?'shield':'check',16)}<span>${esc(confirm)}</span></button>
       </div>
     </div>
@@ -1188,20 +1188,40 @@ function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||
 }
 async function adminAuditDetail(eventId){
  const r=await api('/api/admin/audit/'+eventId);
- const e=r.event,[level,label]=auditLevel(e);
- modal({title:'Chi tiết sự kiện #'+e.id,description:'Bản ghi kiểm toán không thể chỉnh sửa hoặc xóa trên trang quản trị.',
-  confirm:'Đóng',content:`<div class="admin-audit-modal">
-  ${adminDetailRow('Hành động',esc(auditLabel(e.action)))}
-  ${adminDetailRow('Mã sự kiện','#'+e.id)}
-  ${adminDetailRow('Mã hành động',esc(e.action))}
-  ${adminDetailRow('Mức độ',esc(label))}
-  ${adminDetailRow('Quản trị viên',esc(e.admin_username)+' (#'+e.admin_id+')')}
-  ${adminDetailRow('Thời điểm',deadlineDate(e.created_at))}
-  ${adminDetailRow('Unix timestamp',String(e.created_at))}
-  <div class="admin-audit-raw"><b>Chi tiết đã ghi nhận</b><pre>${esc(e.detail||'Không có dữ liệu')}</pre></div>
-  <p class="hint">Thông tin chỉ gồm dữ liệu thực tế được ghi tại thời điểm xảy ra sự kiện. Không tự suy đoán địa chỉ IP, thiết bị hoặc nội dung chưa được lưu.</p>
-  </div>`});
+ const e=r.event,[level,label]=auditLevel(e),info=auditMeaning(e);
+ const who=e.admin_username||'Không có thông tin',whoId=Number(e.admin_id);
+ const actor=esc(who)+(Number.isSafeInteger(whoId)?' (#'+whoId+')':'');
+ const facts=info.facts.map(([name,value])=>adminDetailRow(name,esc(value))).join('');
+ modal({title:'Sự kiện #'+e.id+' · '+auditLabel(e.action),
+   description:'Giải thích nội dung được hệ thống ghi lại để dễ kiểm tra và đối soát.',
+   confirm:'Đóng',cancel:null,content:`<div class="admin-audit-modal">
+   <section class="admin-audit-explanation" aria-label="Ý nghĩa sự kiện">
+     <span class="admin-audit-kicker">SỰ KIỆN #${Number(e.id)}</span>
+     <h3>${esc(auditLabel(e.action))}</h3>
+     <p>${esc(info.description)}</p>
+   </section>
+   <section class="admin-audit-section" aria-label="Người thực hiện và thời gian">
+     <h4>Ai thực hiện và khi nào?</h4>
+     ${adminDetailRow('Người thực hiện',actor)}
+     ${adminDetailRow('Thời gian',deadlineDate(e.created_at))}
+     ${adminDetailRow('Mức độ hệ thống',esc(label))}
+     <p class="admin-audit-note">Mức độ do hệ thống phân loại, không có nghĩa mọi tác động đã được đánh giá đầy đủ.</p>
+   </section>
+   <section class="admin-audit-section" aria-label="Nội dung được ghi nhận">
+     <h4>Phạm vi và thông tin liên quan</h4>
+     ${facts||'<p class="admin-audit-note">Nhật ký không cung cấp thêm đối tượng hoặc số lượng cụ thể cho sự kiện này.</p>'}
+     <p class="admin-audit-note">${esc(info.note)}</p>
+   </section>
+   <details class="admin-audit-technical">
+     <summary>Thông tin kỹ thuật gốc (dành cho đối soát)</summary>
+     ${adminDetailRow('Mã sự kiện','#'+Number(e.id))}
+     ${adminDetailRow('Mã hành động',esc(e.action||'Không có'))}
+     ${adminDetailRow('Thời gian Unix',String(Number(e.created_at)))}
+     <div class="admin-audit-raw"><b>Nội dung nguyên bản</b><pre>${esc(e.detail||'Không có nội dung được lưu')}</pre></div>
+   </details>
+   </div>`});
 }
+
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
