@@ -156,7 +156,33 @@
 .admin-shell .admin-audit-entry>.btn{white-space:nowrap;flex-shrink:0}
 .admin-shell .admin-audit-load{max-width:330px;margin:0 auto}
 .admin-shell .admin-user-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
-#modal-root .admin-audit-modal{display:flex;flex-direction:column;gap:8px}
+/* Human-first audit record: compact on mobile, full details when requested. */
+#modal-root .premium-dialog:has(.admin-audit-modal){width:min(690px,100%);max-width:690px}
+#modal-root .premium-dialog:has(.admin-audit-modal) .dialog-content{max-height:min(65dvh,630px)}
+#modal-root .admin-audit-modal{display:flex;flex-direction:column;gap:14px;min-width:0}
+#modal-root .admin-audit-explanation{padding:16px;border:1px solid #53688b6b;background:linear-gradient(145deg,#253655,#192b47);border-radius:14px}
+#modal-root .admin-audit-kicker{display:block;color:#b5c6e2;font-size:10px;font-weight:800;letter-spacing:.12em;margin-bottom:7px}
+#modal-root .admin-audit-explanation h3{font-size:16px;line-height:1.4;margin:0 0 9px;color:#f5f6ff;overflow-wrap:anywhere}
+#modal-root .admin-audit-explanation p{margin:0;color:#d6e3f5;font-size:12.5px;line-height:1.75}
+#modal-root .admin-audit-section{padding:14px 15px;border:1px solid #344b6a;border-radius:13px;background:#122139}
+#modal-root .admin-audit-section h4{font-size:12.5px;color:#d8e6fa;margin:0 0 10px}
+#modal-root .admin-audit-section .admin-detail-row{gap:13px;padding:10px 0;border-bottom:1px solid #ffffff12;min-width:0}
+#modal-root .admin-audit-section .admin-detail-row strong{font-size:12px;min-width:0;max-width:66%;text-align:right;overflow-wrap:anywhere;line-height:1.55}
+#modal-root .admin-audit-section .admin-detail-row .muted{font-size:11px;line-height:1.55}
+#modal-root .admin-audit-section .admin-detail-row:last-of-type{border-bottom:0}
+#modal-root .admin-audit-note{margin:11px 0 0;color:#9db1cc;font-size:11px;line-height:1.7}
+#modal-root .admin-audit-technical{padding:13px 15px;border:1px solid #344b6a;border-radius:13px;background:#111d31}
+#modal-root .admin-audit-technical summary{cursor:pointer;list-style-position:inside;color:#c0d0ed;font-weight:750;font-size:12px;line-height:1.7}
+#modal-root .admin-audit-technical summary:focus-visible{outline:2px solid #8adfff;outline-offset:3px}
+#modal-root .admin-audit-technical[open] summary{padding-bottom:11px;margin-bottom:7px;border-bottom:1px solid #ffffff17}
+#modal-root .admin-audit-technical .admin-detail-row{gap:12px;padding:9px 0;min-width:0}
+#modal-root .admin-audit-technical .admin-detail-row strong{font-size:11px;text-align:right;max-width:65%;overflow-wrap:anywhere}
+@media(max-width:520px){
+ #modal-root .admin-audit-section,#modal-root .admin-audit-explanation,#modal-root .admin-audit-technical{padding:12px}
+ #modal-root .admin-audit-section .admin-detail-row{align-items:flex-start}
+ #modal-root .admin-audit-section .admin-detail-row strong{max-width:62%}
+ #modal-root .premium-dialog:has(.admin-audit-modal) .dialog-content{max-height:59dvh}
+}
 #modal-root .admin-audit-raw{padding:13px;background:#0e1b30;border:1px solid #384b69;border-radius:12px}
 #modal-root .admin-audit-raw b{font-size:12px}
 #modal-root .admin-audit-raw pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;font:12px/1.65 ui-monospace,Consolas,monospace;color:#dde8f7}
