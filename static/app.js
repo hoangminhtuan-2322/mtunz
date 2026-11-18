@@ -441,7 +441,7 @@ async function enterApp(resume=false){
    state.groupSelected=previous.groupSelected;
   }
   if(state.tab==='notices')await loadNotices();
-  if(state.tab==='world')await loadWorld(false);
+  if(state.tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
   if(state.tab==='settings'){try{await loadWorldStatus();}catch{}}
   if(state.tab==='support'){
    state.mode='support';
@@ -1011,8 +1011,11 @@ function renderApp(){
 }
 async function goTab(tab){
  state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
- if(tab==='settings'){state.accountDeletion=await api('/api/me/deletion');await loadWorldStatus();}
- if(tab==='world')await loadWorld(false);
+ if(tab==='settings'){
+  state.accountDeletion=await api('/api/me/deletion');
+  try{await loadWorldStatus();}catch{}
+ }
+ if(tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
  if(tab==='groups')await refreshGroups(false);
  if(tab==='notices')await loadNotices();
  if(tab==='support'){state.mode='support';await loadTickets();}
