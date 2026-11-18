@@ -122,6 +122,7 @@ def install(core):
             column('messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('group_messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('attachments','file_content','BLOB')
+            column('chat_preferences','pinned','INTEGER NOT NULL DEFAULT 0')
     migrate()
 
     def active_member(c, gid, uid):
@@ -536,6 +537,9 @@ def install(core):
             if not allowed:
                 grp=many(c,'SELECT group_id FROM group_messages WHERE attachment_id=? AND deleted_at IS NULL',(file_id,))
                 allowed=any(one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',(g['group_id'],u['id'])) for g in grp)
+            if not allowed:
+                allowed=bool(one(c,'''SELECT 1 FROM world_messages
+                                   WHERE attachment_id=? AND deleted_at IS NULL''',(file_id,)))
             if not allowed:raise HTTPException(403,'Bạn không có quyền tải tệp này.')
         inline=f['mime'].startswith('image/')
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
@@ -949,15 +953,21 @@ def install(core):
     class Prefs(BaseModel):
         muted:bool=False
         archived:bool=False
+        pinned:bool|None=None
 
     @app.post('/api/chats/{other_id}/preferences')
     async def set_prefs(request:Request,other_id:int,body:Prefs):
         u=current_user(request)
         with db() as c:
             require_peer(c,u['id'],other_id)
-            c.execute('''INSERT INTO chat_preferences(user_id,other_id,muted,archived) VALUES(?,?,?,?)
-                         ON CONFLICT(user_id,other_id) DO UPDATE SET muted=excluded.muted,archived=excluded.archived''',
-                      (u['id'],other_id,int(body.muted),int(body.archived)))
+            previous=one(c,'SELECT pinned FROM chat_preferences WHERE user_id=? AND other_id=?',
+                         (u['id'],other_id))
+            pinned=int(body.pinned) if body.pinned is not None else int(previous['pinned']) if previous else 0
+            c.execute('''INSERT INTO chat_preferences(user_id,other_id,muted,archived,pinned)
+                         VALUES(?,?,?,?,?)
+                         ON CONFLICT(user_id,other_id)
+                         DO UPDATE SET muted=excluded.muted,archived=excluded.archived,pinned=excluded.pinned''',
+                      (u['id'],other_id,int(body.muted),int(body.archived),pinned))
         return {'ok':True}
 
     @app.get('/api/admin/groups')
