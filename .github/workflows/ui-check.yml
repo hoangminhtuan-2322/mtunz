@@ -31,6 +31,7 @@ jobs:
           node --check static/world-moderation.js
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
+          node --check static/mobile-polish.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -67,6 +68,8 @@ jobs:
         run: node tests/admin_upgrade.cjs
       - name: Verify modern member messaging experience
         run: node tests/member_experience.cjs
+      - name: Verify optimized mobile keyboard, touch and responsive layouts
+        run: node tests/mobile_polish.cjs
       - name: Verify friendship, pin, forwarding and settings UI
         run: node tests/social_upgrade.cjs
       - name: Verify World Chat concept page (no live public messaging)
