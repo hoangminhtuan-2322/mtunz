@@ -1135,6 +1135,7 @@ async def get_friends(request: Request):
                  u.display_name,u.show_online,u.last_seen,u.public_id,
                  u.avatar_attachment_id,u.profile_visibility,
                  COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
+                 COALESCE(p.pinned,0) AS pinned,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
                  (SELECT body FROM messages
@@ -1164,6 +1165,7 @@ async def get_friends(request: Request):
             r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
             r['muted']=bool(r['muted'])
             r['archived']=bool(r['archived'])
+            r['pinned']=bool(r['pinned'])
             r['restricted']=bool(r['restricted'])
             r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
                              if r['avatar_attachment_id'] and r['profile_visibility']!='only_me' else None)
@@ -1174,7 +1176,8 @@ async def get_friends(request: Request):
             last_body=r.pop('last_body')
             last_sender=r.pop('last_sender')
             r['last_message']={'body':last_body,'created_at':last_created,'sender_id':last_sender} if last_created else None
-        allrows.sort(key=lambda row:row['last_message']['created_at'] if row['last_message'] else row['created_at'],reverse=True)
+        allrows.sort(key=lambda row:(int(row['pinned']),
+             row['last_message']['created_at'] if row['last_message'] else row['created_at']),reverse=True)
     return {'friends':allrows}
 
 
