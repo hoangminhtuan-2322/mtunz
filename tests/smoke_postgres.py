@@ -114,6 +114,6 @@ with TestClient(app, base_url="https://testserver") as admin:
 with db() as connection:
     assert connection.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 3
     assert connection.execute("SELECT COUNT(*) AS n FROM trusted_devices").fetchone()["n"] == 0
-assert connection.execute("SELECT COUNT(*) AS n FROM world_messages").fetchone()["n"]==1
+    assert connection.execute("SELECT COUNT(*) AS n FROM world_messages").fetchone()["n"]==1
     assert connection.execute("SELECT COUNT(*) AS n FROM user_reports").fetchone()["n"]==1
 print("PostgreSQL smoke OK: auth, World Chat, moderation settings and reviewed reports.")
