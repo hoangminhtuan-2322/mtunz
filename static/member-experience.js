@@ -17,7 +17,7 @@ const svg={
  emoji:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5 4-2.5 4-2.5"/><path d="M9 9h.01M15 9h.01" stroke-width="3"/></svg>',
  map:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>'
 };
-let picker=null,locationDialog=null,scheduled=false;
+let picker=null,locationDialog=null,scheduled=false,photoPreparing=false;
 function chatReady(){
  return !!q('.shell:not(.admin-shell) .conversation .compose-row')&&
  typeof state!=='undefined'&&!!state.user&&!state.user.is_admin;
@@ -206,13 +206,28 @@ async function optimizePhoto(file){
 }
 async function uploadPhoto(file){
  if(!chatReady())return;
- if(state.uploading){toast('Đang tải ảnh trước đó.','warning');return;}
+ if(state.uploading||photoPreparing){toast('Vui lòng hoàn tất ảnh đang tải trước.','warning');return;}
+ const context=chatContext();
+ if(!context)return;
+ photoPreparing=true;
+ const composer=q('.conversation .composer');
+ const progress=make('div','chat-photo-preparing','Đang chuẩn bị ảnh…');
+ composer?.append(progress);
  try{
   const result=await optimizePhoto(file);
-  if(!chatReady())return;
+  if(!sameContext(context)){toast('Bạn đã chuyển cuộc trò chuyện, ảnh chưa được gửi.','warning');return;}
+  progress.textContent='Đang tải ảnh lên…';
   await uploadSelected(result);
+  if(!sameContext(context)){
+   state.pendingAttachment=null;
+   const box=q('.conversation #compose-extra');
+   if(box)box.innerHTML=composerExtras();
+   toast('Đã đổi cuộc trò chuyện. Ảnh vừa tải không được đính kèm.','warning');
+   return;
+  }
   toast('Ảnh đã sẵn sàng. Nhấn gửi để chia sẻ.','ok');
  }catch(error){toast(error.message||'Không thể đính kèm ảnh.','error');}
+ finally{photoPreparing=false;progress.remove();}
 }
 function mountComposer(form){
  if(form.classList.contains('chat-compose-enhanced'))return;
