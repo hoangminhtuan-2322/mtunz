@@ -99,3 +99,15 @@ def test_admin_can_mark_spam_and_reopen(monkeypatch):
     assert admin.post(endpoint, json={'status': 'open'}).status_code == 200
     assert guest.post(f'/api/support/tickets/{ticket}/messages',
                       json={'body': 'Tin nhắn hợp lệ sau khi mở lại'}).status_code == 200
+
+
+def test_support_ticket_accepts_empty_optional_memory():
+    guest = TestClient(app)
+    assert guest.get('/').status_code == 200
+    response = guest.post('/api/support/tickets', json={'kind': 'other', 'claim': ''})
+    assert response.status_code == 200, response.text
+    ticket_id = response.json()['id']
+    with db() as c:
+        ticket = c.execute('SELECT kind, claim FROM tickets WHERE id=?', (ticket_id,)).fetchone()
+    assert ticket['kind'] == 'other'
+    assert ticket['claim'] == ''
