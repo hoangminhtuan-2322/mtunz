@@ -104,3 +104,27 @@ def test_legacy_user_without_phone_is_not_locked_out():
         'display_name':'Legacy','bio':'','show_online':True,'show_receipts':True,
         'phone':'0911223344','email':''}).status_code==200
     assert member.get('/api/me').json()['user']['phone']=='+84911223344'
+
+
+def test_member_and_guest_cannot_access_admin_management_endpoints():
+    """Admin UI strings are cosmetic; endpoint authorization is the security boundary."""
+    admin=logged_admin()
+    member=register_user(admin,'boundary_member')
+    guest=TestClient(app)
+    guest.get('/')
+    uid=member.get('/api/me').json()['user']['id']
+    endpoints=(
+        '/api/admin/stats',
+        '/api/admin/registrations',
+        '/api/admin/users',
+        '/api/admin/tickets',
+        '/api/admin/audit',
+        '/api/admin/groups',
+        '/api/admin/deletions',
+        f'/api/admin/users/{uid}/details',
+        f'/api/admin/users/{uid}/messages',
+    )
+    for endpoint in endpoints:
+        assert guest.get(endpoint).status_code==401,endpoint
+        assert member.get(endpoint).status_code==403,endpoint
+        assert admin.get(endpoint).status_code==200,endpoint
