@@ -50,7 +50,7 @@ function simulate(mobile=true){
  const mq={matches:mobile,addEventListener(name,fn){events.media[name]=fn}};
  const window={innerHeight:750,visualViewport:vv,matchMedia:()=>mq,
   addEventListener(name,fn){events.window[name]=fn},
-  requestAnimationFrame(fn){fn();return 1},setTimeout(fn){fn();return 2},clearTimeout(){}};
+  requestAnimationFrame(fn){fn();return 0},setTimeout(fn){fn();return 2},clearTimeout(){}};
  vm.runInNewContext(js,{window,document,console},{timeout:1500});
  return {events,style,classes,document,vv,mq,window};
 }
