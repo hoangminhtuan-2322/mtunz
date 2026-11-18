@@ -522,7 +522,7 @@ function inputField(label,name,type='text',placeholder='',attr='',required=true)
  const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
  return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
  <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
- <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':'' }></div></div>`;
+ <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':''}></div></div>`;
 }
 /* Plain form control for account settings/admin: no absolutely positioned icon.
    Do not use the decorative auth-input component outside the sign-in flow. */
