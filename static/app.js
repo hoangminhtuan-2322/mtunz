@@ -37,7 +37,7 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
  regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
- adminTicket:null,adminTicketMessages:[],adminQuery:'',accountDeletion:null,typing:false};
+ adminTicket:null,adminTicketMessages:[],adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false};
 let toastTimer=0,typingTimer=0,socketRetry=null;
 
 // A tab-scoped marker survives a normal reload, but not a new ordinary tab.
@@ -913,7 +913,14 @@ async function loadAdmin(){
     if(state.adminTicket){state.adminTicketMessages=(await api(`/api/admin/tickets/${state.adminTicket}/messages`)).messages;}
     break;
    }
-   case 'audit':state.adminData=(await api('/api/admin/audit')).logs;break;
+   case 'audit':{
+    const f=state.adminAuditFilter;
+    const params=new URLSearchParams({limit:'100',q:f.q||'',action:f.action||'',since:String(f.since||0),until:String(f.until||0)});
+    const result=await api('/api/admin/audit?'+params.toString());
+    state.adminData=result.logs;
+    state.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
+    break;
+   }
    default:state.adminData=null;
   }
   renderAdmin();
@@ -1036,9 +1043,76 @@ function adminSecurity(){
    ${state.savedDevice?`<div class="card" style="max-width:650px;margin-top:17px"><h3>${icon('lock',18)} Khóa phiên hiện tại</h3><p class="hint" style="margin:11px 0">Quay về màn hình PIN mà không xóa thiết bị được ghi nhớ.</p><button class="btn ghost" type="button" data-act="lock-device">${icon('lock',16)} Khóa ngay</button></div>`:''}
  </div>`;
 }
-function adminAudit(){const logs=state.adminData||[];
- return `<div class="card" style="max-width:940px;padding:0"><div style="padding:18px;border-bottom:1px solid var(--line)"><b>100 hoạt động quản trị gần nhất</b></div>
- ${logs.length?logs.map(l=>`<div class="audit-item"><div class="row between"><strong>${esc(l.action)}</strong><span class="hint">${date(l.created_at)}</span></div><div class="muted" style="margin-top:6px;overflow-wrap:anywhere">${esc(l.detail)}</div></div>`).join(''):'<div class="empty">Chưa có hoạt động quản trị nào.</div>'}</div>`;}
+const auditNames={
+ registration_approved:'Phê duyệt đăng ký',registration_denied:'Từ chối đăng ký',
+ permanent_user_delete:'Xóa tài khoản vĩnh viễn',sanction_ban:'Cấm tài khoản',
+ sanction_lock:'Khóa tài khoản',sanction_unban:'Gỡ hạn chế',
+ moderation_messages:'Kiểm tra tin nhắn',moderation_group:'Kiểm duyệt nhóm',
+ enable_admin_pin:'Bật PIN quản trị',capacity:'Thay đổi giới hạn tài khoản',
+ ticket_status:'Thay đổi trạng thái hỗ trợ',support_reply:'Trả lời yêu cầu hỗ trợ',
+ issue_recovery:'Cấp mã khôi phục',broadcast:'Gửi thông báo toàn hệ thống',
+ admin_stepup_denied:'Xác minh quyền thất bại',
+ admin_view_user_details:'Xem chi tiết người dùng',
+ admin_edit_user:'Chỉnh sửa hồ sơ người dùng',
+ admin_revoke_user_sessions:'Thu hồi phiên đăng nhập người dùng',
+ audit_detail_view:'Xem nhật ký quản trị',remove_group_message:'Gỡ tin nhắn nhóm',
+ admin_password_change:'Đổi mật khẩu quản trị'
+};
+function auditLabel(action){return auditNames[action]||String(action||'Hoạt động khác').replace(/_/g,' ');}
+function auditLevel(log){return log.severity==='high'?['high','Quan trọng']:log.severity==='medium'?['medium','Cần theo dõi']:['info','Thông thường'];}
+function adminAudit(){const logs=state.adminData||[],meta=state.adminAuditMeta||{};
+ const f=state.adminAuditFilter;
+ const summary=logs.reduce((a,l)=>{a[l.severity||'info']=(a[l.severity||'info']||0)+1;return a;},{});
+ return `<div class="admin-audit-layout">
+ <section class="admin-audit-summary" aria-label="Tổng hợp nhật ký đã tải">
+   <div class="card"><span class="hint">Kết quả tra cứu</span><strong>${Number(meta.total||0).toLocaleString('vi-VN')}</strong><small>Sự kiện được ghi nhận</small></div>
+   <div class="card"><span class="hint">Mức quan trọng</span><strong>${summary.high||0}</strong><small>Trong dữ liệu đã tải</small></div>
+   <div class="card"><span class="hint">Cần theo dõi</span><strong>${summary.medium||0}</strong><small>Trong dữ liệu đã tải</small></div>
+ </section>
+ <form class="admin-audit-filters" data-form="admin-audit-search">
+  <label>Tìm nhật ký<input class="input" name="q" maxlength="100" value="${esc(f.q||'')}" placeholder="Hành động, tài khoản, ID..." autocomplete="off"></label>
+  <label>Hành động<select name="action" class="select">
+   <option value="">Tất cả hành động</option>
+   ${Object.keys(auditNames).map(action=>`<option value="${esc(action)}" ${f.action===action?'selected':''}>${esc(auditLabel(action))}</option>`).join('')}
+  </select></label>
+  <label>Từ ngày<input class="input" type="date" name="since" value="${f.since?new Date(f.since*1000).toLocaleDateString('en-CA'):''}"></label>
+  <label>Đến ngày<input class="input" type="date" name="until" value="${f.until?new Date(f.until*1000).toLocaleDateString('en-CA'):''}"></label>
+  <button class="btn primary" type="submit">${icon('search',16)} Áp dụng bộ lọc</button>
+  <button class="btn ghost" type="button" data-act="admin-audit-clear">Xóa bộ lọc</button>
+ </form>
+ <p class="admin-muted-note">Nhật ký là bằng chứng kiểm toán: chỉ được xem, lọc và xuất; không cho sửa hoặc xóa dữ liệu gốc.</p>
+ <section class="card admin-audit-card" aria-label="Danh sách sự kiện quản trị">
+ <div class="admin-audit-header"><b>${logs.length.toLocaleString('vi-VN')} sự kiện đã tải / ${Number(meta.total||0).toLocaleString('vi-VN')} kết quả</b><span>Thời gian hiển thị theo thiết bị của bạn</span></div>
+ ${logs.length?logs.map(l=>{
+  const [level,label]=auditLevel(l);
+  return `<div class="audit-item admin-audit-entry" data-level="${level}">
+    <div class="admin-audit-entry-main">
+     <div class="admin-audit-heading"><strong>${esc(auditLabel(l.action))}</strong><span class="audit-severity ${level}">${label}</span></div>
+     <p class="admin-audit-detail">${esc(l.detail||'Không có dữ liệu mô tả')}</p>
+     <div class="admin-audit-meta"><span>${icon('users',13)} ${esc(l.admin_username||'Quản trị viên')} · #${l.admin_id}</span><span>${icon('clock',13)} ${deadlineDate(l.created_at)}</span><span>#${l.id}</span></div>
+    </div>
+    <button class="btn ghost sm" type="button" data-act="admin-audit-detail" data-id="${l.id}">${icon('eye',15)} Xem chi tiết</button>
+  </div>`}).join(''):'<div class="empty">Không có nhật ký phù hợp với bộ lọc.</div>'}
+ </section>
+ ${meta.has_more?'<button class="btn ghost full admin-audit-load" type="button" data-act="admin-audit-more">Tải thêm 100 sự kiện</button>':''}
+ </div>`;
+}
+async function adminAuditDetail(eventId){
+ const r=await api('/api/admin/audit/'+eventId);
+ const e=r.event,[level,label]=auditLevel(e);
+ modal({title:'Chi tiết sự kiện #'+e.id,description:'Bản ghi kiểm toán không thể chỉnh sửa hoặc xóa trên trang quản trị.',
+  confirm:'Đóng',content:`<div class="admin-audit-modal">
+  ${adminDetailRow('Hành động',esc(auditLabel(e.action)))}
+  ${adminDetailRow('Mã sự kiện','#'+e.id)}
+  ${adminDetailRow('Mã hành động',esc(e.action))}
+  ${adminDetailRow('Mức độ',esc(label))}
+  ${adminDetailRow('Quản trị viên',esc(e.admin_username)+' (#'+e.admin_id+')')}
+  ${adminDetailRow('Thời điểm',deadlineDate(e.created_at))}
+  ${adminDetailRow('Unix timestamp',String(e.created_at))}
+  <div class="admin-audit-raw"><b>Chi tiết đã ghi nhận</b><pre>${esc(e.detail||'Không có dữ liệu')}</pre></div>
+  <p class="hint">Thông tin chỉ gồm dữ liệu thực tế được ghi tại thời điểm xảy ra sự kiện. Không tự suy đoán địa chỉ IP, thiết bị hoặc nội dung chưa được lưu.</p>
+  </div>`});
+}
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
