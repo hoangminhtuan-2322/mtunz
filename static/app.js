@@ -718,7 +718,7 @@ function sideBody(){
 function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
-  const secondary=[['restricted','shield','Danh sách hạn chế'],['support','inbox','Hỗ trợ']];
+  const secondary=[['restricted','shield','Danh sách hạn chế'],['support','inbox','Hỗ trợ'],['world','group','Chat thế giới · Sắp ra mắt']];
   const moreOpen=!!state.railMoreOpen || secondary.some(([tab])=>state.tab===tab);
   const item=([tab,ic,label])=>`<button type="button" class="rail-btn ${state.tab===tab?'active':''}" title="${label}" aria-label="${label}" aria-current="${state.tab===tab?'page':'false'}" data-act="app-tab" data-tab="${tab}">
     <span class="rail-icon" aria-hidden="true">${icon(ic,20)}</span><span class="rail-text">${label}</span></button>`;
@@ -831,6 +831,7 @@ function settingsContent(){
    <div class="rail-settings-actions">
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Chat thế giới · Sắp ra mắt</button>
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>
@@ -859,10 +860,21 @@ function settingsContent(){
  <details class="member-privacy-details" style="margin-top:18px"><summary>Quyền riêng tư và xử lý dữ liệu</summary><p>Quản trị viên có thể truy cập thông tin tài khoản và lịch sử trò chuyện khi hỗ trợ hoặc kiểm duyệt. Mật khẩu và PIN chỉ được lưu dưới dạng mã băm, không thể xem ở dạng gốc.</p></details></div>`;
 }
 function supportInApp(){return `<div class="section-wrap"><span class="eyebrow">LIÊN HỆ HỖ TRỢ</span><h1 class="section-title">Trò chuyện với admin</h1><p class="section-lead">Gửi câu hỏi và nhận phản hồi realtime từ quản trị viên.</p><div class="card" style="max-width:620px">${authSupport()}</div></div>`;}
+function worldComingSoon(){
+ return `<div class="main-body"><section class="world-coming-soon" aria-label="Chat thế giới đang phát triển">
+ <div class="world-coming-soon-icon" aria-hidden="true">${icon('group',36)}</div>
+ <span class="world-tag">MTUNZ · COMING SOON</span>
+ <h2>Chat thế giới</h2>
+ <p>Một không gian trò chuyện cộng đồng đang được lên ý tưởng. Chức năng hiện chưa mở và chưa có phòng chat công cộng — chúng ta sẽ cùng thiết kế khi sẵn sàng.</p>
+ <div class="world-chips"><span>Chưa mở đăng bài</span><span>Chưa kết nối phòng chung</span><span>Sẽ thiết kế sau</span></div>
+ <button type="button" class="btn primary" data-act="app-tab" data-tab="messages">Quay về tin nhắn</button>
+ </section></div>`;
+}
 function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
+  state.tab==='world'?`${memberHeader('Chat thế giới','Coming soon · Sẽ thiết kế sau')}${worldComingSoon()}`:
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='friends'?`${memberHeader('Bạn bè','Quản lý các kết nối của bạn') }<div class="main-body">${friendsContent()}</div>`:
   state.tab==='restricted'?`${memberHeader('Danh sách hạn chế','Ưu tiên sự riêng tư') }<div class="main-body">${restrictedContent()}</div>`:
