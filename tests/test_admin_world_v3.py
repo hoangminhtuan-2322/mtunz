@@ -23,6 +23,13 @@ def clean_v3():
         c.execute("UPDATE settings SET value='100' WHERE key='max_users'")
         c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0 WHERE id=1')
     yield
+    # Restore the shared Admin fixture for tests in other modules.
+    with db() as c:
+        c.execute('DELETE FROM admin_login_requests')
+        c.execute('DELETE FROM sessions')
+        c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
+                  (hash_secret('mtunz7'),))
+    RATE_BUCKETS.clear()
 
 
 def admin_with_pin():
