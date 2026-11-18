@@ -127,3 +127,46 @@ def test_legacy_sessions_without_metadata_have_honest_fallback():
     entry=c.get('/api/me/sessions').json()['sessions'][0]
     assert entry['label']=='Thiết bị cũ'
     assert entry['os_name']=='Chưa có dữ liệu'
+
+
+def test_admin_session_metadata_is_private_and_audited():
+    """A member receives no network/location metadata; only Admin can inspect it."""
+    from test_flows import logged_admin
+    make_account('device_owner')
+    owner=TestClient(app,headers={'User-Agent':WIN_UA})
+    login(owner)
+    uid=owner.get('/api/me').json()['user']['id']
+    with db() as c:
+        c.execute("""UPDATE sessions SET network_hint=?,location_hint=?
+                     WHERE user_id=?""",('42.117.29.*','Thành phố Hồ Chí Minh',uid))
+        c.execute("""UPDATE trusted_devices SET network_hint=?,location_hint=?
+                     WHERE user_id=?""",('42.117.29.*','Thành phố Hồ Chí Minh',uid))
+    own=owner.get('/api/me/sessions')
+    assert own.status_code==200,own.text
+    for kind in ('sessions','remembered_devices'):
+        assert own.json()[kind]
+        for item in own.json()[kind]:
+            assert 'network_hint' not in item
+            assert 'location_hint' not in item
+            assert 'token_hash' not in item
+    endpoint=f'/api/admin/users/{uid}/session-security'
+    assert owner.get(endpoint).status_code==403
+    assert TestClient(app).get(endpoint).status_code==401
+    admin=logged_admin()
+    response=admin.get(endpoint)
+    assert response.status_code==200,response.text
+    detail=response.json()
+    assert detail['sessions'][0]['network_hint']=='42.117.29.*'
+    assert detail['sessions'][0]['location_hint']=='Thành phố Hồ Chí Minh'
+    assert detail['remembered_devices'][0]['network_hint']=='42.117.29.*'
+    assert 'token_hash' not in response.text
+    assert 'password_hash' not in response.text
+    assert 'pin_hash' not in response.text
+    assert '42.117.29.*' not in own.text
+    assert 'Thành phố Hồ Chí Minh' not in own.text
+    with db() as c:
+        entry=c.execute("SELECT action,detail FROM audit WHERE action=? ORDER BY id DESC LIMIT 1",
+                        ('admin_view_session_security',)).fetchone()
+        assert entry is not None
+        assert f'user_id={uid}' in entry['detail']
+        assert '42.117.29.*' not in entry['detail']
