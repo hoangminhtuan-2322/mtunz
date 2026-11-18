@@ -478,7 +478,7 @@ function authArt(){return `<aside class="auth-art art-v3 art-v4 art-v5" aria-lab
   <div class="auth-art-footer nova-footer" aria-label="Các đặc điểm của mtunz">
     <span>${icon('chat',15)} Nhắn tin tức thì</span>
     <span>${icon('lock',15)} Đăng nhập nhiều lớp</span>
-    <span>${icon('shield',15)} Admin phê duyệt</span>
+    <span>${icon('shield',15)} Đăng ký có xét duyệt</span>
   </div>
 </aside>`;}
 // Contextual authentication feedback: do not put secrets or credentials in toasts.
@@ -561,7 +561,7 @@ function authLogin(){
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
  <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
  <form data-form="login-pin">${inputField('Mã PIN','pin','password','',`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
-${state.loginIsAdmin?`<p class="hint">Bảo vệ Admin: Không hỗ trợ ghi nhớ thiết bị. Mỗi lần đăng nhập cần mật khẩu và PIN; phiên quản trị hết hạn sau 2 giờ.</p>`:` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Sau khi đóng tab, lần mở phiên mới có thể dùng PIN. Tải lại tab đang mở không cần xác thực lại.</small></span></label>`}
+${state.loginIsAdmin?'':` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Sau khi đóng tab, lần mở phiên mới có thể dùng PIN. Tải lại tab đang mở không cần xác thực lại.</small></span></label>`}
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đăng nhập lại</button>`
  };
@@ -570,10 +570,10 @@ ${state.loginIsAdmin?`<p class="hint">Bảo vệ Admin: Không hỗ trợ ghi nh
 }
 function authRegister(){
  if(state.regStatus==='pending')return `<div class="onboard-center"><div class="wait-orbit"></div><span class="eyebrow">ĐANG CHỜ PHÊ DUYỆT</span>
- <h1>Yêu cầu đã được gửi!</h1><p class="hint" style="margin-top:15px">Tài khoản <b>${esc(state.regName)}</b> đang chờ quản trị viên xét duyệt. Khi được duyệt, bạn mới thiết lập mật khẩu và mã PIN.</p>
- <div class="info-strip">Màn hình sẽ tự cập nhật khi admin duyệt. Bạn cũng có thể kiểm tra lại thủ công.</div>
+ <h1>Yêu cầu đã được gửi!</h1><p class="hint" style="margin-top:15px">Tài khoản <b>${esc(state.regName)}</b> đang chờ xét duyệt. Sau khi được chấp thuận, bạn có thể thiết lập mật khẩu và mã PIN.</p>
+ <p class="hint">Trạng thái yêu cầu sẽ được cập nhật tự động.</p>
  <button class="btn ghost full" data-act="refresh-registration">${icon('refresh')} Kiểm tra trạng thái</button></div>`;
- if(state.regStatus==='denied')return `<span class="eyebrow">YÊU CẦU BỊ TỪ CHỐI</span><h1>Chưa thể đăng ký.</h1><p class="hint">Admin đã từ chối yêu cầu <b>${esc(state.regName)}</b>. Bạn có thể gửi yêu cầu mới với tên khác.</p><button class="btn primary full" data-act="retry-registration">Gửi yêu cầu khác</button>`;
+ if(state.regStatus==='denied')return `<span class="eyebrow">YÊU CẦU BỊ TỪ CHỐI</span><h1>Chưa thể đăng ký.</h1><p class="hint">Yêu cầu đăng ký <b>${esc(state.regName)}</b> chưa được chấp thuận. Bạn có thể gửi yêu cầu mới với tên khác.</p><button class="btn primary full" data-act="retry-registration">Gửi yêu cầu khác</button>`;
  if(state.regStatus==='approved')return `<div class="registration-complete">
  <div class="registration-approved">${icon('check',15)} <span>ĐÃ ĐƯỢC PHÊ DUYỆT</span></div>
  <h1>Hoàn tất tài khoản.</h1>
@@ -599,7 +599,7 @@ function authRegister(){
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
      ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
-   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý cung cấp số điện thoại và email (nếu có) cho quản trị viên để quản lý tài khoản. Thông tin liên hệ không hiển thị công khai; mật khẩu và PIN không thể xem được.</span></label>
+   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý cung cấp số điện thoại và email (nếu có) để quản lý và hỗ trợ tài khoản. Thông tin này không công khai nhưng quản trị viên có thể truy cập khi xử lý tài khoản. Mật khẩu và PIN không thể xem ở dạng gốc.</span></label>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
@@ -609,9 +609,8 @@ function authRegister(){
  <div class="hint" style="margin:0 0 13px">3–24 ký tự, bắt đầu bằng chữ; chỉ dùng a-z, 0-9 và dấu gạch dưới.</div>
  ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
  <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254"></div></div>
- <p class="hint" style="margin:0 0 16px">Số điện thoại chưa được xác minh bằng SMS. Chỉ admin được xem thông tin liên hệ khi quản lý tài khoản.</p>
- <button class="btn primary full" type="submit">Gửi yêu cầu phê duyệt ${icon('chevron',17)}</button></form>
- <div class="info-strip">Thông tin liên hệ được giữ riêng tư và không hiện trong hồ sơ công khai.</div>`;
+  <button class="btn primary full" type="submit">Gửi yêu cầu phê duyệt ${icon('chevron',17)}</button></form>
+`;
 }
 function authSupport(){
  if(!state.supportTicket)return `<span class="eyebrow">TRUNG TÂM HỖ TRỢ</span><h1>Admin ở đây để hỗ trợ.</h1>
@@ -842,12 +841,12 @@ function settingsContent(){
    <div><h3>${icon('ban',18)} Xóa tài khoản và dữ liệu</h3>
    ${state.accountDeletion?.pending?`<p class="hint" style="margin:12px 0">Yêu cầu xóa đã được ghi nhận. Dữ liệu sẽ bị xóa vĩnh viễn sau <b>${deadlineDate(state.accountDeletion.purge_at)}</b> (giờ hiển thị theo máy bạn), còn khoảng <b>${daysUntil(state.accountDeletion.purge_at)} ngày</b>. Bạn có thể hủy trước thời điểm này.</p>
      <span class="pill warn">Đang trong thời gian 30 ngày cân nhắc</span>`:
-   `<p class="hint" style="margin:12px 0">Bạn có thể yêu cầu xóa tài khoản. Hệ thống giữ dữ liệu thêm <b>30 ngày</b> để bạn suy nghĩ và hủy yêu cầu nếu cần. Sau hạn, tài khoản, tin nhắn và tệp của bạn sẽ được xóa vĩnh viễn. Admin vẫn có thể xóa ngay theo quyền quản trị.</p>`}</div>
+   `<p class="hint" style="margin:12px 0">Bạn có thể yêu cầu xóa tài khoản và hủy yêu cầu trong vòng <b>30 ngày</b>. Sau thời hạn này, tài khoản, tin nhắn và tệp sẽ bị xóa vĩnh viễn. Một số trường hợp có thể được xử lý xóa sớm hơn.</p>`}</div>
    ${state.accountDeletion?.pending?
      `<button class="btn success" type="button" data-act="cancel-own-deletion">${icon('check',16)} Hủy yêu cầu xóa tài khoản</button>`:
      `<button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Yêu cầu xóa sau 30 ngày</button>`}
  </section>
- <div class="info-strip" style="margin-top:20px">Minh bạch dữ liệu: admin có thể xem thông tin tài khoản và lịch sử trò chuyện để thực hiện kiểm duyệt. Mật khẩu và PIN chỉ lưu dưới dạng mã băm; không thể xem trực tiếp.</div></div>`;
+ <details class="member-privacy-details" style="margin-top:18px"><summary>Quyền riêng tư và xử lý dữ liệu</summary><p>Quản trị viên có thể truy cập thông tin tài khoản và lịch sử trò chuyện khi hỗ trợ hoặc kiểm duyệt. Mật khẩu và PIN chỉ được lưu dưới dạng mã băm, không thể xem ở dạng gốc.</p></details></div>`;
 }
 function supportInApp(){return `<div class="section-wrap"><span class="eyebrow">LIÊN HỆ HỖ TRỢ</span><h1 class="section-title">Trò chuyện với admin</h1><p class="section-lead">Gửi câu hỏi và nhận phản hồi realtime từ quản trị viên.</p><div class="card" style="max-width:620px">${authSupport()}</div></div>`;}
 function renderApp(){
