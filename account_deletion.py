@@ -75,6 +75,17 @@ def delete_user_records(c, uid: int) -> dict:
             c.execute('DELETE FROM group_members WHERE group_id=?', (gid,))
             c.execute('DELETE FROM chat_groups WHERE id=?', (gid,))
 
+    # Remove personal pins and pins referencing messages erased with this user.
+    c.execute('DELETE FROM message_pins WHERE user_id=?', (uid,))
+    c.execute("""DELETE FROM message_pins WHERE scope='dm' AND message_id IN (
+      SELECT id FROM messages WHERE sender_id=? OR recipient_id=?
+      OR attachment_id IN (SELECT id FROM attachments WHERE owner_id=?))""",
+      (uid,uid,uid))
+    c.execute("""DELETE FROM message_pins WHERE scope='group' AND message_id IN (
+      SELECT id FROM group_messages WHERE sender_id=?
+      OR attachment_id IN (SELECT id FROM attachments WHERE owner_id=?))""",
+      (uid,uid))
+
     # Explicitly remove reactions for deleted message IDs (no message FK).
     c.execute(
         "DELETE FROM reactions WHERE scope='dm' AND message_id IN "

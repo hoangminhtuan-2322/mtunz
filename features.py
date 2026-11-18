@@ -97,6 +97,19 @@ def install(core):
                 purge_at INTEGER NOT NULL);
               CREATE INDEX IF NOT EXISTS deletion_due_idx ON account_deletion_requests(purge_at);
             ''')
+            c.executescript('''
+              CREATE TABLE IF NOT EXISTS message_pins(
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scope TEXT NOT NULL,
+                chat_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY(user_id,scope,chat_id,message_id));
+              CREATE INDEX IF NOT EXISTS message_pins_chat_idx
+                ON message_pins(user_id,scope,chat_id,created_at);
+            ''')
+            column('messages','forwarded','INTEGER NOT NULL DEFAULT 0')
+            column('group_messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('attachments','file_content','BLOB')
     migrate()
 
@@ -703,6 +716,7 @@ def install(core):
         with db() as c:
             m=dm_message_owner(c,mid,u['id'])
             c.execute("UPDATE messages SET deleted_at=COALESCE(deleted_at,?), body='' WHERE id=?",(now(),mid))
+            c.execute("DELETE FROM message_pins WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='dm' AND message_id=?",(mid,))
         await dm_changed(m)
         return {'ok':True}
@@ -727,10 +741,130 @@ def install(core):
         with db() as c:
             group_message_owner(c,gid,mid,u['id'])
             c.execute("UPDATE group_messages SET deleted_at=COALESCE(deleted_at,?),body='' WHERE id=?",(now(),mid))
+            c.execute("DELETE FROM message_pins WHERE scope='group' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='group' AND message_id=?",(mid,))
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
         return {'ok':True}
+
+
+    # Pinned messages are private bookmarks in each chat, not global moderation.
+    class PinMessage(BaseModel):
+        scope: Literal['dm','group']
+        chat_id: int = Field(gt=0)
+        message_id: int = Field(gt=0)
+
+    def checked_chat_message(c, uid, scope, chat_id, mid):
+        if scope == 'dm':
+            require_peer(c, uid, chat_id)
+            row=one(c,'''SELECT * FROM messages WHERE id=? AND deleted_at IS NULL
+                         AND ((sender_id=? AND recipient_id=?) OR
+                              (sender_id=? AND recipient_id=?))''',
+                    (mid,uid,chat_id,chat_id,uid))
+        else:
+            active_member(c,chat_id,uid)
+            row=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',
+                    (mid,chat_id))
+        if not row:
+            raise HTTPException(404,'Không tìm thấy tin nhắn trong cuộc trò chuyện này.')
+        return row
+
+    @app.get('/api/chat/pins')
+    async def list_chat_pins(request:Request,scope:Literal['dm','group'],chat_id:int):
+        u=current_user(request)
+        if chat_id<=0:raise HTTPException(422,'Cuộc trò chuyện không hợp lệ.')
+        with db() as c:
+            if scope=='dm':
+                require_peer(c,u['id'],chat_id)
+                rows=many(c,'''SELECT p.message_id,m.body,m.created_at
+                  FROM message_pins p JOIN messages m ON m.id=p.message_id
+                  WHERE p.user_id=? AND p.scope='dm' AND p.chat_id=?
+                  AND m.deleted_at IS NULL AND
+                  ((m.sender_id=? AND m.recipient_id=?) OR
+                   (m.sender_id=? AND m.recipient_id=?))
+                  ORDER BY p.created_at DESC,p.message_id DESC LIMIT 5''',
+                  (u['id'],chat_id,u['id'],chat_id,chat_id,u['id']))
+            else:
+                active_member(c,chat_id,u['id'])
+                rows=many(c,'''SELECT p.message_id,m.body,m.created_at
+                  FROM message_pins p JOIN group_messages m ON m.id=p.message_id
+                  WHERE p.user_id=? AND p.scope='group' AND p.chat_id=?
+                  AND m.group_id=? AND m.deleted_at IS NULL
+                  ORDER BY p.created_at DESC,p.message_id DESC LIMIT 5''',
+                  (u['id'],chat_id,chat_id))
+        return {'pins':rows}
+
+    @app.post('/api/chat/pins')
+    async def toggle_chat_pin(request:Request,body:PinMessage):
+        u=current_user(request)
+        throttle(request,'pin-message',50,60,str(u['id']))
+        with db() as c:
+            checked_chat_message(c,u['id'],body.scope,body.chat_id,body.message_id)
+            existing=one(c,'''SELECT 1 FROM message_pins WHERE user_id=? AND
+                 scope=? AND chat_id=? AND message_id=?''',
+                 (u['id'],body.scope,body.chat_id,body.message_id))
+            if existing:
+                c.execute('''DELETE FROM message_pins WHERE user_id=? AND
+                    scope=? AND chat_id=? AND message_id=?''',
+                    (u['id'],body.scope,body.chat_id,body.message_id))
+                pinned=False
+            else:
+                count=one(c,'''SELECT count(*) n FROM message_pins WHERE
+                    user_id=? AND scope=? AND chat_id=?''',
+                    (u['id'],body.scope,body.chat_id))['n']
+                if count>=5:raise HTTPException(409,'Mỗi cuộc trò chuyện ghim tối đa 5 tin. Hãy bỏ ghim một tin trước.')
+                c.execute('''INSERT INTO message_pins(user_id,scope,chat_id,message_id,created_at)
+                    VALUES(?,?,?,?,?)''',(u['id'],body.scope,body.chat_id,body.message_id,now()))
+                pinned=True
+        return {'pinned':pinned}
+
+    class ForwardMessage(BaseModel):
+        source_scope: Literal['dm','group']
+        source_chat_id: int=Field(gt=0)
+        message_id: int=Field(gt=0)
+        target_scope: Literal['dm','group']
+        target_id: int=Field(gt=0)
+
+    @app.post('/api/chat/forward')
+    async def forward_chat_message(request:Request,body:ForwardMessage):
+        u=current_user(request)
+        throttle(request,'forward-message',35,60,str(u['id']))
+        with db() as c:
+            source=checked_chat_message(c,u['id'],body.source_scope,body.source_chat_id,body.message_id)
+            content=source['body'] or ''
+            attachment_id=source['attachment_id']
+            if not content.strip() and not attachment_id:
+                raise HTTPException(409,'Tin nhắn không còn nội dung để chuyển tiếp.')
+            if body.target_scope=='dm':
+                require_peer(c,u['id'],body.target_id)
+                cur=c.execute('''INSERT INTO messages
+                  (sender_id,recipient_id,body,attachment_id,created_at,forwarded)
+                  VALUES(?,?,?,?,?,1)''',
+                  (u['id'],body.target_id,content,attachment_id,now()))
+                message=message_dict(c,one(c,'SELECT * FROM messages WHERE id=?',(cur.lastrowid,)),'dm')
+                targets=[u['id'],body.target_id]
+                pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
+                         (body.target_id,u['id']))
+                if not pref or not pref['muted']:
+                    notify(c,body.target_id,f'{u["username"]} đã chuyển tiếp một tin nhắn.')
+            else:
+                active_member(c,body.target_id,u['id'])
+                cur=c.execute('''INSERT INTO group_messages
+                  (group_id,sender_id,body,attachment_id,created_at,forwarded)
+                  VALUES(?,?,?,?,?,1)''',
+                  (body.target_id,u['id'],content,attachment_id,now()))
+                row=one(c,'''SELECT m.*,u.username FROM group_messages m
+                              JOIN users u ON u.id=m.sender_id WHERE m.id=?''',(cur.lastrowid,))
+                message=message_dict(c,row,'group')
+                targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',
+                                                      (body.target_id,))]
+        if body.target_scope=='dm':
+            for uid in set(targets):
+                await hub.user(uid,'message',message=message)
+        else:
+            for uid in targets:
+                await hub.user(uid,'group-message',group_id=body.target_id,message=message)
+        return {'message':message}
 
     class React(BaseModel):
         emoji:str
@@ -830,6 +964,7 @@ def install(core):
             m=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=?',(mid,gid))
             if not m:raise HTTPException(404,'Tin nhắn không tồn tại.')
             c.execute("UPDATE group_messages SET body='',deleted_at=COALESCE(deleted_at,?) WHERE id=?",(now(),mid))
+            c.execute("DELETE FROM message_pins WHERE scope='group' AND message_id=?",(mid,))
             admin_log(c,u['id'],'remove_group_message',f'{gid}/{mid}')
             targets=[x['user_id'] for x in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)

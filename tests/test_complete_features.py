@@ -10,7 +10,7 @@ from app import app
 def clean_extended_db():
     RATE_BUCKETS.clear()
     with db() as c:
-        for table in ('group_messages','group_members','chat_groups','reactions','chat_preferences',
+        for table in ('message_pins','group_messages','group_members','chat_groups','reactions','chat_preferences',
                       'attachments','recovery_grants','ticket_messages','tickets','notifications',
                       'messages','friendships','blocks','restrictions','sessions',
                       'login_challenges','registrations','audit'):
