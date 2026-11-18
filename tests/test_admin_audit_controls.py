@@ -82,3 +82,14 @@ def test_sensitive_admin_user_edit_and_session_revoke():
         assert any(r['action'] == 'admin_edit_user' for r in logs)
         assert any(r['action'] == 'admin_revoke_user_sessions' for r in logs)
         assert all('test@example.com' not in r['detail'] for r in logs)
+
+
+def test_maintenance_member_reset_is_high_impact():
+    """Data resets must not appear as ordinary informational events."""
+    from app import enrich_audit
+    example = {'id': 14, 'action': 'maintenance_member_reset', 'detail':
+               'Non-admin accounts and user-generated data reset; '
+               'administrator and configuration retained', 'admin_username': 'admin'}
+    enriched = enrich_audit(example)
+    assert enriched['severity'] == 'high'
+    assert enriched['detail'] == example['detail']
