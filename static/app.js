@@ -38,7 +38,7 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false};
-let toastTimer=0,typingTimer=0,socketRetry=null;
+let toastTimer=0,typingTimer=0,socketRetry=null,typingLastSent=0,typingContext='';
 
 // A tab-scoped marker survives a normal reload, but not a new ordinary tab.
 // Only screen IDs are kept here; never store passwords, PINs or cookies.
@@ -1833,8 +1833,16 @@ document.addEventListener('input',event=>{
   const group=state.tab==='groups'&&state.groupSelected;
   if(!state.selected&&!group)return;
   const payload=group?{type:'group-typing',group_id:state.groupSelected,on:true}:{type:'typing',to:state.selected,on:true};
-  state.ws.send(JSON.stringify(payload));
-  clearTimeout(typingTimer);typingTimer=setTimeout(()=>{if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({...payload,on:false}));},950);
+  const context=group?'group:'+state.groupSelected:'dm:'+state.selected;
+  const at=Date.now();
+  if(context!==typingContext||at-typingLastSent>1700){
+    state.ws.send(JSON.stringify(payload));typingLastSent=at;typingContext=context;
+  }
+  clearTimeout(typingTimer);
+  typingTimer=setTimeout(()=>{
+    if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({...payload,on:false}));
+    typingLastSent=0;typingContext='';
+  },1200);
  }
 });
 document.addEventListener('change',event=>{
