@@ -72,6 +72,8 @@ jobs:
         run: node tests/member_experience.cjs
       - name: Verify friendship, pin, forwarding and settings UI
         run: node tests/social_upgrade.cjs
+      - name: Verify private session manager and Admin-only security details
+        run: node tests/device_sessions_ui.cjs
       - name: Check theme wiring
         run: |
           python - <<'PY'
@@ -103,7 +105,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=16.1' in h
+          assert '/static/app.js?v=16.2' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -115,8 +117,8 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=15.0' in h
-          assert '/static/device-sessions.css?v=10.0' in h
+          assert '/static/extras.js?v=15.1' in h
+          assert '/static/device-sessions.css?v=11.0' in h
           assert 'auth-remember-choice' in application
           assert 'showcase-contact' not in application
           assert 'tối thiểu 10 ký tự' in application
