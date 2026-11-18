@@ -107,7 +107,7 @@ function openLocation(){
  const send=make('button','chat-location-send','Gửi vị trí');send.type='button';send.disabled=true;
  actions.append(cancel,send);
  dialog.append(permission,feedback,preview,actions);
- overlay.append(dialog);document.body.append(overlay);locationDialog=overlay;
+ overlay.append(dialog);overlay.context=ctx;document.body.append(overlay);locationDialog=overlay;
  let coords=null;
  const mapUrl=(a,b)=>'https://www.google.com/maps?q='+a+','+b;
  const selected=()=>{
@@ -277,7 +277,9 @@ function renderLocations(shell){
   const found=pattern.exec(message.body.trim());if(!found)continue;
   const lat=Number(found[2]),lon=Number(found[3]);
   if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)continue;
-  const wrapper=q('#msg-'+scope+'-'+Number(message.id),shell),bubble=q('.bubble',wrapper);
+  const wrapper=q('#msg-'+scope+'-'+Number(message.id),shell);
+  if(!wrapper)continue;
+  const bubble=q('.bubble',wrapper);
   if(!bubble||q('.chat-shared-location',bubble))continue;
   const body=all(':scope > div',bubble).find(node=>!node.classList.contains('stamp')&&!node.classList.contains('reply-inline'));
   if(!body)continue;
@@ -347,7 +349,7 @@ document.addEventListener('paste',event=>{
  uploadPhoto(photo);
 });
 document.addEventListener('dragover',event=>{
- if(!chatReady()||!event.dataTransfer?.types?.includes('Files'))return;
+ if(!chatReady()||!Array.from(event.dataTransfer?.types||[]).includes('Files'))return;
  const area=event.target.closest?.('.conversation');
  if(!area)return;event.preventDefault();area.classList.add('chat-drop-active');
 });
