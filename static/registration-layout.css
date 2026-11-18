@@ -191,3 +191,88 @@
 @media (prefers-reduced-motion:reduce){
   .registration-complete *{scroll-behavior:auto}
 }
+
+/* Registration request: fit the entire first step in standard desktop/laptop viewports.
+   Never clip controls on short viewports or while validation messages are shown. */
+@media (min-width:650px) and (max-width:1100px) and (min-height:820px){
+  .auth:has(form[data-form="register-request"]){
+    height:100dvh;
+    min-height:0;
+  }
+  .auth-main:has(form[data-form="register-request"]){
+    min-height:0;
+    padding:clamp(10px,1.8dvh,20px) clamp(15px,2vw,25px);
+  }
+  .auth-main:has(form[data-form="register-request"]) > .auth-panel{
+    min-height:0;
+    height:auto;
+    padding:clamp(17px,2.15dvh,24px)!important;
+    margin-block:auto;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-nav{
+    margin-bottom:15px;
+    padding:4px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-nav button{
+    min-height:39px;
+    padding:8px 7px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-screen{
+    min-height:0;
+    flex:0 0 auto;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-screen-content{
+    flex:0 0 auto;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-screen-content h1{
+    font-size:clamp(25px,2.6vw,30px);
+    line-height:1.22;
+    margin:8px 0 6px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-screen-content>.hint{
+    margin-bottom:12px;
+    line-height:1.55;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-step{
+    margin:14px 0 14px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .field.auth-input-field{
+    margin:9px 0;
+    gap:5px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-input-wrap .input{
+    height:47px;
+    min-height:47px;
+    padding-block:10px;
+  }
+  .auth-panel form[data-form="register-request"]>.hint,
+  .auth-panel form[data-form="register-request"]>div.hint{
+    margin-bottom:8px!important;
+    line-height:1.55;
+    font-size:11px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .btn.primary.full{
+    min-height:48px;
+    margin-top:13px;
+    padding:10px 15px;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .info-strip{
+    padding:10px 12px;
+    margin:10px 0;
+    line-height:1.55;
+  }
+  .auth-panel:has(form[data-form="register-request"]) .auth-footer{
+    margin-top:13px;
+    padding-top:10px;
+  }
+}
+@media (min-width:650px) and (max-width:800px) and (min-height:820px){
+  /* The narrow one-column layout needs a bounded parent for vertical centering. */
+  .auth-main:has(form[data-form="register-request"]){
+    height:100%;
+    min-height:0;
+    overflow:visible;
+  }
+}
+/* On smaller screens, large text settings, or expanded validation states, retain
+   natural scrolling so no field, privacy note, or submit button becomes unreachable. */
