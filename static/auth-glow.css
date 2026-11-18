@@ -1,0 +1,119 @@
+/* mtunz Soft Sweep v15.1 — a single subdued light reflection across the auth card.
+   Decorative only; isolated GPU-friendly opacity/transform animation. */
+.auth-panel > .auth-top-glow {
+  position:absolute;
+  inset:0 0 auto;
+  height:55px;
+  overflow:hidden;
+  border-radius:25px 25px 0 0;
+  z-index:0;
+  pointer-events:none;
+  user-select:none;
+  flex:none;
+  isolation:isolate;
+}
+.auth-panel > .auth-top-glow::before {
+  content:"";
+  position:absolute;
+  top:4px;
+  left:-44%;
+  width:43%;
+  height:7px;
+  border-radius:999px;
+  pointer-events:none;
+  background:linear-gradient(90deg,
+    transparent 0%,
+    rgba(165,142,255,.12) 22%,
+    rgba(191,177,255,.62) 48%,
+    rgba(131,217,246,.68) 55%,
+    rgba(152,161,255,.12) 80%,
+    transparent 100%);
+  filter:blur(5px);
+  opacity:0;
+  transform:translate3d(0,0,0);
+  will-change:transform,opacity;
+  animation:auth-soft-sweep 7s linear infinite;
+}
+.auth-panel > .auth-top-glow::after {
+  content:"";
+  position:absolute;
+  top:-20px;
+  left:-48%;
+  width:44%;
+  height:62px;
+  border-radius:50%;
+  background:radial-gradient(ellipse at center,
+    rgba(155,174,255,.16) 0%,
+    rgba(137,172,255,.08) 42%,
+    transparent 78%);
+  filter:blur(16px);
+  pointer-events:none;
+  opacity:.25;
+  transform:translate3d(0,0,0);
+  will-change:transform,opacity;
+  animation:auth-ambient-drift 9s ease-in-out infinite alternate;
+}
+@keyframes auth-soft-sweep {
+  0%{transform:translate3d(0,0,0);opacity:0}
+  12%{opacity:.48}
+  52%{opacity:.78}
+  88%{opacity:.42}
+  100%{transform:translate3d(355%,0,0);opacity:0}
+}
+@keyframes auth-ambient-drift {
+  from{transform:translate3d(0,0,0);opacity:.16}
+  to{transform:translate3d(350%,0,0);opacity:.32}
+}
+/* The old moving LED perimeter competes with the quiet top reflection.
+   Keep only its unobtrusive static border; no second moving light. */
+.auth-panel > .auth-neon-perimeter .auth-neon-halo{display:none}
+.auth-panel > .auth-neon-perimeter .auth-neon-runner{
+  animation:none;
+  stroke-opacity:.14;
+  stroke-width:1.3;
+}
+.auth-panel::before{opacity:.22}
+/* Preserve the three-step state without three bright progress bars. */
+.auth-screen-content .auth-step{
+  height:6px;
+  gap:9px;
+  justify-content:center;
+  margin:23px 0;
+}
+.auth-screen-content .auth-step span{
+  width:6px;
+  height:6px;
+  flex:0 0 6px;
+  background:#43516d;
+  border-radius:50%;
+  box-shadow:none;
+}
+.auth-screen-content .auth-step span.active{
+  background:#a9a2ee;
+  box-shadow:0 0 8px rgba(149,139,239,.3);
+  animation:none;
+}
+@media(max-width:520px){
+  .auth-panel > .auth-top-glow{border-radius:20px 20px 0 0}
+}
+/* Pause offscreen tabs / hidden pages without forcing a new layout or repaint loop. */
+html.mtunz-motion-paused .auth-top-glow::before,
+html.mtunz-motion-paused .auth-top-glow::after{
+  animation-play-state:paused!important;
+}
+html.mtunz-save-data .auth-top-glow::after{display:none}
+html.mtunz-save-data .auth-top-glow::before{
+  animation:none!important;
+  transform:translate3d(170%,0,0);
+  opacity:.24;
+  will-change:auto;
+}
+@media(prefers-reduced-motion:reduce){
+  .auth-panel > .auth-top-glow::after{display:none}
+  .auth-panel > .auth-top-glow::before{
+    animation:none!important;
+    transform:translate3d(170%,0,0);
+    opacity:.22;
+    will-change:auto;
+  }
+}
