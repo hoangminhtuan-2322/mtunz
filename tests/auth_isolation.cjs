@@ -66,6 +66,9 @@ context.renderAuth();
 assert.equal(initialShellWrites,1,'Initial mount once');
 assert.equal(artRenderCount,1,'Hero rendered once');
 assert.match(host.markup,/STATIC BRAND/);
+assert.match(host.markup,/class="auth-neon-perimeter" aria-hidden="true"/,'Shared auth panel includes decorative LED perimeter');
+assert.equal((host.markup.match(/class="auth-neon-runner"/g)||[]).length,1,'Only one LED trace mounts');
+assert.match(host.markup,/pathLength="100"/,'LED trace follows scalable frame perimeter');
 
 for(const [name,form] of [['register','registration-form'],['support','support-form'],['login','login-form']]){
   state.mode=name;
@@ -80,6 +83,13 @@ for(const [name,form] of [['register','registration-form'],['support','support-f
   }
 }
 assert(!code.slice(start,end).includes('scrollIntoView'),'Auth transitions must not scroll full page');
+const neon = fs.readFileSync('static/auth-neon.css','utf8');
+assert(neon.includes('.auth-panel > .auth-neon-perimeter'), 'Neon is scoped to auth card');
+assert(neon.includes('stroke-dasharray:8 92'), 'Short perimeter LED segment is defined');
+assert(neon.includes('stroke-dashoffset:-100'), 'LED travels a full continuous lap');
+assert(neon.includes('linear infinite'), 'LED loops continuously');
+assert(neon.includes('prefers-reduced-motion:reduce'), 'Reduced motion is respected');
+assert(neon.includes('mtunz-motion-paused')&&neon.includes('mtunz-save-data'), 'Energy-saving mode stops LED movement');
 const theme = fs.readFileSync('static/auth-refined.css','utf8');
 assert(theme.includes('.auth-screen-content'));
 assert(theme.includes('.auth-art.art-v4 .signal-feature'));
@@ -88,7 +98,8 @@ assert(theme.includes('prefers-reduced-motion'));
 assert(theme.includes('.auth-input-wrap:focus-within'));
 const html=fs.readFileSync('static/index.html','utf8');
 assert(html.includes('auth-refined.css?v=5.1'));
-assert(html.includes('app.js?v=10.1'));
+assert(html.includes('auth-neon.css?v=14.0'));
+assert(html.includes('app.js?v=10.2'));
 assert(html.includes('orbit-brand.css?v=8.0'));
 assert(html.includes('hero-nova.css?v=7.0'));
 assert(!code.includes('Thiết bị này đã được ghi nhớ. Nhập PIN'), 'Remove redundant remembered-device PIN paragraph');
