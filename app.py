@@ -463,7 +463,13 @@ async def health():
             status_code=503,
             detail='Cơ sở dữ liệu chưa sẵn sàng. Vui lòng thử lại sau.'
         ) from None
-    return {'ok':True,'app':'mtunz','version':'2.0'}
+    # Render provides the Git SHA automatically. Exposing a short SHA from a
+    # public repository is safe and makes deployment drift easy to diagnose.
+    release = os.getenv('RENDER_GIT_COMMIT', '').strip().lower()
+    result = {'ok':True,'app':'mtunz','version':'2.0'}
+    if re.fullmatch(r'[0-9a-f]{40}', release):
+        result['commit'] = release[:12]
+    return result
 
 @app.get('/')
 async def home():
