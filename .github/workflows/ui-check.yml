@@ -72,6 +72,8 @@ jobs:
         run: node tests/member_experience.cjs
       - name: Verify friendship, pin, forwarding and settings UI
         run: node tests/social_upgrade.cjs
+      - name: Verify first-login name and phone sign-in interface
+        run: node tests/first_login_ui.cjs
       - name: Verify private session manager and Admin-only security details
         run: node tests/device_sessions_ui.cjs
       - name: Check theme wiring
