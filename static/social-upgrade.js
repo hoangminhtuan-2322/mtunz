@@ -17,8 +17,8 @@ const chat=()=>{
 };
 const chatKey=ctx=>ctx?ctx.scope+':'+ctx.chat_id:'';
 const sameChat=ctx=>chatKey(chat())===chatKey(ctx);
-let shownFriendIds=new Set(),showingFriend=null,friendPollReady=false;
-let currentPinKey='',pinList=[],pinLoading=false,visiblePinKey='',renderScheduled=false;
+let shownFriendIds=new Set(),showingFriend=null,lastFriendUserId=null;
+let currentPinKey='',pinList=[],pinRequestVersion=0,visiblePinKey='',renderScheduled=false;
 let forwardDialog=null,friendPopup=null;
 function closeFriendPopup(){
  if(friendPopup){friendPopup.remove();friendPopup=null;}
@@ -44,7 +44,7 @@ function drawFriendPopup(friend){
  const deny=el('button','mt-friend-btn reject','Từ chối');deny.type='button';
  actions.append(profile,accept,deny);card.append(actions);
  document.body.append(card);friendPopup=card;
- close.addEventListener('click',closeFriendPopup);
+ close.addEventListener('click',()=>{closeFriendPopup();checkInvites();});
  profile.addEventListener('click',async()=>{
    profile.disabled=true;info.hidden=false;info.replaceChildren(el('p','', 'Đang tải hồ sơ…'));
    try{
@@ -71,18 +71,20 @@ function drawFriendPopup(friend){
  deny.addEventListener('click',()=>respond(false));
 }
 function checkInvites(){
- if(!inApp()){closeFriendPopup();shownFriendIds.clear();friendPollReady=false;return;}
+ if(!inApp()){closeFriendPopup();shownFriendIds.clear();lastFriendUserId=null;return;}
+ if(lastFriendUserId!==state.user.id){
+  closeFriendPopup();shownFriendIds.clear();lastFriendUserId=state.user.id;
+ }
  const incoming=(state.friends||[]).filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
  const valid=new Set(incoming.map(f=>f.other_id));
  if(showingFriend&&!valid.has(showingFriend))closeFriendPopup();
  for(const f of incoming){
   if(!shownFriendIds.has(f.other_id)){
+   if(friendPopup)break;
    shownFriendIds.add(f.other_id);
-   if(!friendPopup)drawFriendPopup(f);
-   break;
+   drawFriendPopup(f);break;
   }
  }
- friendPollReady=true;
 }
 function wrapFriends(){
  if(typeof refreshFriends!=='function'||refreshFriends.__mtunzSocialWrapped)return;
@@ -135,7 +137,7 @@ function openForward(id){
  const search=el('input','mt-forward-search');search.type='search';search.placeholder='Tìm người hoặc nhóm…';search.setAttribute('aria-label','Tìm nơi chuyển tiếp');
  dialog.append(search);
  const list=el('div','mt-forward-list');dialog.append(list);
- const friends=(state.friends||[]).filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived).map(f=>({
+ const friends=(state.friends||[]).filter(f=>f.state==='accepted'&&!f.restricted).map(f=>({
   scope:'dm',id:f.other_id,name:f.display_name||f.username,detail:'Bạn bè'
  }));
  const groups=(state.groups||[]).map(g=>({scope:'group',id:g.id,name:g.title,detail:'Nhóm · '+g.member_count+' thành viên'}));
@@ -171,14 +173,14 @@ function openForward(id){
 }
 function closeForward(){if(forwardDialog){forwardDialog.remove();forwardDialog=null;}}
 async function loadPins(ctx){
- if(!ctx||pinLoading)return;
- pinLoading=true;
+ if(!ctx)return;
+ const requestId=++pinRequestVersion;
  try{
   const params=new URLSearchParams({scope:ctx.scope,chat_id:String(ctx.chat_id)});
   const result=await api('/api/chat/pins?'+params);
-  if(sameChat(ctx)){pinList=result.pins||[];visiblePinKey='';renderPins();}
+  if(requestId===pinRequestVersion&&sameChat(ctx)){pinList=result.pins||[];visiblePinKey='';renderPins();}
  }catch(err){if(sameChat(ctx))console.warn('Không thể tải tin đã ghim:',err.message);}
- finally{pinLoading=false;}
+ finally{}
 }
 function renderPins(){
  const ctx=chat();if(!ctx)return;
@@ -260,7 +262,7 @@ function mount(){
  checkInvites();
  upgradeSettings();
  const ctx=chat();
- if(!ctx){currentPinKey='';pinList=[];visiblePinKey='';closeForward();return;}
+ if(!ctx){currentPinKey='';pinList=[];visiblePinKey='';pinRequestVersion++;closeForward();return;}
  addMessageActions();
  const key=chatKey(ctx);
  if(key!==currentPinKey){currentPinKey=key;pinList=[];visiblePinKey='';loadPins(ctx);}
