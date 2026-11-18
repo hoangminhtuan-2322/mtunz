@@ -373,7 +373,7 @@ def install(core):
             if body.scope=='world' and body.message_id:
                 source=one(c,'SELECT sender_id FROM world_messages WHERE id=? AND deleted_at IS NULL',(body.message_id,))
                 if not source:
-                    raise HTTPException(404,'Không tìm thấy tin nhắn để báo cáo.')
+                    raise HTTPException(403,'Tin nhắn không hợp lệ.')
                 if body.target_id not in (0,source['sender_id']):
                     raise HTTPException(403,'Tài khoản được báo cáo không khớp nội dung.')
                 target_id=source['sender_id']
