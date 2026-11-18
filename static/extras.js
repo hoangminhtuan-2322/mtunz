@@ -134,7 +134,7 @@ function profileSettings(){
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
  <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
  <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
- <p class="hint" style="margin:10px 0 14px">Chỉ bạn và quản trị viên được xem số điện thoại, email để quản lý tài khoản. Không xuất hiện trên hồ sơ công khai. Chưa xác minh qua SMS hoặc email.</p>
+ <p class="hint" style="margin:10px 0 14px">Số điện thoại và email không hiển thị trên hồ sơ công khai.</p>
  <form data-form="settings-contact">
   <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
   <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}"></div>
