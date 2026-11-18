@@ -4,6 +4,7 @@ Runs against an isolated SQLite test database. Never targets production Neon.
 """
 import os
 import sys
+import hashlib
 import tempfile
 import time
 from account_deletion import purge_due_deletions
@@ -57,8 +58,10 @@ def login_admin():
 
 def create_member(admin, name):
     client = TestClient(app)
+    digits=int.from_bytes(hashlib.sha256(name.encode('utf-8')).digest()[:6],'big')%1_000_000_000
+    phone='0'+str(digits).zfill(9)
     assert client.post('/api/registration/request',
-                       json={'username':name,'phone':'0912345678'}).status_code == 200
+                       json={'username':name,'phone':phone}).status_code == 200
     pending = admin.get('/api/admin/registrations').json()['registrations']
     ticket = next(x['id'] for x in pending if x['username'] == name)
     assert admin.post(f'/api/admin/registrations/{ticket}/decision',
@@ -73,6 +76,8 @@ def create_member(admin, name):
     challenge = auth.json()['challenge']
     pin = client.post('/api/auth/pin',json={'challenge':challenge,'pin':PIN})
     assert pin.status_code == 200,pin.text
+    completed=client.post('/api/me/display-name',json={'display_name':'Thành viên '+name})
+    assert completed.status_code == 200,completed.text
     return client, client.get('/api/me').json()['user']['id']
 
 

@@ -746,7 +746,7 @@ class PinLogin(BaseModel):
 async def auth_pin(request: Request, body: PinLogin):
     throttle(request, 'pin-login', 12, 900, request.state.gid)
     with db() as c:
-        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.sanction_kind,u.sanction_until
+        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until
                      FROM login_challenges l JOIN users u ON u.id=l.user_id WHERE l.token_hash=?''',
                 (digest(body.challenge),))
         if not r or r['guest_id'] != request.state.gid or r['expires_at'] <= now():
@@ -764,7 +764,7 @@ async def auth_pin(request: Request, body: PinLogin):
             c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(previous),))
         is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(r['user_id'],))['is_admin'])
         # Admins never receive a PIN-only long-lived browser credential.
-        saved = token() if body.remember_device and not is_admin else None
+        saved = token() if body.remember_device and not is_admin and not r['needs_display_name'] else None
         if saved:
             info = device_metadata(request)
             created = now()
