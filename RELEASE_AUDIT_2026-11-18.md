@@ -1,3 +1,5 @@
+> **TÀI LIỆU TRƯỚC ĐÂY:** Bản rà soát này đã được thay thế bằng [PREPUBLIC_FINAL_AUDIT_2026-11-18.md](PREPUBLIC_FINAL_AUDIT_2026-11-18.md). Hãy sử dụng báo cáo mới nhất để kiểm tra trước public.
+
 # MTUNZ — Đánh giá mức sẵn sàng trước public
 **Ngày rà soát:** 18/11/2026  
 **Phạm vi:** GitHub `main`, các workflow CI, mã FastAPI/PostgreSQL, giao diện Admin/người dùng, kiểm tra metadata Neon.  
