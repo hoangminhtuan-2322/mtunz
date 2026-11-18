@@ -646,6 +646,7 @@ function renderAuth(){
    host.innerHTML=`<div class="auth">${authArt()}<main class="auth-main">
      <div class="auth-mobile-logo logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span> mtunz<span class="brand-dot">.</span></div>
      <div class="auth-panel">
+       <span class="auth-top-glow" aria-hidden="true"></span>
        <svg class="auth-neon-perimeter" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
          <defs><linearGradient id="auth-neon-glow-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
            <stop offset="0%" stop-color="#b79aff"/>
