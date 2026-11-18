@@ -1,126 +1,49 @@
-/* mtunz Neon Trace v14.1 — two independent perimeter traces for card and tabs.
-   The SVG follows the real rounded rectangle when the card changes height.
-   No JS frame loop, animated blur, large repainting backgrounds or layout movement. */
 
-.auth-panel{--auth-neon-speed:8.5s}
+/* v16.0: one short, diffuse glow moving around the full rounded auth card.
+   No long top-edge bar and no moving tab outline. */
+.auth-panel{--auth-neon-speed:17s}
 .auth-panel > .auth-neon-perimeter{
-  position:absolute;
-  inset:0;
-  display:block;
-  width:100%;
-  height:100%;
-  z-index:0;
-  overflow:visible;
-  pointer-events:none;
-  user-select:none;
-  flex:none;
-  /* Keep the decorative ring out of layout and hit testing. */
+  position:absolute;inset:0;display:block;width:100%;height:100%;
+  z-index:0;overflow:visible;pointer-events:none;user-select:none;flex:none;
 }
 .auth-panel > .auth-neon-perimeter rect{
-  x:2px;
-  y:2px;
-  width:calc(100% - 4px);
-  height:calc(100% - 4px);
-  rx:24px;
-  ry:24px;
-  fill:none;
-  vector-effect:non-scaling-stroke;
+  x:2px;y:2px;width:calc(100% - 4px);height:calc(100% - 4px);
+  rx:24px;ry:24px;fill:none;vector-effect:non-scaling-stroke;
 }
 .auth-panel > .auth-neon-perimeter .auth-neon-track{
-  stroke:#867ce9;
-  stroke-opacity:.23;
-  stroke-width:1;
+  stroke:#817ac2;stroke-opacity:.14;stroke-width:1;
 }
 .auth-panel > .auth-neon-perimeter .auth-neon-halo,
 .auth-panel > .auth-neon-perimeter .auth-neon-runner{
-  stroke-dasharray:8 92;
-  stroke-dashoffset:0;
-  stroke-linecap:round;
+  stroke-dasharray:2.4 97.6;stroke-dashoffset:0;stroke-linecap:round;
   animation:auth-neon-lap var(--auth-neon-speed) linear infinite;
 }
 .auth-panel > .auth-neon-perimeter .auth-neon-halo{
-  stroke:#8e82ff;
-  stroke-width:5;
-  stroke-opacity:.23;
+  stroke:#9688f5;stroke-width:9;stroke-opacity:.12;filter:blur(3px);
 }
 .auth-panel > .auth-neon-perimeter .auth-neon-runner{
-  stroke:url(#auth-neon-glow-gradient);
-  stroke-width:2.4;
-  stroke-opacity:.98;
+  stroke:url(#auth-neon-glow-gradient);stroke-width:1.6;stroke-opacity:.20;
 }
-/* The tab track is another true rounded-rectangle SVG, not a strip on top
-   or a rotating rectangle. pathLength=100 keeps laps consistent at all sizes. */
-.auth-panel > .auth-nav{
-  isolation:isolate;
+/* Tabs and form content stay above the purely decorative outer glow. */
+.auth-panel > .auth-nav,.auth-panel > .auth-screen,.auth-panel > .auth-footer{
+  position:relative;z-index:1;
 }
-.auth-panel > .auth-nav > .auth-nav-perimeter{
-  position:absolute;
-  inset:0;
-  display:block;
-  width:100%;
-  height:100%;
-  z-index:2;
-  overflow:visible;
-  pointer-events:none;
-  user-select:none;
-  flex:none;
-}
-.auth-panel > .auth-nav > .auth-nav-perimeter rect{
-  x:2px;
-  y:2px;
-  width:calc(100% - 4px);
-  height:calc(100% - 4px);
-  rx:14px;
-  ry:14px;
-  fill:none;
-  vector-effect:non-scaling-stroke;
-}
-.auth-panel > .auth-nav .auth-nav-runner{
-  stroke:#abacff;
-  stroke-width:2.2;
-  stroke-opacity:.95;
-  stroke-dasharray:8 92;
-  stroke-dashoffset:0;
-  stroke-linecap:round;
-  animation:auth-neon-lap 6.5s linear infinite;
-}
-/* Ensure inputs and tabs remain above the noninteractive border decoration. */
-.auth-panel > .auth-nav,
-.auth-panel > .auth-screen,
-.auth-panel > .auth-footer{
-  position:relative;
-  z-index:1;
-}
-@keyframes auth-neon-lap{
-  from{stroke-dashoffset:0}
-  to{stroke-dashoffset:-100}
-}
-/* Card radius is smaller on phones, while the trace still follows its perimeter. */
+@keyframes auth-neon-lap{from{stroke-dashoffset:0}to{stroke-dashoffset:-100}}
 @media(max-width:520px){
   .auth-panel > .auth-neon-perimeter rect{rx:19px;ry:19px}
+  .auth-panel > .auth-neon-perimeter .auth-neon-halo{filter:none;stroke-opacity:.07}
 }
-/* Respect platform energy and motion choices; keep a subtle static accent. */
-html.mtunz-motion-paused .auth-nav-perimeter .auth-nav-runner,
 html.mtunz-motion-paused .auth-neon-perimeter .auth-neon-halo,
 html.mtunz-motion-paused .auth-neon-perimeter .auth-neon-runner{
   animation-play-state:paused!important;
 }
 html.mtunz-save-data .auth-neon-perimeter .auth-neon-halo{display:none}
-html.mtunz-save-data .auth-nav-perimeter .auth-nav-runner,
 html.mtunz-save-data .auth-neon-perimeter .auth-neon-runner{
-  animation:none!important;
-  stroke-dasharray:12 88;
+  animation:none!important;stroke-dasharray:none;stroke-opacity:.06;
 }
 @media(prefers-reduced-motion:reduce){
-  .auth-panel > .auth-nav .auth-nav-runner{
-    animation:none!important;
-    stroke-dasharray:12 88;
-    stroke-opacity:.65;
-  }
   .auth-panel > .auth-neon-perimeter .auth-neon-halo{display:none}
   .auth-panel > .auth-neon-perimeter .auth-neon-runner{
-    animation:none!important;
-    stroke-dasharray:12 88;
-    stroke-opacity:.65;
+    animation:none!important;stroke-dasharray:none;stroke-opacity:.06;
   }
 }

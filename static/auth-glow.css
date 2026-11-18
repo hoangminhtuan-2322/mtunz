@@ -1,8 +1,5 @@
-/* mtunz Auth Glow v15.2.
-   The former top-edge sweep is removed: both borders now use the continuous
-   rounded SVG traces in auth-neon.css instead of competing top-only effects. */
+/* v16.0: no top sweep; moving ambient halo belongs to auth-neon.css. */
 .auth-panel::before{display:none}
-.auth-panel > .auth-neon-perimeter .auth-neon-halo{display:none}
 
 /* Keep the three-step state quiet instead of adding more animated bars. */
 .auth-screen-content .auth-step{
