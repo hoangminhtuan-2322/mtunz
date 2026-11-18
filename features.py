@@ -195,7 +195,8 @@ def install(core):
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
         active_hash=core.digest(request.cookies.get('s',''))
-        columns='token_hash,expires_at,created_at,last_seen,device_label,device_name,device_type,browser,os_name,location_hint,network_hint'
+        # Member API never returns security-only IP or GeoIP hints.
+        columns='token_hash,expires_at,created_at,last_seen,device_label,device_name,device_type,browser,os_name'
         with db() as c:
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',(now(),active_hash,u['id']))
             rows=many(c,f'SELECT {columns} FROM sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC',(u['id'],now()))
@@ -208,8 +209,6 @@ def install(core):
                 entry['label']=entry.pop('device_label') or entry['device_name'] or 'Thiết bị cũ'
                 for field in ('device_name','browser','os_name'):
                     entry[field]=entry[field] or 'Chưa có dữ liệu'
-                entry['location_hint']=entry['location_hint'] or 'Chưa xác định'
-                entry['network_hint']=entry['network_hint'] or ''
         return {'sessions':rows,'remembered_devices':devices}
 
     def owned_device(c, user_id, kind, public_id):

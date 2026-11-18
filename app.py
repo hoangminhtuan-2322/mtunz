@@ -1443,6 +1443,29 @@ async def admin_user_details(request:Request,uid:int):
     return {'user':detail}
 
 
+@app.get('/api/admin/users/{uid}/session-security')
+async def admin_user_session_security(request:Request,uid:int):
+    """Admin-only, audited review of stored truncated network and optional GeoIP hints."""
+    admin=require_admin(request)
+    throttle(request,'admin-session-security',30,3600,str(admin['id']))
+    with db() as c:
+        target=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
+        if not target:
+            raise HTTPException(404,'Không tìm thấy người dùng.')
+        fields=('device_label,device_name,device_type,browser,os_name,'
+                'network_hint,location_hint,created_at,last_seen,expires_at')
+        sessions=many(c,f'''SELECT {fields} FROM sessions
+                          WHERE user_id=? AND expires_at>?
+                          ORDER BY created_at DESC LIMIT 30''',(uid,now()))
+        devices=many(c,f'''SELECT {fields} FROM trusted_devices
+                         WHERE user_id=? AND expires_at>?
+                         ORDER BY created_at DESC LIMIT 30''',(uid,now()))
+        # Audit metadata access; never log the network/location values themselves.
+        admin_log(c,admin['id'],'admin_view_session_security',
+                  f'user_id={uid}; sessions={len(sessions)}; remembered={len(devices)}')
+    return {'user_id':uid,'username':target['username'],
+            'sessions':sessions,'remembered_devices':devices}
+
 @app.post('/api/admin/users/{uid}/sanction')
 async def admin_sanction(request:Request,uid:int,body:Sanction):
     admin=require_admin(request)
