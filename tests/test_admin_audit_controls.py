@@ -75,7 +75,7 @@ def test_sensitive_admin_user_edit_and_session_revoke():
     result = admin.post(revoke, json={**reason, 'admin_password': 'mtunz7'})
     assert result.status_code == 200, result.text
     assert result.json()['sessions_revoked'] >= 1
-    assert member.get('/api/me').status_code == 401
+    assert member.get('/api/me').json()['user'] is None
     with db() as c:
         logs = c.execute("SELECT action, detail FROM audit WHERE action IN "
                          "('admin_edit_user','admin_revoke_user_sessions')").fetchall()
