@@ -30,7 +30,7 @@ assert(backend.includes("request.url.path not in ('/api/me', '/api/me/display-na
 assert(features.includes("column('users','needs_display_name'"));
 assert(backend.includes('needs_display_name)')&&backend.includes('?,?,?,?,?,?,?,?,1'));
 assert(html.includes('app.js?v=16.7'));
-assert(html.includes('extras.js?v=15.2'));
+assert(html.includes('extras.js?v=15.3'));
 assert(html.includes('onboarding.css?v=1.0'));
 assert(css.includes('.onboarding-name-box')&&css.includes('max-width:600px'));
 assert(!extras.includes('r.username)} · ID'),'Peer profile must not show login identifier');
