@@ -27,6 +27,11 @@ assert(world.includes("post('/api/admin/world/config'"),'Admin schedule action e
 assert(world.includes("post('/api/admin/world/reset'"),'Admin reset action exists');
 assert(world.includes("post('/api/admin/reports/")||world.includes("post('/api/admin/reports/'+"),'Admin report decision exists');
 assert(world.includes('data-world-countdown'),'Countdown widget exists');
+assert(fs.readFileSync('static/extras.js','utf8').includes('data-world-scope='),'Direct and group messages expose scoped report action');
+assert(fs.readFileSync('static/extras.js','utf8').includes('data-world-group='),'Group reporting carries group ID');
+assert(world.includes('group_id:groupId'),'Report payload preserves group context');
+assert(world.includes('target.dataset.worldScope'),'Member report action forwards evidence scope');
+assert(app.includes('data-world-report-user'),'Public user search permits reporting');
 assert(server.includes('SPAM_THRESHOLD = 5')&&server.includes('SPAM_WINDOW = 3'));
 assert(server.includes('WARNINGS_PER_PENALTY = 3'));
 assert(server.includes('RESET_AFTER = 30 * 86400'));
