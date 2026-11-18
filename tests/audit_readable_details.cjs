@@ -46,6 +46,6 @@ assert.equal(context.inspect({action:'unrecognized_event',detail:'<script>alert(
  assert(shown.content.includes('<details'),'Raw technical fields should be collapsed');
  assert(shown.content.includes('Non-admin accounts and user-generated data reset'),'Raw original remains intact');
  assert(css.includes('.admin-audit-explanation')&&css.includes('.admin-audit-technical'));
- assert(html.includes('app.js?v=16.6')&&html.includes('admin-console.css?v=12.2'));
+ assert(html.includes('app.js?v=16.7')&&html.includes('admin-console.css?v=12.2'));
  console.log('Admin audit details: grounded Vietnamese explanation, intact raw record, responsive UI.');
 })().catch(e=>{console.error(e);process.exitCode=1});
