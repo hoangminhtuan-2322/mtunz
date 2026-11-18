@@ -298,8 +298,21 @@ async function extraAction(btn){
    const result=await Notification.requestPermission();toast(result==='granted'?'Đã bật thông báo khi tab còn hoạt động.':'Trình duyệt chưa cấp quyền.',result==='granted'?'ok':'info');break;
  }
  case 'profile-view':{
-  const r=(await api(`/api/profile/${id}`)).profile;
-  modal({title:'Hồ sơ người dùng',content:`<div class="row">${avatar(r.display_name||'Thành viên',false,'xl')}<div><h3>${esc(r.display_name||'Thành viên')}</h3><div class="hint">ID #${Number(r.id)}</div></div></div><p>${esc(r.bio||'Chưa có lời giới thiệu.')}</p><p>Tham gia: ${date(r.created_at)}</p><button class="btn ghost sm" type="button" data-world-report-user="${Number(r.id)}">${icon('shield',15)} Báo cáo người dùng</button>`,confirm:'Đóng'});break;
+  const r=(await api('/api/profile/'+id)).profile;
+  const cover=r.cover_url?esc(r.cover_url):null;
+  const website=r.website&&/^https:\/\//.test(r.website)?r.website:null;
+  modal({title:'Hồ sơ thành viên',content:`<div class="social-profile-view">
+   <div class="social-profile-view-cover" ${cover?`style="background-image:url('${cover}')"`:''}></div>
+   <div class="social-profile-view-person">
+     ${avatar(r.display_name||'Thành viên',false,'xl',r.avatar_url)}
+     <div><h3>${esc(r.display_name||'Thành viên')}</h3><div class="hint">ID #${Number(r.public_id||r.id)} · Thành viên từ ${date(r.created_at)}</div></div>
+   </div>
+   ${r.private?'<p class="hint">Hồ sơ được chủ tài khoản giới hạn quyền xem.</p>':
+     `<strong>${esc(r.headline||'')}</strong>
+      <div class="social-profile-view-bio">${esc(r.bio||'Chưa có lời giới thiệu.')}</div>
+      ${website?`<a href="${esc(website)}" target="_blank" rel="noopener noreferrer">Trang web của thành viên</a>`:''}`}
+   <button class="btn ghost sm" type="button" data-world-report-user="${Number(r.id)}">${icon('shield',15)} Báo cáo người dùng</button>
+   </div>`,confirm:'Đóng'});break;
  }
  case 'mute-chat':case 'archive-chat':{
   const f=state.friends.find(x=>x.other_id===id);if(!f)return;
@@ -361,12 +374,34 @@ function notifyBrowser(message){
    try{const n=new Notification('mtunz',{body:message,icon:'/static/favicon.svg'});n.onclick=()=>window.focus();}catch{}
  }
 }
+let groupRefreshTimer=0;
+function scheduleGroupsRefresh(delay=450){
+ clearTimeout(groupRefreshTimer);
+ groupRefreshTimer=setTimeout(()=>refreshGroups(false).then(()=>renderSideItems()).catch(()=>{}),delay);
+}
+function appendGroupMessage(groupId,message){
+ if(!message||state.groupSelected!==groupId)return;
+ const pos=state.groupMessages.findIndex(item=>item.id===message.id);
+ if(pos<0)state.groupMessages.push(message);else state.groupMessages[pos]=message;
+ state.groupMessages.sort((a,b)=>a.id-b.id);
+ if(state.groupMessages.length>100)state.groupMessages.splice(0,state.groupMessages.length-100);
+ if(state.tab==='groups'){
+  const box=$('#chat-messages');
+  if(box){
+   const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<140;
+   const scroll=box.scrollTop;
+   box.innerHTML=bubblesFor(state.groupMessages,true);
+   box.scrollTop=atBottom?box.scrollHeight:scroll;
+  }
+  if(message.sender_id!==state.user?.id)post('/api/groups/'+groupId+'/read').catch(()=>{});
+ }
+}
 async function extraSocket(data){
  const t=data.type;
- if(t==='groups-updated'){await refreshGroups(state.tab==='groups');return;}
+ if(t==='groups-updated'){scheduleGroupsRefresh(80);return;}
  if(t==='group-message'){
-  if(state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
-  await refreshGroups();renderSideItems();
+  if(state.groupSelected===data.group_id)appendGroupMessage(data.group_id,data.message);
+  scheduleGroupsRefresh();
   if(data.message.sender_id!==state.user?.id&&!(state.groupSelected===data.group_id&&state.tab==='groups')){
     toast('Có tin nhắn mới trong nhóm.');notifyBrowser('Tin nhắn mới trong nhóm');
   }
