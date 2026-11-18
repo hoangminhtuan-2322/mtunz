@@ -134,9 +134,8 @@ async function worldSend(text,button){
  }catch(err){toast('Không kết nối được máy chủ. '+err.message,'error');}
  finally{if(button?.isConnected)button.disabled=false;}
 }
-function openReportDialog(uid,messageId=null){
+function openReportDialog(uid,messageId=null,scope=messageId?'world':'profile',groupId=null){
  if(!state.user||state.user.is_admin||!Number.isSafeInteger(uid)||uid<=0||uid===state.user.id)return;
- const scope=messageId?'world':'profile';
  const options=Object.entries(worldReasonNames).map(([key,label])=>'<option value="'+key+'">'+worldEscape(label)+'</option>').join('');
  modal({
   title:'Báo cáo người dùng',
@@ -151,7 +150,7 @@ function openReportDialog(uid,messageId=null){
    const desc=host.querySelector('#world-report-description').value.trim();
    if(desc.length<10)throw Error('Vui lòng mô tả ít nhất 10 ký tự.');
    const result=await post('/api/reports',{target_id:uid,reason:host.querySelector('#world-report-reason').value,
-                                          description:desc,scope,message_id:messageId});
+                                          description:desc,scope,message_id:messageId,group_id:groupId});
    toast('Đã gửi báo cáo #'+result.report_id+'. Admin sẽ xem xét.','ok');
   }
  });
@@ -233,7 +232,10 @@ document.addEventListener('click',async event=>{
  if(!target||target.disabled)return;
  const user=Number(target.dataset.worldReportUser);
  if(target.hasAttribute('data-world-report-user')){
-  openReportDialog(user,target.dataset.worldMessage?Number(target.dataset.worldMessage):null);return;
+  const messageId=target.dataset.worldMessage?Number(target.dataset.worldMessage):null;
+  const scope=target.dataset.worldScope||(messageId?'world':'profile');
+  const groupId=target.dataset.worldGroup?Number(target.dataset.worldGroup):null;
+  openReportDialog(user,messageId,scope,groupId);return;
  }
  const action=target.dataset.worldAction;
  try{
