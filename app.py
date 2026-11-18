@@ -1559,7 +1559,7 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
                   (body.display_name.strip(),body.bio.strip(),phone,email,uid))
         # Never write phone, email, passwords, PIN or profile content into audit.
         admin_log(c,admin['id'],'admin_edit_user',
-                  f'user_id={uid}; fields=display_name,bio,phone,email; reason={body.reason.strip()[:100]}')
+                  f'user_id={uid}; fields=display_name,bio,phone,email; justification=provided')
     await hub.user(uid,'profile-updated')
     return {'ok':True,'user_id':uid}
 
@@ -1584,7 +1584,7 @@ async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRe
         c.execute('DELETE FROM sessions WHERE user_id=?',(uid,))
         c.execute('DELETE FROM trusted_devices WHERE user_id=?',(uid,))
         admin_log(c,admin['id'],'admin_revoke_user_sessions',
-                  f'user_id={uid}; sessions={sessions}; devices={devices}; reason={body.reason.strip()[:100]}')
+                  f'user_id={uid}; sessions={sessions}; devices={devices}; justification=provided')
     await hub.user(uid,'session-ended',reason='Các phiên đã được quản trị viên thu hồi.')
     await hub.terminate_user(uid)
     return {'ok':True,'sessions_revoked':sessions,'devices_revoked':devices}
