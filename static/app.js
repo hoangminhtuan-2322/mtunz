@@ -912,14 +912,67 @@ function settingsContent(){
 }
 function supportInApp(){return `<div class="section-wrap"><span class="eyebrow">LIÊN HỆ HỖ TRỢ</span><h1 class="section-title">Trò chuyện với admin</h1><p class="section-lead">Gửi câu hỏi và nhận phản hồi realtime từ quản trị viên.</p><div class="card" style="max-width:620px">${authSupport()}</div></div>`;}
 function worldComingSoon(){
- return `<div class="main-body"><section class="world-coming-soon" aria-label="Chat thế giới đang phát triển">
- <div class="world-coming-soon-icon" aria-hidden="true">${icon('group',36)}</div>
- <span class="world-tag">MTUNZ · COMING SOON</span>
- <h2>Chat thế giới</h2>
- <p>Một không gian trò chuyện cộng đồng đang được lên ý tưởng. Chức năng hiện chưa mở và chưa có phòng chat công cộng — chúng ta sẽ cùng thiết kế khi sẵn sàng.</p>
- <div class="world-chips"><span>Chưa mở đăng bài</span><span>Chưa kết nối phòng chung</span><span>Sẽ thiết kế sau</span></div>
- <button type="button" class="btn primary" data-act="app-tab" data-tab="messages">Quay về tin nhắn</button>
- </section></div>`;
+ return `<div class="main-body world-preview-page">
+  <section class="world-preview-shell" aria-labelledby="world-preview-title">
+   <div class="world-preview-topline">
+    <div class="world-preview-crumb">${icon('grid',15)} <span>MTUNZ</span> <span class="world-preview-crumb-separator">/</span> <strong>KHÔNG GIAN CỘNG ĐỒNG</strong></div>
+    <span class="world-preview-status"><span class="world-preview-status-dot" aria-hidden="true"></span> ĐANG LÊN Ý TƯỞNG</span>
+   </div>
+   <div class="world-preview-hero">
+    <div class="world-preview-copy">
+     <div class="world-preview-eyebrow"><span class="world-preview-eyebrow-line" aria-hidden="true"></span> TƯƠNG LAI CỦA MTUNZ</div>
+     <h1 id="world-preview-title">Chat thế giới<span>Không gian mới.<br><em>Kết nối không giới hạn.</em></span></h1>
+     <p class="world-preview-description">Một ý tưởng về nơi mọi người có thể khám phá những cuộc trò chuyện mới, chia sẻ câu chuyện và kết nối trong cùng một cộng đồng. Chúng ta sẽ cùng thiết kế trải nghiệm này sau.</p>
+     <div class="world-preview-announcement" role="status">
+      <span class="world-preview-announcement-icon" aria-hidden="true">${icon('clock',20)}</span>
+      <div><strong>Coming soon · Chưa mở truy cập</strong><span>Chưa có phòng chat công cộng hoặc tính năng gửi tin tại đây.</span></div>
+     </div>
+     <div class="world-preview-actions">
+      <button type="button" class="world-preview-action-primary" data-act="app-tab" data-tab="messages">${icon('chat',18)} <span>Về tin nhắn</span> ${icon('chevron',16)}</button>
+      <button type="button" class="world-preview-action-secondary" data-act="app-tab" data-tab="groups">${icon('users',18)} <span>Khám phá nhóm riêng</span></button>
+     </div>
+    </div>
+    <div class="world-preview-visual" aria-hidden="true">
+     <div class="world-preview-visual-grid"></div>
+     <div class="world-preview-orbit world-preview-orbit-outside"></div>
+     <div class="world-preview-orbit world-preview-orbit-middle"></div>
+     <div class="world-preview-orbit world-preview-orbit-inside"></div>
+     <div class="world-preview-planet-dot world-preview-planet-dot-one"></div>
+     <div class="world-preview-planet-dot world-preview-planet-dot-two"></div>
+     <div class="world-preview-planet-dot world-preview-planet-dot-three"></div>
+     <div class="world-preview-center">
+      <div class="world-preview-center-symbol">${icon('users',39)}</div>
+      <strong>mtunz<span>.</span></strong>
+      <small>BEYOND YOUR CIRCLE</small>
+     </div>
+     <div class="world-preview-floating world-preview-floating-top">${icon('chat',15)} <span>MỘT THẾ GIỚI MỞ</span></div>
+     <div class="world-preview-floating world-preview-floating-bottom">${icon('shield',15)} <span>KẾT NỐI CÓ TRÁCH NHIỆM</span></div>
+     <div class="world-preview-visual-caption">A NEW SPACE FOR CONNECTION</div>
+    </div>
+   </div>
+   <div class="world-preview-lower">
+    <div class="world-preview-section-heading"><span>KHÁM PHÁ Ý TƯỞNG</span><div aria-hidden="true"></div><span>01 — 03</span></div>
+    <div class="world-preview-features">
+     <article class="world-preview-feature">
+      <div class="world-preview-feature-icon">${icon('users',19)}</div>
+      <h2>Cộng đồng rộng mở</h2>
+      <p>Hướng tới trải nghiệm kết nối vượt ra ngoài những cuộc trò chuyện cá nhân.</p>
+     </article>
+     <article class="world-preview-feature">
+      <div class="world-preview-feature-icon">${icon('shield',19)}</div>
+      <h2>Ưu tiên an toàn</h2>
+      <p>Quyền riêng tư và cách quản lý cộng đồng sẽ được cân nhắc ngay khi thiết kế.</p>
+     </article>
+     <article class="world-preview-feature">
+      <div class="world-preview-feature-icon">${icon('chat',19)}</div>
+      <h2>Mang chất riêng mtunz</h2>
+      <p>Một không gian được phát triển theo bản sắc mtunz, không sao chép ứng dụng khác.</p>
+     </article>
+    </div>
+    <div class="world-preview-disclaimer">${icon('lock',15)} <span>Đây là bản giới thiệu ý tưởng. Chức năng Chat thế giới hiện chưa được triển khai hoặc mở thử nghiệm.</span></div>
+   </div>
+  </section>
+ </div>`;
 }
 function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
