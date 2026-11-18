@@ -904,7 +904,9 @@ function settingsContent(){
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>
- ${typeof worldPenaltyCard==='function'?worldPenaltyCard():''}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
+ ${typeof worldPenaltyCard==='function'?worldPenaltyCard():''}
+ ${typeof sessionSecuritySettings==='function'?sessionSecuritySettings():''}
+ <div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
  <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
  ${secureSettingsField('PIN mới','new_pin','password','','inputmode="numeric" minlength="4" maxlength="6"')}

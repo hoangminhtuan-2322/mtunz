@@ -8,6 +8,6 @@
 .profile-page>.row.card{margin-bottom:22px!important}
 .profile-page .profile-panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .profile-page .profile-panel-grid>.card{margin:0!important;min-width:0}
-.profile-page .profile-panel-grid>.card:last-child{grid-column:1 / -1}
+.profile-page .profile-panel-grid>.card:last-child{grid-column:auto}
 @media(max-width:900px){.profile-page .profile-panel-grid{grid-template-columns:1fr}.profile-page .profile-panel-grid>.card:last-child{grid-column:auto}}
 @media(max-width:630px){.rail-profile-button{padding:9px 8px}.profile-page .row.card{flex-wrap:wrap;gap:12px}.profile-page .section-wrap{padding-left:10px;padding-right:10px}}
