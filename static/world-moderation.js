@@ -1,6 +1,6 @@
 /* mtunz World Chat — public-room UI and admin moderation. No secrets persisted. */
 let worldRequestVersion=0,worldLastTick=0,worldPolling=false,worldClockOffset=0;
-let worldPendingAttachment=null,worldUploadBusy=false;
+let worldPendingAttachment=null,worldUploadBusy=false,worldOlderExhausted=false;
 const worldReasonNames={
  spam:'Spam / quảng cáo',harassment:'Quấy rối / đe dọa',
  hate:'Nội dung thù ghét',fraud:'Lừa đảo',impersonation:'Giả mạo',
@@ -76,6 +76,8 @@ function worldPage(){
   (muted?'<div class="world-banner danger" role="alert">'+icon('shield',18)+
    '<span>Bạn vẫn đọc được tin nhắn nhưng chưa thể gửi tại Chat thế giới. Còn <strong data-world-countdown="'+until+'">'+worldCountdown(until)+'</strong>. '+
    (s.mute_reason?worldEscape(s.mute_reason):'')+'</span></div>':'')+
+  ((data.messages||[]).length>=70&&!worldOlderExhausted?
+     '<button type="button" class="btn ghost sm world-load-older" data-world-action="older">'+icon('clock',14)+' Xem tin nhắn cũ hơn</button>':'')+
   '<div class="world-feed" id="world-feed" role="log" aria-live="polite" aria-label="Tin nhắn cộng đồng">'+items+'</div>'+
   (closed?'<div class="world-readonly-note" role="status">'+icon('shield',16)+' Phòng hiện đóng. Bạn vẫn được xem toàn bộ lịch sử và phương tiện; chỉ mở lại tính năng gửi khi Admin cho phép.</div>':
   '<form data-world-form="send" class="world-compose">'+
@@ -276,6 +278,28 @@ document.addEventListener('click',async event=>{
  const action=target.dataset.worldAction;
  try{
   if(action==='refresh'){await loadWorld(true);return;}
+  if(action==='older'){
+   const old=state.worldData?.messages||[];
+   if(!old.length)return;
+   const first=Math.min(...old.map(m=>Number(m.id)));
+   target.disabled=true;
+   try{
+    const result=await api('/api/world/messages?before='+first);
+    const older=result.messages||[];
+    if(!older.length){worldOlderExhausted=true;target.remove();toast('Đã hiển thị hết lịch sử trước đó.','info');return;}
+    const known=new Set(old.map(m=>Number(m.id)));
+    state.worldData.messages=[...older.filter(m=>!known.has(Number(m.id))),...old];
+    if(older.length<70)worldOlderExhausted=true;
+    const feed=document.getElementById('world-feed');
+    if(feed){
+     const height=feed.scrollHeight,top=feed.scrollTop;
+     feed.innerHTML=state.worldData.messages.map(worldBubble).join('');
+     feed.scrollTop=top+(feed.scrollHeight-height);
+     if(worldOlderExhausted)target.remove();
+    }
+   }finally{if(target.isConnected)target.disabled=false;}
+   return;
+  }
   if(action==='admin-mute-user'){worldAdminMuteDialog(Number(target.dataset.worldUser));return;}
   if(action==='admin-reset'){
    const uid=Number(target.dataset.worldUser);
