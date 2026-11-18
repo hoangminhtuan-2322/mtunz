@@ -55,7 +55,7 @@
         : 'Vui lòng nhập thông tin này trước khi tiếp tục.';
     }
     if (!input.validity.valid) {
-      if (input.name === 'username') return 'Tên tài khoản không hợp lệ.';
+      if (input.name === 'username') return 'Tên đăng nhập không đúng định dạng.';
       if (input.name.includes('pin')) {
         if (['login-pin', 'login-remembered'].includes(input.form?.dataset.form)) {
           return 'Mã PIN không chính xác. Vui lòng thử lại.';
