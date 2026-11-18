@@ -73,8 +73,9 @@ def token():
     return secrets.token_urlsafe(32)
 
 
-# Public member IDs are the actual user primary key, not an extra identifier.
-# Keep the existing Admin ID unchanged. Never use the ID itself as a login secret.
+# New members get seven-digit internal and public IDs; existing members retain
+# their internal foreign keys and receive separate seven-digit public IDs.
+# Never treat an ID as a login secret.
 MEMBER_ID_MIN = 1_000_000
 MEMBER_ID_MAX = 9_999_999
 
@@ -93,9 +94,11 @@ def create_member(c, *, username, password_hash, pin_hash, pin_length, phone, em
     """
     for _ in range(32):
         member_id = random_member_id()
+        if one(c, 'SELECT 1 FROM users WHERE id=? OR public_id=?',(member_id,member_id)):
+            continue
         inserted = c.execute(
             '''INSERT INTO users(id,username,password_hash,pin_hash,pin_length,created_at,phone,email,needs_display_name,public_id)
-               VALUES(?,?,?,?,?,?,?,?,1,?) ON CONFLICT DO NOTHING RETURNING id''',
+               VALUES(?,?,?,?,?,?,?,?,1,?) ON CONFLICT(id) DO NOTHING RETURNING id''',
             (member_id, username, password_hash, pin_hash, pin_length, now(), phone, email, member_id)
         ).fetchone()
         if inserted:
