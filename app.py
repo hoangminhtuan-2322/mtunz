@@ -664,9 +664,10 @@ async def auth_pin(request: Request, body: PinLogin):
                 (digest(body.challenge),))
         if not r or r['guest_id'] != request.state.gid or r['expires_at'] <= now():
             raise HTTPException(401,'Phiên xác minh PIN hết hạn, vui lòng đăng nhập lại.')
-        ensure_pin(body.pin,r['pin_length'])
-        if not verify_secret(r['pin_hash'],body.pin):
-            raise HTTPException(401,'Mã PIN không đúng.')
+        pin_valid = (len(body.pin) == r['pin_length'] and body.pin.isascii()
+                     and body.pin.isdigit() and verify_secret(r['pin_hash'],body.pin))
+        if not pin_valid:
+            raise HTTPException(401,'Mã PIN không chính xác. Vui lòng thử lại.')
         if r['sanction_kind'] and (not r['sanction_until'] or r['sanction_until'] > now()):
             raise HTTPException(403,'Tài khoản đang bị hạn chế.')
         c.execute('DELETE FROM login_challenges WHERE token_hash=?',(digest(body.challenge),))
@@ -779,7 +780,7 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
         elif r['sanction_kind'] and (not r['sanction_until'] or r['sanction_until']>now()):
             error = HTTPException(403,'Tài khoản đang bị hạn chế.')
         elif r['locked_until'] > now():
-            error = HTTPException(429,'Nhập sai PIN quá nhiều lần. Vui lòng thử lại sau.',
+            error = HTTPException(429,'Thiết bị đang tạm khóa do nhập sai mã PIN nhiều lần. Vui lòng thử lại sau.',
                                   headers={'Retry-After':str(max(1,r['locked_until']-now()))})
         else:
             pin_ok = (len(body.pin)==r['pin_length'] and body.pin.isascii()
@@ -790,7 +791,7 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
                 c.execute('UPDATE trusted_devices SET failed_attempts=?,locked_until=? WHERE token_hash=?',
                           (attempts,lock_until,digest(saved)))
                 error = HTTPException(429 if attempts>=5 else 401,
-                   'Sai PIN 5 lần. Thiết bị tạm khóa 15 phút.' if attempts>=5 else 'Mã PIN không đúng.',
+                   'Bạn đã nhập sai mã PIN 5 lần. Thiết bị tạm khóa trong 15 phút.' if attempts>=5 else 'Mã PIN không chính xác. Vui lòng thử lại.',
                    headers={'Retry-After':'900'} if attempts>=5 else None)
             else:
                 info = device_metadata(request)
