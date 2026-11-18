@@ -57,6 +57,9 @@
     if (!input.validity.valid) {
       if (input.name === 'username') return 'Tên tài khoản cần 3–24 ký tự, bắt đầu bằng chữ và chỉ chứa a–z, 0–9 hoặc _.';
       if (input.name.includes('pin')) {
+        if (['login-pin', 'login-remembered'].includes(input.form?.dataset.form)) {
+          return 'Mã PIN không chính xác. Vui lòng thử lại.';
+        }
         const length = Number(input.form?.querySelector('[name="pin_length"]')?.value || input.maxLength || input.minLength);
         return length >= 4 && length <= 6
           ? 'Vui lòng nhập mã PIN gồm đúng ' + length + ' chữ số (0–9).'
