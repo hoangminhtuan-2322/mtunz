@@ -35,6 +35,11 @@ function worldV3TimerTick(){
   worldV3LastPoll=nowSec;worldV3RefreshStatus();
  }
  if(!current)return;
+ const transitionAt=Number(current.enabled&&current.schedule_enabled&&current.next_change_at)||0;
+ if(transitionAt&&nowSec>=transitionAt&&!worldV3Busy&&worldV3ChangeHandled!==transitionAt){
+  worldV3ChangeHandled=transitionAt;
+  worldV3RefreshStatus();
+ }
  const closeAt=Number(current.open&&current.schedule_enabled&&current.next_change_at)||0;
  const el=document.getElementById('world-close-countdown');
  if(closeAt&&el)el.textContent=worldCountdown(closeAt);
