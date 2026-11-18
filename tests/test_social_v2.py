@@ -4,15 +4,21 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
-from test_flows import logged_admin, register_user
+from test_flows import logged_admin, register_user, RATE_BUCKETS
 from app import app, db
 
 
 @pytest.fixture(autouse=True)
 def reset_social_world():
+    RATE_BUCKETS.clear()
     with db() as c:
-        c.execute('DELETE FROM message_requests')
-        c.execute('DELETE FROM world_messages')
+        for table in ('message_requests','world_messages','message_pins','group_messages','group_members',
+                      'chat_groups','reactions','chat_preferences','attachments','recovery_grants',
+                      'ticket_messages','tickets','notifications','messages','friendships','blocks',
+                      'restrictions','sessions','login_challenges','registrations','audit'):
+            c.execute(f'DELETE FROM {table}')
+        c.execute('DELETE FROM users WHERE is_admin=0')
+        c.execute("UPDATE settings SET value='100' WHERE key='max_users'")
         c.execute("UPDATE world_settings SET enabled=0,schedule_enabled=0 WHERE id=1")
     yield
     with db() as c:
