@@ -51,6 +51,6 @@ assert(app.includes("if(!authField||!showAuthFieldError(form,authField,authFailu
 assert(app.includes("item.dataset.kind===kind&&item.dataset.message===messageText"),'Other toasts deduplicated');
 assert(css.includes('.auth-panel .auth-input-field .field-error'),'Contextual styling is scoped');
 assert(css.includes('#toast-root .notify-toast'),'Other toasts use redesigned style');
-assert(html.includes('auth-feedback.css?v=13.0'));
-assert(html.includes('app.js?v=10.0'));
+assert(html.includes('auth-feedback.css?v=13.1'));
+assert(html.includes('app.js?v=10.1'));
 console.log('Auth error UI OK: account, password, PIN and remembered PIN inline; safe clearing and dedup.');
