@@ -72,6 +72,8 @@ jobs:
         run: node tests/member_experience.cjs
       - name: Verify friendship, pin, forwarding and settings UI
         run: node tests/social_upgrade.cjs
+      - name: Verify World Chat concept page (no live public messaging)
+        run: node tests/world_preview.cjs
       - name: Verify first-login name and phone sign-in interface
         run: node tests/first_login_ui.cjs
       - name: Verify private session manager and Admin-only security details
@@ -107,7 +109,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=16.5' in h
+          assert '/static/app.js?v=16.6' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
