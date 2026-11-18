@@ -17,7 +17,7 @@ function sidebar(shell){
  const buttons=new Map(all(':scope > button[data-act="admin-tab"]',nav).map(b=>[b.dataset.tab,b]));
  const groups=[
  ['BẢNG ĐIỀU KHIỂN',['overview']],
- ['THÀNH VIÊN & CỘNG ĐỒNG',['registrations','users','groups','tickets','deletions']],
+ ['THÀNH VIÊN & CỘNG ĐỒNG',['registrations','users','groups','tickets','deletions','world','reports']],
  ['VẬN HÀNH & BẢO MẬT',['broadcast','audit','security']]
  ];
  for(const [label,tabs]of groups){

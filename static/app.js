@@ -328,6 +328,12 @@ function connectSocket(){
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
    if(t==='account-sanction'){showSanction(data);return;}
+   if((t==='world-message'||t==='world-status'||t==='world-penalty'||t==='world-message-removed')&&state.tab==='world'&&state.user&&!state.user.is_admin){
+     await loadWorld(true).catch(()=>{});return;
+   }
+   if(t==='world-report-new'&&state.user?.is_admin&&state.adminTab==='reports'){
+     await loadAdmin();return;
+   }
    if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');await post('/api/auth/logout').catch(()=>{});resetAuthAfterLogout();return;}
    if(t==='account-deletion-updated'&&state.user?.is_admin){await loadAdmin();return;}
    if(t==='registration-updated'){
@@ -432,6 +438,7 @@ async function enterApp(resume=false){
    state.groupSelected=previous.groupSelected;
   }
   if(state.tab==='notices')await loadNotices();
+  if(state.tab==='world')await loadWorld(false);
   if(state.tab==='support'){
    state.mode='support';
    state.supportTicket=Number.isSafeInteger(previous?.supportTicket)?previous.supportTicket:null;
@@ -769,7 +776,7 @@ function sideBody(){
 function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
-  const secondary=[['restricted','shield','Danh sách hạn chế'],['support','inbox','Hỗ trợ'],['world','group','Chat thế giới · Sắp ra mắt']];
+  const secondary=[['restricted','shield','Danh sách hạn chế'],['support','inbox','Hỗ trợ'],['world','group','Chat thế giới']];
   const moreOpen=!!state.railMoreOpen || secondary.some(([tab])=>state.tab===tab);
   const item=([tab,ic,label])=>`<button type="button" class="rail-btn ${state.tab===tab?'active':''}" title="${label}" aria-label="${label}" aria-current="${state.tab===tab?'page':'false'}" data-act="app-tab" data-tab="${tab}">
     <span class="rail-icon" aria-hidden="true">${icon(ic,20)}</span><span class="rail-text">${label}</span></button>`;
@@ -867,7 +874,7 @@ function friendsContent(){
  ${sent.length?`<h3 style="margin:28px 0 12px">Lời mời đã gửi (${sent.length})</h3>${sent.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ phản hồi</div></div><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Thu hồi</button></div>`).join('')}`:''}
  <h3 style="margin:28px 0 12px">Bạn bè (${accepted.length})</h3>
  ${accepted.length?accepted.map(f=>`<div class="people-row">${avatar(f.username,f.online)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">${f.restricted?'Đang ở danh sách hạn chế':f.online?'Đang hoạt động':'Ngoại tuyến'}</div></div>
- <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
+ <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
 }
 function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepted'&&f.restricted);
  return `<div class="section-wrap"><span class="eyebrow">KHÔNG GIAN RIÊNG</span><h1 class="section-title">Người dùng bị hạn chế</h1>
@@ -893,7 +900,7 @@ function settingsContent(){
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>
- <div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
+ ${worldPenaltyCard()}<div class="setting-grid"><section class="card"><h3>${icon('lock',17)} Đổi mã PIN</h3>
  <form data-form="settings-pin">${secureSettingsField('PIN hiện tại','old_pin','password','','inputmode="numeric" required')}
  <div class="field"><label>Độ dài PIN mới</label><select class="select" name="pin_length"><option value="4" ${state.user.pin_length===4?'selected':''}>4 chữ số</option><option value="5" ${state.user.pin_length===5?'selected':''}>5 chữ số</option><option value="6" ${state.user.pin_length===6?'selected':''}>6 chữ số</option></select></div>
  ${secureSettingsField('PIN mới','new_pin','password','','inputmode="numeric" minlength="4" maxlength="6"')}
@@ -929,10 +936,10 @@ function worldComingSoon(){
     <div class="world-preview-copy">
      <div class="world-preview-eyebrow"><span class="world-preview-eyebrow-line" aria-hidden="true"></span> TƯƠNG LAI CỦA MTUNZ</div>
      <h1 id="world-preview-title">Chat thế giới<span>Không gian mới.<br><em>Kết nối không giới hạn.</em></span></h1>
-     <p class="world-preview-description">Một ý tưởng về nơi mọi người có thể khám phá những cuộc trò chuyện mới, chia sẻ câu chuyện và kết nối trong cùng một cộng đồng. Chúng ta sẽ cùng thiết kế trải nghiệm này sau.</p>
+     <p class="world-preview-description">Không gian cộng đồng của mtunz đang chờ quản trị viên mở truy cập. Hệ thống kiểm duyệt và chống spam đã được chuẩn bị; khi mở, bạn có thể tham gia an toàn.</p>
      <div class="world-preview-announcement" role="status">
       <span class="world-preview-announcement-icon" aria-hidden="true">${icon('clock',20)}</span>
-      <div><strong>Coming soon · Chưa mở truy cập</strong><span>Chưa có phòng chat công cộng hoặc tính năng gửi tin tại đây.</span></div>
+      <div><strong>Coming soon · Chưa mở truy cập</strong><span>Quản trị viên sẽ thông báo khi Chat thế giới chính thức được mở.</span></div>
      </div>
      <div class="world-preview-actions">
       <button type="button" class="world-preview-action-primary" data-act="app-tab" data-tab="messages">${icon('chat',18)} <span>Về tin nhắn</span> ${icon('chevron',16)}</button>
@@ -976,7 +983,7 @@ function worldComingSoon(){
       <p>Một không gian được phát triển theo bản sắc mtunz, không sao chép ứng dụng khác.</p>
      </article>
     </div>
-    <div class="world-preview-disclaimer">${icon('lock',15)} <span>Đây là bản giới thiệu ý tưởng. Chức năng Chat thế giới hiện chưa được triển khai hoặc mở thử nghiệm.</span></div>
+    <div class="world-preview-disclaimer">${icon('lock',15)} <span>Đây là trang chờ mở cửa. Quyền kích hoạt và thời gian hoạt động do quản trị viên quyết định.</span></div>
    </div>
   </section>
  </div>`;
@@ -985,7 +992,7 @@ function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
-  state.tab==='world'?`${memberHeader('Chat thế giới','Coming soon · Sẽ thiết kế sau')}${worldComingSoon()}`:
+  state.tab==='world'?`${memberHeader('Chat thế giới','Không gian chung · Quy tắc cộng đồng')}${worldPage()}`:
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='friends'?`${memberHeader('Bạn bè','Quản lý các kết nối của bạn') }<div class="main-body">${friendsContent()}</div>`:
   state.tab==='restricted'?`${memberHeader('Danh sách hạn chế','Ưu tiên sự riêng tư') }<div class="main-body">${restrictedContent()}</div>`:
@@ -1000,7 +1007,8 @@ function renderApp(){
 }
 async function goTab(tab){
  state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
- if(tab==='settings')state.accountDeletion=await api('/api/me/deletion');
+ if(tab==='settings'){state.accountDeletion=await api('/api/me/deletion');await loadWorldStatus();}
+ if(tab==='world')await loadWorld(false);
  if(tab==='groups')await refreshGroups(false);
  if(tab==='notices')await loadNotices();
  if(tab==='support'){state.mode='support';await loadTickets();}
@@ -1008,7 +1016,7 @@ async function goTab(tab){
 }
 
 // ==== Administrator workspace ====
-const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa 30 ngày'],['overview','grid','Tổng quan'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin']];
+const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa 30 ngày'],['overview','grid','Tổng quan'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin'],['world','group','Chat thế giới'],['reports','shield','Báo cáo vi phạm']];
 function adminNav(){
  return `<aside class="admin-nav"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
  <div class="nav-label">QUẢN LÝ HỆ THỐNG</div>
@@ -1017,12 +1025,16 @@ function adminNav(){
  <div class="row" style="padding:11px 12px">${avatar('admin',true,'sm')}<div class="grow"><b>admin</b><div class="hint">Super administrator</div></div></div>
  <button data-act="logout" style="color:#ff93a0">${icon('logout')} Đăng xuất</button></aside>`;
 }
-const adminHeading={deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.']};
+const adminHeading={deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
+world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và quản lý án phạt spam tại một nơi.'],
+reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
 async function loadAdmin(){
  if(!state.user?.is_admin)return;
  try{
   switch(state.adminTab){
    case 'groups':state.adminData=(await api('/api/admin/groups')).groups;break;
+   case 'world':state.adminData=await api('/api/admin/world');break;
+   case 'reports':state.adminData=await api('/api/admin/reports?status=all');break;
    case 'overview':{
     const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations'),api('/api/admin/audit')]);
     state.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
@@ -1345,7 +1357,7 @@ async function adminAuditDetail(eventId){
 
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
- const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():adminAudit();
+ const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():state.adminTab==='world'?adminWorldContent():state.adminTab==='reports'?adminReportsContent():adminAudit();
  root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
  saveCurrentView();
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
