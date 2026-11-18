@@ -92,7 +92,7 @@ def install(core):
 
     # Available to the existing core routes after this module is installed.
     core.admin_login_gate=admin_login_gate
-    core.verify_admin_pin=verify_pin
+    core.verify_admin_pin_stepup=verify_pin
 
     @app.get('/api/admin/login-approvals')
     async def list_approvals(request:Request):
