@@ -691,8 +691,12 @@ async def register_complete(request: Request, body: RegisterComplete):
         except sqlite3.IntegrityError:
             raise HTTPException(409,'Tên tài khoản đã tồn tại.')
         c.execute("UPDATE registrations SET status='completed' WHERE id=?",(r['id'],))
+        # The user has just entered their new password and PIN in the
+        # approved registration flow. Give a short onboarding-only session;
+        # other APIs stay closed until they set their public display name.
+        raw = issue_session(c,member_id,request)
     await hub.admins('registration-updated')
-    return {'ok':True, 'id':member_id}
+    return session_response({'ok':True,'id':member_id,'onboarding_required':True},raw)
 
 
 # --- Three-stage login ---

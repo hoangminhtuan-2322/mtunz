@@ -52,6 +52,12 @@ def phone_login(guest,phone='0912345678',remember=False):
 def test_required_name_cannot_be_skipped_or_reapproved():
     admin=logged_admin()
     guest,uid=create_approved(admin)
+    # Approved completion creates the initial onboarding session and immediately
+    # displays the compulsory name popup (without re-entering password and PIN).
+    assert guest.get('/api/me').json()['user']['onboarding_required'] is True
+    # Dismissing onboarding means a *real* logout, not a new approval request.
+    assert guest.post('/api/auth/logout').status_code==200
+    assert guest.get('/api/me').json()['user'] is None
     auth=phone_login(guest,remember=True)
     assert auth.json()['remembered'] is False  # Must not bypass onboarding next visit.
     myself=guest.get('/api/me').json()['user']

@@ -1767,8 +1767,10 @@ document.addEventListener('submit',async event=>{
     if(pin!==pin2)throw Error('Hai lần nhập PIN không khớp.');
     if(pin.length!==pinLen)throw Error(`PIN phải đúng ${pinLen} chữ số.`);
     await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined});
-    state.username=state.regName;state.mode='login';state.step='username';state.regStatus='';renderAuth();
-    toast('Tạo tài khoản thành công. Đăng nhập để bắt đầu!','ok');break;
+    state.username=state.regName;state.regStatus='';state.savedDevice=false;state.rememberedDevice=false;
+    state.user=(await api('/api/me')).user;
+    toast('Tạo tài khoản thành công. Hãy đặt tên hiển thị để bắt đầu.','ok');
+    await enterApp();break;
    }
    case 'support-new':{
     state.supportKind=val('kind');const r=await post('/api/support/tickets',{kind:state.supportKind,claim:val('claim')});
