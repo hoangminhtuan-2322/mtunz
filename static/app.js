@@ -645,7 +645,18 @@ function renderAuth(){
  if(!existing){
    host.innerHTML=`<div class="auth">${authArt()}<main class="auth-main">
      <div class="auth-mobile-logo logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span> mtunz<span class="brand-dot">.</span></div>
-     <div class="auth-panel">${authTabs()}
+     <div class="auth-panel">
+       <svg class="auth-neon-perimeter" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+         <defs><linearGradient id="auth-neon-glow-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+           <stop offset="0%" stop-color="#b79aff"/>
+           <stop offset="52%" stop-color="#7bdaf5"/>
+           <stop offset="100%" stop-color="#ad9fff"/>
+         </linearGradient></defs>
+         <rect class="auth-neon-track" pathLength="100"></rect>
+         <rect class="auth-neon-halo" pathLength="100"></rect>
+         <rect class="auth-neon-runner" pathLength="100"></rect>
+       </svg>
+       ${authTabs()}
        <section class="auth-screen" aria-live="polite">${screenMarkup}</section>
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
