@@ -40,8 +40,8 @@ assert(!app.includes('3–24 ký tự, bắt đầu bằng chữ; chỉ dùng a-
 assert(app.includes('pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"'), 'Keep browser-side username validation');
 const premium = fs.readFileSync('static/premium.js','utf8');
 assert(!premium.includes('Dùng 3–24 ký tự'), 'Do not resurrect verbose status hint while typing');
-assert(premium.includes("Tên tài khoản không hợp lệ."), 'Invalid username remains actionable');
-assert(html.includes('/static/premium.js?v=2.7'), 'Load updated validation UI');
+assert(premium.includes("Tên đăng nhập không đúng định dạng."), 'Invalid username remains actionable');
+assert(html.includes('/static/premium.js?v=2.8'), 'Load updated validation UI');
 // Compact the initial registration step only where the viewport can contain it.
 assert(css.includes('@media (min-width:650px) and (max-width:1100px) and (min-height:820px)'), 'Adaptive fit only for standard-height viewports');
 assert(css.includes('.auth-main:has(form[data-form="register-request"])'), 'Fit is isolated to the initial registration request');

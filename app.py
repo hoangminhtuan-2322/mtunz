@@ -105,7 +105,7 @@ def create_member(c, *, username, password_hash, pin_hash, pin_length, phone, em
 def norm_username(name: str):
     value = name.strip().lower()
     if not USERNAME_RE.fullmatch(value):
-        raise HTTPException(422, 'Tên tài khoản: 3–24 ký tự, bắt đầu bằng chữ, chỉ a-z, 0-9 và _.')
+        raise HTTPException(422, 'Tên đăng nhập không đúng định dạng.')
     return value
 
 def normalize_phone(value: str) -> str:
