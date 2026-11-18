@@ -31,7 +31,7 @@ assert(core.includes("phone: str = Field(min_length=8,max_length=40)"));
 assert(core.includes("admin_view_user_details"), 'Admin detail lookup must be audited');
 assert(features.includes("column('registrations',col,typ)"), 'Existing database must migrate');
 assert(html.includes('ui-interactions.css?v=1.0'), 'New motion stylesheet must load');
-assert(html.includes('app.js?v=9.9'));
+assert(html.includes('app.js?v=10.0'));
 assert(html.includes('extras.js?v=10.3'));
 assert(css.includes('prefers-reduced-motion:reduce'), 'Reduced motion is mandatory');
 assert(css.includes('.ui-skeleton-line'), 'Admin data loading must be visible');
