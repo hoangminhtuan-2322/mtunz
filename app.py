@@ -632,6 +632,8 @@ async def registration_request(request: Request, body: RegistrationRequest):
     email = normalize_email(body.email)
     throttle(request, 'signup', 6, 3600)
     with db() as c:
+        if one(c,'SELECT id FROM users WHERE phone=?',(phone,)):
+            raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng dùng số khác hoặc liên hệ hỗ trợ.')
         if name == 'admin' or one(c,'SELECT 1 FROM users WHERE username=?',(name,)):
             raise HTTPException(409,'Tên đăng nhập đã được sử dụng.')
         existing = one(c, 'SELECT * FROM registrations WHERE username=?',(name,))
