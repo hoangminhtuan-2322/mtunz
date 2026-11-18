@@ -102,7 +102,7 @@ const glow = fs.readFileSync('static/auth-glow.css','utf8');
 assert(!glow.includes('auth-soft-sweep')&&!glow.includes('auth-ambient-drift'),'No competing top-only light effects');
 assert(glow.includes('.auth-panel::before{display:none}'),'Static top highlight must be hidden');
 assert(glow.includes('.auth-step span.active'),'Step indicator is kept but no longer uses bright bars');
-assert(glow.includes('mtunz-save-data')&&glow.includes('mtunz-motion-paused'),'Glow honors performance settings');
+assert(neon.includes('mtunz-save-data')&&neon.includes('mtunz-motion-paused'),'Both border traces honor performance settings');
 const theme = fs.readFileSync('static/auth-refined.css','utf8');
 assert(theme.includes('.auth-screen-content'));
 assert(theme.includes('.auth-art.art-v4 .signal-feature'));
