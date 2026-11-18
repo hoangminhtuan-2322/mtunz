@@ -177,3 +177,13 @@ def test_group_forward_and_pin_limit():
     assert forwarded.status_code==200,forwarded.text
     assert forwarded.json()['message']['forwarded']==1
     assert alice.get(f'/api/messages/{b}').json()['messages'][-1]['forwarded']==1
+
+
+def test_same_origin_location_requires_explicit_browser_permission():
+    # Permissions Policy permits the browser to ask for user consent on this origin.
+    with TestClient(app) as client:
+        response=client.get('/health')
+        assert response.status_code==200
+        policy=response.headers.get('permissions-policy','')
+        assert 'geolocation=(self)' in policy
+        assert 'payment=()' in policy
