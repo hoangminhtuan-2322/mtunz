@@ -364,6 +364,11 @@ def install(core):
         with db() as c:
             target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(body.target_id,))
             if not target:raise HTTPException(404,'Không tìm thấy tài khoản cần báo cáo.')
+            # Persistent per-user abuse control, surviving process restarts.
+            recent_total=one(c,'SELECT COUNT(*) AS n FROM user_reports WHERE reporter_id=? AND created_at>?',
+                             (reporter['id'],at-3600))['n']
+            if recent_total>=6:
+                raise HTTPException(429,'Bạn đã gửi quá nhiều báo cáo trong một giờ. Vui lòng thử lại sau.')
             evidence=''
             if body.message_id:
                 if body.scope=='world':
