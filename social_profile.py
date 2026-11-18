@@ -119,7 +119,7 @@ def install(core):
                 updates['headline']=' '.join(body.headline.split())
             if body.website is not None:
                 url=body.website.strip()
-                if url and (not re.fullmatch(r'https://[^\\s/]+(?:/[^\\s]*)?',url,re.I) or len(url)>180):
+                if url and (not re.fullmatch(r'https://[^\s/]+(?:/[^\s]*)?',url,re.I) or len(url)>180):
                     raise HTTPException(422,'Liên kết phải là URL HTTPS hợp lệ.')
                 updates['website']=url
             if body.avatar_attachment_id is not None:
