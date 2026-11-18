@@ -956,7 +956,7 @@ function statusPill(s){return s==='pending'?'<span class="pill warn">Chờ duy�
 function adminRegistrations(){const rows=state.adminData||[];
  return `<div class="row between" style="margin-bottom:18px"><span class="hint">${rows.filter(r=>r.status==='pending').length} yêu cầu chưa xử lý</span><button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Tên đề xuất</th><th>Số điện thoại</th><th>Email</th><th>Thời gian</th><th>Trạng thái</th><th>Quyết định</th></tr></thead><tbody>
- ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions">${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
+ ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
 function adminUsers(){const data=state.adminData||[];
@@ -966,7 +966,9 @@ function adminUsers(){const data=state.adminData||[];
  <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
- <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Ban</button>
+ <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
+ <button class="btn ghost sm" data-act="admin-user-revoke" data-id="${u.id}">${icon('lock',14)} Thu hồi phiên</button>
+ <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Cấm</button>
  <button class="btn ghost sm" data-act="admin-sanction" data-kind="lock" data-id="${u.id}">Khóa</button>
  <button class="btn danger sm" type="button" data-act="admin-delete-user" data-id="${u.id}">${icon('ban',14)} Xóa vĩnh viễn</button>
  ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
@@ -1278,13 +1280,71 @@ async function userDetails(uid){
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
      ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
    </div>
-   <p class="admin-detail-privacy">${icon('lock',16)} Mật khẩu, PIN và thông tin xác thực bí mật không được cung cấp cho Admin.</p>
+   <div class="admin-user-actions">
+ <button type="button" class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',15)} Chỉnh sửa hồ sơ</button>
+ <button type="button" class="btn danger sm" data-act="admin-user-revoke" data-id="${u.id}">${icon('lock',15)} Thu hồi tất cả phiên</button></div>
+ <p class="admin-detail-privacy">${icon('lock',16)} Mật khẩu, PIN và thông tin xác thực bí mật không được cung cấp cho Admin.</p>
   </div>`;
  }catch(e){
   const mount=document.getElementById('admin-user-details-'+uid);
   if(mount)mount.textContent='Không thể tải thông tin. '+e.message;
   toast(e.message,'error');
  }
+}
+async function editUserAsAdmin(uid){
+ const response=await api(`/api/admin/users/${uid}/details`);
+ const u=response.user;
+ modal({title:'Chỉnh sửa tài khoản · '+u.username,
+  description:'Chỉnh sửa hồ sơ và thông tin liên hệ. Mọi thay đổi được ghi nhật ký và cần xác minh lại.',
+  confirm:'Lưu thay đổi',content:`<div class="admin-edit-form">
+   <div class="field"><label for="admin-edit-name">Tên hiển thị</label>
+    <input class="input" id="admin-edit-name" maxlength="50" value="${esc(u.display_name||'')}"></div>
+   <div class="field"><label for="admin-edit-bio">Giới thiệu</label>
+    <textarea class="textarea" id="admin-edit-bio" maxlength="220" rows="3">${esc(u.bio||'')}</textarea></div>
+   <div class="field"><label for="admin-edit-phone">Số điện thoại</label>
+    <input class="input" id="admin-edit-phone" type="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
+   <div class="field"><label for="admin-edit-email">Email (không bắt buộc)</label>
+    <input class="input" id="admin-edit-email" type="email" maxlength="254" value="${esc(u.email||'')}"></div>
+   <div class="field"><label for="admin-edit-reason">Lý do thay đổi</label>
+    <textarea class="textarea" id="admin-edit-reason" maxlength="250" minlength="5" required></textarea></div>
+   ${adminProofFields()}</div>`,
+  handler:async host=>{
+   const val=id=>host.querySelector('#'+id)?.value||'';
+   const payload={display_name:val('admin-edit-name'),bio:val('admin-edit-bio'),
+      phone:val('admin-edit-phone'),email:val('admin-edit-email'),
+      reason:val('admin-edit-reason').trim(),...adminProofValue(host)};
+   if(payload.reason.length<5)throw Error('Vui lòng nhập lý do tối thiểu 5 ký tự.');
+   await post(`/api/admin/users/${uid}/edit`,payload);
+   toast('Đã cập nhật hồ sơ người dùng.','ok');await loadAdmin();
+  }});
+}
+function revokeUserSessionsAsAdmin(uid){
+ const u=(state.adminData||[]).find(x=>x.id===uid);
+ modal({title:'Thu hồi phiên đăng nhập',danger:true,confirm:'Thu hồi toàn bộ phiên',
+  description:`Ngắt toàn bộ phiên và thiết bị đã ghi nhớ của ${u?.username||'#'+uid}. Người dùng sẽ phải đăng nhập lại.`,
+  content:`<div class="field"><label for="admin-revoke-reason">Lý do thu hồi</label>
+   <textarea class="textarea" id="admin-revoke-reason" minlength="5" maxlength="250" required></textarea></div>
+   ${adminProofFields()}`,
+  handler:async host=>{
+   const reason=host.querySelector('#admin-revoke-reason')?.value.trim()||'';
+   if(reason.length<5)throw Error('Nhập lý do tối thiểu 5 ký tự.');
+   const result=await post(`/api/admin/users/${uid}/sessions/revoke`,{reason,...adminProofValue(host)});
+   toast(`Đã thu hồi ${result.sessions_revoked} phiên và ${result.devices_revoked} thiết bị.`,'ok');
+   await loadAdmin();
+  }});
+}
+function registrationDetails(rid){
+ const r=(state.adminData||[]).find(x=>x.id===rid);
+ if(!r)throw Error('Không tìm thấy yêu cầu.');
+ modal({title:'Yêu cầu đăng ký #'+r.id,confirm:'Đóng',
+  content:`<div class="admin-user-detail">
+    ${adminDetailRow('Tài khoản',esc(r.username))}
+    ${adminDetailRow('Số điện thoại',esc(r.phone||'Chưa cung cấp'))}
+    ${adminDetailRow('Email',esc(r.email||'Chưa cung cấp'))}
+    ${adminDetailRow('Ngày gửi',deadlineDate(r.created_at))}
+    ${adminDetailRow('Trạng thái',esc(r.status))}
+    <p class="hint">Dữ liệu liên hệ do người đăng ký khai báo, chưa được xác minh độc lập.</p>
+   </div>`});
 }
 async function userMessageLog(uid){
  const resp=await api(`/api/admin/users/${uid}/messages`);
@@ -1360,6 +1420,22 @@ async function clickAction(button){
    const r=await api('/api/notifications');const el=$('#notifications-list');if(el)el.innerHTML=r.notifications.length?r.notifications.map(n=>`<div class="audit-item" style="padding-left:0"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>`).join(''):'<div class="hint" style="margin-top:12px">Không có thông báo mới.</div>';break;
   }
   case 'admin-tab':state.adminTab=button.dataset.tab;state.adminData=null;await loadAdmin();break;
+  case 'admin-audit-detail':await adminAuditDetail(id);break;
+  case 'admin-audit-clear':
+   state.adminAuditFilter={q:'',action:'',since:0,until:0};await loadAdmin();break;
+  case 'admin-audit-more':{
+   if(!state.adminAuditMeta?.has_more)return;
+   const f=state.adminAuditFilter;
+   const params=new URLSearchParams({limit:'100',offset:String(state.adminData?.length||0),
+     q:f.q||'',action:f.action||'',since:String(f.since||0),until:String(f.until||0)});
+   const result=await api('/api/admin/audit?'+params.toString());
+   state.adminData=(state.adminData||[]).concat(result.logs);
+   state.adminAuditMeta={total:result.total,has_more:result.has_more,offset:state.adminData.length};
+   renderAdmin();break;
+  }
+  case 'admin-user-edit':await editUserAsAdmin(id);break;
+  case 'admin-user-revoke':revokeUserSessionsAsAdmin(id);break;
+  case 'admin-registration-detail':registrationDetails(id);break;
   case 'admin-refresh':await loadAdmin();break;
   case 'admin-decision':{
    const approve=button.dataset.approve==='1';
@@ -1550,6 +1626,14 @@ document.addEventListener('submit',async event=>{
      break;
    }
    case 'admin-search-users':state.adminQuery=val('q');await loadAdmin();break;
+   case 'admin-audit-search':{
+    const since=val('since'),until=val('until');
+    const start=since?Math.floor(new Date(since+'T00:00:00').getTime()/1000):0;
+    const end=until?Math.floor(new Date(until+'T23:59:59').getTime()/1000):0;
+    if(start&&end&&start>end)throw Error('Ngày bắt đầu không thể sau ngày kết thúc.');
+    state.adminAuditFilter={q:val('q'),action:val('action'),since:start,until:end};
+    await loadAdmin();break;
+   }
    case 'admin-ticket-reply':{
     await post(`/api/admin/tickets/${state.adminTicket}/messages`,{body:val('body')});await loadAdmin();break;
    }
