@@ -190,3 +190,10 @@ bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạ
 - Bộ đếm lưu trong SQLite (local) hoặc Neon PostgreSQL (Render), dùng UPSERT nguyên tử và không mất khi worker khởi động lại. Khi vượt ngưỡng, máy chủ trả HTTP 429 kèm Retry-After.
 - Admin có thể **Đánh dấu spam** một phiếu, đóng quyền gửi tiếp, ẩn phiếu khỏi danh sách mặc định và xem lại/mở lại bằng **Xem phiếu spam**. Hành động được ghi vào audit. Tin nhắn Admin gửi không chịu giới hạn spam của khách.
 - Giới hạn theo IP có thể ảnh hưởng đến nhiều người dùng cùng mạng (ví dụ Wi-Fi trường học), nên đặt hạn mức IP rộng hơn giới hạn cookie; có thể điều chỉnh các ngưỡng theo lưu lượng thực tế.
+
+## Kiểm tra sức khỏe và trạng thái triển khai
+
+- `GET /health` thực hiện truy vấn chỉ đọc tới các bảng bắt buộc `users` và `message_pins`. Nếu database không sẵn sàng, trả `HTTP 503` mà không lộ chi tiết kết nối. Khi hoạt động bình thường trả `HTTP 200` và `{"ok":true}`.
+- Tệp `render.yaml` có `healthCheckPath: /health`, nhưng **dịch vụ Render tạo thủ công không tự đồng bộ cấu hình Blueprint**. Cần xác minh `serviceDetails.healthCheckPath` thực tế trên Render; chỉ coi HTTP health check đã kích hoạt khi trường đó bằng `/health`.
+- Workflow đánh thức dịch vụ mỗi 6 giờ vẫn gọi `/health`; nếu database gián đoạn, workflow sẽ báo lỗi thay vì coi dịch vụ khỏe sai.
+- Chạy `python -m pytest -q tests/test_readiness.py` để kiểm tra cả đường thành công và lỗi cơ sở dữ liệu; PostgreSQL smoke test dùng database thử nghiệm, tuyệt đối không chạy vào production.

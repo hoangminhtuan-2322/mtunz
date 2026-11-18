@@ -421,6 +421,20 @@ async def cookies_and_origin(request: Request, call_next):
 
 @app.get('/health')
 async def health():
+    """Readiness: report 200 only when essential Neon/SQLite tables are reachable.
+
+    Render's HTTP check can use this endpoint. Fail closed without disclosing
+    connection strings, SQL errors or any user data to unauthenticated callers.
+    """
+    try:
+        with db() as connection:
+            connection.execute('SELECT 1 FROM users LIMIT 1').fetchone()
+            connection.execute('SELECT 1 FROM message_pins LIMIT 1').fetchone()
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail='Cơ sở dữ liệu chưa sẵn sàng. Vui lòng thử lại sau.'
+        ) from None
     return {'ok':True,'app':'mtunz','version':'2.0'}
 
 @app.get('/')
