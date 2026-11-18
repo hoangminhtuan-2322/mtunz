@@ -1269,7 +1269,7 @@ async def send_ticket_message(request:Request,tid:int,body:SupportMessage):
         if last and current-last['created_at'] < 4:
             raise HTTPException(429,'Hãy đợi 4 giây trước khi gửi tin tiếp theo.',
                                 headers={'Retry-After':str(max(1,4-(current-last['created_at'])))})
-        normalized=lambda value: re.sub(r'\\s+',' ',value.strip()).casefold()
+        normalized=lambda value: re.sub(r'\s+',' ',value.strip()).casefold()
         if last and current-last['created_at'] < 60 and normalized(last['body'])==normalized(message):
             raise HTTPException(429,'Tin nhắn trùng nội dung vừa gửi. Không cần gửi lại.',
                                 headers={'Retry-After':str(max(1,60-(current-last['created_at'])))})
