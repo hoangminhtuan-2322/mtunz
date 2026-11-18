@@ -191,7 +191,7 @@ def install(core):
     async def show_profile(request:Request,uid:int):
         u=current_user(request)
         with db() as c:
-            r=one(c,'''SELECT id,username,display_name,bio,created_at,last_seen,show_online
+            r=one(c,'''SELECT id,display_name,bio,created_at,last_seen,show_online
                        FROM users WHERE id=? AND is_admin=0''',(uid,))
             if not r or (uid!=u['id'] and has_block(c,uid,u['id'])):
                 raise HTTPException(404,'Không tìm thấy người dùng.')
@@ -556,7 +556,7 @@ def install(core):
             c.execute('INSERT INTO group_members(group_id,user_id,role,joined_at) VALUES(?,?,?,?)',(gid,u['id'],'owner',now()))
             for uid in member_ids:
                 c.execute('INSERT INTO group_members(group_id,user_id,joined_at) VALUES(?,?,?)',(gid,uid,now()))
-                notify(c,uid,f'{u["username"]} đã thêm bạn vào nhóm “{body.title.strip()}”.')
+                notify(c,uid,f'{u["display_name"] or "Thành viên"} đã thêm bạn vào nhóm “{body.title.strip()}”.')
         for uid in member_ids|{u['id']}:
             await hub.user(uid,'groups-updated')
         return {'id':gid}
@@ -571,7 +571,7 @@ def install(core):
                            FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
                            WHERE gm.user_id=? ORDER BY g.id DESC''',(u['id'],u['id']))
             for g in rows:
-                last=one(c,'''SELECT m.id,m.body,m.sender_id,m.created_at,m.deleted_at,m.attachment_id,u.username
+                last=one(c,'''SELECT m.id,m.body,m.sender_id,m.created_at,m.deleted_at,m.attachment_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username
                           FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=? ORDER BY m.id DESC LIMIT 1''',(g['id'],))
                 g['last_message']=dict(last) if last else None
             rows.sort(key=lambda g:g['last_message']['created_at'] if g['last_message'] else g['created_at'],reverse=True)
@@ -582,7 +582,7 @@ def install(core):
         u=current_user(request)
         with db() as c:
             group=active_member(c,gid,u['id'])
-            members=many(c,'''SELECT gm.user_id,gm.role,u.username,u.display_name FROM group_members gm JOIN users u
+            members=many(c,'''SELECT gm.user_id,gm.role,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,u.display_name FROM group_members gm JOIN users u
                               ON u.id=gm.user_id WHERE gm.group_id=? ORDER BY CASE gm.role WHEN 'owner' THEN 0 ELSE 1 END,u.username''',(gid,))
         return {'group':dict(group),'members':members}
 
@@ -619,7 +619,7 @@ def install(core):
                     raise HTTPException(409,'Có người đã tham gia nhóm.')
             for uid in new_ids:
                 c.execute('INSERT INTO group_members(group_id,user_id,joined_at) VALUES(?,?,?)',(gid,uid,now()))
-                notify(c,uid,f'{u["username"]} đã mời bạn vào nhóm “{m["title"]}”.')
+                notify(c,uid,f'{u["display_name"] or "Thành viên"} đã mời bạn vào nhóm “{m["title"]}”.')
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'groups-updated')
         return {'ok':True}
@@ -651,7 +651,7 @@ def install(core):
         u=current_user(request)
         with db() as c:
             active_member(c,gid,u['id'])
-            sql='SELECT m.*,u.username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?'
+            sql='SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?'
             args=[gid]
             if before>0:sql+=' AND m.id<?';args.append(before)
             messages=many(c,sql+' ORDER BY m.id DESC LIMIT 70',args)
@@ -671,7 +671,7 @@ def install(core):
                 raise HTTPException(404,'Tin nhắn trả lời không tồn tại.')
             cur=c.execute('''INSERT INTO group_messages(group_id,sender_id,body,attachment_id,reply_to,created_at)
                              VALUES(?,?,?,?,?,?)''',(gid,u['id'],text,body.attachment_id,body.reply_to,now()))
-            msg=dict(one(c,'SELECT m.*,u.username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?',(cur.lastrowid,)))
+            msg=dict(one(c,'SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?',(cur.lastrowid,)))
             msg=message_dict(c,msg,'group')
             members=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in members:await hub.user(uid,'group-message',group_id=gid,message=msg)
@@ -855,14 +855,14 @@ def install(core):
                 pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
                          (body.target_id,u['id']))
                 if not pref or not pref['muted']:
-                    notify(c,body.target_id,f'{u["username"]} đã chuyển tiếp một tin nhắn.')
+                    notify(c,body.target_id,f'{u["display_name"] or "Thành viên"} đã chuyển tiếp một tin nhắn.')
             else:
                 active_member(c,body.target_id,u['id'])
                 cur=c.execute('''INSERT INTO group_messages
                   (group_id,sender_id,body,attachment_id,created_at,forwarded)
                   VALUES(?,?,?,?,?,1)''',
                   (body.target_id,u['id'],content,attachment_id,now()))
-                row=one(c,'''SELECT m.*,u.username FROM group_messages m
+                row=one(c,'''SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m
                               JOIN users u ON u.id=m.sender_id WHERE m.id=?''',(cur.lastrowid,))
                 message=message_dict(c,row,'group')
                 targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',
@@ -917,7 +917,7 @@ def install(core):
             pattern='%'+q.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
             if group_id is not None:
                 active_member(c,group_id,u['id'])
-                rows=many(c,"SELECT m.id,m.body,m.created_at,u.username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,pattern))
+                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,pattern))
             else:
                 if other_id is None:raise HTTPException(422,'Cần chọn một cuộc trò chuyện.')
                 require_peer(c,u['id'],other_id)

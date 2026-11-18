@@ -1036,8 +1036,9 @@ async def people_search(request: Request,q: str=''):
     with db() as c:
         search = q.strip()[:24]
         numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
-        rows = many(c, '''SELECT id,username FROM users WHERE is_admin=0 AND id!=?
-                          AND (username LIKE ? OR id=?)
+        rows = many(c, '''SELECT id,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
+                          FROM users WHERE is_admin=0 AND id!=? AND needs_display_name=0
+                          AND (display_name LIKE ? OR id=?)
                           AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
                           AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id=?)
                           LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
@@ -1052,7 +1053,7 @@ async def people_search(request: Request,q: str=''):
 async def get_friends(request: Request):
     u=current_user(request)
     with db() as c:
-        allrows=many(c, '''SELECT f.*,u.id other_id,u.username FROM friendships f
+        allrows=many(c, '''SELECT f.*,u.id other_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           WHERE f.u1=? OR f.u2=? ORDER BY f.created_at DESC''',(u['id'],u['id'],u['id']))
         for r in allrows:
@@ -1086,7 +1087,7 @@ async def friend_request(request: Request,other_id: int):
         if one(c,'SELECT 1 FROM friendships WHERE u1=? AND u2=?',(a,b)):
             raise HTTPException(409,'Đã có lời mời hoặc đã kết bạn.')
         c.execute('INSERT INTO friendships VALUES(?,?,?,?,?)',(a,b,u['id'],'pending',now()))
-        notify_user_persist(c,other_id,f'{u["username"]} đã gửi lời mời kết bạn.')
+        notify_user_persist(c,other_id,f'{u["display_name"] or "Thành viên"} đã gửi lời mời kết bạn.')
     await hub.user(other_id,'friends-updated')
     await hub.user(u['id'],'friends-updated')
     return {'ok':True}
@@ -1101,7 +1102,7 @@ async def friend_accept(request: Request,other_id: int):
         if not r or r['state']!='pending' or r['requested_by']==u['id']:
             raise HTTPException(403,'Không có lời mời kết bạn chờ chấp thuận.')
         c.execute("UPDATE friendships SET state='accepted' WHERE u1=? AND u2=?",(a,b))
-        notify_user_persist(c,other_id,f'{u["username"]} đã chấp nhận lời mời kết bạn.')
+        notify_user_persist(c,other_id,f'{u["display_name"] or "Thành viên"} đã chấp nhận lời mời kết bạn.')
     await hub.user(other_id,'friends-updated')
     await hub.user(u['id'],'friends-updated')
     return {'ok':True}
@@ -1122,7 +1123,7 @@ async def friend_remove(request: Request,other_id:int):
 async def get_blocks(request:Request):
     u=current_user(request)
     with db() as c:
-        return {'users':many(c,'SELECT users.id,username FROM blocks JOIN users ON users.id=blocks.blocked_id WHERE blocker_id=?',(u['id'],))}
+        return {'users':many(c,'SELECT users.id,COALESCE(NULLIF(users.display_name,''),'Thành viên') AS username FROM blocks JOIN users ON users.id=blocks.blocked_id WHERE blocker_id=?',(u['id'],))}
 
 
 @app.post('/api/blocks/{other_id}')
@@ -1209,7 +1210,7 @@ async def send_message(request:Request,body:SendMessage):
         # Do not generate interruption notifications for users who mute this conversation.
         pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',(body.recipient_id,u['id']))
         if not pref or not pref['muted']:
-            notify_user_persist(c,body.recipient_id,f'Tin nhắn từ {u["username"]}: {text[:120] if text else "Đã gửi một tệp"}')
+            notify_user_persist(c,body.recipient_id,f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}')
     await hub.user(body.recipient_id,'message',message=msg)
     await hub.user(u['id'],'message',message=msg)
     return {'message':msg}

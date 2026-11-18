@@ -36,7 +36,7 @@ function drawFriendPopup(friend){
  title.append(el('small','', 'LỜI MỜI KẾT BẠN'),el('strong','',friend.display_name||friend.username));
  const close=el('button','mt-close-pop','×');close.type='button';close.title='Để sau';close.setAttribute('aria-label','Để sau');
  header.append(icon,title,close);card.append(header);
- card.append(el('p','mt-friend-request-copy','@'+friend.username+' muốn kết nối với bạn trên mtunz.'));
+ card.append(el('p','mt-friend-request-copy',(friend.display_name||friend.username)+' muốn kết nối với bạn trên mtunz.'));
  const info=el('div','mt-friend-request-profile');info.hidden=true;card.append(info);
  const actions=el('div','mt-friend-request-actions');
  const profile=el('button','mt-friend-btn','Xem hồ sơ');profile.type='button';
