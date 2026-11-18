@@ -1,5 +1,5 @@
 'use strict';
-/* The World Chat page is a visually rich concept preview, NOT a live community. */
+/* World Chat remains Coming Soon while switched off; admin can launch it. */
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
@@ -32,9 +32,11 @@ for(const dest of ['messages','groups']){
 }
 assert.equal((rendered.match(/data-act="app-tab"/g)||[]).length,2,'Only existing navigation actions may be interactive');
 assert(rendered.includes('Chưa mở truy cập'));
-assert(rendered.includes('chưa được triển khai'));
+assert(rendered.includes('Quản trị viên sẽ thông báo khi Chat thế giới chính thức được mở.'));
+assert(rendered.includes('Quyền kích hoạt và thời gian hoạt động do quản trị viên quyết định.'));
+assert(app.includes('worldPage()'),'World Chat becomes functional only when enabled.');
 assert(!/data-form=|data-act="(world|send|join)|api\/world|WebSocket|chat-world/.test(rendered),
- 'World concept must not pretend that public chat is enabled');
+ 'World preview must not pretend that public chat is enabled');
 assert(!/đã ra mắt|đang hoạt động|online|tham gia ngay|đăng ký ngay/i.test(rendered),
  'Concept must not suggest live users or a usable public room');
 assert(css.includes('container:world-stage/inline-size'),'Layout must adapt to available chat-pane width');
@@ -46,4 +48,4 @@ assert(css.includes('prefers-reduced-motion:reduce'));
 assert(css.includes(':focus-visible'),'Keyboard navigation requires a visible focus state');
 assert(css.includes('pointer-events:none'),'Decorative network should not capture interactions');
 assert(!/https?:\/\/|@import|url\(/.test(css),'World preview must not depend on remote image assets');
-console.log('World Preview OK: polished real UI, responsive layout, accessible nav, no false live chat features.');
+console.log('World Preview OK: closed-by-default landing, responsive UI, admin-controlled launch.');
