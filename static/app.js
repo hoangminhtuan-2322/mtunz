@@ -531,6 +531,9 @@ function secureSettingsField(label,name,type='text',placeholder='',attr=''){
  <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required></div>`;
 }
 function authTabs(){return `<div class="auth-nav" role="group" aria-label="Điều hướng tài khoản">
+ <svg class="auth-nav-perimeter" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+   <rect class="auth-nav-runner" pathLength="100"></rect>
+ </svg>
  <button type="button" class="${state.mode==='login'?'active':''}" aria-pressed="${state.mode==='login'}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
  <button type="button" class="${state.mode==='register'?'active':''}" aria-pressed="${state.mode==='register'}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
  <button type="button" class="${state.mode==='support'?'active':''}" aria-pressed="${state.mode==='support'}" data-act="mode-support">${icon('inbox',16)}<span>Hỗ trợ</span></button>
@@ -645,7 +648,6 @@ function renderAuth(){
    host.innerHTML=`<div class="auth">${authArt()}<main class="auth-main">
      <div class="auth-mobile-logo logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span> mtunz<span class="brand-dot">.</span></div>
      <div class="auth-panel">
-       <span class="auth-top-glow" aria-hidden="true"></span>
        <svg class="auth-neon-perimeter" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
          <defs><linearGradient id="auth-neon-glow-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
            <stop offset="0%" stop-color="#b79aff"/>
