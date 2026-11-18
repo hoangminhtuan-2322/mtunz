@@ -27,13 +27,14 @@ assert(!/localStorage|sessionStorage|document\.cookie/.test(js),'Do not store fr
 assert(css.includes('.mt-pins-bar')&&css.includes('.mt-forward-dialog'));
 assert(css.includes('.mt-settings-health')&&css.includes('.mt-friend-request-pop'));
 assert(css.includes('@media(max-width:800px)'));
-assert(app.includes("['world','group','Chat thế giới · Sắp ra mắt']"),'World Chat in secondary nav');
+assert(app.includes("['world','group','Chat thế giới']"),'World Chat is available in secondary navigation');
 assert(app.includes("function worldComingSoon()"),'Non-operational world preview exists');
-assert(!/api\/world|world-send|world-room/.test(app),'No public world chat API is wired');
+assert(app.includes('worldPage()'),'World Chat is gated by admin launch state');
+assert(fs.readFileSync('static/world-moderation.js','utf8').includes('function worldPage()'),'Public room is implemented separately');
 assert(features.includes('class PinMessage(BaseModel)')&&features.includes('class ForwardMessage(BaseModel)'));
 assert(features.includes('checked_chat_message(c,u['),"Server verifies source ownership and membership");
 assert(features.includes('require_peer(c,u['),"Server enforces DM friend/block rules");
 assert(features.includes('active_member(c,body.target_id,u['),"Server enforces group membership");
 assert(features.includes("15*60"),'Original 15 minute edit limit remains');
 assert(features.includes("scope='group'")&&features.includes("scope='dm'"));
-console.log('Social UI OK: invite popup, profile, pin, forward, settings, preview-only World Chat, guarded server actions.');
+console.log('Social UI OK: invites, pin/forward, protected world launch, and existing private/group guards.');
