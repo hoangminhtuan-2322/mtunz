@@ -1,0 +1,84 @@
+/* mtunz World Chat & community trust. Scoped away from private and group messages. */
+.world-live-page{max-width:1160px;margin-inline:auto;padding:22px 24px 30px;min-height:0;height:100%;box-sizing:border-box}
+.world-live-shell{min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden;border-radius:22px;border:1px solid #3e5679;background:linear-gradient(155deg,#182841 0%,#101c31 55%,#141e33 100%);box-shadow:0 20px 60px #0208172b}
+.world-live-head{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:24px 28px 16px}
+.world-live-head h1{font-size:clamp(23px,3vw,30px);margin:7px 0;font-weight:830;letter-spacing:-.035em;color:#edf2ff}
+.world-live-spark{color:#ae9bfc;font-size:.8em}
+.world-live-head p{font-size:12px;color:#a8b9d5;line-height:1.6}
+.world-live-head .eyebrow{font-size:10px;letter-spacing:.16em;color:#b6a7ff}
+.world-live-state{white-space:nowrap;font-size:11px;font-weight:800;border-radius:30px;padding:8px 12px}
+.world-live-state.online{background:#14564755;color:#83ebc6;border:1px solid #299d7566}
+.world-live-state.offline{background:#74472444;color:#ffcc8b;border:1px solid #ba864c66}
+.world-live-toolbar{border-top:1px solid #33476988;border-bottom:1px solid #33476988;padding:8px 26px;display:flex;align-items:center;justify-content:space-between;gap:10px;color:#a6b9d7;font-size:11px;min-height:44px}
+.world-live-toolbar span{display:flex;align-items:center;gap:7px}
+.world-banner{display:flex;align-items:flex-start;gap:10px;line-height:1.65;padding:12px 20px;font-size:12px}
+.world-banner svg{flex:none;margin-top:3px}
+.world-banner.warn{background:#7b5c251c;color:#f5d7a5;border-bottom:1px solid #d5a05140}
+.world-banner.danger{background:#84424e22;color:#ffd5dc;border-bottom:1px solid #ff85974a}
+.world-banner strong{font-variant-numeric:tabular-nums;color:#fff}
+.world-feed{flex:1;min-height:190px;overflow-y:auto;overscroll-behavior:contain;padding:16px 26px;display:flex;flex-direction:column;gap:9px;scrollbar-color:#445775 transparent}
+.world-message{display:flex;align-items:flex-start;gap:10px;background:#1e304a8c;border:1px solid #40557557;border-radius:15px;padding:11px 12px;max-width:100%;box-sizing:border-box}
+.world-message.mine{background:#29294e8c;border-color:#6460a76f}
+.world-message-avatar{flex:none;width:34px;height:34px;border-radius:12px;background:linear-gradient(135deg,#8f71ed,#467cba);display:grid;place-items:center;font-size:15px;font-weight:850;color:white}
+.world-message-body{min-width:0;flex:1}
+.world-message-meta{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;font-size:11px}
+.world-message-meta b{color:#e3eaff;font-weight:800}
+.world-message-meta span{color:#8ca2c4;font-size:10px}
+.world-message-text{margin:6px 0 0;color:#dbe6f8;font-size:13px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
+.world-message-text em{color:#8194b2}
+.world-report-mini{align-self:flex-start;border:1px solid #485c7b;background:transparent;border-radius:9px;color:#bac9e2;cursor:pointer;padding:6px 9px;font-size:10px;transition:background .15s}
+.world-report-mini:hover{background:#384966;color:#fff}
+.world-empty{margin:auto;text-align:center;padding:42px 18px;color:#9fb4d1;font-size:12px}
+.world-compose{border-top:1px solid #4354778c;padding:15px 25px;display:flex;align-items:center;gap:12px;background:#121e33}
+.world-compose .input{flex:1;min-width:0;resize:vertical;max-height:130px;min-height:50px;background:#1b2b44;border:1px solid #466181;border-radius:13px;color:#f0f4ff;padding:12px}
+.world-compose .input:disabled{opacity:.6;cursor:not-allowed}
+.world-compose button{align-self:stretch;white-space:nowrap;border-radius:12px}
+.world-rule-footer{padding:10px 25px 14px;font-size:10px;color:#97adcd;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.world-rule-footer strong{color:#d6d0ff}
+.world-safety-settings{margin:0 0 20px}
+.world-safety-settings h3{display:flex;align-items:center;gap:8px}
+.world-safety-settings .hint{margin:9px 0;font-size:11px;line-height:1.7}
+.world-safety-stats{display:flex;flex-wrap:wrap;gap:9px;margin:13px 0}
+.world-safety-stats>span{display:flex;flex-direction:column;gap:6px;min-width:106px;padding:11px 14px;border:1px solid #465c7b;border-radius:12px;background:#18243a;color:#98afd0;font-size:11px}
+.world-safety-stats strong{color:#f0ecff;font-size:13px;font-variant-numeric:tabular-nums}
+.world-safety-alert{color:#ffc1c6;border-left:3px solid #f27c92;padding-left:12px;font-size:12px}
+.world-modal-penalty{display:flex;align-items:center;gap:11px;margin:15px 0;background:#272f4a;padding:14px;border-radius:12px;color:#d9dcf7;font-size:12px;line-height:1.8}
+.world-modal-penalty b{font-size:17px;font-variant-numeric:tabular-nums;color:#fff}
+.world-report-form{display:grid;gap:9px}
+.world-report-form label{font-size:12px;font-weight:750;color:#d8e5fa}
+.world-report-form .hint{font-size:11px;color:#9eb0c9;line-height:1.65}
+.world-report-form .input,.world-report-form .select{width:100%;box-sizing:border-box}
+.world-admin-page{display:grid;gap:16px}
+.world-admin-stats{border:1px solid #596b9c6e;background:#1c2b4580;padding:14px 18px;border-radius:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:#e2e8ff}
+.world-admin-stats .hint{margin:0;color:#a8b9d6}
+.world-admin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.world-admin-card{min-width:0}
+.world-admin-card h2{font-size:18px;margin:0 0 12px}
+.world-admin-card h3{font-size:13px;margin:22px 0 12px}
+.world-admin-card .hint{font-size:11px;line-height:1.8}
+.world-admin-form{display:grid;gap:13px;margin-top:16px}
+.world-admin-form>button,.world-admin-mute>button{justify-self:start}
+.world-check{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #43567888;border-radius:12px;font-size:12px;font-weight:700}
+.world-check input{width:16px;height:16px;accent-color:#9780ee}
+.world-time-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.world-time-grid label,.world-admin-mute>label{display:grid;gap:6px;font-size:11px;color:#b2c1da}
+.world-admin-mute{display:grid;gap:12px}
+.world-admin-form .input,.world-admin-form .select,.world-admin-mute .input,.world-admin-mute .select{min-width:0;width:100%;box-sizing:border-box}
+.world-admin-offenders{display:grid;gap:8px}
+.world-offender,.world-admin-message{display:flex;align-items:center;justify-content:space-between;gap:15px;border:1px solid #3f5375;border-radius:12px;padding:11px 13px;color:#e6edfb;font-size:12px}
+.world-offender>div,.world-admin-message>div{min-width:0;overflow-wrap:anywhere}
+.world-admin-message{align-items:flex-start;margin-top:9px}
+.world-admin-message p{font-size:12px;line-height:1.6;color:#c2d2ed;margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.world-report-card{border:1px solid #455b7b;border-radius:15px;background:#1b2c45;padding:16px 18px;color:#dbe6fc;display:grid;gap:10px;font-size:12px}
+.world-report-card header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.world-report-card p{margin:0;line-height:1.7}
+.world-report-card .hint{font-size:11px;color:#a2b6d1}
+.world-report-description{padding:13px;background:#132139;border-radius:11px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.75}
+.world-report-card details{border:1px solid #506488;border-radius:9px;padding:8px 12px}
+.world-report-card summary{cursor:pointer}
+.world-report-card details p{padding-top:10px;overflow-wrap:anywhere}
+.world-report-actions{display:flex;gap:8px;flex-wrap:wrap}
+.world-live-page button:focus-visible,.world-admin-page button:focus-visible,.world-report-mini:focus-visible{outline:2px solid #bfaeff;outline-offset:3px}
+@media(max-width:980px){.world-admin-grid{grid-template-columns:1fr}.world-live-page{padding:12px}}
+@media(max-width:650px){.world-live-page{padding:0;height:calc(100dvh - 116px)}.world-live-shell{border-radius:0;border-left:0;border-right:0}.world-live-head{padding:17px 16px 13px}.world-live-head h1{font-size:21px}.world-live-toolbar,.world-compose{padding:10px 13px}.world-feed{padding:11px 12px;gap:7px}.world-message{padding:9px;gap:8px}.world-message-avatar{width:29px;height:29px;font-size:12px}.world-report-mini{font-size:10px}.world-rule-footer{padding:9px 12px;font-size:10px}.world-time-grid{grid-template-columns:1fr}.world-report-card{padding:12px}.world-live-head p{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.rail-profile-button,.world-report-mini{transition:none}}
