@@ -58,7 +58,9 @@ jobs:
         run: node tests/admin_console.cjs
       - name: Verify contextual login error feedback
         run: node tests/auth_feedback.cjs
-      - name: Verify detailed Admin audit and protected account actions\n        run: node tests/admin_audit_ui.cjs\n      - name: Check theme wiring
+      - name: Verify detailed Admin audit and protected account actions
+        run: node tests/admin_audit_ui.cjs
+      - name: Check theme wiring
         run: |
           python - <<'PY'
           from pathlib import Path
