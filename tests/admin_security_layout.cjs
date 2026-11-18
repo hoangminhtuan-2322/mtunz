@@ -56,7 +56,7 @@ inspectMarkup(context.settingsContent(),4);
 const authInput=context.inputField('Password','password','password','Your password');
 assert(authInput.includes('class="auth-input-icon"'),'Only login flow retains input icon');
 assert(html.includes('form-layout.css?v=8.4'),'New geometry CSS is loaded');
-assert(html.includes('app.js?v=15.3'),'New JS bypasses old browser cache');
+assert(html.includes('app.js?v=15.4'),'New JS bypasses old browser cache');
 assert(html.indexOf('form-layout.css?v=8.4')>html.indexOf('auth-refined.css?v=5.1'),'Fix takes precedence');
 assert(css.includes('.secure-settings-field > .input'),'Native input sizing must exist');
 assert(css.includes('padding:13px 16px !important'),'Native inputs have explicit left/right padding');
