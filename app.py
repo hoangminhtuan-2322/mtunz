@@ -787,6 +787,10 @@ async def auth_password(request: Request, body: PasswordLogin):
             raise HTTPException(403, {'code':'sanction','kind':u['sanction_kind'],
                                       'until':u['sanction_until'],'reason':u['sanction_reason']})
         if u['is_admin'] and not u['pin_hash']:
+            # Prevent concurrent password-only Admin logins from each observing
+            # zero active sessions before either creates its own session.
+            if POSTGRES_MODE:
+                c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(u['id'],))
             if one(c,'SELECT 1 FROM sessions WHERE user_id=? AND expires_at>?',(u['id'],now())):
                 raise HTTPException(409,'Phiên Admin đã hoạt động. Hãy bật PIN tại phiên hiện tại để phê duyệt thiết bị thứ hai.')
             old_device = request.cookies.get(REMEMBER_COOKIE)
