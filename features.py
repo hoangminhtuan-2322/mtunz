@@ -689,7 +689,7 @@ def install(core):
             msg=dict(one(c,"SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?",(cur.lastrowid,)))
             msg=message_dict(c,msg,'group')
             members=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
-        for uid in members:await hub.user(uid,'group-message',group_id=gid,message=msg)
+        await asyncio.gather(*(hub.user(uid,'group-message',group_id=gid,message=msg) for uid in members))
         return {'message':msg}
 
     @app.post('/api/groups/{gid}/read')
