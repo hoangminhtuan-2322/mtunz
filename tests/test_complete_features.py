@@ -187,3 +187,31 @@ def test_same_origin_location_requires_explicit_browser_permission():
         policy=response.headers.get('permissions-policy','')
         assert 'geolocation=(self)' in policy
         assert 'payment=()' in policy
+
+
+def test_forwarding_images_preserves_attachment_permissions():
+    admin, alice, bob, alice_id, bob_id = setup_pair()
+    charlie = register_user(admin, 'feature_charlie')
+    charlie_id = charlie.get('/api/me').json()['user']['id']
+    stranger = register_user(admin, 'feature_stranger')
+    assert bob.post(f'/api/friends/request/{charlie_id}').status_code == 200
+    assert charlie.post(f'/api/friends/accept/{bob_id}').status_code == 200
+    group = bob.post('/api/groups',json={'title':'Ảnh chuyển tiếp','member_ids':[charlie_id]})
+    assert group.status_code == 200,group.text
+    gid = group.json()['id']
+    image = bytes.fromhex('89504e470d0a1a0a') + b'0'*100
+    uploaded = alice.post('/api/uploads', files={'file': ('photo.png',image,'image/png')})
+    assert uploaded.status_code == 200,uploaded.text
+    file_id = uploaded.json()['attachment']['id']
+    source = alice.post('/api/messages',json={'recipient_id':bob_id,'body':'Ảnh gốc','attachment_id':file_id})
+    assert source.status_code == 200,source.text
+    source_id = source.json()['message']['id']
+    assert stranger.get(f'/api/attachments/{file_id}').status_code == 403
+    forwarded = bob.post('/api/chat/forward',json={
+       'source_scope':'dm','source_chat_id':alice_id,'message_id':source_id,
+       'target_scope':'group','target_id':gid
+    })
+    assert forwarded.status_code == 200,forwarded.text
+    assert forwarded.json()['message']['attachment']['id'] == file_id
+    assert charlie.get(f'/api/attachments/{file_id}').status_code == 200
+    assert stranger.get(f'/api/attachments/{file_id}').status_code == 403
