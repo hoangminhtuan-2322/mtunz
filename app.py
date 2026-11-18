@@ -70,6 +70,37 @@ def token():
     return secrets.token_urlsafe(32)
 
 
+# Public member IDs are the actual user primary key, not an extra identifier.
+# Keep the existing Admin ID unchanged. Never use the ID itself as a login secret.
+MEMBER_ID_MIN = 1000
+MEMBER_ID_MAX = 999_999_999
+
+
+def random_member_id():
+    """Cryptographically secure random numeric account ID (inclusive range)."""
+    return MEMBER_ID_MIN + secrets.randbelow(MEMBER_ID_MAX - MEMBER_ID_MIN + 1)
+
+
+def create_member(c, *, username, password_hash, pin_hash, pin_length, phone, email):
+    """Create a member with a unique random ID, safely retrying rare collisions.
+
+    ON CONFLICT(id) DO NOTHING avoids aborting PostgreSQL transactions on an
+    ID collision. A competing registration of the same username still raises
+    a uniqueness error and the enclosing transaction rolls back.
+    """
+    for _ in range(32):
+        member_id = random_member_id()
+        inserted = c.execute(
+            '''INSERT INTO users(id,username,password_hash,pin_hash,pin_length,created_at,phone,email)
+               VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING RETURNING id''',
+            (member_id, username, password_hash, pin_hash, pin_length, now(), phone, email)
+        ).fetchone()
+        if inserted:
+            return int(inserted['id'])
+    raise RuntimeError('Không thể cấp ID tài khoản duy nhất. Vui lòng thử lại.')
+
+
+
 def norm_username(name: str):
     value = name.strip().lower()
     if not USERNAME_RE.fullmatch(value):
@@ -596,14 +627,14 @@ async def register_complete(request: Request, body: RegisterComplete):
         if total >= max_users:
             raise HTTPException(409,'Hệ thống đã đạt giới hạn người dùng.')
         try:
-            c.execute('''INSERT INTO users(username,password_hash,pin_hash,pin_length,created_at,phone,email)
-                         VALUES(?,?,?,?,?,?,?)''',
-                      (name,hash_secret(body.password),hash_secret(body.pin),body.pin_length,now(),phone,email))
+            member_id = create_member(c, username=name, password_hash=hash_secret(body.password),
+                                      pin_hash=hash_secret(body.pin), pin_length=body.pin_length,
+                                      phone=phone, email=email)
         except sqlite3.IntegrityError:
             raise HTTPException(409,'Tên tài khoản đã tồn tại.')
         c.execute("UPDATE registrations SET status='completed' WHERE id=?",(r['id'],))
     await hub.admins('registration-updated')
-    return {'ok':True}
+    return {'ok':True, 'id':member_id}
 
 
 # --- Three-stage login ---
@@ -930,10 +961,13 @@ async def people_search(request: Request,q: str=''):
     u=current_user(request)
     if not q.strip(): return {'users':[]}
     with db() as c:
-        rows = many(c, '''SELECT id,username FROM users WHERE is_admin=0 AND id!=? AND username LIKE ?
+        search = q.strip()[:24]
+        numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
+        rows = many(c, '''SELECT id,username FROM users WHERE is_admin=0 AND id!=?
+                          AND (username LIKE ? OR id=?)
                           AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
                           AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id=?)
-                          LIMIT 20''', (u['id'], '%'+q.strip()[:24]+'%',u['id'],u['id']))
+                          LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
         for r in rows:
             fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
             r['friend_state'] = fr['state'] if fr else 'none'
@@ -1280,12 +1314,14 @@ async def set_capacity(request:Request,body:Capacity):
 async def admin_users(request:Request,q:str=''):
     require_admin(request)
     with db() as c:
+        query=q.strip()[:24]
+        numeric_id=int(query) if query.isascii() and query.isdigit() and len(query)<=9 else -1
         rows=many(c,'''SELECT u.id,u.username,u.created_at,u.last_seen,u.pin_length,
                               u.sanction_kind,u.sanction_until,u.sanction_reason,
                               d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                        FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
-                       WHERE u.is_admin=0 AND u.username LIKE ? ORDER BY u.id DESC LIMIT 200''',
-                  ('%'+q.strip()[:24]+'%',))
+                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.id=?)
+                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%',numeric_id))
         for r in rows:
             r['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(r['id'],r['id']))['n']
             r['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(r['id'],r['id']))['n']
