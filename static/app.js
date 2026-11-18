@@ -661,7 +661,7 @@ function authRegister(){
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
      ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
-   <label class="registration-consent"><input type="checkbox" name="accepted_terms" required><span>Tôi đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư của mtunz.</span></label>
+   <div class="registration-consent"><input id="accepted-terms" type="checkbox" name="accepted_terms" required><label for="accepted-terms">Tôi đã đọc và đồng ý với <a href="/terms" target="_blank" rel="noopener noreferrer">Điều khoản sử dụng</a> và <a href="/privacy" target="_blank" rel="noopener noreferrer">Chính sách quyền riêng tư</a> của mtunz.</label></div>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
@@ -1849,7 +1849,7 @@ document.addEventListener('submit',async event=>{
     if(pw!==pw2)throw Error('Hai lần nhập mật khẩu không khớp.');
     if(pin!==pin2)throw Error('Hai lần nhập PIN không khớp.');
     if(pin.length!==pinLen)throw Error(`PIN phải đúng ${pinLen} chữ số.`);
-    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined});
+    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined,accepted_terms:fd.get('accepted_terms')==='on'});
     state.username=state.regName;state.regStatus='';state.savedDevice=false;state.rememberedDevice=false;
     state.user=(await api('/api/me')).user;
     toast('Tạo tài khoản thành công. Hãy đặt tên hiển thị để bắt đầu.','ok');

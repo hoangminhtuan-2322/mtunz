@@ -53,6 +53,10 @@ def install(core):
             # Legacy accounts remain usable. Only newly completed registrations
             # require the first-login display-name onboarding step.
             column('users','needs_display_name','INTEGER NOT NULL DEFAULT 0')
+            # Only explicit approved-registration consent is recorded. Legacy
+            # accounts have NULL; never claim acceptance on their behalf.
+            column('users','terms_accepted_at','INTEGER')
+            column('users','terms_accepted_version','TEXT')
             # Existing deployments might contain duplicate, unverified phones.
             # Avoid failing startup; ambiguous phone login will be rejected.
             if not one(c,"SELECT phone FROM users WHERE phone IS NOT NULL AND phone<>'' GROUP BY phone HAVING COUNT(*)>1 LIMIT 1"):
@@ -435,7 +439,7 @@ def install(core):
     async def export_account(request:Request):
         u=current_user(request)
         with db() as c:
-            user=one(c,'SELECT username,created_at,display_name,bio,phone,email FROM users WHERE id=?',(u['id'],))
+            user=one(c,'SELECT username,created_at,display_name,bio,phone,email,terms_accepted_at,terms_accepted_version FROM users WHERE id=?',(u['id'],))
             direct=many(c,'''SELECT id,sender_id,recipient_id,body,created_at,edited_at,deleted_at FROM messages
                              WHERE sender_id=? OR recipient_id=? ORDER BY id''',(u['id'],u['id']))
             groups=many(c,'''SELECT gm.group_id,g.title,gm.role FROM group_members gm

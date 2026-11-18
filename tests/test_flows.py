@@ -40,11 +40,16 @@ def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     digits=int.from_bytes(hashlib.sha256(name.encode('utf-8')).digest()[:6],'big') % 1_000_000_000
     phone='0'+str(digits).zfill(9)
     assert guest.post('/api/registration/request',json={'username':name,'phone':phone,'email':'demo@example.com'}).json()['status']=='pending'
-    assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)}).status_code==403
+    assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin),'accepted_terms':True}).status_code==403
     pending=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']==name][0]
     assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True}).status_code==200
     assert guest.get('/api/registration/status').json()['requests'][0]['status']=='approved'
-    assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)}).status_code==200
+    missing=guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)})
+    assert missing.status_code==422, missing.text
+    assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin),'accepted_terms':True}).status_code==200
+    with db() as c:
+        consent=c.execute('SELECT terms_accepted_at,terms_accepted_version FROM users WHERE username=?',(name,)).fetchone()
+        assert consent['terms_accepted_at']>0 and consent['terms_accepted_version']=='2026-11-18'
     # The real interface continues directly into the name popup; these helpers
     # intentionally re-enter the password/PIN flow, so end onboarding first.
     assert guest.post('/api/auth/logout').status_code==200

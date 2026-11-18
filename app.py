@@ -40,6 +40,7 @@ NEW_DB_FILE = DATA_DIR / 'mtunz.sqlite3'
 LEGACY_DB_FILE = DATA_DIR / ('ve' + 'lora.sqlite3')
 DB_FILE = NEW_DB_FILE if NEW_DB_FILE.exists() or not LEGACY_DB_FILE.exists() else LEGACY_DB_FILE
 PUBLIC_MODE = os.getenv('PUBLIC_MODE', '0') == '1'
+TERMS_VERSION = '2026-11-18'
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'mtunz7' if not PUBLIC_MODE else '')
 # A public server must never be bootstrapped with the documented demo credential.
 if PUBLIC_MODE and (len(ADMIN_PASSWORD) < 12 or ADMIN_PASSWORD == 'mtunz7'):
@@ -441,7 +442,7 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['X-Robots-Tag'] = 'noindex, nofollow'
     result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-         "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
+         "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; "
          "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
     return result
 
@@ -467,6 +468,16 @@ async def health():
 @app.get('/')
 async def home():
     return FileResponse(ROOT / 'static' / 'index.html')
+
+
+@app.get('/terms')
+async def public_terms():
+    return FileResponse(ROOT / 'static' / 'terms.html', media_type='text/html')
+
+
+@app.get('/privacy')
+async def public_privacy():
+    return FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
 
 
 def current_user(request: Request, require=True):
@@ -666,6 +677,7 @@ class RegisterComplete(BaseModel):
     pin: str
     pin_length: int
     phone: str | None = Field(default=None,max_length=40)
+    accepted_terms: bool = False
 
 
 @app.post('/api/registration/complete')
@@ -677,6 +689,8 @@ async def register_complete(request: Request, body: RegisterComplete):
         r = one(c, 'SELECT * FROM registrations WHERE username=? AND guest_id=?', (name,request.state.gid))
         if not r or r['status'] != 'approved':
             raise HTTPException(403,'Yêu cầu của bạn chưa được admin chấp thuận.')
+        if not body.accepted_terms:
+            raise HTTPException(422,'Bạn cần đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.')
         phone=normalize_phone(r['phone'] or body.phone)
         email=normalize_email(r['email'])
         if one(c,'SELECT 1 FROM users WHERE phone=?',(phone,)):
@@ -690,6 +704,8 @@ async def register_complete(request: Request, body: RegisterComplete):
                                       phone=phone, email=email)
         except sqlite3.IntegrityError:
             raise HTTPException(409,'Tên tài khoản đã tồn tại.')
+        c.execute('''UPDATE users SET terms_accepted_at=?,terms_accepted_version=? WHERE id=?''',
+                  (now(), TERMS_VERSION, member_id))
         c.execute("UPDATE registrations SET status='completed' WHERE id=?",(r['id'],))
         # The user has just entered their new password and PIN in the
         # approved registration flow. Give a short onboarding-only session;

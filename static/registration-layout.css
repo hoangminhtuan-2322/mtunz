@@ -159,7 +159,10 @@
   outline:2px solid #91e3ee;
   outline-offset:3px;
 }
-.registration-consent span{display:block;min-width:0}
+.registration-consent label{display:block;min-width:0;cursor:pointer}
+.registration-consent a{color:#cbbfff;font-weight:750;text-underline-offset:3px}
+.registration-consent a:hover{color:#fff}
+.registration-consent a:focus-visible{outline:2px solid #91e3ee;outline-offset:3px;border-radius:2px}
 .registration-security-note{
   display:flex;
   align-items:center;

@@ -29,7 +29,7 @@ def create_approved(admin,name='private_account',phone='0912345678'):
     approved=admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True})
     assert approved.status_code==200,approved.text
     complete=guest.post('/api/registration/complete',json={
-        'username':name,'password':'LongPasswordForTest123!','pin':'123456','pin_length':6})
+        'username':name,'password':'LongPasswordForTest123!','pin':'123456','pin_length':6,'accepted_terms':True})
     assert complete.status_code==200,complete.text
     return guest,complete.json()['id']
 

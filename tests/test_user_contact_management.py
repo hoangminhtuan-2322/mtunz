@@ -42,7 +42,7 @@ def test_signup_requires_phone_and_admin_can_review_contact():
                       json={'approve':True}).status_code==200
     complete=guest.post('/api/registration/complete',json={
         'username':'contact_demo','password':'SecurePassword123!',
-        'pin':'123456','pin_length':6})
+        'pin':'123456','pin_length':6,'accepted_terms':True})
     assert complete.status_code==200,complete.text
     assert guest.post('/api/auth/logout').status_code==200
     assert guest.post('/api/auth/start',json={'username':'contact_demo'}).status_code==200

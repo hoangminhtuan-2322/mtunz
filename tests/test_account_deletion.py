@@ -67,7 +67,7 @@ def create_member(admin, name):
     assert admin.post(f'/api/admin/registrations/{ticket}/decision',
                       json={'approve':True}).status_code == 200
     assert client.post('/api/registration/complete',json={
-        'username':name,'password':PASSWORD,'pin':PIN,'pin_length':6
+        'username':name,'password':PASSWORD,'pin':PIN,'pin_length':6,'accepted_terms':True
     }).status_code == 200
     assert client.post('/api/auth/logout').status_code == 200
     auth = client.post('/api/auth/password',json={

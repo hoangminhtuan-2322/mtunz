@@ -52,6 +52,7 @@ with TestClient(app, base_url="https://testserver") as admin:
                 "password": "RenderTestPassword123!",
                 "pin": "123456",
                 "pin_length": 6,
+                "accepted_terms": True,
             },
         )
         assert complete.status_code == 200, complete.text
@@ -94,7 +95,7 @@ with TestClient(app, base_url="https://testserver") as admin:
                               json={"approve":True}).status_code==200
             complete2=peer.post("/api/registration/complete",json={
                 "username":"render_ci_peer","password":"RenderPeerPassword123!",
-                "pin":"123456","pin_length":6})
+                "pin":"123456","pin_length":6,"accepted_terms":True})
             assert complete2.status_code==200,complete2.text
             assert peer.post("/api/me/display-name",json={
                 "display_name":"Hội viên phản ánh"}).status_code==200
