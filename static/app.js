@@ -878,11 +878,39 @@ function renderMessageThread(scroll=false){
 function appendDirectMessage(message){
  if(!message||!state.selected)return;
  if(![message.sender_id,message.recipient_id].includes(state.selected))return;
- const index=state.messages.findIndex(x=>x.id===message.id);
- if(index>=0)state.messages[index]=message;
+ const currentIndex=state.messages.findIndex(x=>x.id===message.id);
+ const previous=state.messages[state.messages.length-1];
+ if(currentIndex>=0)state.messages[currentIndex]=message;
  else state.messages.push(message);
- if(state.messages.length>100)state.messages.splice(0,state.messages.length-100);
- renderMessageThread(false);
+ const box=$('#chat-messages');
+ if(!box||currentIndex<0&&previous&&previous.id>0&&message.id<previous.id){
+   renderMessageThread(false);
+ }else{
+   const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
+   const oldPosition=box.scrollTop;
+   const template=document.createElement('template');
+   template.innerHTML=bubblesFor([message],false);
+   const row=template.content.querySelector('.bubble-wrap');
+   if(currentIndex>=0){
+     const existing=box.querySelector('#msg-dm-'+message.id);
+     if(existing&&row)existing.replaceWith(row);
+     else renderMessageThread(false);
+   }else if(row){
+     const previousDay=previous?new Date(previous.created_at*1000).toLocaleDateString('vi-VN'):'';
+     const nextDay=new Date(message.created_at*1000).toLocaleDateString('vi-VN');
+     box.querySelector('.empty')?.remove();
+     if(previousDay!==nextDay){
+       const day=template.content.querySelector('.day-label');
+       if(day)box.appendChild(day);
+     }
+     box.appendChild(row);
+   }
+   if(near)box.scrollTop=box.scrollHeight;else box.scrollTop=oldPosition;
+ }
+ if(state.messages.length>110){
+   state.messages.splice(0,state.messages.length-100);
+   renderMessageThread(false);
+ }
  if(message.sender_id!==state.user?.id&&state.tab==='messages'&&document.visibilityState==='visible'){
    post('/api/messages/read/'+state.selected).catch(()=>{});
  }
@@ -1947,6 +1975,7 @@ document.addEventListener('submit',async event=>{
         attachment_id:pending?.id||null,reply_to:reply});
       if(state.selected===recipient){
         state.messages=state.messages.filter(x=>x.id!==tmpId);
+        document.getElementById('msg-dm-'+tmpId)?.remove();
         appendDirectMessage(result.message);
       }
       state.replyTo=null;state.pendingAttachment=null;
@@ -1956,6 +1985,7 @@ document.addEventListener('submit',async event=>{
       scheduleFriendsRefresh();
     }catch(e){
       state.messages=state.messages.filter(x=>x.id!==tmpId);
+      document.getElementById('msg-dm-'+tmpId)?.remove();
       renderMessageThread(false);throw e;
     }
     break;
