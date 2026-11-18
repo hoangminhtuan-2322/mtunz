@@ -56,7 +56,12 @@
     }
     if (!input.validity.valid) {
       if (input.name === 'username') return 'Tên tài khoản cần 3–24 ký tự, bắt đầu bằng chữ và chỉ chứa a–z, 0–9 hoặc _.';
-      if (input.name.includes('pin') || input.name === 'pin') return 'Mã PIN phải gồm đúng số chữ số đã chọn, chỉ chứa số 0–9.';
+      if (input.name.includes('pin')) {
+        const length = Number(input.form?.querySelector('[name="pin_length"]')?.value || input.maxLength || input.minLength);
+        return length >= 4 && length <= 6
+          ? 'Vui lòng nhập mã PIN gồm đúng ' + length + ' chữ số (0–9).'
+          : 'Mã PIN chỉ được chứa các chữ số từ 0 đến 9.';
+      }
       if (input.validity.tooShort) return 'Cần nhập tối thiểu ' + input.minLength + ' ký tự.';
       if (input.validity.tooLong) return 'Vui lòng nhập không quá ' + input.maxLength + ' ký tự.';
       if (input.validity.patternMismatch) return 'Định dạng chưa đúng. Vui lòng kiểm tra lại.';
@@ -79,7 +84,7 @@
     if (input.name === 'new-pin' || input.name === 'repeat-pin') {
       const select = input.form?.querySelector('[name="pin_length"]');
       const n = Number(select?.value || 4);
-      if (!new RegExp('^[0-9]{' + n + '}$').test(input.value)) return 'PIN phải có đúng ' + n + ' chữ số.';
+      if (!new RegExp('^[0-9]{' + n + '}$').test(input.value)) return 'Vui lòng nhập mã PIN gồm đúng ' + n + ' chữ số (0–9).';
     }
     if (input.name === 'username' && input.form?.dataset.form === 'register-request') {
       if (availability.value === input.value.trim().toLowerCase() &&
