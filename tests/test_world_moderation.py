@@ -202,3 +202,12 @@ def test_member_reports_are_permission_checked_and_admin_reviews_are_logged():
         audit=c.execute("SELECT action FROM audit WHERE action='member_report_review' ORDER BY id DESC LIMIT 1").fetchone()
         assert audit and audit['action']=='member_report_review'
     assert alice.get('/api/notifications').json()['notifications'][0]['body'].startswith('Báo cáo #')
+    # Even if moderators resolve earlier reports, a reporter cannot flood the
+    # same hour with unlimited fresh records.
+    for _ in range(5):
+        again=alice.post('/api/reports',json=payload)
+        assert again.status_code==200,again.text
+        with db() as c:
+            c.execute("UPDATE user_reports SET status='dismissed' WHERE id=?",
+                      (again.json()['report_id'],))
+    assert alice.post('/api/reports',json=payload).status_code==429
