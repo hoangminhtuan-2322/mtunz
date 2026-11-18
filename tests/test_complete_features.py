@@ -111,3 +111,69 @@ def test_profile_sessions_notifications_and_exports():
     assert exported.status_code==200 and exported.json()['account']['username']=='feature_alice'
     assert 'attachment' in exported.headers['content-disposition']
     assert alice.post('/api/notifications/read').status_code==200
+
+
+def test_private_chat_pins_and_forward_permissions():
+    admin, alice, bob, a, b = setup_pair()
+    outsider = register_user(admin, 'feature_outsider')
+    created = alice.post('/api/messages', json={'recipient_id': b, 'body': 'Tin quan trọng'})
+    assert created.status_code == 200, created.text
+    mid = created.json()['message']['id']
+    pin = {'scope': 'dm', 'chat_id': b, 'message_id': mid}
+    assert alice.post('/api/chat/pins', json=pin).json()['pinned'] is True
+    pins = alice.get(f'/api/chat/pins?scope=dm&chat_id={b}')
+    assert pins.status_code == 200 and pins.json()['pins'][0]['message_id'] == mid
+    assert outsider.post('/api/chat/pins', json=pin).status_code in (403, 404)
+    assert bob.get(f'/api/chat/pins?scope=dm&chat_id={a}').json()['pins'] == []
+
+    # Sender-only editing has a hard 15-minute server-side deadline.
+    assert bob.patch(f'/api/messages/{mid}', json={'body':'Không được sửa'}).status_code == 403
+    assert alice.patch(f'/api/messages/{mid}', json={'body':'Đã cập nhật'}).status_code == 200
+    with db() as c:
+        c.execute('UPDATE messages SET created_at=created_at-901 WHERE id=?', (mid,))
+    assert alice.patch(f'/api/messages/{mid}', json={'body':'Quá hạn'}).status_code == 409
+
+    # Only current members can forward to a group; untrusted viewers cannot.
+    group = alice.post('/api/groups', json={'title':'Nhóm chuyển tiếp','member_ids':[b]})
+    assert group.status_code == 200, group.text
+    gid = group.json()['id']
+    forward = {'source_scope':'dm','source_chat_id':b,'message_id':mid,
+               'target_scope':'group','target_id':gid}
+    result = alice.post('/api/chat/forward', json=forward)
+    assert result.status_code == 200, result.text
+    assert result.json()['message']['forwarded'] == 1
+    assert result.json()['message']['body'] == 'Đã cập nhật'
+    assert bob.get(f'/api/groups/{gid}/messages').json()['messages'][0]['forwarded'] == 1
+    assert outsider.post('/api/chat/forward', json=forward).status_code in (403, 404)
+    assert outsider.post('/api/chat/pins', json={
+        'scope':'group','chat_id':gid,'message_id':result.json()['message']['id']
+    }).status_code in (403, 404)
+
+    # Pins are private; recalling a message clears saved references.
+    assert alice.delete(f'/api/messages/{mid}').status_code == 200
+    assert alice.get(f'/api/chat/pins?scope=dm&chat_id={b}').json()['pins'] == []
+    assert alice.post('/api/chat/forward', json=forward).status_code == 404
+
+
+def test_group_forward_and_pin_limit():
+    admin,alice,bob,a,b=setup_pair()
+    group=alice.post('/api/groups',json={'title':'Nhóm ghim','member_ids':[b]})
+    gid=group.json()['id']
+    ids=[]
+    for idx in range(6):
+        msg=alice.post(f'/api/groups/{gid}/messages',json={'body':f'Mục {idx}'})
+        assert msg.status_code==200,msg.text
+        ids.append(msg.json()['message']['id'])
+    for mid in ids[:5]:
+        assert bob.post('/api/chat/pins',json={'scope':'group','chat_id':gid,'message_id':mid}).json()['pinned']
+    full=bob.post('/api/chat/pins',json={'scope':'group','chat_id':gid,'message_id':ids[5]})
+    assert full.status_code==409
+    assert bob.post('/api/chat/pins',json={'scope':'group','chat_id':gid,'message_id':ids[0]}).json()['pinned'] is False
+    assert bob.post('/api/chat/pins',json={'scope':'group','chat_id':gid,'message_id':ids[5]}).json()['pinned'] is True
+    forwarded=bob.post('/api/chat/forward',json={
+        'source_scope':'group','source_chat_id':gid,'message_id':ids[5],
+        'target_scope':'dm','target_id':a
+    })
+    assert forwarded.status_code==200,forwarded.text
+    assert forwarded.json()['message']['forwarded']==1
+    assert alice.get(f'/api/messages/{b}').json()['messages'][-1]['forwarded']==1
