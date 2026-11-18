@@ -331,7 +331,11 @@ function connectSocket(){
    if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
      await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
    }
-   if((t==='world-message'||t==='world-status'||t==='world-penalty'||t==='world-message-removed')&&state.tab==='world'&&state.user&&!state.user.is_admin){
+   if(t==='world-message'&&state.user&&!state.user.is_admin){
+     if(typeof appendWorldSocket==='function')appendWorldSocket(data.message);
+     return;
+   }
+   if((t==='world-status'||t==='world-penalty'||t==='world-message-removed')&&state.tab==='world'&&state.user&&!state.user.is_admin){
      await loadWorld(true).catch(()=>{});return;
    }
    if(t==='world-report-new'&&state.user?.is_admin&&state.adminTab==='reports'){
@@ -343,16 +347,23 @@ function connectSocket(){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin)loadAdmin();
    }
-   if(t==='friends-updated'){if(state.user&&!state.user.is_admin)await refreshFriends();}
+   if(t==='friends-updated'){if(state.user&&!state.user.is_admin)scheduleFriendsRefresh(60);}
+   if(t==='message-requests-updated'&&state.user&&!state.user.is_admin&&typeof loadMessageRequests==='function')loadMessageRequests(state.tab==='friends').catch(()=>{});
    if(t==='message'){
      if(state.user&&!state.user.is_admin){
        const m=data.message;
-       if(state.selected && (m.sender_id===state.selected||m.recipient_id===state.selected))await loadMessages(false);
-       await refreshFriends();
+       if(state.selected && (m.sender_id===state.selected||m.recipient_id===state.selected))appendDirectMessage(m);
+       scheduleFriendsRefresh();
        if(m.sender_id!==state.user.id && state.selected!==m.sender_id)toast('Bạn có tin nhắn mới','info');
      }
    }
-   if(t==='read' && state.selected===data.by)await loadMessages(false);
+   if(t==='read' && state.selected===data.by){
+     let changed=false;
+     for(const message of state.messages){
+       if(message.sender_id===state.user?.id&&!message.read_at){message.read_at=data.at;changed=true;}
+     }
+     if(changed)renderMessageThread(false);
+   }
    if(t==='typing' && state.selected===data.from_id){const el=$('#typing-text');if(el){el.textContent=data.on?'Đang nhập tin nhắn…':'';}}
    if(t==='presence' && state.user && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=data.online;renderSideItems();updateChatHeader();}}
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
@@ -753,6 +764,11 @@ async function loadTicketMessages(){if(!state.supportTicket)return;const r=await
 async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
 
 // ==== Friends, messages and the member experience ====
+let friendsRefreshTimer=0;
+function scheduleFriendsRefresh(delay=500){
+ clearTimeout(friendsRefreshTimer);
+ friendsRefreshTimer=setTimeout(()=>refreshFriends(true).catch(()=>{}),delay);
+}
 async function refreshFriends(redraw=true){
   if(!state.user||state.user.is_admin)return;
   const [fr,bl]=await Promise.all([api('/api/friends'),api('/api/blocks')]);
@@ -851,16 +867,41 @@ async function openChat(uid){
  if(!f){toast('Chưa kết bạn hoặc tài khoản đã bị chặn.','error');return;}
  state.selected=uid;state.groupSelected=null;state.tab='messages';state.messages=[];state.replyTo=null;state.pendingAttachment=null;renderApp();await loadMessages();
 }
+let dmLoadGeneration=0;
+function renderMessageThread(scroll=false){
+ const box=$('#chat-messages');if(!box)return;
+ const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
+ const previousPosition=box.scrollTop;
+ box.innerHTML=renderBubbles();
+ if(scroll||near)box.scrollTop=box.scrollHeight;else box.scrollTop=previousPosition;
+}
+function appendDirectMessage(message){
+ if(!message||!state.selected)return;
+ if(![message.sender_id,message.recipient_id].includes(state.selected))return;
+ const index=state.messages.findIndex(x=>x.id===message.id);
+ if(index>=0)state.messages[index]=message;
+ else state.messages.push(message);
+ if(state.messages.length>100)state.messages.splice(0,state.messages.length-100);
+ renderMessageThread(false);
+ if(message.sender_id!==state.user?.id&&state.tab==='messages'&&document.visibilityState==='visible'){
+   post('/api/messages/read/'+state.selected).catch(()=>{});
+ }
+}
 async function loadMessages(scroll=true){
- if(!state.selected)return;
+ const friend=state.selected;if(!friend)return;
+ const seq=++dmLoadGeneration;
  try{
-  const friend=state.selected;
-  const r=await api(`/api/messages/${friend}`);
-  if(state.selected!==friend)return;
-  state.messages=r.messages;
-  const box=$('#chat-messages');if(box){const nearBottom=box.scrollHeight-box.scrollTop-box.clientHeight<120;box.innerHTML=renderBubbles();if(scroll||nearBottom)box.scrollTop=box.scrollHeight;}
-  await post(`/api/messages/read/${friend}`);
-  const item=state.friends.find(x=>x.other_id===friend);if(item){item.unread=0;renderSideItems();}
+  const r=await api('/api/messages/'+friend);
+  if(seq!==dmLoadGeneration||state.selected!==friend)return;
+  const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
+  for(const message of r.messages)known.set(message.id,message);
+  state.messages=[...known.values()].sort((a,b)=>a.id-b.id).slice(-100);
+  renderMessageThread(scroll);
+  if(state.messages.some(m=>m.sender_id===friend&&!m.read_at)){
+   post('/api/messages/read/'+friend).catch(()=>{});
+  }
+  const item=state.friends.find(x=>x.other_id===friend);
+  if(item&&item.unread){item.unread=0;renderSideItems();}
  }catch(e){toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
@@ -1883,13 +1924,33 @@ document.addEventListener('submit',async event=>{
    }
    case 'send-message':{
     if(state.uploading)throw Error('Tệp vẫn đang tải lên.');
-    const content=String(fd.get('body')||'').trim();if(!content&&!state.pendingAttachment)return;
-    const recipient=state.selected;await post('/api/messages',{recipient_id:recipient,body:content,
-     attachment_id:state.pendingAttachment?.id||null,reply_to:state.replyTo?.scope==='dm'?state.replyTo.id:null});
-    state.replyTo=null;state.pendingAttachment=null;
-    if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'typing',to:recipient,on:false}));
-    const txt=$('#chat-text');if(txt)txt.value='';if($('#compose-extra'))$('#compose-extra').innerHTML=composerExtras();
-    await loadMessages();await refreshFriends();break;
+    const content=String(fd.get('body')||'').trim();
+    if(!content&&!state.pendingAttachment)return;
+    const recipient=state.selected;
+    const pending=state.pendingAttachment;
+    const reply=state.replyTo?.scope==='dm'?state.replyTo.id:null;
+    const tmpId=-(Date.now()+Math.floor(Math.random()*1000));
+    const optimistic={id:tmpId,sender_id:state.user.id,recipient_id:recipient,body:content,
+      created_at:Math.floor(Date.now()/1000),read_at:null,reactions:[],pending:true,
+      attachment:pending};
+    state.messages.push(optimistic);renderMessageThread(true);
+    try{
+      const result=await post('/api/messages',{recipient_id:recipient,body:content,
+        attachment_id:pending?.id||null,reply_to:reply});
+      if(state.selected===recipient){
+        state.messages=state.messages.filter(x=>x.id!==tmpId);
+        appendDirectMessage(result.message);
+      }
+      state.replyTo=null;state.pendingAttachment=null;
+      if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'typing',to:recipient,on:false}));
+      const txt=$('#chat-text');if(txt)txt.value='';
+      const extra=$('#compose-extra');if(extra)extra.innerHTML=composerExtras();
+      scheduleFriendsRefresh();
+    }catch(e){
+      state.messages=state.messages.filter(x=>x.id!==tmpId);
+      renderMessageThread(false);throw e;
+    }
+    break;
    }
    case 'settings-pin':{
     await post('/api/me/pin',{old_pin:val('old_pin'),new_pin:val('new_pin'),pin_length:Number(fd.get('pin_length'))});
