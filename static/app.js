@@ -865,7 +865,8 @@ async function loadMessages(scroll=true){
 function personResult(r){return `<div class="people-row">${avatar(r.username)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
- r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}</div>`;}
+ r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}
+ <button type="button" class="btn ghost sm" data-world-report-user="${Number(r.id)}" title="Báo cáo tài khoản">${icon('shield',14)} Báo cáo</button></div>`;}
 function friendsContent(){
  const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
  const sent=state.friends.filter(f=>f.state==='pending'&&f.requested_by===state.user.id);
