@@ -23,6 +23,8 @@ assert(member.includes("new File([blob]"),'Oversize photos are compressed to the
 assert(member.includes('1.7*1024*1024'),'Image compression respects Render-hosted 2 MB upload cap');
 assert(member.includes('uploadSelected(result)'),'Photo upload reuses authorized attachment endpoint');
 assert(member.includes('state.pendingAttachment'),'Attachment preview must reuse existing message state');
+assert(member.includes('photoPreparing=true'),'Only one photo may prepare at a time');
+assert(member.includes('if(!sameContext(context))'),'A photo cannot be silently attached to a different conversation');
 assert(extras.includes("await fetch('/api/uploads'"),'Existing authenticated upload remains available');
 assert(extras.includes('uploadMarkup(m)'),'Picture bubbles remain supported in direct and group messages');
 assert(app.includes('attachment_id:state.pendingAttachment?.id||null'),'Direct messages keep authorized attachment IDs');
