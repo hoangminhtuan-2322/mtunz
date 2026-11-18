@@ -6,6 +6,7 @@ const worldReasonNames={
  inappropriate:'Nội dung không phù hợp',other:'Khác'
 };
 const worldEscape=value=>esc(String(value??''));
+const worldOwnIds=new Set();
 const worldClock=()=>Math.floor(Date.now()/1000)+worldClockOffset;
 function worldTime(value){
  const n=Number(value)||0;return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
@@ -40,10 +41,10 @@ function worldPenaltyCard(){
   '</section>';
 }
 function worldBubble(message){
- const own=Number(message.sender_id)===Number(state.user?.id);
- const name=worldEscape(message.display_name||'Thành viên');
+ const own=!!message.is_mine||Number(message.sender_id)===Number(state.user?.id)||worldOwnIds.has(Number(message.id));
+ const name=worldEscape(message.anonymous?'Ẩn danh':message.display_name||'Thành viên');
  return '<article class="world-message '+(own?'mine':'')+'" data-world-message-id="'+Number(message.id)+'">'+
-  '<div class="world-message-avatar" aria-hidden="true">'+worldEscape((message.display_name||'T').slice(0,1).toUpperCase())+'</div>'+
+  '<div class="world-message-avatar" aria-hidden="true">'+(message.anonymous?'?':worldEscape((message.display_name||'T').slice(0,1).toUpperCase()))+'</div>'+
   '<div class="world-message-body"><div class="world-message-meta"><b>'+name+'</b><span>· '+worldDate(message.created_at)+'</span></div>'+
   '<p class="world-message-text">'+(message.deleted?'<em>Tin nhắn đã được gỡ.</em>':worldEscape(message.body))+'</p></div>'+
   (!own&&!message.deleted?'<button type="button" class="world-report-mini" data-world-report-user="'+Number(message.sender_id)+'" data-world-message="'+Number(message.id)+'" aria-label="Báo cáo tin nhắn của '+name+'">Báo cáo</button>':'')+
@@ -61,6 +62,7 @@ function worldPage(){
   '<p>Chia sẻ văn minh, tôn trọng người khác. Hội thoại chỉ dùng tên hiển thị.</p></div>'+
   '<span class="world-live-state '+(s.open?'online':'offline')+'">'+(s.open?'● Đang mở':'● Tạm đóng')+'</span></div>'+
   '<div class="world-live-toolbar"><span>'+icon('clock',14)+' '+worldEscape(worldTimeLabel(s))+'</span>'+
+  '<label class="world-privacy-switch"><input type="checkbox" data-social-world-anon '+(state.user?.world_anonymous?'checked':'')+'> Ẩn danh khi gửi</label>'+ 
   '<button type="button" class="btn ghost sm" data-world-action="refresh">'+icon('refresh',14)+' Làm mới</button></div>'+
   (closed?'<div class="world-banner warn" role="status">'+icon('clock',18)+' '+worldEscape(s.closed_reason)+
     (s.next_change_at?' · Mở dự kiến '+worldDate(s.next_change_at):'')+'</div>':'')+
@@ -121,21 +123,41 @@ async function worldSend(text,button){
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({body:text})
   });
-  const body=await response.json();
+  const result=await response.json();
   if(!response.ok){
-   if(body.detail&&typeof body.detail==='object'&&body.detail.code?.startsWith('world_')){
+   if(result.detail&&typeof result.detail==='object'&&result.detail.code?.startsWith('world_')){
     await loadWorld(true).catch(()=>{});
-    worldWarnPopup(body.detail);
-   }else toast(typeof body.detail==='string'?body.detail:'Không gửi được tin nhắn.','error');
+    worldWarnPopup(result.detail);
+   }else toast(typeof result.detail==='string'?result.detail:'Không gửi được tin nhắn.','error');
    return;
   }
+  worldOwnIds.add(Number(result.message.id));
+  appendWorldSocket({...result.message,is_mine:true});
   const field=document.querySelector('#world-compose-text');if(field)field.value='';
-  await loadWorld(true);
  }catch(err){toast('Không kết nối được máy chủ. '+err.message,'error');}
  finally{if(button?.isConnected)button.disabled=false;}
 }
+function appendWorldSocket(message){
+ if(!message||!state.user||state.user.is_admin)return;
+ const data=state.worldData;
+ if(!data?.status?.enabled)return;
+ if(!data.messages)data.messages=[];
+ if(data.messages.some(m=>Number(m.id)===Number(message.id)))return;
+ data.messages.push(message);
+ if(data.messages.length>70)data.messages.splice(0,data.messages.length-70);
+ if(state.tab==='world'){
+  const feed=document.querySelector('#world-feed');
+  if(feed){
+   const near=feed.scrollHeight-feed.scrollTop-feed.clientHeight<130;
+   const empty=feed.querySelector('.world-empty');if(empty)empty.remove();
+   feed.insertAdjacentHTML('beforeend',worldBubble(message));
+   while(feed.querySelectorAll('.world-message').length>70)feed.querySelector('.world-message')?.remove();
+   if(near)feed.scrollTop=feed.scrollHeight;
+  }
+ }
+}
 function openReportDialog(uid,messageId=null,scope=messageId?'world':'profile',groupId=null){
- if(!state.user||state.user.is_admin||!Number.isSafeInteger(uid)||uid<=0||uid===state.user.id)return;
+ if(!state.user||state.user.is_admin||!Number.isSafeInteger(uid)||uid<0||uid===state.user.id||(!uid&&!(messageId&&scope==='world')))return;
  const options=Object.entries(worldReasonNames).map(([key,label])=>'<option value="'+key+'">'+worldEscape(label)+'</option>').join('');
  modal({
   title:'Báo cáo người dùng',
@@ -145,7 +167,7 @@ function openReportDialog(uid,messageId=null,scope=messageId?'world':'profile',g
    '<select class="select" id="world-report-reason">'+options+'</select>'+
    '<label for="world-report-description">Mô tả cụ thể (ít nhất 10 ký tự)</label>'+
    '<textarea class="input" id="world-report-description" maxlength="1000" rows="4" placeholder="Điều gì đã xảy ra? Mô tả đúng sự thật, không gửi dữ liệu nhạy cảm không cần thiết."></textarea>'+
-   '<p class="hint">ID tài khoản được báo cáo: #'+uid+(messageId?' · Tin nhắn #'+messageId:'')+'.</p></div>',
+   '<p class="hint">'+(uid?'ID tài khoản được báo cáo: #'+uid:'Người gửi ẩn danh sẽ được hệ thống xác minh riêng')+(messageId?' · Tin nhắn #'+messageId:'')+'.</p></div>',
   handler:async host=>{
    const desc=host.querySelector('#world-report-description').value.trim();
    if(desc.length<10)throw Error('Vui lòng mô tả ít nhất 10 ký tự.');

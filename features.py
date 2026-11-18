@@ -195,12 +195,23 @@ def install(core):
     async def show_profile(request:Request,uid:int):
         u=current_user(request)
         with db() as c:
-            r=one(c,'''SELECT id,display_name,bio,created_at,last_seen,show_online
-                       FROM users WHERE id=? AND is_admin=0''',(uid,))
+            r=one(c,'''SELECT id,public_id,display_name,bio,headline,website,created_at,last_seen,
+                               show_online,profile_visibility,avatar_attachment_id,cover_attachment_id
+                        FROM users WHERE id=? AND is_admin=0''',(uid,))
             if not r or (uid!=u['id'] and has_block(c,uid,u['id'])):
                 raise HTTPException(404,'Không tìm thấy người dùng.')
+            allowed=(uid==u['id'] or bool(u['is_admin']) or r['profile_visibility']=='everyone' or
+                     (r['profile_visibility']=='friends' and friends(c,uid,u['id'])))
             p=dict(r)
             p['last_seen']=r['last_seen'] if r['show_online'] or uid==u['id'] else None
+            p['avatar_url']=f'/api/profile/{uid}/avatar' if allowed and r['avatar_attachment_id'] else None
+            p['cover_url']=f'/api/profile/{uid}/cover' if allowed and r['cover_attachment_id'] else None
+            p['headline']=r['headline'] if allowed else ''
+            p['bio']=r['bio'] if allowed else ''
+            p['website']=r['website'] if allowed else ''
+            p.pop('avatar_attachment_id',None)
+            p.pop('cover_attachment_id',None)
+            p['private']=not allowed
         return {'profile':p}
 
     @app.get('/api/me/sessions')
@@ -678,7 +689,7 @@ def install(core):
             msg=dict(one(c,"SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?",(cur.lastrowid,)))
             msg=message_dict(c,msg,'group')
             members=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
-        for uid in members:await hub.user(uid,'group-message',group_id=gid,message=msg)
+        await asyncio.gather(*(hub.user(uid,'group-message',group_id=gid,message=msg) for uid in members))
         return {'message':msg}
 
     @app.post('/api/groups/{gid}/read')

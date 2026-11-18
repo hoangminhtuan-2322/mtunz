@@ -5,6 +5,7 @@ Never deploy the bundled demo administrator password to a public server.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -72,10 +73,11 @@ def token():
     return secrets.token_urlsafe(32)
 
 
-# Public member IDs are the actual user primary key, not an extra identifier.
-# Keep the existing Admin ID unchanged. Never use the ID itself as a login secret.
-MEMBER_ID_MIN = 1000
-MEMBER_ID_MAX = 999_999_999
+# New members get seven-digit internal and public IDs; existing members retain
+# their internal foreign keys and receive separate seven-digit public IDs.
+# Never treat an ID as a login secret.
+MEMBER_ID_MIN = 1_000_000
+MEMBER_ID_MAX = 9_999_999
 
 
 def random_member_id():
@@ -92,10 +94,12 @@ def create_member(c, *, username, password_hash, pin_hash, pin_length, phone, em
     """
     for _ in range(32):
         member_id = random_member_id()
+        if one(c, 'SELECT 1 FROM users WHERE id=? OR public_id=?',(member_id,member_id)):
+            continue
         inserted = c.execute(
-            '''INSERT INTO users(id,username,password_hash,pin_hash,pin_length,created_at,phone,email,needs_display_name)
-               VALUES(?,?,?,?,?,?,?,?,1) ON CONFLICT(id) DO NOTHING RETURNING id''',
-            (member_id, username, password_hash, pin_hash, pin_length, now(), phone, email)
+            '''INSERT INTO users(id,username,password_hash,pin_hash,pin_length,created_at,phone,email,needs_display_name,public_id)
+               VALUES(?,?,?,?,?,?,?,?,1,?) ON CONFLICT(id) DO NOTHING RETURNING id''',
+            (member_id, username, password_hash, pin_hash, pin_length, now(), phone, email, member_id)
         ).fetchone()
         if inserted:
             return int(inserted['id'])
@@ -310,21 +314,46 @@ class Hub:
         self.users: dict[int, set[WebSocket]] = defaultdict(set)
         self.guests: dict[str, set[WebSocket]] = defaultdict(set)
         self.session_hashes: dict[WebSocket, str] = {}
+        self.valid_session_until: dict[str, int] = {}
 
     async def send(self, sockets, payload):
-        for ws in list(sockets):
+        async def deliver(ws):
             try:
-                await ws.send_json(payload)
+                await asyncio.wait_for(ws.send_json(payload), timeout=2)
             except Exception:
                 pass
+        if sockets:
+            await asyncio.gather(*(deliver(ws) for ws in tuple(sockets)))
+
+    async def broadcast_members(self, event, **data):
+        # One query for all live clients, not a database read for each recipient.
+        sockets = list(self.session_hashes)
+        if not sockets:
+            return
+        with db() as c:
+            active = {r['token_hash'] for r in c.execute(
+                'SELECT token_hash FROM sessions WHERE expires_at>?', (now(),))}
+        valid = [ws for ws in sockets if self.session_hashes.get(ws) in active]
+        for ws in sockets:
+            if ws not in valid:
+                try: await ws.close(code=1008)
+                except Exception: pass
+        await self.send(valid, {'type':event, **data})
 
     async def user(self, uid, event, **data):
         sockets = list(self.users.get(uid, ()))
         # Critical events must be delivered once even after the session is revoked.
         if event not in ('account-sanction', 'session-ended') and sockets:
-            with db() as c:
-                active = {r['token_hash'] for r in c.execute(
-                    'SELECT token_hash FROM sessions WHERE user_id=? AND expires_at>?', (uid, now()))}
+            current = now()
+            cached = {self.session_hashes.get(ws) for ws in sockets
+                      if self.valid_session_until.get(self.session_hashes.get(ws,''),0)>current}
+            if len(cached)==len({self.session_hashes.get(ws) for ws in sockets}):
+                active = cached
+            else:
+                with db() as c:
+                    active = {r['token_hash'] for r in c.execute(
+                        'SELECT token_hash FROM sessions WHERE user_id=? AND expires_at>?', (uid,current))}
+                for sid in active:self.valid_session_until[sid]=current+3
             good = []
             for ws in sockets:
                 if self.session_hashes.get(ws) in active:
@@ -542,6 +571,12 @@ def public_user(u):
     return {'id': u['id'], 'username': u['username'], 'is_admin': bool(u['is_admin']),
             'pin_length': u['pin_length'], 'created_at': u['created_at'],
             'display_name':u['display_name'] or '', 'bio':u['bio'] or '',
+            'public_id':u['public_id'], 'headline':u['headline'] or '',
+            'website':u['website'] or '', 'profile_visibility':u['profile_visibility'],
+            'avatar_url':f'/api/profile/{u["id"]}/avatar' if u['avatar_attachment_id'] else None,
+            'cover_url':f'/api/profile/{u["id"]}/cover' if u['cover_attachment_id'] else None,
+            'allow_message_requests':bool(u['allow_message_requests']),
+            'world_anonymous':bool(u['world_anonymous']),
             'onboarding_required':bool(u['needs_display_name']),
             'phone':u['phone'] or '', 'email':u['email'] or '',
             'show_online':bool(u['show_online']), 'show_receipts':bool(u['show_receipts'])}
@@ -608,7 +643,9 @@ def is_restricted(c, a, b):
 
 
 def require_peer(c, a, b):
-    if a == b or has_block(c,a,b) or not friends(c,a,b):
+    if a == b or has_block(c,a,b) or not friends(c,a,b) or not one(c,\
+            'SELECT 1 FROM users WHERE id=? AND is_admin=0', (a,)) or not one(c,\
+            'SELECT 1 FROM users WHERE id=? AND is_admin=0', (b,)):
         raise HTTPException(403, 'Chỉ nhắn tin được với bạn bè chưa bị chặn.')
 
 
@@ -1064,14 +1101,17 @@ async def people_search(request: Request,q: str=''):
     with db() as c:
         search = q.strip()[:24]
         numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
-        rows = many(c, '''SELECT id,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
+        rows = many(c, '''SELECT id,public_id,avatar_attachment_id,profile_visibility,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
                           FROM users WHERE is_admin=0 AND id!=? AND needs_display_name=0
-                          AND (display_name LIKE ? OR id=?)
+                          AND (display_name LIKE ? OR public_id=?)
                           AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
                           AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id=?)
                           LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
         for r in rows:
             fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
+            r['avatar_url'] = f'/api/profile/{r["id"]}/avatar' if r['avatar_attachment_id'] and r['profile_visibility']=='everyone' else None
+            r.pop('avatar_attachment_id',None)
+            r.pop('profile_visibility',None)
             r['friend_state'] = fr['state'] if fr else 'none'
             r['requested_by_me'] = bool(fr and fr['requested_by']==u['id'])
     return {'users':rows}
@@ -1081,31 +1121,61 @@ async def people_search(request: Request,q: str=''):
 async def get_friends(request: Request):
     u=current_user(request)
     with db() as c:
-        allrows=many(c, '''SELECT f.*,u.id other_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM friendships f
+        # One joined query avoids multiple Neon roundtrips per friend on every
+        # realtime sidebar refresh. Preserve the existing response format.
+        allrows=many(c, '''
+          SELECT f.*,u.id AS other_id,
+                 COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,
+                 u.display_name,u.show_online,u.last_seen,u.public_id,
+                 u.avatar_attachment_id,u.profile_visibility,
+                 COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
+                 CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
+                 CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
+                 (SELECT body FROM messages
+                   WHERE (sender_id=? AND recipient_id=u.id) OR
+                         (sender_id=u.id AND recipient_id=?)
+                   ORDER BY id DESC LIMIT 1) AS last_body,
+                 (SELECT created_at FROM messages
+                   WHERE (sender_id=? AND recipient_id=u.id) OR
+                         (sender_id=u.id AND recipient_id=?)
+                   ORDER BY id DESC LIMIT 1) AS last_created,
+                 (SELECT sender_id FROM messages
+                   WHERE (sender_id=? AND recipient_id=u.id) OR
+                         (sender_id=u.id AND recipient_id=?)
+                   ORDER BY id DESC LIMIT 1) AS last_sender,
+                 (SELECT count(*) FROM messages
+                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL) AS unread
+          FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
-          WHERE f.u1=? OR f.u2=? ORDER BY f.created_at DESC''',(u['id'],u['id'],u['id']))
+          LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
+          LEFT JOIN restrictions r ON r.owner_id=? AND r.other_id=u.id
+          LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
+          WHERE f.u1=? OR f.u2=?
+          ORDER BY f.created_at DESC
+        ''',(u['id'],u['id'],u['id'],u['id'],u['id'],u['id'],u['id'],
+             u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
         for r in allrows:
-            other_user = one(c,'SELECT show_online,display_name FROM users WHERE id=?',(r['other_id'],))
-            r['online'] = bool(hub.users.get(r['other_id'])) and bool(other_user['show_online']) and not is_restricted(c,r['other_id'],u['id'])
-            r['display_name'] = other_user['display_name'] or ''
-            pref=one(c,'SELECT muted,archived FROM chat_preferences WHERE user_id=? AND other_id=?',(u['id'],r['other_id']))
-            r['muted'] = bool(pref['muted']) if pref else False
-            r['archived'] = bool(pref['archived']) if pref else False
-            r['restricted'] = is_restricted(c,u['id'],r['other_id'])
-            r['last_seen'] = one(c,'SELECT last_seen FROM users WHERE id=?',(r['other_id'],))['last_seen']
-            msg = one(c, '''SELECT body,created_at,sender_id FROM messages
-                            WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?)
-                            ORDER BY id DESC LIMIT 1''', (u['id'],r['other_id'],r['other_id'],u['id']))
-            r['last_message']=dict(msg) if msg else None
-            r['unread']=one(c,'SELECT count(*) n FROM messages WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
-                            (u['id'],r['other_id']))['n']
-        allrows.sort(key=lambda a:a['last_message']['created_at'] if a['last_message'] else a['created_at'],reverse=True)
+            r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
+            r['muted']=bool(r['muted'])
+            r['archived']=bool(r['archived'])
+            r['restricted']=bool(r['restricted'])
+            r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
+                             if r['avatar_attachment_id'] and r['profile_visibility']!='only_me' else None)
+            r.pop('avatar_attachment_id',None)
+            r.pop('profile_visibility',None)
+            r.pop('show_online',None)
+            last_created=r.pop('last_created')
+            last_body=r.pop('last_body')
+            last_sender=r.pop('last_sender')
+            r['last_message']={'body':last_body,'created_at':last_created,'sender_id':last_sender} if last_created else None
+        allrows.sort(key=lambda row:row['last_message']['created_at'] if row['last_message'] else row['created_at'],reverse=True)
     return {'friends':allrows}
 
 
 @app.post('/api/friends/request/{other_id}')
 async def friend_request(request: Request,other_id: int):
     u=current_user(request)
+    if u['is_admin']:raise HTTPException(403,'Admin không thể kết bạn hoặc nhắn tin riêng.')
     with db() as c:
         if u['id']==other_id or not one(c,'SELECT 1 FROM users WHERE id=? AND is_admin=0',(other_id,)):
             raise HTTPException(404,'Người dùng không hợp lệ.')
@@ -1124,6 +1194,7 @@ async def friend_request(request: Request,other_id: int):
 @app.post('/api/friends/accept/{other_id}')
 async def friend_accept(request: Request,other_id: int):
     u=current_user(request)
+    if u['is_admin']:raise HTTPException(403,'Admin không thể kết bạn hoặc nhắn tin riêng.')
     a,b=sorted((u['id'],other_id))
     with db() as c:
         r=one(c,'SELECT * FROM friendships WHERE u1=? AND u2=?',(a,b))
@@ -1239,8 +1310,8 @@ async def send_message(request:Request,body:SendMessage):
         pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',(body.recipient_id,u['id']))
         if not pref or not pref['muted']:
             notify_user_persist(c,body.recipient_id,f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}')
-    await hub.user(body.recipient_id,'message',message=msg)
-    await hub.user(u['id'],'message',message=msg)
+    await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
+                         hub.user(u['id'],'message',message=msg))
     return {'message':msg}
 
 
@@ -1939,3 +2010,5 @@ from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
 from world_chat import install as _install_world_chat
 _install_world_chat(_sys.modules[__name__])
+from social_profile import install as _install_social_profile
+_install_social_profile(_sys.modules[__name__])

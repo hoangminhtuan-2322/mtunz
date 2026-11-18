@@ -30,7 +30,7 @@ assert(member.includes('photoPreparing=true'),'Only one photo may prepare at a t
 assert(member.includes('if(!sameContext(context))'),'A photo cannot be silently attached to a different conversation');
 assert(extras.includes("await fetch('/api/uploads'"),'Existing authenticated upload remains available');
 assert(extras.includes('uploadMarkup(m)'),'Picture bubbles remain supported in direct and group messages');
-assert(app.includes('attachment_id:state.pendingAttachment?.id||null'),'Direct messages keep authorized attachment IDs');
+assert(app.includes('attachment_id:pending?.id||null'),'Direct messages keep authorized attachment IDs from the captured send context');
 assert(extras.includes('attachment_id:state.pendingAttachment?.id||null'),'Group messages keep attachment support');
 assert(features.includes("f['owner_id']==u['id']"),'Attachment download verifies owner');
 assert(features.includes('if not allowed:raise HTTPException(403'),'Unauthorized attachment access stays forbidden');

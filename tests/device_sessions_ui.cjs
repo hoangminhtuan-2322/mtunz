@@ -28,7 +28,7 @@ assert(css.includes('overflow-y:auto')&&css.includes('overflow:hidden'));
 assert(css.includes('max-height:none')&&css.includes('.dialog-content'));
 assert(css.includes('@media(max-width:540px)'));
 assert(html.includes('device-sessions.css?v=11.0'));
-assert(html.includes('extras.js?v=15.5')&&html.includes('app.js?v=17.2'));
+assert(html.includes('extras.js?v=16.0')&&html.includes('app.js?v=18.0'));
 const begin=extras.indexOf('function deviceTitle(entry){');
 const end=extras.indexOf('function groupManageDialog(){',begin);
 assert(begin>0&&end>begin);
