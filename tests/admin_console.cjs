@@ -12,8 +12,8 @@ const server=fs.readFileSync('app.py','utf8');
 
 new vm.Script(admin,{filename:'admin-console.js'});
 new vm.Script(app,{filename:'app.js'});
-assert.match(html,/admin-console\.css\?v=12\.0/);
-assert.match(html,/admin-console\.js\?v=12\.0/);
+assert.match(html,/admin-console\.css\?v=12\.1/);
+assert.match(html,/admin-console\.js\?v=12\.1/);
 assert(html.indexOf('admin-console.js')>html.indexOf('app.js'),'Admin script loads after app state');
 assert(css.includes('.admin-shell .admin-workspace-top'));
 assert(css.includes('@media(max-width:950px)'));
