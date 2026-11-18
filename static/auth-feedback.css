@@ -99,3 +99,24 @@
   .auth-panel .auth-input-field .field-error{animation:none!important}
   #toast-root .notify-toast{animation:none!important}
 }
+
+/* Optional, concise privacy disclosure in member settings. */
+.member-privacy-details{
+  border:1px solid #425375;
+  border-radius:12px;
+  background:#172238;
+  color:#b7c7df;
+  overflow:hidden;
+}
+.member-privacy-details summary{
+  padding:13px 15px;
+  color:#cad6f0;
+  font-size:12px;
+  font-weight:750;
+  cursor:pointer;
+  list-style-position:inside;
+}
+.member-privacy-details summary:hover{background:#ffffff08}
+.member-privacy-details summary:focus-visible{outline:2px solid #94dcea;outline-offset:-3px}
+.member-privacy-details[open] summary{border-bottom:1px solid #425375}
+.member-privacy-details p{margin:0;padding:13px 15px;font-size:11.5px;line-height:1.75}
