@@ -23,7 +23,7 @@ for (const fragment of [
 ]) assert(approved.includes(fragment), 'Missing registration structure: '+fragment);
 assert(approved.indexOf('class="registration-consent"') < approved.indexOf('type="submit">Tạo tài khoản'), 'Consent must precede the submit button');
 assert(!approved.includes('style="align-items:flex-start'), 'Legacy consent must not float into footer');
-assert(html.includes('/static/registration-layout.css?v=11.0'), 'Final stylesheet is loaded with cache busting');
+assert(html.includes('/static/registration-layout.css?v=11.1'), 'Final stylesheet is loaded with cache busting');
 assert(html.indexOf('registration-layout.css') > html.indexOf('form-layout.css'), 'Registration geometry overrides previous form themes');
 assert(css.includes('.auth-main > .auth-panel'), 'The auth card must never shrink');
 assert(css.includes('flex-shrink:0'), 'Auth card shrink guard is required');
@@ -34,4 +34,11 @@ assert(css.includes('overflow-y:auto'), 'Mobile visitors can reach content below
 assert(css.includes('@media (min-width:801px)'), 'Desktop scrolling and centering remain supported');
 assert(css.includes('@media (max-width:800px)'), 'Mobile page flow remains supported');
 assert(!app.includes('Bước đầu tiên là đăng ký tên tài khoản riêng'), 'Remove redundant signup instruction paragraph');
+// Compact the initial registration step only where the viewport can contain it.
+assert(css.includes('@media (min-width:650px) and (max-width:1100px) and (min-height:820px)'), 'Adaptive fit only for standard-height viewports');
+assert(css.includes('.auth-main:has(form[data-form="register-request"])'), 'Fit is isolated to the initial registration request');
+assert(css.includes('.auth-panel:has(form[data-form="register-request"]) .auth-step'), 'Vertical spacing is compacted');
+assert(css.includes('.auth-panel:has(form[data-form="register-request"]) .auth-footer'), 'Footer stays inside the card');
+assert(css.includes('Never clip controls on short viewports'), 'Short-height fallback remains scrollable');
+assert(!css.includes('overflow-y:hidden!important'), 'Do not hide scrolling for clipped controls');
 console.log('Approved registration layout integrity checks passed.');
