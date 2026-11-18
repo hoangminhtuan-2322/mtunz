@@ -78,6 +78,8 @@ jobs:
         run: node tests/group_lobby_ui.cjs
       - name: Verify first-login name and phone sign-in interface
         run: node tests/first_login_ui.cjs
+      - name: Verify World Chat, reports, and separate Profile
+        run: node tests/world_moderation_ui.cjs
       - name: Verify private session manager and Admin-only security details
         run: node tests/device_sessions_ui.cjs
       - name: Check theme wiring
