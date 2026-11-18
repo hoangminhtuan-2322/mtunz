@@ -69,6 +69,7 @@ def create_member(admin, name):
     assert client.post('/api/registration/complete',json={
         'username':name,'password':PASSWORD,'pin':PIN,'pin_length':6
     }).status_code == 200
+    assert client.post('/api/auth/logout').status_code == 200
     auth = client.post('/api/auth/password',json={
         'username':name,'password':PASSWORD
     })

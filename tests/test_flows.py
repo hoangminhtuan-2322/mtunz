@@ -45,6 +45,9 @@ def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True}).status_code==200
     assert guest.get('/api/registration/status').json()['requests'][0]['status']=='approved'
     assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)}).status_code==200
+    # The real interface continues directly into the name popup; these helpers
+    # intentionally re-enter the password/PIN flow, so end onboarding first.
+    assert guest.post('/api/auth/logout').status_code==200
     assert guest.post('/api/auth/start',json={'username':name}).status_code==200
     challenge=guest.post('/api/auth/password',json={'username':name,'password':pw}).json()['challenge']
     assert guest.post('/api/auth/pin',json={'challenge':challenge,'pin':pin}).json()['ok'] is True

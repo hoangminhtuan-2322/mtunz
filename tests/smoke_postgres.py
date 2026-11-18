@@ -55,6 +55,7 @@ with TestClient(app, base_url="https://testserver") as admin:
             },
         )
         assert complete.status_code == 200, complete.text
+        assert guest.post("/api/auth/logout").status_code == 200
         check = guest.post("/api/auth/start", json={"username": "render_ci_user"})
         assert check.status_code == 200, check.text
         pw = guest.post(
