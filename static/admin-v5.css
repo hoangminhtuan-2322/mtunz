@@ -1,0 +1,104 @@
+/* Admin V5 — quieter enterprise control surfaces, legible data, mobile-safe actions. */
+.admin-shell{--v5-panel:#182840;--v5-line:rgba(150,177,215,.23)}
+.admin-shell .v5-topbar{background:linear-gradient(115deg,#17253e,#1a2b49)!important;
+  border:1px solid #35496b!important;border-radius:17px!important;padding:13px 16px!important;
+  min-height:68px;box-shadow:0 8px 26px #050a1826;gap:16px}
+.admin-shell .v5-topbar .work-label{color:#dce8fa;letter-spacing:.095em;font-weight:790;font-size:11px}
+.admin-shell .v5-topbar .admin-online{background:rgba(41,200,160,.13);color:#98f5d5;
+  border:1px solid rgba(66,225,175,.38);border-radius:999px;padding:8px 11px}
+.admin-shell .v5-topbar .worktop-left,.admin-shell .v5-topbar .worktop-right{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.admin-shell .v5-topbar .worktop-right{margin-left:auto}
+.admin-shell .v5-topbar button[data-admin-ui]{border-radius:11px;min-height:37px;padding:8px 12px;
+  font-size:12px;font-weight:700;white-space:nowrap}
+.admin-shell .v5-topbar button[data-admin-ui="security"]{background:rgba(134,112,255,.2);border-color:rgba(173,157,255,.48)}
+.admin-shell .v5-last-update{display:inline-flex;align-items:center;gap:7px;color:#b6c8e3;
+  font-size:11px;white-space:nowrap;border-right:1px solid #415575;padding-right:12px;margin-right:4px;font-variant-numeric:tabular-nums}
+.admin-shell .v5-last-update:before{content:"";width:7px;height:7px;border-radius:50%;background:#59d4a9;box-shadow:0 0 0 3px #59d4a92a}
+.admin-shell .v5-command-deck,.admin-shell .v5-security-center{
+ display:grid;gap:17px;background:linear-gradient(140deg,#192b47,#132138);
+ border:1px solid #3d5578;border-radius:20px;padding:22px;margin:15px 0 22px;box-shadow:0 15px 34px rgba(2,7,22,.12)}
+.admin-shell .v5-kicker{font-size:10px;letter-spacing:.18em;font-weight:790;color:#a99afe}
+.admin-shell .v5-deck-head{display:flex;justify-content:space-between;align-items:start;gap:15px;flex-wrap:wrap}
+.admin-shell .v5-deck-head h2{font-size:21px;line-height:1.2;letter-spacing:-.026em;font-weight:800;margin:7px 0 5px;color:#f4f8ff}
+.admin-shell .v5-deck-head p{color:#a8bad5;font-size:12px;line-height:1.6;margin:0;max-width:680px}
+.admin-shell .v5-deck-status{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;
+  border:1px solid #586b8b;border-radius:999px;background:#213554;color:#e6eefc;font-size:11px;font-weight:800}
+.admin-shell .v5-status-dot{height:8px;width:8px;border-radius:50%;background:#a8b3c9}
+.admin-shell .v5-deck-status.v5-ok{border-color:#2c8c80;color:#b5ffda;background:#153d3d}
+.admin-shell .v5-ok .v5-status-dot{background:#5ce7b2}
+.admin-shell .v5-deck-status.v5-attention{border-color:#aa8441;color:#ffdda0;background:#3b3329}
+.admin-shell .v5-attention .v5-status-dot{background:#ffc767}
+.admin-shell .v5-deck-status.v5-paused{border-color:#d66679;color:#ffd1d9;background:#492939}
+.admin-shell .v5-paused .v5-status-dot{background:#ff8ca4}
+.admin-shell .v5-security-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.admin-shell .v5-security-metric{display:flex;flex-direction:column;min-width:0;gap:7px;
+ background:#111d32;border:1px solid #334663;border-radius:15px;padding:16px 15px}
+.admin-shell .v5-security-metric-top{display:flex;align-items:center;justify-content:space-between;gap:5px}
+.admin-shell .v5-security-metric-top span{font-size:11px;font-weight:670;color:#c5d3e9}
+.admin-shell .v5-security-metric strong{font-size:24px;font-weight:810;letter-spacing:-.035em;color:#f6f8fe}
+.admin-shell .v5-security-metric small{font-size:10px;line-height:1.5;color:#91a8cb}
+.admin-shell .v5-deck-footer{display:flex;align-items:center;justify-content:space-between;gap:13px;flex-wrap:wrap;border-top:1px solid #374b68;padding-top:14px}
+.admin-shell .v5-deck-footer p{flex:1;min-width:220px;color:#b6c4d9;font-size:11px;line-height:1.6;margin:0}
+.admin-shell .v5-deck-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.admin-shell .v5-deck-buttons button{border-radius:10px;min-height:36px}
+.admin-shell .v5-security-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.admin-shell .v5-action-card{display:flex;flex-direction:column;gap:10px;padding:17px 18px;
+ background:#102139;border:1px solid #384e6c;border-radius:16px}
+.admin-shell .v5-action-card-head{display:flex;align-items:center;gap:9px}
+.admin-shell .v5-action-card-head span{font-size:22px}
+.admin-shell .v5-action-card h3{font-size:15px;color:#f1f5ff;margin:0}
+.admin-shell .v5-action-card p{font-size:11.5px;color:#9eb3d1;line-height:1.65;margin:0;flex:1}
+.admin-shell .v5-action-state{font-size:11px;font-weight:730;color:#d8e2fb}
+.admin-shell .v5-action-card .btn{align-self:flex-start;white-space:normal;text-align:center;min-height:39px}
+.admin-shell .v5-risk-list{background:#112039;border:1px solid #38506f;border-radius:16px;padding:16px 19px;display:grid;gap:0}
+.admin-shell .v5-risk-list h3{margin:0 0 9px;font-size:14px;color:#e4efff}
+.admin-shell .v5-risk-list>div{display:flex;justify-content:space-between;align-items:center;gap:10px;border-top:1px solid #334663;padding:12px 0}
+.admin-shell .v5-risk-list>div span{color:#c0d0e9;font-size:12px}
+.admin-shell .v5-risk-list>div strong{font-size:11.5px;color:#f3f6ff;text-align:right;font-weight:760}
+.admin-shell .v5-security-footnote{font-size:11px;line-height:1.6;color:#9caecc;margin:0}
+.admin-shell .v5-reset-preview{gap:14px}
+.admin-shell .v5-reset-major{padding:16px 18px;border-radius:14px;background:linear-gradient(115deg,#43283b,#322335);border:1px solid #a45372;display:flex;flex-direction:column;gap:3px}
+.admin-shell .v5-reset-major>span{font-size:10px;color:#f4b3c9;font-weight:800;letter-spacing:.12em}
+.admin-shell .v5-reset-major strong{font-size:33px;line-height:1.2;font-weight:800;color:#fff}
+.admin-shell .v5-reset-major small{font-size:11px;color:#d9bed0}
+.admin-shell .v5-reset-details{border-radius:12px;border:1px solid #475b77;background:#17263d;padding:13px}
+.admin-shell .v5-reset-details summary{cursor:pointer;color:#ebf2ff;font-weight:720;font-size:12px}
+.admin-shell .v5-reset-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:13px;max-height:210px;overflow:auto}
+.admin-shell .v5-reset-count{display:flex;justify-content:space-between;gap:9px;padding:8px 10px;border-radius:8px;background:#101e32;border:1px solid #314765;font-size:11px;color:#aabdda}
+.admin-shell .v5-reset-count strong{color:#f6faff;font-variant-numeric:tabular-nums}
+.admin-shell .v5-reset-preserve,.admin-shell .v5-reset-warning{border:1px solid #3c5a74;border-radius:12px;background:#102d37;padding:13px 14px;display:grid;gap:6px}
+.admin-shell .v5-reset-preserve strong,.admin-shell .v5-reset-warning strong{font-size:12px;color:#e4f8fc}
+.admin-shell .v5-reset-preserve p,.admin-shell .v5-reset-warning p{font-size:11px;line-height:1.55;color:#aec5d1;margin:0}
+.admin-shell .v5-reset-warning{background:#382b29;border-color:#8b6c44}
+.admin-shell .v5-reset-warning strong{color:#ffe0ac}
+.admin-shell .v5-reset-warning p{color:#f5d7b2}
+.admin-shell .v5-reset-agreement{display:flex;align-items:flex-start;gap:9px;color:#eef3ff;font-size:12px;line-height:1.6;cursor:pointer}
+.admin-shell .v5-reset-agreement input{flex:0 0 auto;width:18px;height:18px;margin-top:2px;accent-color:#b6a9ff}
+@media(max-width:1240px){
+ .admin-shell .v5-security-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .admin-shell .v5-topbar .v5-last-update{display:none}
+}
+@media(max-width:780px){
+ .admin-shell .v5-topbar{gap:9px;padding:10px 12px!important;flex-wrap:wrap}
+ .admin-shell .v5-topbar .worktop-left,.admin-shell .v5-topbar .worktop-right{width:100%}
+ .admin-shell .v5-topbar .worktop-right{margin-left:0}
+ .admin-shell .v5-topbar .work-label{font-size:10px;letter-spacing:.04em}
+ .admin-shell .v5-topbar button[data-admin-ui]{min-height:39px}
+ .admin-shell .v5-topbar .admin-online{padding:6px 9px}
+ .admin-shell .v5-security-actions{grid-template-columns:1fr}
+ .admin-shell .v5-deck-head h2{font-size:19px}
+}
+@media(max-width:540px){
+ .admin-shell .v5-command-deck,.admin-shell .v5-security-center{padding:14px;border-radius:15px;gap:13px;margin:9px 0 15px}
+ .admin-shell .v5-security-metrics{gap:8px}
+ .admin-shell .v5-security-metric{padding:12px 10px;border-radius:12px}
+ .admin-shell .v5-security-metric strong{font-size:20px}
+ .admin-shell .v5-security-metric-top span{font-size:10px}
+ .admin-shell .v5-security-metric small{font-size:9.5px}
+ .admin-shell .v5-deck-buttons{width:100%}
+ .admin-shell .v5-deck-buttons button{flex:1}
+ .admin-shell .v5-reset-breakdown{grid-template-columns:1fr}
+ .admin-shell .v5-risk-list{padding:12px}
+ .admin-shell .v5-risk-list>div{align-items:flex-start;flex-direction:column;gap:5px}
+}
+@media(prefers-reduced-motion:reduce){.admin-shell .v5-status-dot{animation:none!important}}
