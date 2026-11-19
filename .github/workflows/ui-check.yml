@@ -32,6 +32,7 @@ jobs:
           node --check static/world-moderation.js
           node --check static/admin-v3.js
           node --check static/world-release.js
+          node --check static/messenger-v4.js
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
