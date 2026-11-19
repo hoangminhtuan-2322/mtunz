@@ -1,0 +1,56 @@
+/* Messenger V4: compact voice controls, explicit receipts and schedules */
+.v4-microphone,.v4-schedule-button{display:inline-flex;align-items:center;justify-content:center;min-width:41px;min-height:42px;padding:8px;font-size:1.05rem;flex-shrink:0}
+.v4-microphone:hover,.v4-schedule-button:hover{background:rgba(136,155,248,.13)}
+.v4-audio-bubble{display:flex;gap:10px;align-items:center;min-height:58px;min-width:min(235px,100%);max-width:100%;padding:8px 4px}
+.v4-play-circle{display:inline-flex;align-items:center;justify-content:center;min-width:42px;width:42px;height:42px;border-radius:50%;border:1px solid rgba(162,162,255,.38);color:var(--text);background:rgba(131,141,255,.15);cursor:pointer}
+.v4-audio-wave-wrap{display:flex;min-width:0;flex:1;flex-direction:column;gap:5px}
+.v4-audio-wave-wrap small{color:var(--muted);font-size:.68rem;white-space:nowrap}
+.v4-waveform{display:flex;align-items:center;gap:2px;height:35px;max-width:100%;overflow:hidden;user-select:none}
+.v4-waveform i{width:3px;min-width:2px;flex:1;height:var(--v4-level,12px);border-radius:10px;background:linear-gradient(180deg,#a6a3ff,#6fbcef);opacity:.9}
+.v4-audio-bubble .v4-speed{font-size:.7rem;min-width:34px}
+.v4-speed{border:1px solid var(--line);background:transparent;border-radius:8px;padding:6px;min-width:36px;color:inherit;cursor:pointer;font-size:.75rem}
+.v4-speed:hover{background:rgba(149,149,252,.12)}
+.v4-delivery-status{font-size:.69rem;font-weight:650;color:var(--muted)}
+.v4-delivery-status.v4-error{color:#f6a3a5}
+.v4-retry-inline{font-size:.72rem;border:1px solid rgba(239,130,145,.45);background:rgba(239,130,145,.12);border-radius:9px;color:var(--text);padding:5px 9px;margin-left:4px;cursor:pointer}
+.v4-retry-inline:hover{background:rgba(239,130,145,.22)}
+.v4-record-widget{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid rgba(143,137,250,.3);border-radius:13px;padding:10px 12px;background:rgba(102,118,199,.08);margin-top:6px}
+.v4-record-dot{width:9px;height:9px;border-radius:50%;background:#ee6f8e;box-shadow:0 0 0 4px rgba(238,111,142,.1);animation:v4-pulse 1.3s infinite}
+.v4-record-widget strong{font-size:.8rem;font-weight:720}
+.v4-record-widget small,#v4-record-clock{font-size:.76rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.v4-record-preview{flex-direction:column;align-items:stretch}
+.v4-record-preview-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.v4-record-buttons{display:flex;flex-wrap:wrap;gap:8px}
+.v4-record-buttons button{flex:1;min-height:38px}
+.v4-floating-audio{position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));z-index:1400;width:min(350px,calc(100vw - 24px));padding:13px 15px;border-radius:18px;border:1px solid rgba(164,175,242,.32);background:#152137;box-shadow:0 16px 55px rgba(0,0,0,.45);color:#f4f6ff;display:grid;gap:10px}
+.v4-floating-audio[hidden]{display:none}
+.v4-floating-head,.v4-floating-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.v4-floating-head strong{font-size:.75rem;letter-spacing:.02em}
+.v4-floating-head button{border:0;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer}
+.v4-floating-row>button{flex-shrink:0}
+.v4-floating-info{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.v4-floating-info>span{font-size:.82rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v4-floating-info small{font-size:.7rem;color:#bec6e0;font-variant-numeric:tabular-nums}
+.v4-floating-info input[type=range]{width:100%;accent-color:#a6a3ff}
+.v4-schedule-form{display:grid;gap:13px;margin-block:8px}
+.v4-schedule-form textarea{resize:vertical;white-space:pre-wrap}
+.v4-schedule-list{display:grid;gap:11px;max-height:min(400px,58vh);overflow:auto}
+.v4-schedule-item{display:flex;gap:12px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:12px;padding:13px}
+.v4-schedule-copy{display:grid;gap:4px;min-width:0;flex:1;overflow-wrap:anywhere}
+.v4-schedule-copy>strong{font-size:.85rem;white-space:pre-wrap}
+.v4-schedule-actions{display:flex;gap:6px;flex-wrap:wrap}
+@keyframes v4-pulse{0%,100%{box-shadow:0 0 0 3px rgba(238,111,142,.15)}50%{box-shadow:0 0 0 8px rgba(238,111,142,.04)}}
+@media(max-width:760px){
+ .v4-microphone,.v4-schedule-button{min-width:36px;width:36px;height:39px;padding:5px;font-size:.95rem}
+ .compose-row{gap:5px}
+ .v4-audio-bubble{gap:6px;min-width:min(190px,100%)}
+ .v4-play-circle{min-width:34px;width:34px;height:34px}
+ .v4-waveform{gap:1px}
+ .v4-waveform i{min-width:2px;width:2px}
+ .v4-floating-audio{left:12px;right:12px;bottom:calc(70px + env(safe-area-inset-bottom));width:auto;max-width:none}
+ .v4-record-widget{gap:8px;padding:10px}
+ .v4-record-buttons .btn{font-size:.77rem}
+ .v4-schedule-item{align-items:flex-start;flex-wrap:wrap}
+ .v4-schedule-actions{width:100%}
+}
+@media(prefers-reduced-motion:reduce){.v4-record-dot{animation:none}}
