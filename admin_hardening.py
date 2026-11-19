@@ -6,6 +6,8 @@ No password, PIN or approval token is logged, stored in plaintext or broadcast.
 """
 import secrets
 import re
+import hashlib
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -47,6 +49,12 @@ def install(core):
           );
           CREATE INDEX IF NOT EXISTS admin_login_queue_idx
             ON admin_login_requests(user_id,state,expires_at);
+          CREATE TABLE IF NOT EXISTS admin_pin_attempts (
+            admin_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            failures INTEGER NOT NULL DEFAULT 0,
+            last_failed_at INTEGER NOT NULL DEFAULT 0,
+            locked_until INTEGER NOT NULL DEFAULT 0
+          );
         """)
 
     def active_sessions(c,user_id):
@@ -79,14 +87,49 @@ def install(core):
                 'expires_at':now()+APPROVAL_LIFETIME}
 
     def verify_pin(request,admin,pin):
-        throttle(request,'admin-pin-verify',40,900,str(admin['id']))
+        """Persistent attempt limits survive Render worker restarts and different devices.
+
+        A correct PIN cannot bypass a still-active lockout. Lock counters are
+        checked and committed in a separate transaction before raising errors.
+        """
+        throttle(request,'admin-pin-verify',25,900,str(admin['id']))
+        at=now()
+        with db() as c:
+            record=one(c,'SELECT failures,locked_until FROM admin_pin_attempts WHERE admin_id=?',
+                       (admin['id'],))
+        if record and int(record['locked_until'])>at:
+            raise HTTPException(429,'Xác minh PIN Admin tạm khóa do nhập sai nhiều lần.',
+                                headers={'Retry-After':str(max(1,int(record['locked_until'])-at))})
         valid=bool(admin['pin_hash'] and pin and
                    len(pin)==admin['pin_length'] and pin.isascii() and
                    pin.isdigit() and verify_secret(admin['pin_hash'],pin))
+        blocked_for=0
+        with db() as c:
+            if core.POSTGRES_MODE:
+                c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(admin['id'],))
+            record=one(c,'SELECT failures,last_failed_at,locked_until FROM admin_pin_attempts WHERE admin_id=?',
+                       (admin['id'],))
+            at=now()
+            if record and int(record['locked_until'])>at:
+                blocked_for=int(record['locked_until'])-at
+            elif valid:
+                c.execute('DELETE FROM admin_pin_attempts WHERE admin_id=?',(admin['id'],))
+            else:
+                failures=(int(record['failures'])+1 if record and at-int(record['last_failed_at'])<900 else 1)
+                until=at+900 if failures>=5 else 0
+                c.execute('''INSERT INTO admin_pin_attempts(admin_id,failures,last_failed_at,locked_until)
+                            VALUES(?,?,?,?) ON CONFLICT(admin_id)
+                            DO UPDATE SET failures=excluded.failures,
+                                          last_failed_at=excluded.last_failed_at,
+                                          locked_until=excluded.locked_until''',
+                          (admin['id'],failures,at,until))
+                core.admin_log(c,admin['id'],'admin_pin_denied',
+                               'PIN verification rejected; redacted')
+                blocked_for=900 if until else 0
+        if blocked_for:
+            raise HTTPException(429,'Xác minh PIN Admin tạm khóa do nhập sai nhiều lần.',
+                                headers={'Retry-After':str(max(1,blocked_for))})
         if not valid:
-            throttle(request,'admin-pin-failed',5,900,str(admin['id']))
-            with db() as c:
-                core.admin_log(c,admin['id'],'admin_pin_denied','PIN verification rejected')
             raise HTTPException(401,'Mã PIN quản trị không chính xác.')
         return True
 
