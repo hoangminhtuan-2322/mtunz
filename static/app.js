@@ -907,6 +907,7 @@ async function openChat(uid){
  state.selected=uid;state.groupSelected=null;state.tab='messages';state.messages=[];state.replyTo=null;state.pendingAttachment=null;renderApp();await loadMessages();
 }
 let dmLoadGeneration=0;
+const v4SendingChats=new Set();
 function renderMessageThread(scroll=false){
  const box=$('#chat-messages');if(!box)return;
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
@@ -2037,6 +2038,8 @@ document.addEventListener('submit',async event=>{
     if(!content&&!state.pendingAttachment)return;
     const recipient=state.selected,pending=state.pendingAttachment;
     if(!recipient)throw Error('Hãy chọn người nhận.');
+    if(v4SendingChats.has(recipient))return;
+    v4SendingChats.add(recipient);
     const reply=state.replyTo?.scope==='dm'?state.replyTo.id:null;
     const tmpId=-(Date.now()+Math.floor(Math.random()*1000));
     const payload={recipient_id:recipient,body:content,attachment_id:pending?.id||null,
@@ -2070,7 +2073,7 @@ document.addEventListener('submit',async event=>{
       renderMessageThread(false);
       toast('Chưa xác nhận được tin. Dùng nút Gửi lại trong bong bóng; hệ thống sẽ không tạo tin trùng.','warning');
       return;
-    }
+    }finally{v4SendingChats.delete(recipient);}
     break;
    }
    case 'settings-pin':{
