@@ -56,24 +56,24 @@
 .admin-shell .v5-risk-list>div span{color:#c0d0e9;font-size:12px}
 .admin-shell .v5-risk-list>div strong{font-size:11.5px;color:#f3f6ff;text-align:right;font-weight:760}
 .admin-shell .v5-security-footnote{font-size:11px;line-height:1.6;color:#9caecc;margin:0}
-.admin-shell .v5-reset-preview{gap:14px}
-.admin-shell .v5-reset-major{padding:16px 18px;border-radius:14px;background:linear-gradient(115deg,#43283b,#322335);border:1px solid #a45372;display:flex;flex-direction:column;gap:3px}
-.admin-shell .v5-reset-major>span{font-size:10px;color:#f4b3c9;font-weight:800;letter-spacing:.12em}
-.admin-shell .v5-reset-major strong{font-size:33px;line-height:1.2;font-weight:800;color:#fff}
-.admin-shell .v5-reset-major small{font-size:11px;color:#d9bed0}
-.admin-shell .v5-reset-details{border-radius:12px;border:1px solid #475b77;background:#17263d;padding:13px}
-.admin-shell .v5-reset-details summary{cursor:pointer;color:#ebf2ff;font-weight:720;font-size:12px}
-.admin-shell .v5-reset-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:13px;max-height:210px;overflow:auto}
-.admin-shell .v5-reset-count{display:flex;justify-content:space-between;gap:9px;padding:8px 10px;border-radius:8px;background:#101e32;border:1px solid #314765;font-size:11px;color:#aabdda}
-.admin-shell .v5-reset-count strong{color:#f6faff;font-variant-numeric:tabular-nums}
-.admin-shell .v5-reset-preserve,.admin-shell .v5-reset-warning{border:1px solid #3c5a74;border-radius:12px;background:#102d37;padding:13px 14px;display:grid;gap:6px}
-.admin-shell .v5-reset-preserve strong,.admin-shell .v5-reset-warning strong{font-size:12px;color:#e4f8fc}
-.admin-shell .v5-reset-preserve p,.admin-shell .v5-reset-warning p{font-size:11px;line-height:1.55;color:#aec5d1;margin:0}
-.admin-shell .v5-reset-warning{background:#382b29;border-color:#8b6c44}
-.admin-shell .v5-reset-warning strong{color:#ffe0ac}
-.admin-shell .v5-reset-warning p{color:#f5d7b2}
-.admin-shell .v5-reset-agreement{display:flex;align-items:flex-start;gap:9px;color:#eef3ff;font-size:12px;line-height:1.6;cursor:pointer}
-.admin-shell .v5-reset-agreement input{flex:0 0 auto;width:18px;height:18px;margin-top:2px;accent-color:#b6a9ff}
+.v5-reset-preview{gap:14px}
+.v5-reset-major{padding:16px 18px;border-radius:14px;background:linear-gradient(115deg,#43283b,#322335);border:1px solid #a45372;display:flex;flex-direction:column;gap:3px}
+.v5-reset-major>span{font-size:10px;color:#f4b3c9;font-weight:800;letter-spacing:.12em}
+.v5-reset-major strong{font-size:33px;line-height:1.2;font-weight:800;color:#fff}
+.v5-reset-major small{font-size:11px;color:#d9bed0}
+.v5-reset-details{border-radius:12px;border:1px solid #475b77;background:#17263d;padding:13px}
+.v5-reset-details summary{cursor:pointer;color:#ebf2ff;font-weight:720;font-size:12px}
+.v5-reset-breakdown{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:13px;max-height:210px;overflow:auto}
+.v5-reset-count{display:flex;justify-content:space-between;gap:9px;padding:8px 10px;border-radius:8px;background:#101e32;border:1px solid #314765;font-size:11px;color:#aabdda}
+.v5-reset-count strong{color:#f6faff;font-variant-numeric:tabular-nums}
+.v5-reset-preserve,.v5-reset-warning{border:1px solid #3c5a74;border-radius:12px;background:#102d37;padding:13px 14px;display:grid;gap:6px}
+.v5-reset-preserve strong,.v5-reset-warning strong{font-size:12px;color:#e4f8fc}
+.v5-reset-preserve p,.v5-reset-warning p{font-size:11px;line-height:1.55;color:#aec5d1;margin:0}
+.v5-reset-warning{background:#382b29;border-color:#8b6c44}
+.v5-reset-warning strong{color:#ffe0ac}
+.v5-reset-warning p{color:#f5d7b2}
+.v5-reset-agreement{display:flex;align-items:flex-start;gap:9px;color:#eef3ff;font-size:12px;line-height:1.6;cursor:pointer}
+.v5-reset-agreement input{flex:0 0 auto;width:18px;height:18px;margin-top:2px;accent-color:#b6a9ff}
 @media(max-width:1240px){
  .admin-shell .v5-security-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
  .admin-shell .v5-topbar .v5-last-update{display:none}
@@ -97,7 +97,7 @@
  .admin-shell .v5-security-metric small{font-size:9.5px}
  .admin-shell .v5-deck-buttons{width:100%}
  .admin-shell .v5-deck-buttons button{flex:1}
- .admin-shell .v5-reset-breakdown{grid-template-columns:1fr}
+ .v5-reset-breakdown{grid-template-columns:1fr}
  .admin-shell .v5-risk-list{padding:12px}
  .admin-shell .v5-risk-list>div{align-items:flex-start;flex-direction:column;gap:5px}
 }
