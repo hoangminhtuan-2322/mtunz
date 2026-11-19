@@ -144,7 +144,8 @@ def install(core):
         if not file:
             raise HTTPException(403, 'Tệp đính kèm không thuộc tài khoản của bạn.')
         # Uploaded file can be sent once; prevents leaking a file into unrelated rooms.
-        if one(c, 'SELECT 1 FROM messages WHERE attachment_id=? UNION SELECT 1 FROM group_messages WHERE attachment_id=?', (attachment_id,attachment_id)):
+        if one(c, 'SELECT 1 FROM messages WHERE attachment_id=? UNION SELECT 1 FROM group_messages WHERE attachment_id=? UNION SELECT 1 FROM world_messages WHERE attachment_id=?',
+               (attachment_id,attachment_id,attachment_id)):
             raise HTTPException(409, 'Tệp đã được gửi. Vui lòng tải lên lại.')
         return file
 
@@ -501,7 +502,7 @@ def install(core):
                 'image/gif':first.startswith((b'GIF87a',b'GIF89a')),
                 'image/webp':first.startswith(b'RIFF') and first[8:12]==b'WEBP',
                 'application/pdf':first.startswith(b'%PDF-'),
-                'audio/webm':first.startswith(b'\\x1a\\x45\\xdf\\xa3'),
+                'audio/webm':first.startswith(b'\x1a\x45\xdf\xa3'),
                 'audio/ogg':first.startswith(b'OggS'),
                 'audio/mp4':first[4:8]==b'ftyp',
                 'audio/mpeg':first.startswith(b'ID3') or (len(first)>1 and first[0]==0xff and first[1]&0xe0==0xe0),
