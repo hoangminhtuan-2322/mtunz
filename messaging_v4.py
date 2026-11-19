@@ -234,6 +234,8 @@ def install(core):
         return completed
 
     wake=asyncio.Event()
+    # Callable in tests and useful for a future explicitly authorized worker.
+    core.messaging_v4_deliver_due=deliver_due
 
     async def worker():
         while True:
