@@ -201,9 +201,9 @@ def install(core):
                         raise HTTPException(403,'Người gửi không còn quyền sử dụng tài khoản.')
                     can_schedule(c,sender_id,recipient_id,None,row['reply_to'])
                     if row['attachment_id']:
-                        f=one(c,'SELECT id FROM attachments WHERE id=? AND owner_id=?',
-                             (row['attachment_id'],sender_id))
-                        if not f:raise HTTPException(404,'Tệp đã bị xóa khỏi tài khoản.')
+                        # Revalidate ownership AND that a voice/file was not
+                        # consumed by another conversation after scheduling.
+                        core.file_for_message(c,row['attachment_id'],sender_id)
                     unique='scheduled:'+str(row['id'])
                     saved=c.execute('''INSERT INTO messages
                           (sender_id,recipient_id,body,attachment_id,reply_to,created_at,client_message_id)
