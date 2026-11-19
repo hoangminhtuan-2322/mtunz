@@ -76,6 +76,9 @@ def install(core):
                 c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0,updated_at=? WHERE id=1',(now(),))
             core.admin_log(c,admin['id'],'admin_emergency_lockdown',
                            'enabled' if body.enabled else 'disabled')
+        # Wake persisted scheduled jobs as soon as the lockdown is lifted.
+        if not body.enabled and getattr(core,'messenger_v4_wake',None):
+            core.messenger_v4_wake.set()
         await core.hub.broadcast_members('emergency-mode',enabled=bool(body.enabled))
         return {'ok':True,'enabled':bool(body.enabled),
                 'world_chat_disabled':bool(body.enabled)}
