@@ -17,7 +17,7 @@ APPROVAL_LIFETIME=5*60
 ERASE_CONFIRM='XOA TOAN BO NGUOI DUNG'
 AUDIT_CONFIRM='XOA NHAT KY'
 PURGE_TABLES=(
- 'message_pins','reactions','message_requests','user_reports','world_penalties',
+ 'scheduled_messages', 'message_pins','reactions','message_requests','user_reports','world_penalties',
  'world_messages','group_messages','group_members','chat_groups','chat_preferences',
  'messages','attachments','friendships','blocks','restrictions','notifications',
  'recovery_grants','ticket_messages','tickets','login_challenges','registrations',
