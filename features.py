@@ -16,7 +16,7 @@ import asyncio
 import logging
 from urllib.parse import quote
 
-from fastapi import HTTPException, Request, UploadFile, File
+from fastapi import HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,8 @@ ALLOWED = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
     'application/zip': '.zip',
+    'audio/webm': '.webm', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a',
+    'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
 }
 
 
@@ -122,6 +124,8 @@ def install(core):
             column('messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('group_messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('attachments','file_content','BLOB')
+            column('attachments','waveform',"TEXT NOT NULL DEFAULT ''")
+            column('attachments','duration_ms','INTEGER NOT NULL DEFAULT 0')
             column('chat_preferences','pinned','INTEGER NOT NULL DEFAULT 0')
     migrate()
 
@@ -140,15 +144,18 @@ def install(core):
         if not file:
             raise HTTPException(403, 'Tệp đính kèm không thuộc tài khoản của bạn.')
         # Uploaded file can be sent once; prevents leaking a file into unrelated rooms.
-        if one(c, 'SELECT 1 FROM messages WHERE attachment_id=? UNION SELECT 1 FROM group_messages WHERE attachment_id=?', (attachment_id,attachment_id)):
+        if one(c, 'SELECT 1 FROM messages WHERE attachment_id=? UNION SELECT 1 FROM group_messages WHERE attachment_id=? UNION SELECT 1 FROM world_messages WHERE attachment_id=?',
+               (attachment_id,attachment_id,attachment_id)):
             raise HTTPException(409, 'Tệp đã được gửi. Vui lòng tải lên lại.')
         return file
 
     def file_meta(c, file_id):
         if file_id is None:return None
-        f = one(c, 'SELECT id,original_name,mime,size FROM attachments WHERE id=?',(file_id,))
+        f = one(c, 'SELECT id,original_name,mime,size,waveform,duration_ms FROM attachments WHERE id=?',(file_id,))
         if not f:return None
         return {'id':f['id'],'name':f['original_name'],'mime':f['mime'],'size':f['size'],
+                'duration_ms':f['duration_ms'] or 0,
+                'waveform':f['waveform'] or '',
                 'url':f'/api/attachments/{f["id"]}'}
 
     def reactions_for(c, scope, mid):
@@ -322,7 +329,7 @@ def install(core):
 
     def remove_local_uploads(names):
         for filename in names:
-            if not re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip)',filename or ''):
+            if not re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip|webm|ogg|m4a|mp3|wav)',filename or ''):
                 continue
             try:
                 (upload_dir/filename).unlink(missing_ok=True)
@@ -462,7 +469,7 @@ def install(core):
         return resp
 
     @app.post('/api/uploads')
-    async def upload(request:Request, file:UploadFile=File(...)):
+    async def upload(request:Request, file:UploadFile=File(...), waveform:str=Form(''), duration_ms:int=Form(0)):
         u=current_user(request)
         throttle(request, 'upload', 35, 3600, str(u['id']))
         mime=(file.content_type or '').lower().split(';')[0]
@@ -471,6 +478,13 @@ def install(core):
         safe_name=re.sub(r'[\x00-\x1f\x7f/\\]+','_', Path(file.filename or 'tep-tin').name).strip('. ')[:120] or 'tep-tin'
         if safe_name.lower().endswith(('.html','.htm','.svg','.js','.exe','.bat','.cmd','.ps1')):
             raise HTTPException(415,'Định dạng có thể thực thi không được cho phép.')
+        if len(waveform)>80 or (waveform and not re.fullmatch(r'[0-9a-f]{8,80}',waveform)):
+            raise HTTPException(422,'Dữ liệu dạng sóng không hợp lệ.')
+        if duration_ms<0 or duration_ms>120000:
+            raise HTTPException(422,'Bản ghi tối đa 120 giây.')
+        if not mime.startswith('audio/'):
+            waveform=''
+            duration_ms=0
         stored=secrets.token_hex(20)+ALLOWED[mime]
         path=upload_dir/stored
         total=0
@@ -488,6 +502,12 @@ def install(core):
                 'image/gif':first.startswith((b'GIF87a',b'GIF89a')),
                 'image/webp':first.startswith(b'RIFF') and first[8:12]==b'WEBP',
                 'application/pdf':first.startswith(b'%PDF-'),
+                'audio/webm':first.startswith(b'\x1a\x45\xdf\xa3'),
+                'audio/ogg':first.startswith(b'OggS'),
+                'audio/mp4':first[4:8]==b'ftyp',
+                'audio/mpeg':first.startswith(b'ID3') or (len(first)>1 and first[0]==0xff and first[1]&0xe0==0xe0),
+                'audio/wav':first.startswith(b'RIFF') and first[8:12]==b'WAVE',
+                'audio/x-wav':first.startswith(b'RIFF') and first[8:12]==b'WAVE',
                 'application/zip':first.startswith(b'PK\x03\x04'),
                 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':first.startswith(b'PK\x03\x04'),
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':first.startswith(b'PK\x03\x04'),
@@ -502,11 +522,11 @@ def install(core):
                     # Render Free storage disappears after sleeping/redeploying.
                     # Keep small attachments in PostgreSQL instead (Neon quota applies).
                     content=path.read_bytes()
-                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,file_content)
-                                     VALUES(?,?,?,?,?,?,?)''',(u['id'],stored,safe_name,mime,total,now(),content))
+                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,file_content,waveform,duration_ms)
+                                     VALUES(?,?,?,?,?,?,?,?,?)''',(u['id'],stored,safe_name,mime,total,now(),content,waveform,duration_ms))
                 else:
-                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at)
-                                     VALUES(?,?,?,?,?,?)''',(u['id'],stored,safe_name,mime,total,now()))
+                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,waveform,duration_ms)
+                                     VALUES(?,?,?,?,?,?,?,?)''',(u['id'],stored,safe_name,mime,total,now(),waveform,duration_ms))
                 ident=cur.lastrowid
         except BaseException:
             path.unlink(missing_ok=True)
@@ -541,7 +561,7 @@ def install(core):
                 allowed=bool(one(c,'''SELECT 1 FROM world_messages
                                    WHERE attachment_id=? AND deleted_at IS NULL''',(file_id,)))
             if not allowed:raise HTTPException(403,'Bạn không có quyền tải tệp này.')
-        inline=f['mime'].startswith('image/')
+        inline=f['mime'].startswith(('image/','audio/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
         if hosted:
             from fastapi.responses import Response
