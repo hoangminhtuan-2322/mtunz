@@ -14,7 +14,7 @@ from contextlib import contextmanager
 SERIAL_TABLES = {
     'users', 'registrations', 'messages', 'tickets', 'ticket_messages',
     'notifications', 'audit', 'attachments', 'chat_groups', 'group_messages',
-    'world_messages', 'user_reports', 'message_requests',
+    'world_messages', 'user_reports', 'message_requests', 'scheduled_messages',
 }
 
 
@@ -82,7 +82,8 @@ class PGConnection:
             if exc.__class__.__name__ == 'UniqueViolation':
                 raise sqlite3.IntegrityError('Unique constraint violation') from exc
             raise
-        row_id = cursor.fetchone()['id'] if get_id else None
+        returned = cursor.fetchone() if get_id else None
+        row_id = returned['id'] if returned else None
         return PGCursor(cursor, lastrowid=row_id)
 
     def executescript(self, script):
