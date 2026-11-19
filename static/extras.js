@@ -63,6 +63,7 @@ function groupHeader(){
 }
 function uploadMarkup(m){
  const a=m.attachment;if(!a)return '';
+ if(String(a.mime||'').startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
  if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
  return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
 }
@@ -76,7 +77,7 @@ function bubblesFor(messages,isGroup=false){
   const mine=m.sender_id===state.user.id;
   const reference=messages.find(x=>x.id===m.reply_to);
   const reacted=[...new Set((m.reactions||[]).map(r=>r.emoji))];
-  const actions=(!m.deleted_at)?`<div class="bubble-actions">
+  const actions=(!m.deleted_at&&m.id>0)?`<div class="bubble-actions">
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
@@ -87,7 +88,10 @@ function bubblesFor(messages,isGroup=false){
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
     ${m.reply_to?`<div class="reply-inline">↳ ${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||(reference.attachment?'Tệp đính kèm':'Tin nhắn'),80)):'Đã trả lời tin nhắn'}</div>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
-    <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''} ${mine&&!isGroup?(m.read_at?'<span class="seen">✓✓ Đã xem</span>':'✓ Đã gửi'):''}</div></div>
+    <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
+     ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
+     ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
+    </div></div>
     ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}</div>`;
  }
  return html;
@@ -97,7 +101,8 @@ function composerExtras(){
  return `<div class="compose-extra" id="compose-extra">
  ${m?`<div class="compose-reply">↳ Đang trả lời: ${esc(short(m.body||'Tệp đính kèm',80))}<button class="icon-only" data-act="cancel-reply">${icon('x',13)}</button></div>`:''}
  ${a?`<div class="compose-file">${icon('paperclip',15)} ${esc(short(a.name,45))} (${fmtSize(a.size)})<button class="icon-only" data-act="cancel-file">${icon('x',13)}</button></div>`:''}
- ${state.uploading?'<div class="compose-file">Đang tải tệp lên…</div>':''}</div>`;
+ ${state.uploading?'<div class="compose-file">Đang tải tệp lên…</div>':''}
+ ${typeof v4VoiceComposer==='function'?v4VoiceComposer():''}</div>`;
 }
 function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
@@ -106,8 +111,9 @@ function groupConversation(){
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
- <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1"></textarea>
- <button type="submit" class="btn primary send" ${state.uploading?'disabled':''} title="Gửi tin nhắn">${icon('send',20)}</button></form>
+ <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
+ <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
+ ${sendLine}
  <div class="hint" style="margin-top:7px;font-size:10px">Tối đa 12 MB/tệp · Enter gửi · Shift+Enter xuống dòng</div></div></div>`;
 }
 async function openGroup(gid){
