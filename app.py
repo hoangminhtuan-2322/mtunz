@@ -1279,6 +1279,7 @@ class SendMessage(BaseModel):
     body:str=Field(default='',max_length=2000)
     attachment_id:int|None=None
     reply_to:int|None=None
+    client_message_id:str|None=Field(default=None,max_length=64)
 
 
 @app.get('/api/messages/{other_id}')
@@ -1299,7 +1300,9 @@ async def message_history(request:Request,other_id:int,before:int=0):
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
         if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
             for item in result:
-                if item['sender_id']==u['id']:item['read_at']=None
+                if item['sender_id']==u['id']:
+                    item['read_at']=None
+                    item['delivered_at']=None
     return {'messages':result}
 
 
@@ -1308,24 +1311,59 @@ async def send_message(request:Request,body:SendMessage):
     throttle(request, 'chat-send', 90, 60)
     u=current_user(request)
     text=body.body.strip()
-    if not text and not body.attachment_id:raise HTTPException(422,'Nhập nội dung hoặc chọn tệp để gửi.')
+    if not text and not body.attachment_id:
+        raise HTTPException(422,'Nhập nội dung hoặc chọn tệp để gửi.')
+    nonce=body.client_message_id
+    if nonce is not None and not re.fullmatch(r'[A-Za-z0-9_-]{16,64}',nonce):
+        raise HTTPException(422,'Mã xác nhận tin nhắn không hợp lệ.')
+    replay=False
     with db() as c:
         require_peer(c,u['id'],body.recipient_id)
-        file_for_message(c,body.attachment_id,u['id'])
-        if body.reply_to and not one(c,'''SELECT 1 FROM messages WHERE id=? AND
-             ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))''',
-             (body.reply_to,u['id'],body.recipient_id,body.recipient_id,u['id'])):
-            raise HTTPException(404,'Tin nhắn được trả lời không tồn tại.')
-        cursor=c.execute('''INSERT INTO messages(sender_id,recipient_id,body,attachment_id,reply_to,created_at)
-                          VALUES(?,?,?,?,?,?)''',(u['id'],body.recipient_id,text,body.attachment_id,body.reply_to,now()))
-        msg=message_details(c,one(c,'SELECT * FROM messages WHERE id=?',(cursor.lastrowid,)))
-        # Do not generate interruption notifications for users who mute this conversation.
-        pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',(body.recipient_id,u['id']))
-        if not pref or not pref['muted']:
-            notify_user_persist(c,body.recipient_id,f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}')
-    await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
-                         hub.user(u['id'],'message',message=msg))
-    return {'message':msg}
+        previous=(one(c,'SELECT * FROM messages WHERE sender_id=? AND client_message_id=?',
+                      (u['id'],nonce)) if nonce else None)
+        if previous:
+            if (previous['recipient_id']!=body.recipient_id or previous['body']!=text or
+                    previous['attachment_id']!=body.attachment_id or previous['reply_to']!=body.reply_to):
+                raise HTTPException(409,'Mã tin nhắn đã được dùng cho nội dung khác.')
+            msg=message_details(c,previous)
+            replay=True
+        else:
+            file_for_message(c,body.attachment_id,u['id'])
+            if body.attachment_id and one(c,'''SELECT 1 FROM scheduled_messages
+                           WHERE attachment_id=? AND state='pending' ''',(body.attachment_id,)):
+                raise HTTPException(409,'Tệp đang chờ gửi theo lịch.')
+            if body.reply_to and not one(c,'''SELECT 1 FROM messages WHERE id=? AND deleted_at IS NULL AND
+                 ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))''',
+                 (body.reply_to,u['id'],body.recipient_id,body.recipient_id,u['id'])):
+                raise HTTPException(404,'Tin nhắn được trả lời không tồn tại.')
+            sql='''INSERT INTO messages(sender_id,recipient_id,body,attachment_id,reply_to,
+                          created_at,client_message_id) VALUES(?,?,?,?,?,?,?)'''
+            args=(u['id'],body.recipient_id,text,body.attachment_id,body.reply_to,now(),nonce)
+            if nonce:
+                sql+=' ON CONFLICT DO NOTHING'
+            cursor=c.execute(sql,args)
+            if nonce and cursor.rowcount==0:
+                # Two simultaneous device retries with the same key: exactly one
+                # persisted message, never a duplicate notification.
+                old=one(c,'SELECT * FROM messages WHERE sender_id=? AND client_message_id=?',
+                        (u['id'],nonce))
+                if not old:raise HTTPException(409,'Tin nhắn đang được xử lý, hãy thử lại.')
+                if (old['recipient_id']!=body.recipient_id or old['body']!=text or
+                        old['attachment_id']!=body.attachment_id or old['reply_to']!=body.reply_to):
+                    raise HTTPException(409,'Mã tin nhắn đã được dùng cho nội dung khác.')
+                msg=message_details(c,old)
+                replay=True
+            else:
+                msg=message_details(c,one(c,'SELECT * FROM messages WHERE id=?',(cursor.lastrowid,)))
+                pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
+                         (body.recipient_id,u['id']))
+                if not pref or not pref['muted']:
+                    notify_user_persist(c,body.recipient_id,
+                       f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}')
+    if not replay:
+        await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
+                             hub.user(u['id'],'message',message=msg))
+    return {'message':msg,'replayed':replay}
 
 
 @app.post('/api/messages/read/{other_id}')
@@ -1334,6 +1372,8 @@ async def read_messages(request:Request,other_id:int):
     with db() as c:
         require_peer(c,u['id'],other_id)
         t=now()
+        c.execute('''UPDATE messages SET delivered_at=? WHERE recipient_id=?
+                     AND sender_id=? AND delivered_at IS NULL''',(t,u['id'],other_id))
         cursor=c.execute('UPDATE messages SET read_at=? WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
                          (t,u['id'],other_id))
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(u['id'],))
@@ -2034,3 +2074,5 @@ from social_profile import install as _install_social_profile
 _install_social_profile(_sys.modules[__name__])
 from admin_hardening import install as _install_admin_hardening
 _install_admin_hardening(_sys.modules[__name__])
+from messaging_v4 import install as _install_messaging_v4
+_install_messaging_v4(_sys.modules[__name__])
