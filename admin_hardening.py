@@ -201,26 +201,76 @@ def install(core):
                            f'approved_request={row["request_id"][:8]}')
         return core.session_response({'ok':True,'status':'active','admin':True},raw)
 
+    RESET_SCOPE_TABLES=tuple(PURGE_TABLES)+('audit',)
+    RESET_LABELS={
+        'scheduled_messages':'Tin nhắn hẹn giờ',
+        'message_pins':'Đoạn chat đã ghim',
+        'reactions':'Cảm xúc',
+        'message_requests':'Tin nhắn chờ',
+        'user_reports':'Báo cáo vi phạm',
+        'world_penalties':'Lịch sử xử phạt chat',
+        'world_messages':'Chat thế giới',
+        'group_messages':'Tin nhắn nhóm',
+        'group_members':'Thành viên nhóm',
+        'chat_groups':'Nhóm chat',
+        'chat_preferences':'Cài đặt hội thoại',
+        'messages':'Tin nhắn riêng',
+        'attachments':'Tệp và âm thanh',
+        'friendships':'Kết bạn',
+        'blocks':'Danh sách chặn',
+        'restrictions':'Danh sách hạn chế',
+        'notifications':'Thông báo',
+        'recovery_grants':'Mã khôi phục',
+        'ticket_messages':'Trao đổi hỗ trợ',
+        'tickets':'Phiếu hỗ trợ',
+        'login_challenges':'Yêu cầu xác thực',
+        'registrations':'Đơn đăng ký',
+        'account_deletion_requests':'Yêu cầu xóa tài khoản',
+        'trusted_devices':'Thiết bị tin cậy',
+        'support_rate_limits':'Bộ đếm chống spam hỗ trợ',
+        'audit':'Nhật ký Admin'
+    }
+
+    def reset_counts(c):
+        counts={table:int(one(c,'SELECT COUNT(*) n FROM '+table)['n'])
+                for table in RESET_SCOPE_TABLES}
+        counts['member_accounts']=int(one(c,'SELECT COUNT(*) n FROM users WHERE is_admin=0')['n'])
+        counts['member_sessions']=int(one(c,'SELECT COUNT(*) n FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_admin=0)')['n'])
+        counts['admin_other_sessions']=int(one(c,'SELECT COUNT(*) n FROM sessions WHERE user_id IN (SELECT id FROM users WHERE is_admin=1) AND expires_at>?',(now(),))['n'])
+        return counts
+
+    def reset_fingerprint(c):
+        # Exclude live Admin sessions; their count can change while reviewing.
+        counts=reset_counts(c)
+        counts.pop('admin_other_sessions',None)
+        raw=json.dumps(counts,sort_keys=True,separators=(',',':')).encode()
+        return hashlib.sha256(raw).hexdigest(),counts
+
     @app.get('/api/admin/data-reset/preview')
     async def data_reset_preview(request:Request):
         admin=require_admin(request)
         with db() as c:
-            total=one(c,'SELECT count(*) n FROM users WHERE is_admin=0')['n']
-            pending=one(c,'SELECT count(*) n FROM registrations')['n']
-            messages=one(c,'SELECT count(*) n FROM messages')['n']
-            groups=one(c,'SELECT count(*) n FROM group_messages')['n']
-            world=one(c,'SELECT count(*) n FROM world_messages')['n']
-            files=one(c,'SELECT count(*) n FROM attachments')['n']
-            reports=one(c,'SELECT count(*) n FROM user_reports')['n']
-            audit=one(c,'SELECT count(*) n FROM audit')['n']
-        return {'members':total,'registrations':pending,'direct_messages':messages,
-                'group_messages':groups,'world_messages':world,
-                'files':files,'reports':reports,'audit_logs':audit,
-                'preserves_admin':True}
+            fingerprint,counts=reset_fingerprint(c)
+        return {'members':counts['member_accounts'],'registrations':counts['registrations'],
+                'direct_messages':counts['messages'],'group_messages':counts['group_messages'],
+                'world_messages':counts['world_messages'],'files':counts['attachments'],
+                'reports':counts['user_reports'],'audit_logs':counts['audit'],
+                'scheduled_messages':counts['scheduled_messages'],
+                'support_tickets':counts['tickets'],'notifications':counts['notifications'],
+                'all_scopes':[{'name':RESET_LABELS[table],'table':table,'rows':counts[table]}
+                              for table in RESET_SCOPE_TABLES],
+                'revision':fingerprint,'preserves_admin':True,
+                'resets_admin_profile':True,
+                'retains_security_receipt':True,
+                'resets_world_chat_to_closed':True,
+                'resets_user_capacity_to':100,
+                'external_neon_branches_not_deleted':True,
+                'current_admin_session_preserved':True}
 
     class EraseAll(BaseModel):
         confirm:Literal['XOA TOAN BO NGUOI DUNG']
         expected_members:int=Field(ge=0)
+        revision:str=Field(min_length=64,max_length=64)
         admin_pin:str=Field(min_length=4,max_length=6)
 
     @app.post('/api/admin/data-reset')
@@ -232,38 +282,78 @@ def install(core):
         throttle(request,'admin-data-reset',2,86400,str(admin['id']))
         files=[]
         user_ids=[]
+        cookie=request.cookies.get('s') or ''
+        current_hash=digest(cookie)
+        if not re.fullmatch(r'[0-9a-f]{64}',body.revision):
+            raise HTTPException(422,'Mã phiên thống kê không hợp lệ.')
         with db() as c:
-            if core.POSTGRES_MODE:c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(admin['id'],))
-            ids=many(c,'SELECT id FROM users WHERE is_admin=0')
-            user_ids=[r['id'] for r in ids]
-            if len(user_ids)!=body.expected_members:
-                raise HTTPException(409,'Số lượng thành viên thay đổi. Hãy xem lại bản thống kê trước khi xóa.')
+            if core.POSTGRES_MODE:
+                c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(admin['id'],))
+            session=one(c,'''SELECT 1 FROM sessions
+                            WHERE token_hash=? AND user_id=? AND expires_at>?''',
+                        (current_hash,admin['id'],now()))
+            if not session:
+                raise HTTPException(401,'Phiên Admin đã hết hạn, vui lòng đăng nhập lại.')
+            fingerprint,counts=reset_fingerprint(c)
+            if (fingerprint!=body.revision or
+                    counts['member_accounts']!=body.expected_members):
+                raise HTTPException(409,'Dữ liệu đã thay đổi sau khi xem trước. Hãy tải lại thống kê trước khi xóa.')
+            saved=one(c,'SELECT username,password_hash,pin_hash,pin_length FROM users WHERE id=? AND is_admin=1',
+                      (admin['id'],))
+            if not saved or not saved['pin_hash']:
+                raise HTTPException(409,'Không tìm thấy thông tin xác thực Admin cần bảo vệ.')
+            user_ids=[r['id'] for r in many(c,'SELECT id FROM users WHERE is_admin=0')]
             files=[r['stored_name'] for r in many(c,'SELECT stored_name FROM attachments')]
-            # Delete dependent rows in FK-safe order. Do not clear Admin auth
-            # secrets, Admin sessions or system-level configuration keys.
+            # Wipe application-owned content inside one transaction and leave
+            # unrelated tables, Neon backups and project structure untouched.
             for table in PURGE_TABLES:
                 c.execute('DELETE FROM '+table)
-            c.execute('DELETE FROM sessions WHERE user_id<>?',(admin['id'],))
+            c.execute('DELETE FROM sessions WHERE token_hash<>?', (current_hash,))
             c.execute('DELETE FROM admin_login_requests')
+            c.execute('DELETE FROM admin_pin_attempts')
             c.execute('DELETE FROM audit')
             c.execute('DELETE FROM users WHERE is_admin=0')
-            c.execute('''UPDATE world_settings SET enabled=0,schedule_enabled=0,updated_at=? WHERE id=1''',
+            # "Fresh install" defaults; never overwrite Admin auth credentials.
+            c.execute("""UPDATE users SET last_seen=NULL,sanction_kind=NULL,
+                       sanction_until=NULL,sanction_reason=NULL,display_name='',
+                       bio='',show_online=1,show_receipts=1,phone=NULL,email=NULL,
+                       needs_display_name=0,terms_accepted_at=NULL,
+                       terms_accepted_version=NULL,headline='',website='',
+                       avatar_attachment_id=NULL,cover_attachment_id=NULL,
+                       profile_visibility='everyone',allow_message_requests=1,
+                       world_anonymous=0 WHERE id=? AND is_admin=1""",(admin['id'],))
+            c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0,open_minute=540,close_minute=1320,updated_at=? WHERE id=1',
                       (now(),))
-            remaining=one(c,'SELECT COUNT(*) n FROM users WHERE is_admin=0')['n']
-            if remaining:
-                raise RuntimeError('Không thể xóa toàn bộ dữ liệu: transaction phải được hoàn tác.')
-            core.admin_log(c,admin['id'],'admin_full_member_reset',
-                           f'completed; members={len(user_ids)}; archived_content_deleted=true')
+            c.execute("INSERT INTO settings(key,value) VALUES('max_users','100') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            c.execute("INSERT INTO settings(key,value) VALUES('emergency_lockdown','0') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+            c.execute("INSERT INTO settings(key,value) VALUES('support_rate_salt',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                      (core.token(),))
+            current=one(c,'SELECT username,password_hash,pin_hash,pin_length FROM users WHERE id=? AND is_admin=1',
+                        (admin['id'],))
+            if tuple(current[k] for k in ('username','password_hash','pin_hash','pin_length')) != tuple(
+                    saved[k] for k in ('username','password_hash','pin_hash','pin_length')):
+                raise RuntimeError('Admin credentials changed: transaction must roll back.')
+            remaining=reset_counts(c)
+            left={table:remaining[table] for table in PURGE_TABLES if remaining[table]}
+            if remaining['member_accounts'] or remaining['member_sessions'] or left:
+                raise RuntimeError('Reset incomplete: transaction must roll back.')
+            # Keep only one non-PII security receipt as proof a destructive
+            # operation occurred; no user names, message contents or IDs.
+            core.admin_log(c,admin['id'],'admin_system_factory_reset',
+                           'reset_completed; content_erased=true; admin_credentials_preserved=true')
         for uid in user_ids:
             await core.hub.user(uid,'session-ended',reason='Dữ liệu thành viên đã được đặt lại.')
             await core.hub.terminate_user(uid)
-        # Local development uploads; hosted blobs were removed transactionally.
+        await core.hub.terminate_user(admin['id'],except_hash=current_hash)
+        # Render stores blobs in Neon; local development uses the uploads folder.
         folder=Path(core.DATA_DIR)/'uploads'
         for name in files:
-            if re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip)',name or ''):
+            if re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip|webm|ogg|m4a|mp3|wav)',name or ''):
                 try:(folder/name).unlink(missing_ok=True)
                 except OSError:pass
-        return {'ok':True,'erased_members':len(user_ids),'admin_preserved':True}
+        return {'ok':True,'erased_members':len(user_ids),'admin_preserved':True,
+                'content_rows_cleared':True,'security_receipt_retained':True,
+                'remaining_member_accounts':0,'current_admin_session_preserved':True}
 
     class PruneAudit(BaseModel):
         mode:Literal['selected','all']
