@@ -134,7 +134,8 @@ def test_audit_cleanup_and_full_member_reset_require_correct_pin():
     uid=member.get('/api/me').json()['user']['id']
     preview=admin.get('/api/admin/data-reset/preview')
     assert preview.status_code==200 and preview.json()['members']==1
-    payload={'confirm':'XOA TOAN BO NGUOI DUNG','expected_members':1,'admin_pin':'0000'}
+    payload={'confirm':'XOA TOAN BO NGUOI DUNG','expected_members':1,
+             'revision':preview.json()['revision'],'admin_pin':'0000'}
     assert admin.post('/api/admin/data-reset',json=payload).status_code==401
     assert admin.get('/api/admin/data-reset/preview').json()['members']==1
     logs=admin.get('/api/admin/audit').json()['logs']
