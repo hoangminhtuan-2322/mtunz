@@ -455,13 +455,30 @@ async def cookies_and_origin(request: Request, call_next):
     if not gid or len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}', gid):
         gid = token()
     request.state.gid = gid
+    # Emergency mode disables creation of user content, without cutting off
+    # read-only history, logins, Admin recovery or security operations.
+    if request.method in ('POST','PUT','PATCH','DELETE'):
+        path=request.url.path
+        protected=(
+            path in ('/api/messages','/api/uploads','/api/world/messages',
+                     '/api/registration/request','/api/registration/complete',
+                     '/api/message-requests','/api/scheduled-messages')
+            or re.fullmatch(r'/api/groups/[0-9]+/messages',path) is not None
+            or re.fullmatch(r'/api/friends/request/[0-9]+',path) is not None
+        )
+        if protected:
+            with db() as c:
+                row=one(c,"SELECT value FROM settings WHERE key='emergency_lockdown'")
+            if row and row['value']=='1':
+                return JSONResponse({'detail':'Hệ thống đang ở chế độ an toàn khẩn cấp. Chỉ cho phép xem dữ liệu.'},
+                                    status_code=423,headers={'Cache-Control':'no-store'})
     result = await call_next(request)
     if request.cookies.get('g') != gid:
         result.set_cookie('g', gid, max_age=365*86400, httponly=True, secure=COOKIE_SECURE, samesite='lax', path='/')
     result.headers['X-Content-Type-Options'] = 'nosniff'
     if COOKIE_SECURE:
         result.headers['Strict-Transport-Security'] = 'max-age=31536000'
-    result.headers['Permissions-Policy'] = 'geolocation=(self), payment=()'
+    result.headers['Permissions-Policy'] = 'geolocation=(self), camera=(self), microphone=(self), payment=(), usb=(), browsing-topics=()'
     result.headers['Referrer-Policy'] = 'no-referrer'
     result.headers['X-Frame-Options'] = 'DENY'
     result.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
@@ -600,7 +617,8 @@ def issue_session(c, uid, request):
 def session_response(result, raw):
     from fastapi.responses import JSONResponse
     response = JSONResponse(result)
-    response.set_cookie('s', raw, httponly=True, secure=COOKIE_SECURE, samesite='lax', path='/')
+    response.set_cookie('s', raw, httponly=True, secure=COOKIE_SECURE,
+                        samesite='strict' if result.get('admin') else 'lax', path='/')
     return response
 
 
@@ -2074,5 +2092,7 @@ from social_profile import install as _install_social_profile
 _install_social_profile(_sys.modules[__name__])
 from admin_hardening import install as _install_admin_hardening
 _install_admin_hardening(_sys.modules[__name__])
+from admin_security_v5 import install as _install_admin_security_v5
+_install_admin_security_v5(_sys.modules[__name__])
 from messaging_v4 import install as _install_messaging_v4
 _install_messaging_v4(_sys.modules[__name__])

@@ -31,6 +31,7 @@ jobs:
           node --check static/social-v2.js
           node --check static/world-moderation.js
           node --check static/admin-v3.js
+          node --check static/admin-v5.js
           node --check static/world-release.js
           node --check static/messenger-v4.js
           node --check static/admin-upgrade.js
@@ -70,6 +71,8 @@ jobs:
         run: node tests/audit_readable_details.cjs
       - name: Verify Admin Clarity enhancements
         run: node tests/admin_upgrade.cjs
+      - name: Verify Admin V5 security dashboard and reset safety boundaries
+        run: node tests/admin_security_v5_ui.cjs
       - name: Verify modern member messaging experience
         run: node tests/member_experience.cjs
       - name: Verify optimized mobile keyboard, touch and responsive layouts

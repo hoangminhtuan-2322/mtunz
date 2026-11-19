@@ -191,9 +191,9 @@ function adminV3SecurityPanel(){
     '<p class="hint">Không có yêu cầu đăng nhập đang chờ.</p>'}
   </div></section>
   <section class="card admin-v3-reset-card">
-   <h3>🧹 Đặt lại dữ liệu thành viên</h3>
-   <p class="hint">Xóa toàn bộ dữ liệu thành viên, lịch sử tin nhắn, tệp và dữ liệu liên quan trong cơ sở dữ liệu hiện tại. Giữ nguyên tài khoản, mật khẩu, PIN và phiên hiện tại của Admin. Bản sao lưu/nhánh dữ liệu khác không tự xóa.</p>
-   <button class="btn danger" type="button" data-admin-v3-action="preview-reset">Xem thống kê & xác nhận xóa</button>
+   <h3>🧹 Đặt lại dữ liệu mtunz</h3>
+   <p class="hint">Làm sạch mọi dữ liệu người dùng và nội dung trong database mtunz hiện tại: tin nhắn, lịch hẹn, tệp, nhật ký, yêu cầu hỗ trợ và các phiên thành viên. Giữ tài khoản/mật khẩu/PIN Admin; đưa các cài đặt ứng dụng về mặc định. Các bản sao lưu Neon nằm ngoài thao tác này.</p>
+   <button class="btn danger" type="button" data-admin-v3-action="preview-reset">Xem toàn bộ phạm vi và xác minh PIN để reset</button>
   </section>`;
 }
 function adminV3AuditControls(){
@@ -216,33 +216,45 @@ async function adminV3RequestDecision(requestId,approve){
 }
 async function adminV3ResetPreview(){
  const preview=await api('/api/admin/data-reset/preview');
- modal({title:'Xóa sạch dữ liệu thành viên',
-  description:'Hành động không thể hoàn tác trong database hiện tại. Tài khoản Admin vẫn được giữ nguyên.',
-  danger:true,confirm:'Xóa toàn bộ dữ liệu thành viên',
-  content:`<div class="admin-v3-reset-preview">
-    <strong>Các dữ liệu sẽ bị xóa</strong>
-    <div class="admin-v3-reset-numbers"><span>Thành viên: <b>${preview.members}</b></span>
-    <span>Đơn đăng ký: <b>${preview.registrations}</b></span>
-    <span>Tin riêng: <b>${preview.direct_messages}</b></span>
-    <span>Tin nhóm: <b>${preview.group_messages}</b></span>
-    <span>Chat thế giới: <b>${preview.world_messages}</b></span>
-    <span>Tệp: <b>${preview.files}</b></span>
-    <span>Báo cáo: <b>${preview.reports}</b></span>
-    <span>Nhật ký: <b>${preview.audit_logs}</b></span></div>
-    <p class="hint">Chỉ database production hiện tại được xử lý. Snapshot, nhánh Neon và bản sao lưu ngoài hệ thống vẫn tồn tại. Hãy kiểm tra phạm vi này trước khi tiếp tục.</p>
+ const nonempty=(preview.all_scopes||[]).filter(item=>Number(item.rows)>0);
+ const breakdown=nonempty.map(item=>
+  '<div class="v5-reset-count"><span>'+esc(item.name)+'</span><strong>'+Number(item.rows).toLocaleString('vi-VN')+'</strong></div>').join('');
+ modal({title:'Đặt lại toàn bộ mtunz về trạng thái ban đầu',
+  description:'Xóa toàn bộ dữ liệu ứng dụng trên database production. Chỉ giữ thông tin xác thực Admin và một phiên Admin hiện tại.',
+  danger:true,confirm:'Xóa sạch dữ liệu mtunz',
+  content:`<div class="admin-v3-reset-preview v5-reset-preview">
+    <div class="v5-reset-major"><span>THÀNH VIÊN SẼ BỊ XÓA</span><strong>${Number(preview.members).toLocaleString('vi-VN')}</strong>
+    <small>${nonempty.length} loại dữ liệu đang có bản ghi · Sau reset mục tiêu bằng 0</small></div>
+    <details class="v5-reset-details" open><summary>Phạm vi dữ liệu sẽ xóa · ${nonempty.length} loại</summary>
+    <div class="v5-reset-breakdown">${breakdown||'<div class="hint">Không còn nội dung trong các bảng ứng dụng.</div>'}</div></details>
+    <div class="v5-reset-preserve"><strong>Những gì được giữ</strong>
+      <p>Tài khoản, mật khẩu đã băm, PIN đã băm và độ dài PIN Admin; mã nguồn, các tính năng và phiên Admin hiện tại.</p>
+      <strong>Những gì được đưa về mặc định</strong>
+      <p>Chat thế giới đóng, lịch tự động tắt, giới hạn thành viên đặt về 100 và hồ sơ Admin được làm sạch.</p>
+    </div>
+    <div class="v5-reset-warning">
+      <strong>Lưu ý về sao lưu</strong>
+      <p>Thao tác không xóa các nhánh/snapshot Neon cũ, tệp sao lưu ngoài database hoặc bảng không thuộc mtunz. Một dấu xác nhận bảo mật không có dữ liệu người dùng sẽ được giữ trong nhật ký Admin.</p>
+    </div>
+    <label class="v5-reset-agreement"><input type="checkbox" id="v5-reset-understand">
+    <span>Tôi hiểu việc xóa dữ liệu mtunz trên production là không thể hoàn tác trực tiếp.</span></label>
     <div class="field"><label for="admin-v3-erase-confirm">Nhập chính xác: XOA TOAN BO NGUOI DUNG</label>
-    <input class="input" id="admin-v3-erase-confirm" autocomplete="off" spellcheck="false" placeholder="Nhập cụm từ xác nhận"></div>
+    <input class="input" id="admin-v3-erase-confirm" autocomplete="off" spellcheck="false"
+       placeholder="XOA TOAN BO NGUOI DUNG" aria-label="Cụm từ xác nhận xóa sạch"></div>
     ${adminV3PinFields()}
    </div>`,
   handler:async host=>{
+   if(!host.querySelector('#v5-reset-understand')?.checked)
+     throw Error('Hãy xác nhận đã hiểu phạm vi và tính không thể hoàn tác.');
    const confirm=host.querySelector('#admin-v3-erase-confirm').value.trim();
    if(confirm!=='XOA TOAN BO NGUOI DUNG')throw Error('Cụm từ xác nhận chưa chính xác.');
    const proof=adminV3PinPayload(host);
    if(!proof.admin_pin)throw Error('Phải bật PIN Admin trước khi xóa dữ liệu.');
    const result=await post('/api/admin/data-reset',{
-    confirm,expected_members:preview.members,admin_pin:proof.admin_pin
+    confirm,expected_members:preview.members,revision:preview.revision,admin_pin:proof.admin_pin
    });
-   toast('Đã xóa dữ liệu của '+result.erased_members+' thành viên; giữ nguyên Admin.','ok');
+   toast('Đã đặt lại dữ liệu mtunz, giữ nguyên thông tin xác thực Admin.','ok');
+   if(typeof adminV5Refresh==='function')adminV5Refresh(true).catch(()=>{});
    state.adminTab='overview';await loadAdmin();
   }
  });

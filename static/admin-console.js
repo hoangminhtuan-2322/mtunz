@@ -169,7 +169,9 @@
   if(activeTab()==='security'){
    const area=q('.admin-security',page);
    if(area){
-    const banner=make('section',{class:'admin-alert-strip'},state.user.pin_length?'Đã kích hoạt PIN quản trị. Những thao tác cấp khôi phục và phát thông báo sẽ yêu cầu nhập lại mật khẩu và PIN.':'PIN quản trị chưa bật. Hãy kích hoạt PIN 6 chữ số để bảo vệ thao tác nhạy cảm.');
+    const banner=make('section',{class:'admin-alert-strip'},state.user.pin_length?
+  'PIN quản trị đã bật. Khóa khẩn cấp, đặt lại dữ liệu, thu hồi phiên và xóa nhật ký đều phải xác minh lại PIN. Những thao tác đặc quyền khác vẫn yêu cầu mức xác thực riêng.':
+  'PIN quản trị chưa bật. Hãy thiết lập PIN để bảo vệ các thao tác quan trọng; không thể đặt lại toàn bộ dữ liệu khi thiếu PIN.');
     area.before(banner);
    }
   }

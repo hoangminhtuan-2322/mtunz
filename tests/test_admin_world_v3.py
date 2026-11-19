@@ -10,7 +10,7 @@ from test_flows import logged_admin,register_user
 def clean_v3():
     RATE_BUCKETS.clear()
     with db() as c:
-        for table in ('admin_login_requests','message_requests','user_reports','world_messages',
+        for table in ('admin_pin_attempts','scheduled_messages','admin_login_requests','message_requests','user_reports','world_messages',
                       'world_penalties','message_pins','group_messages','group_members','chat_groups',
                       'reactions','chat_preferences','attachments','recovery_grants','ticket_messages',
                       'tickets','notifications','messages','friendships','blocks','restrictions',
@@ -26,6 +26,7 @@ def clean_v3():
     # Restore the shared Admin fixture for tests in other modules.
     with db() as c:
         c.execute('DELETE FROM admin_login_requests')
+        c.execute('DELETE FROM admin_pin_attempts')
         c.execute('DELETE FROM sessions')
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
                   (hash_secret('mtunz7'),))
@@ -133,7 +134,8 @@ def test_audit_cleanup_and_full_member_reset_require_correct_pin():
     uid=member.get('/api/me').json()['user']['id']
     preview=admin.get('/api/admin/data-reset/preview')
     assert preview.status_code==200 and preview.json()['members']==1
-    payload={'confirm':'XOA TOAN BO NGUOI DUNG','expected_members':1,'admin_pin':'0000'}
+    payload={'confirm':'XOA TOAN BO NGUOI DUNG','expected_members':1,
+             'revision':preview.json()['revision'],'admin_pin':'0000'}
     assert admin.post('/api/admin/data-reset',json=payload).status_code==401
     assert admin.get('/api/admin/data-reset/preview').json()['members']==1
     logs=admin.get('/api/admin/audit').json()['logs']
@@ -144,7 +146,9 @@ def test_audit_cleanup_and_full_member_reset_require_correct_pin():
     with db() as c:
         before=c.execute("SELECT password_hash,pin_hash FROM users WHERE is_admin=1").fetchone()
         pw,pin=before['password_hash'],before['pin_hash']
-    erased=admin.post('/api/admin/data-reset',json={**payload,'admin_pin':'2345'})
+    fresh=admin.get('/api/admin/data-reset/preview').json()
+    erased=admin.post('/api/admin/data-reset',json={
+        **payload,'expected_members':fresh['members'],'revision':fresh['revision'],'admin_pin':'2345'})
     assert erased.status_code==200,erased.text
     with db() as c:
         assert c.execute('SELECT count(*) n FROM users WHERE is_admin=0').fetchone()['n']==0

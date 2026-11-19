@@ -177,6 +177,10 @@ def install(core):
         return {'ok':True}
 
     async def deliver_due():
+        with db() as c:
+            emergency=one(c,"SELECT value FROM settings WHERE key='emergency_lockdown'")
+        if emergency and emergency['value']=='1':
+            return 0
         # Query only a small page of jobs; each item is claimed in the same
         # transaction as the message insert. No duplicate after process restart.
         with db() as c:
@@ -186,6 +190,9 @@ def install(core):
             message=None
             sender_id=recipient_id=None
             with db() as c:
+                emergency=one(c,"SELECT value FROM settings WHERE key='emergency_lockdown'")
+                if emergency and emergency['value']=='1':
+                    break
                 claim=c.execute('''UPDATE scheduled_messages SET state='processing',updated_at=?
                            WHERE id=? AND state='pending' AND send_at<=?''',
                            (now(),ref['id'],now()))
@@ -234,6 +241,7 @@ def install(core):
         return completed
 
     wake=asyncio.Event()
+    core.messenger_v4_wake=wake
     # Callable in tests and useful for a future explicitly authorized worker.
     core.messaging_v4_deliver_due=deliver_due
 
@@ -246,7 +254,10 @@ def install(core):
                 with db() as c:
                     next_row=one(c,"SELECT MIN(send_at) next_at FROM scheduled_messages WHERE state='pending'")
                 until=int(next_row['next_at'])-now() if next_row and next_row['next_at'] is not None else 60
-                wait=0.2 if finished==30 else max(0.3,min(60,until))
+                with db() as c:
+                    locked=one(c,"SELECT value FROM settings WHERE key='emergency_lockdown'")
+                wait=30 if locked and locked['value']=='1' else (
+                    0.2 if finished==30 else max(0.3,min(60,until)))
                 wake.clear()
                 try:await asyncio.wait_for(wake.wait(),timeout=wait)
                 except asyncio.TimeoutError:pass
