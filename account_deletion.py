@@ -96,6 +96,14 @@ def delete_user_records(c, uid: int) -> dict:
     # clean and predictable per-account data erase.
     c.execute('DELETE FROM world_poll_votes WHERE user_id=?',(uid,))
 
+    # Community participation must not prevent a complete account deletion.
+    c.execute('DELETE FROM world_poll_votes WHERE user_id=?',(uid,))
+    c.execute('DELETE FROM user_reports WHERE reporter_id=? OR target_id=?',(uid,uid))
+    c.execute('DELETE FROM world_penalties WHERE user_id=?',(uid,))
+    c.execute("""DELETE FROM world_messages WHERE sender_id=? OR attachment_id IN
+                 (SELECT id FROM attachments WHERE owner_id=?)""",(uid,uid))
+    c.execute('DELETE FROM message_requests WHERE sender_id=? OR recipient_id=?',(uid,uid))
+
     # Remove personal pins and pins referencing messages erased with this user.
     c.execute('DELETE FROM message_pins WHERE user_id=?', (uid,))
     c.execute("""DELETE FROM message_pins WHERE scope='dm' AND message_id IN (
