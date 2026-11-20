@@ -51,6 +51,8 @@ def install(core):
     async def disappear_status(request:Request,other_id:int):
         u=core.current_user(request)
         with db() as c:
+            if not core.v6_feature_on(c,'disappearing_dm'):
+                raise HTTPException(403,'Tính năng tin nhắn tự biến mất đã được Admin tắt.')
             core.require_peer(c,u['id'],other_id)
             seconds=vanish_seconds(c,u['id'],other_id)
         return {'seconds':seconds,'options':list(VANISH_CHOICES),
@@ -61,6 +63,8 @@ def install(core):
         u=core.current_user(request)
         core.throttle(request,'vanish-set',30,3600,str(u['id']))
         with db() as c:
+            if not core.v6_feature_on(c,'disappearing_dm'):
+                raise HTTPException(403,'Tính năng tin nhắn tự biến mất đã được Admin tắt.')
             core.require_peer(c,u['id'],other_id)
             c.execute('''INSERT INTO chat_preferences(user_id,other_id,vanish_seconds)
                          VALUES(?,?,?) ON CONFLICT(user_id,other_id)
