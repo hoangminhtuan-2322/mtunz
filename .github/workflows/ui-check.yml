@@ -82,6 +82,8 @@ jobs:
         run: node tests/v6_ui.cjs
       - name: Verify V7 events, appeals, call stability and readiness
         run: node tests/community_plus_v7_ui.cjs
+      - name: Prepublic V8 security and smooth world/Admin UI contracts
+        run: node tests/prepublic_v8_ui.cjs
       - name: Verify modern member messaging experience
         run: node tests/member_experience.cjs
       - name: Verify optimized mobile keyboard, touch and responsive layouts

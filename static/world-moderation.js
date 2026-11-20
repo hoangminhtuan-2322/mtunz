@@ -8,6 +8,22 @@ const worldReasonNames={
 };
 const worldEscape=value=>esc(String(value??''));
 const worldOwnIds=new Set();
+let worldOwnIdsUser=null;
+// Deliberately omit server_time: a ticking clock is not a reason to replace
+// the composer, scroll container or 70 message bubbles every few seconds.
+function worldStatusPaintKey(status,room){
+ const x=status||{};
+ return JSON.stringify([room,x.open,x.enabled,x.muted_until,x.warnings,x.strikes,
+  x.next_change_at,x.closed_reason,x.schedule_enabled,x.announcement,x.slow_seconds,
+  x.open_minute,x.close_minute,x.mute_reason,x.reset_at]);
+}
+function worldFeedPaintKey(messages){
+ return JSON.stringify((messages||[]).map(x=>[
+  x.id,x.sender_id,x.display_name,x.anonymous,x.deleted,x.deleted_at,
+  x.body,x.created_at,x.is_mine,x.attachment?.id,x.attachment?.name,
+  x.attachment?.mime]));
+}
+
 const worldClock=()=>Math.floor(Date.now()/1000)+worldClockOffset;
 function worldTime(value){
  const n=Number(value)||0;return String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
@@ -100,21 +116,47 @@ function worldPage(){
 async function loadWorld(render=true){
  if(!state.user||state.user.is_admin)return;
  const seq=++worldRequestVersion,uid=state.user.id;
+ if(worldOwnIdsUser!==uid){worldOwnIds.clear();worldOwnIdsUser=uid;}
  const room=Number(state.v6WorldRoom||1);
  const data=await api('/api/world/messages?room_id='+room);
- if(seq!==worldRequestVersion||state.user?.id!==uid)return;
+ if(seq!==worldRequestVersion||state.user?.id!==uid||Number(state.v6WorldRoom||1)!==room)return;
  worldClockOffset=(Number(data.status?.server_time)||Math.floor(Date.now()/1000))-Math.floor(Date.now()/1000);
- const before=state.worldData?.status;
+ const previous=state.worldData;
  state.worldData=data;
  if(typeof v6RefreshCommunity==='function')await v6RefreshCommunity(false,false).catch(()=>{});
- if(state.tab==='world'&&render){
-  const focused=document.activeElement?.id==='world-compose-text';
-  const typed=document.querySelector('#world-compose-text')?.value||'';
-  const sameStatus=before&&['open','enabled','muted_until','warnings','strikes','next_change_at'].every(k=>before[k]===data.status[k]);
-  if(focused&&typed&&sameStatus&&document.querySelector('#world-feed')){
-   document.querySelector('#world-feed').innerHTML=(data.messages||[]).map(worldBubble).join('');
-  }else renderApp();
-  const feed=document.querySelector('#world-feed');if(feed)feed.scrollTop=feed.scrollHeight;
+ if(state.tab!=='world'||!render)return;
+ const feed=document.getElementById('world-feed');
+ const sameView=!!(previous&&feed&&
+   worldStatusPaintKey(previous.status,room)===worldStatusPaintKey(data.status,room));
+ const signature=worldFeedPaintKey(data.messages);
+ if(sameView){
+   // On identical state, perform absolutely no DOM writes. This preserves
+   // selection, mobile keyboard, audio playback and scroll position.
+   if(feed.dataset.worldPaintKey!==signature){
+     const nearEnd=feed.scrollHeight-feed.scrollTop-feed.clientHeight<130;
+     const oldScroll=feed.scrollTop;
+     feed.innerHTML=(data.messages||[]).map(worldBubble).join('')||
+       '<div class="world-empty">Chưa có tin nhắn nào. Hãy bắt đầu một cuộc trò chuyện lịch sự!</div>';
+     feed.dataset.worldPaintKey=signature;
+     feed.scrollTop=nearEnd?feed.scrollHeight:oldScroll;
+   }
+   return;
+ }
+ const field=document.getElementById('world-compose-text');
+ const draft=field?.value||'';
+ const hadFocus=document.activeElement===field;
+ const oldScroll=feed?.scrollTop||0;
+ const nearEnd=!feed||feed.scrollHeight-feed.scrollTop-feed.clientHeight<130;
+ renderApp();
+ const newFeed=document.getElementById('world-feed');
+ if(newFeed){
+   newFeed.dataset.worldPaintKey=signature;
+   newFeed.scrollTop=nearEnd?newFeed.scrollHeight:oldScroll;
+ }
+ const nextField=document.getElementById('world-compose-text');
+ if(nextField&&!nextField.disabled){
+   nextField.value=draft;
+   if(hadFocus)nextField.focus({preventScroll:true});
  }
 }
 async function loadWorldStatus(){
@@ -181,6 +223,7 @@ function appendWorldSocket(message){
    feed.insertAdjacentHTML('beforeend',worldBubble(message));
    while(feed.querySelectorAll('.world-message').length>70)feed.querySelector('.world-message')?.remove();
    if(near)feed.scrollTop=feed.scrollHeight;
+   feed.dataset.worldPaintKey=worldFeedPaintKey(data.messages);
   }
  }
 }
@@ -391,7 +434,7 @@ setInterval(()=>{
  });
 },1000);
 setInterval(async()=>{
- if(!state.user||state.user.is_admin||state.tab!=='world'||worldPolling)return;
+ if(!state.user||state.user.is_admin||state.tab!=='world'||worldPolling||document.hidden)return;
  worldPolling=true;
  try{await loadWorld(true);}catch(err){}finally{worldPolling=false;}
 },6000);

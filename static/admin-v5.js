@@ -119,8 +119,21 @@ async function adminV5Refresh(force=false){
   const result=await api('/api/admin/security/overview');
   if(!adminV5Ready())return;
   adminV5Security=result;adminV5Fetched=Date.now();
-  document.querySelectorAll('.v5-overview-root').forEach(el=>el.innerHTML=adminV5OverviewHtml(result));
-  document.querySelectorAll('.v5-security-root').forEach(el=>el.innerHTML=adminV5SecurityHtml(result));
+  // The request clock changes on every fetch. Repaint cards only when
+  // an actual security indicator changes, preserving focus and smooth scrolling.
+  const key=JSON.stringify(Object.entries(result).filter(([field])=>field!=='updated_at'));
+  document.querySelectorAll('.v5-overview-root').forEach(el=>{
+   if(el.dataset.securityPaintKey!==key){
+    el.innerHTML=adminV5OverviewHtml(result);
+    el.dataset.securityPaintKey=key;
+   }
+  });
+  document.querySelectorAll('.v5-security-root').forEach(el=>{
+   if(el.dataset.securityPaintKey!==key){
+    el.innerHTML=adminV5SecurityHtml(result);
+    el.dataset.securityPaintKey=key;
+   }
+  });
   adminV5DecorateTopbar();
   const update=document.querySelector('.v5-last-update');
   if(update)update.textContent='Bảo mật · '+adminV5Clock(result.updated_at);

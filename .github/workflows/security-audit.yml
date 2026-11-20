@@ -1,0 +1,27 @@
+name: Prepublic Python dependency audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '15 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependency vulnerability scanner
+        run: python -m pip install --upgrade pip pip-audit
+      - name: Check resolved Python package vulnerabilities
+        run: python -m pip_audit -r requirements.txt --strict

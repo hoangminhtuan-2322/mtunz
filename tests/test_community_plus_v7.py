@@ -19,6 +19,7 @@ def isolate():
         c.execute('DELETE FROM users WHERE is_admin=0')
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",(hash_secret('mtunz7'),))
         c.execute("UPDATE settings SET value='100' WHERE key='max_users'")
+        c.execute("UPDATE settings SET value='0' WHERE key='emergency_lockdown'")
         c.execute("UPDATE world_rooms SET active=CASE WHEN slug='general' THEN 1 ELSE 0 END")
     yield
     with db() as c:
@@ -27,6 +28,7 @@ def isolate():
         c.execute('DELETE FROM sanction_appeals')
         c.execute('DELETE FROM sessions')
         c.execute('DELETE FROM admin_pin_attempts')
+        c.execute("UPDATE settings SET value='0' WHERE key='emergency_lockdown'")
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",(hash_secret('mtunz7'),))
     RATE_BUCKETS.clear()
 
@@ -92,3 +94,40 @@ def test_private_readiness_and_full_reset_scope():
     with db() as c:
         assert c.execute('SELECT COUNT(*) n FROM community_events').fetchone()['n']==0
     assert admin.get('/api/me').json()['user']['is_admin']
+
+
+def test_prepublic_emergency_mode_blocks_new_community_and_message_writes():
+    admin,a,b=users()
+    event=admin.post('/api/admin/community/events',json={
+        'room_id':1,'title':'Sự kiện kiểm thử chế độ an toàn',
+        'starts_at':now()+3600,'ends_at':now()+7200,'admin_pin':'2345'})
+    assert event.status_code==200,event.text
+    event_id=event.json()['id']
+    assert a.get('/api/community/events').status_code==200
+    enable=admin.post('/api/admin/security/lockdown',json={'enabled':True,'admin_pin':'2345'})
+    assert enable.status_code==200,enable.text
+
+    # Lockdown must contain every new-content route, not just legacy DMs.
+    for method,url,payload in (
+        ('post',f'/api/community/events/{event_id}/rsvp',{}),
+        ('post','/api/world/polls/1/vote',{'option_id':1}),
+        ('post','/api/groups',{'title':'Không được tạo nhóm','member_ids':[22]}),
+        ('post','/api/chat/forward',{'scope':'dm','chat_id':1,'message_id':1}),
+        ('post','/api/messages',{'recipient_id':1,'body':'Bị chặn'}),
+        ('patch','/api/me/social',{'headline':'Không cập nhật'}),
+        ('patch','/api/me/profile',{'bio':'Không cập nhật'}),
+        ('post','/api/friends/request/999',{}),
+        ('post','/api/message-requests',{'other_id':1,'body':'Bị chặn'}),
+    ):
+        response=getattr(a,method)(url,json=payload)
+        assert response.status_code==423,(method,url,response.status_code,response.text)
+    # Reading existing content and user safety routes remain available.
+    assert a.get('/api/community/events').status_code==200
+    assert a.get('/api/messages/999').status_code!=423
+    assert a.get('/api/me/appeals').status_code!=423
+    assert a.post('/api/reports',json={}).status_code!=423
+
+    disable=admin.post('/api/admin/security/lockdown',json={'enabled':False,'admin_pin':'2345'})
+    assert disable.status_code==200,disable.text
+    signed=a.post(f'/api/community/events/{event_id}/rsvp')
+    assert signed.status_code==200,signed.text
