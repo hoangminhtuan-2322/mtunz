@@ -82,7 +82,7 @@ def test_disappearing_dm_privacy_and_attachment_expiry():
     with db() as c:c.execute('UPDATE messages SET expires_at=? WHERE id IN (?,?)',(now()-1,mid,photo_mid))
     assert b.get('/api/messages/'+str(aid)).json()['messages']==[]
     assert b.get('/api/chat/search/v6',params={'scope':'dm','chat_id':aid,'q':'bí mật'}).json()['results']==[]
-    assert b.get('/api/attachments/'+str(fid)).status_code==403
+    assert b.get('/api/attachments/'+str(fid)).status_code==404
     assert core.v6_prune_expired()>=2
     with db() as c:
         assert c.execute('SELECT body FROM messages WHERE id=?',(mid,)).fetchone()['body']==''
