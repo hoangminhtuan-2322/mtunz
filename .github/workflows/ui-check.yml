@@ -37,6 +37,8 @@ jobs:
           node --check static/smart-v6.js
           node --check static/community-v6.js
           node --check static/admin-ops-v6.js
+          node --check static/community-plus-v7.js
+          node --check static/admin-readiness-v7.js
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
@@ -78,6 +80,8 @@ jobs:
         run: node tests/admin_security_v5_ui.cjs
       - name: Verify V6 smart conversation, community and Admin controls
         run: node tests/v6_ui.cjs
+      - name: Verify V7 events, appeals, call stability and readiness
+        run: node tests/community_plus_v7_ui.cjs
       - name: Verify modern member messaging experience
         run: node tests/member_experience.cjs
       - name: Verify optimized mobile keyboard, touch and responsive layouts
@@ -127,7 +131,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=20.0' in h
+          assert '/static/app.js?v=20.1' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h

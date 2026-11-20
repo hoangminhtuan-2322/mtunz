@@ -20,7 +20,7 @@ ERASE_CONFIRM='XOA TOAN BO NGUOI DUNG'
 AUDIT_CONFIRM='XOA NHAT KY'
 PURGE_TABLES=(
  'scheduled_messages','message_edit_history','world_poll_votes','world_poll_options',
- 'world_polls','world_rooms', 'message_pins','reactions','message_requests','user_reports','world_penalties',
+ 'world_polls','community_event_rsvps','community_events','world_rooms','sanction_appeals', 'message_pins','reactions','message_requests','user_reports','world_penalties',
  'world_messages','group_messages','group_members','chat_groups','chat_preferences',
  'messages','attachments','friendships','blocks','restrictions','notifications',
  'recovery_grants','ticket_messages','tickets','login_challenges','registrations',
@@ -209,6 +209,9 @@ def install(core):
         'world_poll_options':'Lựa chọn bình chọn',
         'world_polls':'Bình chọn cộng đồng',
         'world_rooms':'Phòng chủ đề cộng đồng',
+        'community_event_rsvps':'Đăng ký tham gia sự kiện',
+        'community_events':'Sự kiện cộng đồng',
+        'sanction_appeals':'Kháng nghị xử phạt',
         'scheduled_messages':'Tin nhắn hẹn giờ',
         'message_pins':'Đoạn chat đã ghim',
         'reactions':'Cảm xúc',

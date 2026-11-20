@@ -71,7 +71,8 @@ function worldPage(){
   '<div class="world-live-toolbar"><span>'+icon('clock',14)+' '+worldEscape(worldTimeLabel(s))+
   (s.slow_seconds?' · Chế độ chậm '+Number(s.slow_seconds)+' giây/tin':'')+'</span>'+
   '<label class="world-privacy-switch"><input type="checkbox" data-social-world-anon '+(state.user?.world_anonymous?'checked':'')+'> Ẩn danh khi gửi</label>'+ 
-  '<button type="button" class="btn ghost sm" data-world-action="refresh">'+icon('refresh',14)+' Làm mới</button></div>'+
+  '<button type="button" class="btn ghost sm" data-world-action="refresh">'+icon('refresh',14)+' Làm mới</button>'+
+  (typeof communityPlusAppealsButton==='function'?communityPlusAppealsButton():'')+'</div>'+
   (s.open&&s.schedule_enabled&&s.next_change_at?
    '<div class="world-closing-clock" role="status">'+icon('clock',17)+' Tự động đóng sau <strong id="world-close-countdown" data-world-close-at="'+Number(s.next_change_at)+'">'+worldCountdown(s.next_change_at)+'</strong></div>':'')+
   (closed?'<div class="world-banner warn" role="status">'+icon('clock',18)+' '+worldEscape(s.closed_reason)+
@@ -81,6 +82,7 @@ function worldPage(){
    (s.mute_reason?worldEscape(s.mute_reason):'')+'</span></div>':'')+
   ((data.messages||[]).length>=70&&!worldOlderExhausted?
      '<button type="button" class="btn ghost sm world-load-older" data-world-action="older">'+icon('clock',14)+' Xem tin nhắn cũ hơn</button>':'')+
+  '<div id="v7-community-events">'+(typeof communityPlusEvents==='function'?communityPlusEvents():'')+'</div>'+
   '<div class="v6-community-polls" id="v6-polls-root">'+(typeof v6PollCards==='function'?v6PollCards():'')+'</div>'+
   '<div class="world-feed" id="world-feed" role="log" aria-live="polite" aria-label="Tin nhắn cộng đồng">'+items+'</div>'+
   (closed?'<div class="world-readonly-note" role="status">'+icon('shield',16)+' Phòng hiện đóng. Bạn vẫn được xem toàn bộ lịch sử và phương tiện; chỉ mở lại tính năng gửi khi Admin cho phép.</div>':
@@ -234,6 +236,7 @@ function adminWorldContent(){
  '<p>'+worldEscape(m.deleted?'Đã gỡ':m.body)+'</p></div>'+
  (m.deleted?'':'<button class="btn ghost sm" data-world-action="admin-remove" data-world-message="'+Number(m.id)+'">Gỡ tin</button>')+'</div>').join(''):'<p class="hint">Phòng chưa có tin nhắn.</p>')+'</section>';
  return '<div class="world-admin-page">'+(typeof v6AdminCommunityPanel==='function'?v6AdminCommunityPanel():'')+
+ '<div id="v7-community-admin">'+(typeof communityPlusAdminPanel==='function'?communityPlusAdminPanel():'')+'</div>'+
  '<div class="world-admin-stats"><strong>Báo cáo chờ xử lý: '+Number(d.pending_reports||0)+'</strong>'+
  '<button type="button" class="btn ghost sm" data-act="admin-tab" data-tab="reports">Mở hàng chờ báo cáo</button></div>'+
  '<div class="world-admin-grid">'+control+muted+'</div>'+recent+'</div>';
