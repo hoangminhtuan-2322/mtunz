@@ -155,7 +155,7 @@ def install(core):
                     {'id':row['attachment_id'],'name':row['attachment_name'],
                      'mime':row['attachment_mime'],'size':row['attachment_size'],
                      'url':f'/api/attachments/{row["attachment_id"]}'}
-                    if row.get('attachment_id') and not row['deleted_at'] else None)}
+                    if row['attachment_id'] and not row['deleted_at'] else None)}
 
     @app.get('/api/world/status')
     async def world_status(request:Request):
