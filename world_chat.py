@@ -207,6 +207,8 @@ def install(core):
             state=effective_status(c,user['id'])
             if not state['open']:
                 raise HTTPException(403,state['closed_reason'])
+            if body.room_id!=1 and not core.v6_feature_on(c,'world_rooms'):
+                raise HTTPException(403,'Phòng chủ đề đã được Admin tạm tắt.')
             core.v6_world_room(c,body.room_id,True)
             if state['muted_until']>at:
                 raise HTTPException(423,{'code':'world_muted','muted_until':state['muted_until'],
