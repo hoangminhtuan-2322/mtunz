@@ -6,6 +6,8 @@ re-evaluate the current sender's disappearing-message preference at delivery.
 """
 import asyncio
 import logging
+import re
+from pathlib import Path
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -142,19 +144,38 @@ def install(core):
 
     def prune_expired(limit=200):
         at=core.now()
+        removable=[]
         with db() as c:
-            rows=many(c,'''SELECT id FROM messages WHERE expires_at IS NOT NULL
+            rows=many(c,'''SELECT id,attachment_id FROM messages
+                           WHERE expires_at IS NOT NULL
                            AND expires_at<=? AND deleted_at IS NULL
                            ORDER BY expires_at,id LIMIT ?''',(at,limit))
             if not rows:return 0
-            ids=[r['id'] for r in rows]
-            for mid in ids:
+            for row in rows:
+                mid=row['id']
                 c.execute('''UPDATE messages SET body='',attachment_id=NULL,
                              deleted_at=?,expires_at=NULL WHERE id=?''',(at,mid))
                 c.execute("DELETE FROM reactions WHERE scope='dm' AND message_id=?",(mid,))
                 c.execute("DELETE FROM message_pins WHERE scope='dm' AND message_id=?",(mid,))
                 c.execute("DELETE FROM message_edit_history WHERE scope='dm' AND message_id=?",(mid,))
-            return len(ids)
+                fid=row['attachment_id']
+                if fid is not None:
+                    linked=one(c,'''SELECT 1 FROM messages WHERE attachment_id=?
+                                   UNION SELECT 1 FROM group_messages WHERE attachment_id=?
+                                   UNION SELECT 1 FROM world_messages WHERE attachment_id=?
+                                   UNION SELECT 1 FROM scheduled_messages WHERE
+                                   attachment_id=? AND state='pending' ''',(fid,fid,fid,fid))
+                    if not linked:
+                        file=one(c,'SELECT stored_name FROM attachments WHERE id=?',(fid,))
+                        c.execute('DELETE FROM attachments WHERE id=?',(fid,))
+                        if file:removable.append(file['stored_name'])
+        # File removal occurs after DB commit; PostgreSQL blob is already gone.
+        directory=Path(core.DATA_DIR)/'uploads'
+        for name in removable:
+            if re.fullmatch(r'[a-f0-9]{40}\.(?:png|jpg|webp|gif|pdf|txt|docx|xlsx|zip|webm|ogg|m4a|mp3|wav)',name or ''):
+                try:(directory/name).unlink(missing_ok=True)
+                except OSError:LOG.warning('Could not unlink expired local file')
+        return len(rows)
 
     core.v6_prune_expired=prune_expired
     async def worker():
