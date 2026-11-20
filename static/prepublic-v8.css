@@ -1,0 +1,50 @@
+/* mtunz Prepublic V8 — smoother chat surfaces without motion-heavy effects. */
+.world-live-page .world-feed{
+  scroll-behavior:auto;
+  overflow-anchor:auto;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+}
+.world-live-page .world-message{
+  transform:none;
+  animation:none;
+  will-change:auto;
+}
+.world-live-page .world-compose textarea{
+  font-size:16px;
+  line-height:1.55;
+}
+.world-live-page .world-compose:focus-within{
+  border-top-color:rgba(145,166,235,.6);
+}
+.admin-shell .v5-command-deck,
+.admin-shell .v5-security-center{
+  content-visibility:visible;
+  scroll-behavior:auto;
+}
+@media(max-width:650px){
+  .world-live-page .world-live-shell{
+    min-width:0;
+  }
+  .world-live-page .world-compose{
+    padding-bottom:max(10px,env(safe-area-inset-bottom,0px));
+    gap:8px;
+  }
+  .world-live-page .world-compose .input{
+    min-width:0;
+    flex:1 1 0;
+  }
+  .world-live-page .world-live-toolbar{
+    flex-wrap:wrap;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .world-live-page *,
+  .admin-shell .v5-command-deck *,
+  .admin-shell .v5-security-center *{
+    scroll-behavior:auto!important;
+    animation-duration:0.01ms!important;
+    transition-duration:0.01ms!important;
+  }
+}
