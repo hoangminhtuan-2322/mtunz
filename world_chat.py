@@ -112,8 +112,8 @@ def install(core):
             'schedule_enabled':schedule_active,
             'open_minute':settings['open_minute'],'close_minute':settings['close_minute'],
             'timezone':'Asia/Ho_Chi_Minh','server_time':at,
-            'slow_seconds':int(settings.get('slow_seconds') or 0),
-            'announcement':settings.get('announcement') or '',
+            'slow_seconds':int(settings['slow_seconds'] or 0),
+            'announcement':settings['announcement'] or '',
             'closed_reason':reason,'next_change_at':None
         }
         if settings['enabled'] and schedule_active:
@@ -146,7 +146,7 @@ def install(core):
 
     def world_record(c,row,viewer_id=None,admin=False):
         anonymous=bool(row['anonymous'])
-        return {'id':row['id'],'room_id':row.get('room_id',1), 'sender_id':row['sender_id'] if admin or not anonymous else 0,
+        return {'id':row['id'],'room_id':row['room_id'], 'sender_id':row['sender_id'] if admin or not anonymous else 0,
                 'display_name':('Ẩn danh' if anonymous and not admin else row['display_name'] or 'Thành viên'),
                 'anonymous':anonymous, 'is_mine':viewer_id==row['sender_id'] if viewer_id else False,
                 'body':'' if row['deleted_at'] else row['body'],
@@ -221,7 +221,7 @@ def install(core):
             c.execute('UPDATE world_penalties SET window_count=window_count WHERE user_id=?',(user['id'],))
             p=one(c,'SELECT * FROM world_penalties WHERE user_id=?',(user['id'],))
             slow=int(state.get('slow_seconds') or 0)
-            last=int(p.get('last_sent_at') or 0)
+            last=int(p['last_sent_at'] or 0)
             if slow and last and at-last<slow:
                 raise HTTPException(429,{
                     'code':'world_slow_mode','retry_after':slow-(at-last),
