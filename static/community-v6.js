@@ -25,6 +25,10 @@ async function v6RefreshCommunity(redraw=false,force=false){
    state.v6Polls=r.polls||[];v6PollCacheAt=Date.now();
   }));
  if(tasks.length)await Promise.all(tasks);
+ if(typeof communityPlusRefresh==='function'&&
+    (force||Date.now()-(communityPlusCache?.at||0)>30000)){
+   communityPlusRefresh(true,false).catch(()=>{});
+ }
  if(redraw&&state.tab==='world'){
   const rooms=document.querySelector('.v6-community-rooms');
   if(rooms)rooms.innerHTML=v6WorldRoomsBar();
