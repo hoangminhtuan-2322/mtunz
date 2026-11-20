@@ -1347,7 +1347,7 @@ async def send_message(request:Request,body:SendMessage):
         previous=(one(c,'SELECT * FROM messages WHERE sender_id=? AND client_message_id=?',
                       (u['id'],nonce)) if nonce else None)
         if previous:
-            if previous.get('expires_at') and previous['expires_at']<=now():
+            if previous['expires_at'] and previous['expires_at']<=now():
                 raise HTTPException(410,'Tin nhắn đã tự biến mất.')
             if (previous['recipient_id']!=body.recipient_id or previous['body']!=text or
                     previous['attachment_id']!=body.attachment_id or previous['reply_to']!=body.reply_to):
