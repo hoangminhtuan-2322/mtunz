@@ -81,10 +81,10 @@ def install(core):
             PRIMARY KEY(poll_id,user_id)
           );
         """)
-        for slug,title in DEFAULT_ROOMS:
-            c.execute('''INSERT INTO world_rooms(slug,title,active,created_at)
-                         VALUES(?,?,?,?) ON CONFLICT(slug) DO NOTHING''',
-                      (slug,title,1 if slug=='general' else 0,core.now()))
+        for stable_id,(slug,title) in enumerate(DEFAULT_ROOMS,1):
+            c.execute('''INSERT INTO world_rooms(id,slug,title,active,created_at)
+                         VALUES(?,?,?,?,?) ON CONFLICT(slug) DO NOTHING''',
+                      (stable_id,slug,title,1 if slug=='general' else 0,core.now()))
 
     def available_room(c,room_id,write=False):
         row=one(c,'SELECT * FROM world_rooms WHERE id=?',(room_id,))
@@ -123,8 +123,9 @@ def install(core):
             if total>=12:raise HTTPException(409,'Tối đa 12 phòng chủ đề.')
             if one(c,'SELECT 1 FROM world_rooms WHERE slug=?',(body.slug,)):
                 raise HTTPException(409,'Tên đường dẫn phòng đã tồn tại.')
-            result=c.execute('INSERT INTO world_rooms(slug,title,active,created_at) VALUES(?,?,?,?)',
-                             (body.slug,body.title.strip(),int(body.active),core.now()))
+            next_id=one(c,'SELECT COALESCE(MAX(id),0)+1 AS n FROM world_rooms')['n']
+            result=c.execute('INSERT INTO world_rooms(id,slug,title,active,created_at) VALUES(?,?,?,?,?)',
+                             (next_id,body.slug,body.title.strip(),int(body.active),core.now()))
             core.admin_log(c,admin['id'],'world_room_created',
                            f'room_id={result.lastrowid}; active={int(body.active)}')
         await core.hub.broadcast_members('world-rooms-updated')
@@ -166,6 +167,15 @@ def install(core):
             available_room(c,room_id)
             rows=many(c,'SELECT * FROM world_polls WHERE room_id=? ORDER BY id DESC LIMIT 8',(room_id,))
             return {'polls':[render_poll(c,r,user['id']) for r in rows]}
+
+    @app.get('/api/admin/world/polls')
+    async def admin_list_polls(request:Request,room_id:int=0):
+        admin=core.require_admin(request)
+        with db() as c:
+            rows=many(c,'''SELECT * FROM world_polls
+                           WHERE (?=0 OR room_id=?)
+                           ORDER BY id DESC LIMIT 30''',(room_id,room_id))
+            return {'polls':[render_poll(c,r,None) for r in rows]}
 
     @app.post('/api/admin/world/polls')
     async def admin_create_poll(request:Request,body:PollCreate):
