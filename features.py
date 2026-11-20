@@ -752,7 +752,7 @@ def install(core):
         u=current_user(request)
         with db() as c:
             m=dm_message_owner(c,mid,u['id'])
-            if m['deleted_at'] or m.get('expires_at') and m['expires_at']<=now():
+            if m['deleted_at'] or m['expires_at'] and m['expires_at']<=now():
                 raise HTTPException(409,'Tin nhắn đã thu hồi hoặc hết hạn.')
             if now()-m['created_at']>15*60:raise HTTPException(409,'Chỉ sửa được trong vòng 15 phút.')
             text=body.body.strip()
@@ -781,7 +781,7 @@ def install(core):
         u=current_user(request)
         with db() as c:
             m=group_message_owner(c,gid,mid,u['id'])
-            if m['deleted_at'] or m.get('expires_at') and m['expires_at']<=now():
+            if m['deleted_at'] or m['expires_at'] and m['expires_at']<=now():
                 raise HTTPException(409,'Tin nhắn đã thu hồi hoặc hết hạn.')
             if now()-m['created_at']>15*60:raise HTTPException(409,'Chỉ sửa được trong 15 phút.')
             text=body.body.strip()
