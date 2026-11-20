@@ -112,6 +112,8 @@ def install(core):
             'schedule_enabled':schedule_active,
             'open_minute':settings['open_minute'],'close_minute':settings['close_minute'],
             'timezone':'Asia/Ho_Chi_Minh','server_time':at,
+            'slow_seconds':int(settings.get('slow_seconds') or 0),
+            'announcement':settings.get('announcement') or '',
             'closed_reason':reason,'next_change_at':None
         }
         if settings['enabled'] and schedule_active:
@@ -140,9 +142,11 @@ def install(core):
             result['can_send']=opened and not bool(result['muted_until'])
         return result
 
+    core.v6_world_status=effective_status
+
     def world_record(c,row,viewer_id=None,admin=False):
         anonymous=bool(row['anonymous'])
-        return {'id':row['id'], 'sender_id':row['sender_id'] if admin or not anonymous else 0,
+        return {'id':row['id'],'room_id':row.get('room_id',1), 'sender_id':row['sender_id'] if admin or not anonymous else 0,
                 'display_name':('Ẩn danh' if anonymous and not admin else row['display_name'] or 'Thành viên'),
                 'anonymous':anonymous, 'is_mine':viewer_id==row['sender_id'] if viewer_id else False,
                 'body':'' if row['deleted_at'] else row['body'],
@@ -162,24 +166,30 @@ def install(core):
             return effective_status(c,user['id'])
 
     @app.get('/api/world/messages')
-    async def world_history(request:Request,before:int=0):
+    async def world_history(request:Request,before:int=0,room_id:int=1):
         user=current_user(request)
         if user['is_admin']:
             raise HTTPException(403,'Khu vực này dành cho thành viên.')
         with db() as c:
-            where='WHERE m.id<?' if before>0 else ''
-            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,
+            core.v6_world_room(c,room_id)
+            where='WHERE m.room_id=?'
+            params=[room_id]
+            if before>0:
+                where+=' AND m.id<?'
+                params.append(before)
+            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,m.room_id,
                                    m.attachment_id,a.original_name AS attachment_name,
                                    a.mime AS attachment_mime,a.size AS attachment_size,u.display_name
                             FROM world_messages m JOIN users u ON u.id=m.sender_id
                             LEFT JOIN attachments a ON a.id=m.attachment_id '''+
-                      where+' ORDER BY m.id DESC LIMIT 70', (before,) if before>0 else ())
+                      where+' ORDER BY m.id DESC LIMIT 70',tuple(params))
             return {'messages':[world_record(c,x,viewer_id=user['id']) for x in rows[::-1]],
                     'status':effective_status(c,user['id'])}
 
     class WorldMessage(BaseModel):
         body:str=Field(default='',max_length=1200)
         attachment_id:int|None=None
+        room_id:int=Field(default=1,ge=1)
 
     @app.post('/api/world/messages')
     async def world_send(request:Request,body:WorldMessage):
@@ -197,6 +207,7 @@ def install(core):
             state=effective_status(c,user['id'])
             if not state['open']:
                 raise HTTPException(403,state['closed_reason'])
+            core.v6_world_room(c,body.room_id,True)
             if state['muted_until']>at:
                 raise HTTPException(423,{'code':'world_muted','muted_until':state['muted_until'],
                                          'strikes':state['strikes'],'warnings':state['warnings']})
@@ -207,6 +218,13 @@ def install(core):
             # escape the 5-in-3s rule by racing on different API connections.
             c.execute('UPDATE world_penalties SET window_count=window_count WHERE user_id=?',(user['id'],))
             p=one(c,'SELECT * FROM world_penalties WHERE user_id=?',(user['id'],))
+            slow=int(state.get('slow_seconds') or 0)
+            last=int(p.get('last_sent_at') or 0)
+            if slow and last and at-last<slow:
+                raise HTTPException(429,{
+                    'code':'world_slow_mode','retry_after':slow-(at-last),
+                    'message':f'Phòng đang bật chế độ chậm {slow} giây giữa các tin.'
+                })
             expired=p['last_violation_at'] and at-p['last_violation_at']>=RESET_AFTER
             warnings=0 if expired else int(p['warnings'])
             strikes=0 if expired else int(p['strikes'])
@@ -247,13 +265,13 @@ def install(core):
                     c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
                               (user['id'],f'Cảnh báo spam Chat thế giới {warnings}/3: không gửi 5 tin trong 3 giây.',at))
             else:
-                c.execute('UPDATE world_penalties SET window_started=?,window_count=? WHERE user_id=?',
-                          (started,count,user['id']))
+                c.execute('UPDATE world_penalties SET window_started=?,window_count=?,last_sent_at=? WHERE user_id=?',
+                          (started,count,at,user['id']))
                 anonymous=bool(user['world_anonymous'])
-                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous,attachment_id) VALUES(?,?,?,?,?)',
-                                 (user['id'],content,at,int(anonymous),body.attachment_id))
+                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous,attachment_id,room_id) VALUES(?,?,?,?,?,?)',
+                                 (user['id'],content,at,int(anonymous),body.attachment_id,body.room_id))
                 mid=result.lastrowid
-                saved={'id':mid,'sender_id':0 if anonymous else user['id'],
+                saved={'id':mid,'room_id':body.room_id,'sender_id':0 if anonymous else user['id'],
                        'display_name':'Ẩn danh' if anonymous else user['display_name'] or 'Thành viên',
                        'anonymous':anonymous,'body':content,'created_at':at,'deleted':False,
                        'attachment':None}
@@ -295,7 +313,7 @@ def install(core):
                                  ORDER BY p.last_violation_at DESC LIMIT 50''',(timestamp(),timestamp()))
             pending=one(c,"SELECT count(*) AS n FROM user_reports WHERE status='pending'")['n']
             total=one(c,'SELECT COUNT(*) AS n FROM world_messages')['n']
-            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,
+            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,m.room_id,
                                    m.attachment_id,a.original_name AS attachment_name,
                                    a.mime AS attachment_mime,a.size AS attachment_size,u.display_name
                                 FROM world_messages m JOIN users u ON u.id=m.sender_id
