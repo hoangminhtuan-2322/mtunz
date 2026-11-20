@@ -1,0 +1,42 @@
+/* V6 UI contract checks — pure local static analysis, no network secrets. */
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const file=p=>fs.readFileSync(p,'utf8');
+const html=file('static/index.html');
+const app=file('static/app.js');
+const extras=file('static/extras.js');
+const world=file('static/world-moderation.js');
+const smart=file('static/smart-v6.js');
+const community=file('static/community-v6.js');
+const admin=file('static/admin-ops-v6.js');
+const css=file('static/v6-experience.css');
+for(const script of ['smart-v6.js','community-v6.js','admin-ops-v6.js']){
+ assert(html.includes('/static/'+script+'?v=1.0'),'Missing V6 script '+script);
+}
+assert(html.includes('v6-experience.css?v=1.0'),'V6 responsive stylesheet linked');
+assert(app.includes("['ops','shield','Điều hành thông minh']"),'Admin V6 operations nav');
+assert(app.includes("api('/api/admin/ops/overview')"),'Admin V6 real metrics API');
+assert(app.includes("api('/api/admin/world/rooms')"),'World topics Admin API');
+assert(app.includes('data-v6-act="disappear"'),'Vanishing message setting in DM header');
+assert(app.includes('v6RefreshCommunity(true)'),'Server event updates room/polls');
+assert(extras.includes('v6ShowAdvancedSearch'),'Advanced search replaces basic search');
+assert(extras.includes('data-v6-act="message-versions"'),'Edit history discoverable');
+assert(extras.includes('data-v6-call="screen"'),'WebRTC screen-share control');
+assert(smart.includes('/api/chat/search/v6?'),'Server-backed filters');
+assert(smart.includes('/api/chat/disappear/'),'Sender-only disappearance preference');
+assert(smart.includes('/api/chat/message/'),'Author edit-history route');
+assert(smart.includes('getDisplayMedia'),'Browser permission-gated screen sharing');
+assert(smart.includes('replaceTrack'),'Replace video sender without new unprotected signaling');
+assert(world.includes('v6WorldRoomsBar'),'Topic rooms in World Chat');
+assert(world.includes('v6PollCards'),'Polls in World Chat');
+assert(world.includes('room_id:Number(state.v6WorldRoom||1)'),'Room-specific message submission');
+assert(world.includes("v6AdminCommunityPanel"),'PIN-protected community controls');
+assert(community.includes('/api/admin/world/controls'),'Pinned notice and slow mode');
+assert(community.includes('/api/world/polls/'),'One-vote UI');
+assert(community.includes('adminV3PinPayload(host)'),'Admin community writes verify PIN');
+assert(admin.includes('/api/admin/ops/flags'),'Admin feature toggle API');
+assert(admin.includes('adminV3PinPayload(host)'),'Feature flags require PIN');
+assert(admin.includes('v6OpsAlert'),'Risk status displayed');
+assert(css.includes('@media(max-width:600px)'),'Mobile layout');
+console.log('mtunz V6 UI contract checks passed');

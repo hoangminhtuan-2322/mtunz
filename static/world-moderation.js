@@ -66,7 +66,10 @@ function worldPage(){
   '<h1>Chat thế giới <span class="world-live-spark">✦</span></h1>'+
   '<p>Không gian cộng đồng realtime. Khi phòng đóng, lịch sử và phương tiện vẫn có thể xem lại.</p></div>'+
   '<span class="world-live-state '+(s.open?'online':'offline')+'">'+(s.open?'● Đang mở':'● Tạm đóng')+'</span></div>'+
-  '<div class="world-live-toolbar"><span>'+icon('clock',14)+' '+worldEscape(worldTimeLabel(s))+'</span>'+
+  '<div class="v6-community-rooms">'+(typeof v6WorldRoomsBar==='function'?v6WorldRoomsBar():'')+'</div>'+
+  (s.announcement?'<div class="v6-world-announcement" role="note">📌 <strong>Thông báo Admin:</strong> '+worldEscape(s.announcement)+'</div>':'')+
+  '<div class="world-live-toolbar"><span>'+icon('clock',14)+' '+worldEscape(worldTimeLabel(s))+
+  (s.slow_seconds?' · Chế độ chậm '+Number(s.slow_seconds)+' giây/tin':'')+'</span>'+
   '<label class="world-privacy-switch"><input type="checkbox" data-social-world-anon '+(state.user?.world_anonymous?'checked':'')+'> Ẩn danh khi gửi</label>'+ 
   '<button type="button" class="btn ghost sm" data-world-action="refresh">'+icon('refresh',14)+' Làm mới</button></div>'+
   (s.open&&s.schedule_enabled&&s.next_change_at?
@@ -78,6 +81,7 @@ function worldPage(){
    (s.mute_reason?worldEscape(s.mute_reason):'')+'</span></div>':'')+
   ((data.messages||[]).length>=70&&!worldOlderExhausted?
      '<button type="button" class="btn ghost sm world-load-older" data-world-action="older">'+icon('clock',14)+' Xem tin nhắn cũ hơn</button>':'')+
+  '<div class="v6-community-polls" id="v6-polls-root">'+(typeof v6PollCards==='function'?v6PollCards():'')+'</div>'+
   '<div class="world-feed" id="world-feed" role="log" aria-live="polite" aria-label="Tin nhắn cộng đồng">'+items+'</div>'+
   (closed?'<div class="world-readonly-note" role="status">'+icon('shield',16)+' Phòng hiện đóng. Bạn vẫn được xem toàn bộ lịch sử và phương tiện; chỉ mở lại tính năng gửi khi Admin cho phép.</div>':
   '<form data-world-form="send" class="world-compose">'+
@@ -94,11 +98,13 @@ function worldPage(){
 async function loadWorld(render=true){
  if(!state.user||state.user.is_admin)return;
  const seq=++worldRequestVersion,uid=state.user.id;
- const data=await api('/api/world/messages');
+ const room=Number(state.v6WorldRoom||1);
+ const data=await api('/api/world/messages?room_id='+room);
  if(seq!==worldRequestVersion||state.user?.id!==uid)return;
  worldClockOffset=(Number(data.status?.server_time)||Math.floor(Date.now()/1000))-Math.floor(Date.now()/1000);
  const before=state.worldData?.status;
  state.worldData=data;
+ if(typeof v6RefreshCommunity==='function')await v6RefreshCommunity(false,false).catch(()=>{});
  if(state.tab==='world'&&render){
   const focused=document.activeElement?.id==='world-compose-text';
   const typed=document.querySelector('#world-compose-text')?.value||'';
@@ -135,11 +141,14 @@ async function worldSend(text,button){
   const response=await fetch('/api/world/messages',{
    method:'POST',credentials:'same-origin',
    headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({body:text,attachment_id:worldPendingAttachment?.id||null})
+   body:JSON.stringify({body:text,attachment_id:worldPendingAttachment?.id||null,
+                        room_id:Number(state.v6WorldRoom||1)})
   });
   const result=await response.json();
   if(!response.ok){
-   if(result.detail&&typeof result.detail==='object'&&result.detail.code?.startsWith('world_')){
+   if(result.detail?.code==='world_slow_mode'){
+     toast('Chế độ chat chậm: hãy đợi '+Number(result.detail.retry_after||1)+' giây trước khi gửi tiếp.','error');
+   }else if(result.detail&&typeof result.detail==='object'&&result.detail.code?.startsWith('world_')){
     await loadWorld(true).catch(()=>{});
     worldWarnPopup(result.detail);
    }else toast(typeof result.detail==='string'?result.detail:'Không gửi được tin nhắn.','error');
@@ -157,6 +166,7 @@ function appendWorldSocket(message){
  if(!message||!state.user||state.user.is_admin)return;
  const data=state.worldData;
  if(!data?.status?.enabled)return;
+ if(Number(message.room_id||1)!==Number(state.v6WorldRoom||1))return;
  if(!data.messages)data.messages=[];
  if(data.messages.some(m=>Number(m.id)===Number(message.id)))return;
  data.messages.push(message);
@@ -223,7 +233,8 @@ function adminWorldContent(){
  (messages.length?messages.map(m=>'<div class="world-admin-message"><div><strong>'+worldEscape(m.display_name||'Thành viên')+'</strong> · #'+Number(m.sender_id)+' · '+worldDate(m.created_at)+
  '<p>'+worldEscape(m.deleted?'Đã gỡ':m.body)+'</p></div>'+
  (m.deleted?'':'<button class="btn ghost sm" data-world-action="admin-remove" data-world-message="'+Number(m.id)+'">Gỡ tin</button>')+'</div>').join(''):'<p class="hint">Phòng chưa có tin nhắn.</p>')+'</section>';
- return '<div class="world-admin-page"><div class="world-admin-stats"><strong>Báo cáo chờ xử lý: '+Number(d.pending_reports||0)+'</strong>'+
+ return '<div class="world-admin-page">'+(typeof v6AdminCommunityPanel==='function'?v6AdminCommunityPanel():'')+
+ '<div class="world-admin-stats"><strong>Báo cáo chờ xử lý: '+Number(d.pending_reports||0)+'</strong>'+
  '<button type="button" class="btn ghost sm" data-act="admin-tab" data-tab="reports">Mở hàng chờ báo cáo</button></div>'+
  '<div class="world-admin-grid">'+control+muted+'</div>'+recent+'</div>';
 }
@@ -284,7 +295,7 @@ document.addEventListener('click',async event=>{
    const first=Math.min(...old.map(m=>Number(m.id)));
    target.disabled=true;
    try{
-    const result=await api('/api/world/messages?before='+first);
+    const result=await api('/api/world/messages?before='+first+'&room_id='+Number(state.v6WorldRoom||1));
     const older=result.messages||[];
     if(!older.length){worldOlderExhausted=true;target.remove();toast('Đã hiển thị hết lịch sử trước đó.','info');return;}
     const known=new Set(old.map(m=>Number(m.id)));

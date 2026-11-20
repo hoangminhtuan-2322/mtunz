@@ -71,6 +71,8 @@ def delete_user_records(c, uid: int) -> dict:
                 "DELETE FROM reactions WHERE scope='group' AND message_id "
                 'IN (SELECT id FROM group_messages WHERE group_id=?)', (gid,)
             )
+            c.execute("""DELETE FROM message_edit_history WHERE scope='group' AND message_id IN
+                         (SELECT id FROM group_messages WHERE group_id=?)""",(gid,))
             c.execute('DELETE FROM group_messages WHERE group_id=?', (gid,))
             c.execute('DELETE FROM group_members WHERE group_id=?', (gid,))
             c.execute('DELETE FROM chat_groups WHERE id=?', (gid,))
@@ -78,6 +80,29 @@ def delete_user_records(c, uid: int) -> dict:
     # Scheduled messages may still reference this user's uploaded attachments.
     # Cancel pending work before attachments are removed or FK rows cascade.
     c.execute('DELETE FROM scheduled_messages WHERE sender_id=? OR recipient_id=?',(uid,uid))
+
+    # Remove prior versions before deleting messages. History has no FK to
+    # a message id because DMs/groups use separate message tables.
+    c.execute("""DELETE FROM message_edit_history WHERE scope='dm' AND message_id IN
+                 (SELECT id FROM messages WHERE sender_id=? OR recipient_id=?
+                  OR attachment_id IN (SELECT id FROM attachments WHERE owner_id=?))""",
+              (uid,uid,uid))
+    c.execute("""DELETE FROM message_edit_history WHERE scope='group' AND message_id IN
+                 (SELECT id FROM group_messages WHERE sender_id=?
+                  OR attachment_id IN (SELECT id FROM attachments WHERE owner_id=?))""",
+              (uid,uid))
+    c.execute('DELETE FROM message_edit_history WHERE editor_id=?',(uid,))
+    # Vote rows reference the user via a foreign key, explicitly remove for a
+    # clean and predictable per-account data erase.
+    c.execute('DELETE FROM world_poll_votes WHERE user_id=?',(uid,))
+
+    # Community participation must not prevent a complete account deletion.
+    c.execute('DELETE FROM world_poll_votes WHERE user_id=?',(uid,))
+    c.execute('DELETE FROM user_reports WHERE reporter_id=? OR target_id=?',(uid,uid))
+    c.execute('DELETE FROM world_penalties WHERE user_id=?',(uid,))
+    c.execute("""DELETE FROM world_messages WHERE sender_id=? OR attachment_id IN
+                 (SELECT id FROM attachments WHERE owner_id=?)""",(uid,uid))
+    c.execute('DELETE FROM message_requests WHERE sender_id=? OR recipient_id=?',(uid,uid))
 
     # Remove personal pins and pins referencing messages erased with this user.
     c.execute('DELETE FROM message_pins WHERE user_id=?', (uid,))

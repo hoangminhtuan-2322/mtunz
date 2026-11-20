@@ -81,6 +81,7 @@ function bubblesFor(messages,isGroup=false){
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
+   ${mine&&m.edited_at?`<button type="button" data-v6-act="message-versions" data-v6-id="${Number(m.id)}" data-v6-scope="${scope}" title="Xem lịch sử chỉnh sửa">${icon('history',13)}</button>`:''}
    ${mine?`<button type="button" data-act="message-delete" data-id="${m.id}" data-scope="${scope}" title="Thu hồi">${icon('trash',13)}</button>`:''}
    ${!mine?`<button type="button" data-world-report-user="${Number(m.sender_id)}" data-world-message="${Number(m.id)}" data-world-scope="${scope}" ${isGroup?`data-world-group="${Number(state.groupSelected)}"`:''} title="Báo cáo tin nhắn">${icon('shield',13)}</button>`:''}</div>`:'';
   html+=`<div class="bubble-wrap ${mine?'mine':''}" id="msg-${scope}-${m.id}">
@@ -89,6 +90,7 @@ function bubblesFor(messages,isGroup=false){
     ${m.reply_to?`<div class="reply-inline">↳ ${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||(reference.attachment?'Tệp đính kèm':'Tin nhắn'),80)):'Đã trả lời tin nhắn'}</div>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
+     ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${new Date(Number(m.expires_at)*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`:''}
      ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
@@ -249,6 +251,7 @@ function groupManageDialog(){
  }).catch(e=>toast(e.message,'error'));
 }
 async function showSearch(){
+ if(typeof v6ShowAdvancedSearch==='function')return v6ShowAdvancedSearch();
  const group=state.tab==='groups'&&state.groupSelected,chat=group?state.groupSelected:state.selected;
  if(!chat){toast('Chọn cuộc trò chuyện trước.','error');return;}
  const html=`<div class="field" style="margin-top:16px"><input class="input" id="chat-search-key" placeholder="Nhập từ khóa tìm kiếm…" maxlength="100"></div><div id="chat-search-results" class="search-results"></div>`;
@@ -466,6 +469,10 @@ function displayCallUI(){
  $('#modal-root').innerHTML=`<div class="modal-backdrop call-layer"><div class="modal call-modal"><div class="call-mark">${icon(call.video?'video':'phone',26)}</div>
  <h2>${esc(f?.display_name||f?.username||'Bạn bè')}</h2><p id="call-status">${esc(call.status)}</p>
  <div class="call-videos"><video id="remote-video" autoplay playsinline></video><video id="local-video" autoplay playsinline muted></video></div>
+ <div class="v6-call-tools">
+ <button type="button" data-v6-call="mic" aria-label="Bật hoặc tắt micro">🎤 Micro</button>
+ ${call.video?'<button type="button" data-v6-call="camera" aria-label="Bật hoặc tắt camera">📷 Camera</button><button type="button" data-v6-call="screen" aria-label="Chia sẻ màn hình">🖥️ Chia sẻ</button>':''}
+ </div>
  <button class="btn danger" id="call-hangup" style="margin-top:18px">${icon('phone')} Kết thúc cuộc gọi</button></div></div>`;
  $('#local-video').srcObject=call.local;$('#remote-video').srcObject=call.remote;
  $('#call-hangup').onclick=()=>stopCall(true);
@@ -475,6 +482,7 @@ function stopCall(signal=true){
  if(signal)sendSignal('call-hangup',call.peerId);
  state.call=null;
  for(const t of call.local?.getTracks()||[])t.stop();
+ for(const t of call.screenStream?.getTracks()||[])t.stop();
  call.pc?.close();
  $('#modal-root .call-layer')?.remove();
 }

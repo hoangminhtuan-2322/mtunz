@@ -34,6 +34,9 @@ jobs:
           node --check static/admin-v5.js
           node --check static/world-release.js
           node --check static/messenger-v4.js
+          node --check static/smart-v6.js
+          node --check static/community-v6.js
+          node --check static/admin-ops-v6.js
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
@@ -73,6 +76,8 @@ jobs:
         run: node tests/admin_upgrade.cjs
       - name: Verify Admin V5 security dashboard and reset safety boundaries
         run: node tests/admin_security_v5_ui.cjs
+      - name: Verify V6 smart conversation, community and Admin controls
+        run: node tests/v6_ui.cjs
       - name: Verify modern member messaging experience
         run: node tests/member_experience.cjs
       - name: Verify optimized mobile keyboard, touch and responsive layouts
@@ -122,7 +127,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=19.0' in h
+          assert '/static/app.js?v=20.0' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -134,7 +139,7 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=17.0' in h
+          assert '/static/extras.js?v=18.0' in h
           assert '/static/group-lobby.css?v=1.0' in h
           assert '/static/device-sessions.css?v=11.0' in h
           assert 'auth-remember-choice' in application
