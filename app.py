@@ -2077,7 +2077,8 @@ async def websocket_events(ws:WebSocket):
                 if not isinstance(target,int) or target==uid:continue
                 with db() as c:
                     session_ok=one(c,'SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?',(digest(sid),now()))
-                    permitted=bool(session_ok and friends(c,uid,target) and not has_block(c,uid,target))
+                    permitted=bool(session_ok and friends(c,uid,target) and not has_block(c,uid,target)
+                                   and v6_feature_on(c,'calls'))
                 if permitted:
                     # Only narrow signaling fields may transit; never execute/parse remote SDP on the server.
                     blob=msg.get('signal')
@@ -2111,3 +2112,7 @@ from messaging_v4 import install as _install_messaging_v4
 _install_messaging_v4(_sys.modules[__name__])
 from smart_chat_v6 import install as _install_smart_chat_v6
 _install_smart_chat_v6(_sys.modules[__name__])
+from community_v6 import install as _install_community_v6
+_install_community_v6(_sys.modules[__name__])
+from admin_ops_v6 import install as _install_admin_ops_v6
+_install_admin_ops_v6(_sys.modules[__name__])
