@@ -100,10 +100,11 @@ def install(core):
         user=core.current_user(request)
         if user['is_admin']:raise HTTPException(403,'Dành cho thành viên.')
         with db() as c:
+            enabled=core.v6_feature_on(c,'world_rooms')
             rooms=many(c,'''SELECT r.id,r.slug,r.title,r.active,
                  (SELECT COUNT(*) FROM world_messages m WHERE m.room_id=r.id AND m.deleted_at IS NULL) AS total_messages
                  FROM world_rooms r ORDER BY id ASC''')
-        return {'rooms':rooms}
+        return {'rooms':rooms if enabled else [r for r in rooms if r['slug']=='general']}
 
     @app.get('/api/admin/world/rooms')
     async def admin_rooms(request:Request):
@@ -160,6 +161,8 @@ def install(core):
         user=core.current_user(request)
         if user['is_admin']:raise HTTPException(403,'Dành cho thành viên.')
         with db() as c:
+            if not core.v6_feature_on(c,'community_polls'):
+                return {'polls':[]}
             available_room(c,room_id)
             rows=many(c,'SELECT * FROM world_polls WHERE room_id=? ORDER BY id DESC LIMIT 8',(room_id,))
             return {'polls':[render_poll(c,r,user['id']) for r in rows]}
@@ -172,6 +175,8 @@ def install(core):
         if any(len(x)<1 or len(x)>80 for x in items) or len(set(x.lower() for x in items))!=len(items):
             raise HTTPException(422,'Lựa chọn không hợp lệ hoặc trùng nhau.')
         with db() as c:
+            if not core.v6_feature_on(c,'community_polls'):
+                raise HTTPException(403,'Tính năng bình chọn đang tắt.')
             available_room(c,body.room_id,True)
             existing=one(c,'''SELECT 1 FROM world_polls WHERE room_id=?
                                AND closed_at IS NULL AND closes_at>?''',(body.room_id,core.now()))
@@ -194,11 +199,13 @@ def install(core):
         if user['is_admin']:raise HTTPException(403,'Admin không bỏ phiếu bằng tài khoản quản trị.')
         core.throttle(request,'world-poll-vote',30,3600,str(user['id']))
         with db() as c:
+            if not core.v6_feature_on(c,'community_polls'):
+                raise HTTPException(403,'Bình chọn đã được Admin tạm tắt.')
             poll=one(c,'SELECT * FROM world_polls WHERE id=?',(poll_id,))
             if not poll:raise HTTPException(404,'Bình chọn không tồn tại.')
             available_room(c,poll['room_id'],True)
-            world=one(c,'SELECT enabled FROM world_settings WHERE id=1')
-            if not world or not world['enabled'] or poll['closed_at'] or poll['closes_at']<=core.now():
+            effective=core.v6_world_status(c,user['id'])
+            if not effective['can_send'] or poll['closed_at'] or poll['closes_at']<=core.now():
                 raise HTTPException(403,'Bình chọn đã đóng.')
             if not one(c,'SELECT 1 FROM world_poll_options WHERE id=? AND poll_id=?',
                        (body.option_id,poll_id)):
