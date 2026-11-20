@@ -2077,14 +2077,18 @@ async def websocket_events(ws:WebSocket):
                 other=msg.get('to')
                 if not isinstance(other,int):continue
                 with db() as c:
-                    session_ok=one(c,'SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?',(digest(sid),now()))
+                    session_ok=one(c,"""SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?
+                               AND NOT EXISTS(SELECT 1 FROM settings
+                                 WHERE key='emergency_lockdown' AND value='1')""",(digest(sid),now()))
                     valid=bool(session_ok and friends(c,uid,other) and not has_block(c,uid,other))
                 if valid:await hub.user(other,'typing',from_id=uid,on=bool(msg.get('on')))
             if uid is not None and isinstance(msg,dict) and msg.get('type')=='group-typing':
                 gid=msg.get('group_id')
                 if not isinstance(gid,int):continue
                 with db() as c:
-                    session_ok=one(c,'SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?',(digest(sid),now()))
+                    session_ok=one(c,"""SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?
+                               AND NOT EXISTS(SELECT 1 FROM settings
+                                 WHERE key='emergency_lockdown' AND value='1')""",(digest(sid),now()))
                     targets=group_members_for(c,gid) if session_ok and group_membership(c,gid,uid) else []
                 for target in targets:
                     if target!=uid:await hub.user(target,'group-typing',group_id=gid,from_id=uid,on=bool(msg.get('on')))
@@ -2092,7 +2096,9 @@ async def websocket_events(ws:WebSocket):
                 target=msg.get('to')
                 if not isinstance(target,int) or target==uid:continue
                 with db() as c:
-                    session_ok=one(c,'SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?',(digest(sid),now()))
+                    session_ok=one(c,"""SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?
+                               AND NOT EXISTS(SELECT 1 FROM settings
+                                 WHERE key='emergency_lockdown' AND value='1')""",(digest(sid),now()))
                     permitted=bool(session_ok and friends(c,uid,target) and not has_block(c,uid,target)
                                    and v6_feature_on(c,'calls'))
                 if permitted:
