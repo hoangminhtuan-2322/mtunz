@@ -32,6 +32,7 @@ function adminOpsV6(){
     v6OpsMetric('Tin riêng / 24 giờ',v6StatNumber(d.direct_messages_24h||0),'Tin được ghi nhận trên máy chủ','message-circle')+
     v6OpsMetric('Truy vấn báo cáo',ms+' ms','Thời gian lấy các thống kê trong Neon','zap')+
    '</div>'+
+   '<div id="v7-readiness-panel">'+(typeof v7ReadinessPanel==='function'?v7ReadinessPanel():'')+'</div>'+
    '<div class="v6-ops-grid"><section class="card v6-ops-card"><div class="v6-card-top">'+
    '<h3>⚡ Hoạt động 60 phút gần nhất</h3><span class="pill">Realtime</span></div>'+
    '<div class="v6-traffic-graph">'+traffic.map(([label,count])=>
