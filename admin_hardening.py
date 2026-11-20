@@ -346,11 +346,12 @@ def install(core):
                 raise RuntimeError('Reset incomplete: transaction must roll back.')
             # Restore only default topic rooms after verifying content really
             # reached zero. No member-generated room or poll survives the reset.
-            for slug,title in (('general','Chung'),('study','Học tập'),
+            for stable_id,(slug,title) in enumerate((('general','Chung'),('study','Học tập'),
                                ('technology','Công nghệ'),('gaming','Game'),
-                               ('chill','Tâm sự')):
-                c.execute('''INSERT INTO world_rooms(slug,title,active,created_at)
-                             VALUES(?,?,?,?)''',(slug,title,1 if slug=='general' else 0,now()))
+                               ('chill','Tâm sự')),1):
+                c.execute('''INSERT INTO world_rooms(id,slug,title,active,created_at)
+                             VALUES(?,?,?,?,?)''',(stable_id,slug,title,
+                                1 if slug=='general' else 0,now()))
             c.execute('UPDATE feature_flags SET enabled=1,updated_at=?',(now(),))
             # Keep only one non-PII security receipt as proof a destructive
             # operation occurred; no user names, message contents or IDs.
