@@ -212,11 +212,16 @@ def install(core):
                         # consumed by another conversation after scheduling.
                         core.file_for_message(c,row['attachment_id'],sender_id)
                     unique='scheduled:'+str(row['id'])
+                    lifespan=(core.v6_vanish_seconds(c,sender_id,recipient_id)
+                              if core.v6_feature_on(c,'disappearing_dm') else 0)
+                    created=now()
                     saved=c.execute('''INSERT INTO messages
-                          (sender_id,recipient_id,body,attachment_id,reply_to,created_at,client_message_id)
-                          VALUES(?,?,?,?,?,?,?)''',
+                          (sender_id,recipient_id,body,attachment_id,reply_to,
+                           created_at,client_message_id,expires_at)
+                          VALUES(?,?,?,?,?,?,?,?)''',
                           (sender_id,recipient_id,row['body'],row['attachment_id'],
-                           row['reply_to'],now(),unique))
+                           row['reply_to'],created,unique,
+                           created+lifespan if lifespan else None))
                     message=core.message_details(c,one(c,'SELECT * FROM messages WHERE id=?',(saved.lastrowid,)))
                     c.execute('''UPDATE scheduled_messages
                               SET state='sent',updated_at=?,message_id=? WHERE id=?''',
@@ -225,7 +230,9 @@ def install(core):
                           (recipient_id,sender_id))
                     if not p or not p['muted']:
                         core.notify_user_persist(c,recipient_id,
-                            f'Tin nhắn hẹn giờ từ {sender["display_name"] or "Thành viên"}: {row["body"][:120] if row["body"] else "Có tệp đính kèm"}')
+                            (f'Tin nhắn tự biến mất từ {sender["display_name"] or "Thành viên"}.'
+                             if lifespan else
+                             f'Tin nhắn hẹn giờ từ {sender["display_name"] or "Thành viên"}: {row["body"][:120] if row["body"] else "Có tệp đính kèm"}'))
                 except HTTPException as exc:
                     c.execute('''UPDATE scheduled_messages SET state='failed',updated_at=?,
                                failure_reason=? WHERE id=?''',
