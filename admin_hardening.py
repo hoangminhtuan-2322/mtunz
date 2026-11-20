@@ -19,7 +19,8 @@ APPROVAL_LIFETIME=5*60
 ERASE_CONFIRM='XOA TOAN BO NGUOI DUNG'
 AUDIT_CONFIRM='XOA NHAT KY'
 PURGE_TABLES=(
- 'scheduled_messages', 'message_pins','reactions','message_requests','user_reports','world_penalties',
+ 'scheduled_messages','message_edit_history','world_poll_votes','world_poll_options',
+ 'world_polls','world_rooms', 'message_pins','reactions','message_requests','user_reports','world_penalties',
  'world_messages','group_messages','group_members','chat_groups','chat_preferences',
  'messages','attachments','friendships','blocks','restrictions','notifications',
  'recovery_grants','ticket_messages','tickets','login_challenges','registrations',
@@ -203,6 +204,11 @@ def install(core):
 
     RESET_SCOPE_TABLES=tuple(PURGE_TABLES)+('audit',)
     RESET_LABELS={
+        'message_edit_history':'Lịch sử chỉnh sửa tin nhắn',
+        'world_poll_votes':'Phiếu bình chọn cộng đồng',
+        'world_poll_options':'Lựa chọn bình chọn',
+        'world_polls':'Bình chọn cộng đồng',
+        'world_rooms':'Phòng chủ đề cộng đồng',
         'scheduled_messages':'Tin nhắn hẹn giờ',
         'message_pins':'Đoạn chat đã ghim',
         'reactions':'Cảm xúc',
@@ -322,7 +328,8 @@ def install(core):
                        avatar_attachment_id=NULL,cover_attachment_id=NULL,
                        profile_visibility='everyone',allow_message_requests=1,
                        world_anonymous=0 WHERE id=? AND is_admin=1""",(admin['id'],))
-            c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0,open_minute=540,close_minute=1320,updated_at=? WHERE id=1',
+            c.execute('''UPDATE world_settings SET enabled=0,schedule_enabled=0,open_minute=540,
+                         close_minute=1320,slow_seconds=0,announcement='',updated_at=? WHERE id=1''',
                       (now(),))
             c.execute("INSERT INTO settings(key,value) VALUES('max_users','100') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
             c.execute("INSERT INTO settings(key,value) VALUES('emergency_lockdown','0') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
@@ -337,6 +344,14 @@ def install(core):
             left={table:remaining[table] for table in PURGE_TABLES if remaining[table]}
             if remaining['member_accounts'] or remaining['member_sessions'] or left:
                 raise RuntimeError('Reset incomplete: transaction must roll back.')
+            # Restore only default topic rooms after verifying content really
+            # reached zero. No member-generated room or poll survives the reset.
+            for slug,title in (('general','Chung'),('study','Học tập'),
+                               ('technology','Công nghệ'),('gaming','Game'),
+                               ('chill','Tâm sự')):
+                c.execute('''INSERT INTO world_rooms(slug,title,active,created_at)
+                             VALUES(?,?,?,?)''',(slug,title,1 if slug=='general' else 0,now()))
+            c.execute('UPDATE feature_flags SET enabled=1,updated_at=?',(now(),))
             # Keep only one non-PII security receipt as proof a destructive
             # operation occurred; no user names, message contents or IDs.
             core.admin_log(c,admin['id'],'admin_system_factory_reset',
