@@ -1,0 +1,30 @@
+/* mtunz community + call improvements: responsive, readable, low-motion */
+.v7-event-wrap{display:grid;gap:10px;margin:14px 0;padding:15px;border:1px solid var(--line);border-radius:16px;background:rgba(103,124,179,.055)}
+.v7-event-heading,.v7-community-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.v7-event-heading h3{font-size:.92rem;margin:0;font-weight:750}
+.v7-event-card{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(120,145,193,.04)}
+.v7-event-main{display:flex;flex-direction:column;min-width:0;gap:5px;overflow-wrap:anywhere}
+.v7-event-main strong{font-size:.85rem;font-weight:760}
+.v7-event-main small,.v7-event-main p{font-size:.75rem;color:var(--muted);line-height:1.5;margin:0}
+.v7-event-card>.btn{flex-shrink:0;min-height:38px}
+.v7-community-admin{display:grid;gap:15px;margin:18px 0}
+.v7-community-heading h2{font-size:1.13rem;margin:5px 0}
+.v7-admin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.v7-admin-card{min-width:0;display:flex;flex-direction:column;gap:12px}
+.v7-admin-card>h3{font-size:.94rem;margin:0}
+.v7-date-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.v7-admin-item{display:flex;align-items:center;justify-content:space-between;gap:13px;border-top:1px solid var(--line);padding:12px 0;overflow-wrap:anywhere}
+.v7-admin-item>div{min-width:0;display:grid;gap:5px}
+.v7-admin-item b{font-size:.81rem}
+.v7-admin-item small{font-size:.72rem;color:var(--muted)}
+.v7-admin-item p{font-size:.82rem;line-height:1.5;white-space:pre-wrap;margin:0}
+.v7-admin-item .btn{flex-shrink:0}
+.v7-appeal-panel{grid-column:1/-1}
+.v7-appeals{display:grid;gap:12px}
+.v7-appeal-entry{padding:12px;border:1px solid var(--line);border-radius:12px;font-size:.8rem}
+.v7-appeal-entry p{margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.v7-appeal-entry small{color:var(--muted)}
+.v7-call-time{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:750}
+.v7-call-health{font-size:.79rem;margin:6px 0;color:var(--muted)}
+@media(max-width:800px){.v7-admin-grid{grid-template-columns:1fr}.v7-appeal-panel{grid-column:auto}}
+@media(max-width:540px){.v7-event-wrap{padding:12px}.v7-event-card{align-items:flex-start;flex-wrap:wrap}.v7-event-card>.btn{width:100%}.v7-date-grid{grid-template-columns:1fr}.v7-admin-item{flex-wrap:wrap}.v7-admin-item .btn{min-height:38px}}
