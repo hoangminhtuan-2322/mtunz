@@ -544,6 +544,12 @@ def install(core):
         with db() as c:
             f=one(c,'SELECT id,owner_id,stored_name,original_name,mime,size FROM attachments WHERE id=?',(file_id,))
             if not f:raise HTTPException(404,'Tệp không tồn tại.')
+            # One upload can be sent once. If that DM expired, even the
+            # original uploader/Admin cannot access its ephemeral media.
+            expired=one(c,'''SELECT 1 FROM messages WHERE attachment_id=?
+                              AND expires_at IS NOT NULL AND expires_at<=?''',
+                        (file_id,now()))
+            if expired:raise HTTPException(404,'Tệp của tin nhắn đã hết hạn.')
             allowed=f['owner_id']==u['id']
             if u['is_admin']:
                 linked=one(c,'''SELECT 1 FROM messages WHERE attachment_id=?
