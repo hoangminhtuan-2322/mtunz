@@ -1,8 +1,9 @@
 name: Render PostgreSQL integration
 
 on:
-  # PostgreSQL smoke runs on every main commit, not only selected file paths.
-  # Guard Render's checksPass deployment against front/back-end drift.
+  # Check PostgreSQL compatibility before merging, then recheck each main commit.
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
