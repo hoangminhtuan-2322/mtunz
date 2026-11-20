@@ -164,7 +164,7 @@ def install(core):
 
     def message_dict(c, row, scope='dm'):
         result=dict(row)
-        if row['deleted_at']:
+        if row['deleted_at'] or (scope=='dm' and result.get('expires_at') and result['expires_at']<=now()):
             result['body']=''
             result['attachment']=None
             result['reactions']=[]
@@ -460,7 +460,8 @@ def install(core):
         with db() as c:
             user=one(c,'SELECT username,created_at,display_name,bio,phone,email,terms_accepted_at,terms_accepted_version FROM users WHERE id=?',(u['id'],))
             direct=many(c,'''SELECT id,sender_id,recipient_id,body,created_at,edited_at,deleted_at FROM messages
-                             WHERE sender_id=? OR recipient_id=? ORDER BY id''',(u['id'],u['id']))
+                             WHERE (sender_id=? OR recipient_id=?) AND
+                             (expires_at IS NULL OR expires_at>?) ORDER BY id''',(u['id'],u['id'],now()))
             groups=many(c,'''SELECT gm.group_id,g.title,gm.role FROM group_members gm
                              JOIN chat_groups g ON g.id=gm.group_id WHERE gm.user_id=?''',(u['id'],))
             tickets=many(c,'SELECT id,kind,claim,status,created_at FROM tickets WHERE owner_id=?',(u['id'],))
@@ -552,7 +553,8 @@ def install(core):
                     admin_log(c,u['id'],'moderation_attachment',str(file_id))
             if not allowed:
                 direct=many(c,'''SELECT m.sender_id,m.recipient_id FROM messages m
-                                 WHERE m.attachment_id=? AND m.deleted_at IS NULL''',(file_id,))
+                                 WHERE m.attachment_id=? AND m.deleted_at IS NULL
+                                 AND (m.expires_at IS NULL OR m.expires_at>?)''',(file_id,now()))
                 allowed=any(u['id'] in (m['sender_id'],m['recipient_id']) and friends(c,m['sender_id'],m['recipient_id']) and not has_block(c,m['sender_id'],m['recipient_id']) for m in direct)
             if not allowed:
                 grp=many(c,'SELECT group_id FROM group_messages WHERE attachment_id=? AND deleted_at IS NULL',(file_id,))
@@ -750,11 +752,15 @@ def install(core):
         u=current_user(request)
         with db() as c:
             m=dm_message_owner(c,mid,u['id'])
-            if m['deleted_at']:raise HTTPException(409,'Tin nhắn đã thu hồi.')
+            if m['deleted_at'] or m.get('expires_at') and m['expires_at']<=now():
+                raise HTTPException(409,'Tin nhắn đã thu hồi hoặc hết hạn.')
             if now()-m['created_at']>15*60:raise HTTPException(409,'Chỉ sửa được trong vòng 15 phút.')
             text=body.body.strip()
             if not text and not m['attachment_id']:raise HTTPException(422,'Nội dung không được trống.')
-            c.execute('UPDATE messages SET body=?,edited_at=? WHERE id=?',(text,now(),mid))
+            if text!=m['body']:
+                c.execute('''INSERT INTO message_edit_history(scope,message_id,editor_id,previous_body,changed_at)
+                             VALUES('dm',?,?,?,?)''',(mid,u['id'],m['body'],now()))
+                c.execute('UPDATE messages SET body=?,edited_at=? WHERE id=?',(text,now(),mid))
         await dm_changed(m)
         return {'ok':True}
 
@@ -766,6 +772,7 @@ def install(core):
             c.execute("UPDATE messages SET deleted_at=COALESCE(deleted_at,?), body='' WHERE id=?",(now(),mid))
             c.execute("DELETE FROM message_pins WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='dm' AND message_id=?",(mid,))
+            c.execute("DELETE FROM message_edit_history WHERE scope='dm' AND message_id=?",(mid,))
         await dm_changed(m)
         return {'ok':True}
 
@@ -774,11 +781,15 @@ def install(core):
         u=current_user(request)
         with db() as c:
             m=group_message_owner(c,gid,mid,u['id'])
-            if m['deleted_at']:raise HTTPException(409,'Tin nhắn đã thu hồi.')
+            if m['deleted_at'] or m.get('expires_at') and m['expires_at']<=now():
+                raise HTTPException(409,'Tin nhắn đã thu hồi hoặc hết hạn.')
             if now()-m['created_at']>15*60:raise HTTPException(409,'Chỉ sửa được trong 15 phút.')
             text=body.body.strip()
             if not text and not m['attachment_id']:raise HTTPException(422,'Nội dung không được trống.')
-            c.execute('UPDATE group_messages SET body=?,edited_at=? WHERE id=?',(text,now(),mid))
+            if text!=m['body']:
+                c.execute('''INSERT INTO message_edit_history(scope,message_id,editor_id,previous_body,changed_at)
+                             VALUES('group',?,?,?,?)''',(mid,u['id'],m['body'],now()))
+                c.execute('UPDATE group_messages SET body=?,edited_at=? WHERE id=?',(text,now(),mid))
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
         return {'ok':True}
@@ -791,6 +802,7 @@ def install(core):
             c.execute("UPDATE group_messages SET deleted_at=COALESCE(deleted_at,?),body='' WHERE id=?",(now(),mid))
             c.execute("DELETE FROM message_pins WHERE scope='group' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='group' AND message_id=?",(mid,))
+            c.execute("DELETE FROM message_edit_history WHERE scope='group' AND message_id=?",(mid,))
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
         return {'ok':True}
@@ -806,9 +818,10 @@ def install(core):
         if scope == 'dm':
             require_peer(c, uid, chat_id)
             row=one(c,'''SELECT * FROM messages WHERE id=? AND deleted_at IS NULL
+                         AND (expires_at IS NULL OR expires_at>?)
                          AND ((sender_id=? AND recipient_id=?) OR
                               (sender_id=? AND recipient_id=?))''',
-                    (mid,uid,chat_id,chat_id,uid))
+                    (mid,now(),uid,chat_id,chat_id,uid))
         else:
             active_member(c,chat_id,uid)
             row=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',
@@ -929,7 +942,8 @@ def install(core):
     async def react_dm(request:Request,mid:int,body:React):
         u=current_user(request)
         with db() as c:
-            m=one(c,'SELECT * FROM messages WHERE id=? AND (sender_id=? OR recipient_id=?)',(mid,u['id'],u['id']))
+            m=one(c,'''SELECT * FROM messages WHERE id=? AND (sender_id=? OR recipient_id=?)
+                      AND (expires_at IS NULL OR expires_at>?)''',(mid,u['id'],u['id'],now()))
             if not m or m['deleted_at']:raise HTTPException(404,'Tin nhắn không tồn tại.')
             require_peer(c,m['sender_id'],m['recipient_id'])
             toggle_reaction(c,'dm',mid,u['id'],body.emoji)
@@ -960,7 +974,7 @@ def install(core):
             else:
                 if other_id is None:raise HTTPException(422,'Cần chọn một cuộc trò chuyện.')
                 require_peer(c,u['id'],other_id)
-                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern))
+                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now()))
         return {'results':rows}
 
     @app.post('/api/notifications/read')
