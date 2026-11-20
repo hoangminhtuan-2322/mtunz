@@ -77,6 +77,10 @@ def delete_user_records(c, uid: int) -> dict:
             c.execute('DELETE FROM group_members WHERE group_id=?', (gid,))
             c.execute('DELETE FROM chat_groups WHERE id=?', (gid,))
 
+    # Remove user-owned community attendance and appeal cases.
+    c.execute('DELETE FROM community_event_rsvps WHERE user_id=?',(uid,))
+    c.execute('DELETE FROM sanction_appeals WHERE user_id=?',(uid,))
+
     # Scheduled messages may still reference this user's uploaded attachments.
     # Cancel pending work before attachments are removed or FK rows cascade.
     c.execute('DELETE FROM scheduled_messages WHERE sender_id=? OR recipient_id=?',(uid,uid))
