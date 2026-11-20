@@ -2122,3 +2122,5 @@ from community_v6 import install as _install_community_v6
 _install_community_v6(_sys.modules[__name__])
 from admin_ops_v6 import install as _install_admin_ops_v6
 _install_admin_ops_v6(_sys.modules[__name__])
+from community_plus_v7 import install as _install_community_plus_v7
+_install_community_plus_v7(_sys.modules[__name__])
