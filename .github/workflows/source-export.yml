@@ -1,0 +1,71 @@
+name: Export mtunz complete source (V8)
+on:
+  push:
+    branches: [backup/source-export-20261120]
+    paths:
+      - .github/workflows/source-export.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out exact production source
+        uses: actions/checkout@v4
+        with:
+          ref: d07eeafe16f7d2d930eabb0ffed31ab0b9910df5
+          persist-credentials: false
+      - name: Build reproducible source archive and checksums
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib, subprocess, zipfile
+          root=pathlib.Path('.')
+          entries=subprocess.check_output(['git','ls-files','-z']).split(b'\0')
+          paths=sorted({pathlib.Path(p.decode()) for p in entries if p})
+          checked=[p for p in paths if p.is_file()]
+          assert len(checked)>=140, f'Unexpected file count {len(checked)}'
+          expected='d07eeafe16f7d2d930eabb0ffed31ab0b9910df5'
+          actual=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert actual==expected,(actual,expected)
+          docs={
+            'project':'mtunz',
+            'source_commit':actual,
+            'branch':'main',
+            'file_count':len(checked),
+            'files':[{'path':p.as_posix(),
+                      'size':p.stat().st_size,
+                      'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+                     for p in checked],
+          }
+          output=pathlib.Path('mtunz-full-source-v8-2026-11-20.zip')
+          with zipfile.ZipFile(output,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=8) as z:
+            for p in checked:
+              z.write(p,p.as_posix())
+            z.writestr('SOURCE_MANIFEST.json',json.dumps(docs,ensure_ascii=False,indent=2)+'\n')
+            z.writestr('BACKUP_NOTES.txt',
+              'mtunz full source backup\nCommit: '+actual+
+              '\nContains all Git-tracked source, static assets, tests and deployment configs.'+
+              '\nDoes NOT include live Neon PostgreSQL data, user-uploaded private files outside Git,'+
+              ' secret environment variables, Admin account password or PIN.'+
+              '\nInstall Python deps: pip install -r requirements.txt'+
+              '\nSee README.md and HUONG_DAN_RENDER.md for deployment.\n')
+          with zipfile.ZipFile(output) as z:
+            bad=z.testzip()
+            assert bad is None,bad
+            assert len(z.namelist())==len(checked)+2
+          pathlib.Path('ARCHIVE_SHA256.txt').write_text(hashlib.sha256(output.read_bytes()).hexdigest()+
+            '  '+output.name+'\n',encoding='utf-8')
+          print(f'Exported {len(checked)} tracked files from {actual}: {output.stat().st_size} bytes')
+          PY
+      - name: Upload downloadable source backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtunz-full-source-v8-2026-11-20
+          path: |
+            mtunz-full-source-v8-2026-11-20.zip
+            ARCHIVE_SHA256.txt
+          if-no-files-found: error
+          retention-days: 30
