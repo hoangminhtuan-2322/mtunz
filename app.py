@@ -1745,7 +1745,10 @@ async def admin_user_messages(request:Request,uid:int):
                               m.attachment_id,a.original_name attachment_name,m.deleted_at
                        FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id
                        LEFT JOIN attachments a ON a.id=m.attachment_id
-                       WHERE m.sender_id=? OR m.recipient_id=? ORDER BY m.id DESC LIMIT 100''',(uid,uid))
+                       WHERE (m.sender_id=? OR m.recipient_id=?)
+                         AND (m.expires_at IS NULL OR m.expires_at>?)
+                         AND m.deleted_at IS NULL
+                       ORDER BY m.id DESC LIMIT 100''',(uid,uid,now()))
         admin_log(c,admin['id'],'moderation_messages',u['username'])
     return {'messages':rows}
 
