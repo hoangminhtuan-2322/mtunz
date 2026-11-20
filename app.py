@@ -459,12 +459,22 @@ async def cookies_and_origin(request: Request, call_next):
     # read-only history, logins, Admin recovery or security operations.
     if request.method in ('POST','PUT','PATCH','DELETE'):
         path=request.url.path
+        # One server-side containment gate for every user-content write.
+        # Login, logout, account protection, blocking, abuse reporting, support
+        # and appeals remain available so users can recover or seek help.
+        # The guard runs before endpoints to protect newly added community APIs.
         protected=(
-            path in ('/api/messages','/api/uploads','/api/world/messages',
+            path in ('/api/uploads','/api/world/messages',
                      '/api/registration/request','/api/registration/complete',
-                     '/api/message-requests','/api/scheduled-messages')
-            or re.fullmatch(r'/api/groups/[0-9]+/messages',path) is not None
-            or re.fullmatch(r'/api/friends/request/[0-9]+',path) is not None
+                     '/api/me/profile','/api/me/social')
+            or path.startswith(('/api/messages','/api/scheduled-messages',
+                                '/api/groups','/api/message-requests',
+                                '/api/world/polls/','/api/chat/pins',
+                                '/api/chat/forward','/api/chat/disappear/',
+                                '/api/friends/request/','/api/friends/accept/',
+                                '/api/friends/remove/'))
+            or (path.startswith('/api/community/events/') and
+                path.endswith('/rsvp'))
         )
         if protected:
             with db() as c:
