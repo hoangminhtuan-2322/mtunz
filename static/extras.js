@@ -433,6 +433,24 @@ async function extraSocket(data){
 // Browser-to-browser WebRTC: signaling is relayed by the authenticated websocket;
 // media stays peer-to-peer. Calls need HTTPS (except localhost), NAT may require a TURN relay.
 const pendingCallerIce=new Map();
+const v7CallWaitMs=45000;
+function v7StartCallGuard(call){
+ if(call.guardTimer)clearTimeout(call.guardTimer);
+ call.guardTimer=setTimeout(()=>{
+  if(state.call!==call||call.pc.connectionState==='connected')return;
+  toast('Cuộc gọi không thể kết nối trong 45 giây. Kiểm tra mạng hoặc cần máy chủ TURN.','error');
+  stopCall(true);
+ },v7CallWaitMs);
+}
+function v7CallDuration(call){
+ if(call.durationTimer)clearInterval(call.durationTimer);
+ call.durationTimer=setInterval(()=>{
+  if(state.call!==call||!call.connectedAt)return;
+  const el=document.getElementById('v7-call-duration');
+  if(el){const n=Math.max(0,Math.floor((Date.now()-call.connectedAt)/1000));el.textContent=
+   String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
+ },1000);
+}
 const rtcConfig={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]};
 async function startCall(peerId, video){
  if(state.call)throw Error('Đang có cuộc gọi khác.');
@@ -442,6 +460,7 @@ async function startCall(peerId, video){
  const pc=new RTCPeerConnection(rtcConfig);
  state.call={peerId,video,pc,local,remote:new MediaStream(),status:'Đang gọi…',candidateQueue:[]};
  setupCallPc(state.call);
+ v7StartCallGuard(state.call);
  displayCallUI();
  try{
   const offer=await pc.createOffer();await pc.setLocalDescription(offer);
@@ -460,6 +479,11 @@ function setupCallPc(call){
   if(state.call!==call)return;
   call.status=({connected:'Đã kết nối',connecting:'Đang kết nối…',failed:'Kết nối thất bại',disconnected:'Mất kết nối'})[call.pc.connectionState]||call.status;
   const label=$('#call-status');if(label)label.textContent=call.status;
+  if(call.pc.connectionState==='connected'){
+   clearTimeout(call.guardTimer);call.guardTimer=null;
+   if(!call.connectedAt)call.connectedAt=Date.now();
+   v7CallDuration(call);
+  }
   if(['failed','closed'].includes(call.pc.connectionState))stopCall(false);
  };
 }
@@ -467,7 +491,7 @@ function displayCallUI(){
  const call=state.call;if(!call)return;
  const f=state.friends.find(x=>x.other_id===call.peerId);
  $('#modal-root').innerHTML=`<div class="modal-backdrop call-layer"><div class="modal call-modal"><div class="call-mark">${icon(call.video?'video':'phone',26)}</div>
- <h2>${esc(f?.display_name||f?.username||'Bạn bè')}</h2><p id="call-status">${esc(call.status)}</p>
+ <h2>${esc(f?.display_name||f?.username||'Bạn bè')}</h2><p id="call-status">${esc(call.status)}</p><div id="v7-call-duration" class="v7-call-time">00:00</div><p class="v7-call-health">Gọi trực tiếp có thể cần TURN khi mạng hạn chế kết nối ngang hàng.</p>
  <div class="call-videos"><video id="remote-video" autoplay playsinline></video><video id="local-video" autoplay playsinline muted></video></div>
  <div class="v6-call-tools">
  <button type="button" data-v6-call="mic" aria-label="Bật hoặc tắt micro">🎤 Micro</button>
@@ -481,6 +505,8 @@ function stopCall(signal=true){
  const call=state.call;if(!call)return;
  if(signal)sendSignal('call-hangup',call.peerId);
  state.call=null;
+ clearTimeout(call.guardTimer);clearInterval(call.durationTimer);
+ pendingCallerIce.delete(call.peerId);
  for(const t of call.local?.getTracks()||[])t.stop();
  for(const t of call.screenStream?.getTracks()||[])t.stop();
  call.pc?.close();
@@ -499,6 +525,7 @@ async function handleCallSignal(d){
     const pc=new RTCPeerConnection(rtcConfig);
     state.call={peerId:d.from_id,video:!!d.video,pc,local,remote:new MediaStream(),status:'Đang kết nối…',candidateQueue:[]};
     setupCallPc(state.call);
+    v7StartCallGuard(state.call);
     await pc.setRemoteDescription(new RTCSessionDescription(d.signal));
     for(const ice of pendingCallerIce.get(d.from_id)||[])await pc.addIceCandidate(new RTCIceCandidate(ice));
     pendingCallerIce.delete(d.from_id);
