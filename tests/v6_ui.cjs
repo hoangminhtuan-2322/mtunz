@@ -11,8 +11,8 @@ const smart=file('static/smart-v6.js');
 const community=file('static/community-v6.js');
 const admin=file('static/admin-ops-v6.js');
 const css=file('static/v6-experience.css');
-for(const script of ['smart-v6.js','community-v6.js','admin-ops-v6.js']){
- assert(html.includes('/static/'+script+'?v=1.0'),'Missing V6 script '+script);
+for(const [script,version] of [['smart-v6.js','1.0'],['community-v6.js','1.1'],['admin-ops-v6.js','1.1']]){
+ assert(html.includes('/static/'+script+'?v='+version),'Missing V6 script '+script);
 }
 assert(html.includes('v6-experience.css?v=1.0'),'V6 responsive stylesheet linked');
 assert(app.includes("['ops','shield','Điều hành thông minh']"),'Admin V6 operations nav');
