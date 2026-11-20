@@ -371,6 +371,14 @@ function connectSocket(){
      if(typeof v4PaintStatuses==='function')v4PaintStatuses();
      return;
    }
+   if(t==='feature-flags-updated'&&state.user&&!state.user.is_admin){
+     if(typeof v6RefreshFlags==='function')v6RefreshFlags().catch(()=>{});
+     return;
+   }
+   if((t==='world-rooms-updated'||t==='world-poll-updated')&&state.user&&!state.user.is_admin){
+     if(typeof v6RefreshCommunity==='function')v6RefreshCommunity(true).catch(()=>{});
+     return;
+   }
    if(t==='scheduled-updated'&&state.user&&!state.user.is_admin){
      if(state.tab==='messages'&&state.selected)toast('Tin nhắn hẹn giờ đã được xử lý.','info');
      return;
@@ -873,6 +881,8 @@ function convoHeader(f){if(!f)return '';
  ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
  <button class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}" title="Xem hồ sơ">${icon('users',15)}</button>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin">${icon('search',15)}</button>
+ <button type="button" class="btn ghost sm v6-disappear-control" data-v6-act="disappear"
+   data-v6-peer="${f.other_id}" title="Cài đặt tự biến mất cho tin nhắn mới">⌛ <span class="button-word">${f.vanish_seconds?'Tự xóa '+(f.vanish_seconds===3600?'1 giờ':f.vanish_seconds===86400?'1 ngày':'7 ngày'):'Tự biến mất'}</span></button>
  <button type="button" class="btn ghost sm" data-v4-act="schedule-list" title="Tin nhắn hẹn giờ">⏰ <span class="button-word">Đã hẹn</span></button>
  <button class="btn ghost sm" data-act="call-audio" data-id="${f.other_id}" title="Gọi thoại">${icon('phone',15)}</button>
  <button class="btn ghost sm" data-act="call-video" data-id="${f.other_id}" title="Gọi video">${icon('video',15)}</button>
