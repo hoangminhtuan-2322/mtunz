@@ -1364,7 +1364,8 @@ async def send_message(request:Request,body:SendMessage):
                  ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))''',
                  (body.reply_to,now(),u['id'],body.recipient_id,body.recipient_id,u['id'])):
                 raise HTTPException(404,'Tin nhắn được trả lời không tồn tại.')
-            vanish=v6_vanish_seconds(c,u['id'],body.recipient_id)
+            vanish=(v6_vanish_seconds(c,u['id'],body.recipient_id)
+                    if v6_feature_on(c,'disappearing_dm') else 0)
             created=now()
             expires=created+vanish if vanish else None
             sql='''INSERT INTO messages(sender_id,recipient_id,body,attachment_id,reply_to,
@@ -1390,7 +1391,9 @@ async def send_message(request:Request,body:SendMessage):
                          (body.recipient_id,u['id']))
                 if not pref or not pref['muted']:
                     notify_user_persist(c,body.recipient_id,
-                       f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}')
+                       (f'Tin nhắn tự biến mất từ {u["display_name"] or "Thành viên"}.'
+                        if vanish else
+                        f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}'))
     if not replay:
         await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
                              hub.user(u['id'],'message',message=msg))
