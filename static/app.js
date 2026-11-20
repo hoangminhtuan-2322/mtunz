@@ -1185,6 +1185,12 @@ const adminHeading={ops:['Trung tâm điều hành V6','Giám sát hiệu năng,
 world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và quản lý án phạt spam tại một nơi.'],
 reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
 async function loadAdmin(){
+ if(state.adminTab==='world'&&typeof communityPlusRefresh==='function')
+   communityPlusRefresh(false,true).then(()=>{
+     const root=document.getElementById('v7-community-admin');
+     if(root&&state.adminTab==='world')root.innerHTML=communityPlusAdminPanel();
+   }).catch(()=>{});
+
  if(!state.user?.is_admin)return;
  try{
   switch(state.adminTab){
