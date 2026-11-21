@@ -471,7 +471,25 @@ let notificationWorker;
 function chatNotificationRegistration(){
  if(!('serviceWorker' in navigator))return Promise.resolve(null);
  if(!notificationWorker)notificationWorker=navigator.serviceWorker.register('/static/chat-alert-worker.js')
-   .catch(()=>{notificationWorker=null;return null;});
+   .then(async registration=>{
+    const worker=registration.installing||registration.waiting;
+    if(!registration.active&&worker){
+     await new Promise(resolve=>{
+      const finish=()=>{
+       clearTimeout(timeout);
+       worker.removeEventListener('statechange',check);
+       resolve();
+      };
+      const check=()=>{
+       if(registration.active||worker.state==='redundant')finish();
+      };
+      const timeout=setTimeout(finish,4000);
+      worker.addEventListener('statechange',check);
+      check();
+     });
+    }
+    return registration;
+   }).catch(()=>{notificationWorker=null;return null;});
  return notificationWorker;
 }
 async function notifyBrowser(message,tag='mtunz',silent=false){
