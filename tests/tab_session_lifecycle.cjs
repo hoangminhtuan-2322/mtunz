@@ -10,7 +10,7 @@ const get=(start,end)=>{
  return code.slice(a,b);
 };
 const helpers=get("const ACTIVE_TAB_KEY=","\nasync function api(");
-const boot=get("async function setup(){","\nfunction connectSocket(){");
+const boot=get("async function setup(){","\nfunction connectSocket(");
 const enter=get("async function enterApp(resume=false){","\nfunction resetAuthAfterLogout(){");
 const storage=new Map();
 const calls=[];

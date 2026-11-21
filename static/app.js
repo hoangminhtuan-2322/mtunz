@@ -41,7 +41,7 @@ const state={user:null,ws:null,mode:'login',step:'username',username:'',challeng
  regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false,adminApprovalToken:null,adminApprovalData:null};
-let toastTimer=0,typingTimer=0,socketRetry=null,typingLastSent=0,typingContext='';
+let toastTimer=0,typingTimer=0,socketRetry=null,socketRetryDelay=2500,typingLastSent=0,typingContext='';
 
 // A tab-scoped marker survives a normal reload, but not a new ordinary tab.
 // Only screen IDs are kept here; never store passwords, PINs or cookies.
@@ -322,7 +322,6 @@ async function setup(){
   }
  }
 }
-let socketRetryDelay=2500;
 function connectSocket(retry=false){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
