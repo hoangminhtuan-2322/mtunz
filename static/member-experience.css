@@ -461,3 +461,31 @@
 @media(prefers-reduced-motion:reduce){
  .shell:not(.admin-shell) .message-delete-menu-trigger{transition:none}
 }
+
+/* V12: native support chat composer; mounted across messages and new tickets. */
+.support-chat-composer{min-width:0}
+.support-chat-composer .row{display:flex;align-items:flex-end;gap:9px;min-width:0}
+.support-chat-composer .support-chat-entry{
+ flex:1 1 0;width:100%;min-width:0;min-height:46px;max-height:144px;
+ padding:12px 15px;border-radius:15px;line-height:1.4;
+ resize:none;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere;
+ font:inherit;font-size:14px;touch-action:manipulation;
+}
+.support-chat-composer button[type=submit]{
+ flex:0 0 44px;width:44px;min-width:44px;height:44px;min-height:44px;
+ align-self:flex-end;display:grid;place-items:center;
+}
+.support-chat-composer .support-chat-entry:focus-visible{
+ outline:2px solid #b8c5ff;outline-offset:1px;
+}
+.admin-shell #admin-ticket-messages .support-message.admin{
+ align-self:flex-end;background:#675dcd;color:#fff;
+}
+.admin-shell #admin-ticket-messages .support-message.mine{
+ align-self:flex-start;background:#29314a;color:#d6e0fc;
+}
+@media(max-width:800px){
+ .support-chat-composer .row{gap:8px}
+ .support-chat-composer .support-chat-entry{font-size:16px;min-height:44px}
+ .support-chat-composer button[type=submit]{flex-basis:44px}
+}
