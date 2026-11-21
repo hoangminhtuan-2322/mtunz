@@ -909,7 +909,7 @@ function appRail(){
     </div>
   </aside>`;
 }
-function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
+function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button><button type="button" class="mobile-inbox-profile" aria-label="Mở hồ sơ cá nhân" data-act="app-tab" data-tab="profile">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</button></div>
   <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" type="search" id="side-filter" aria-label="Tìm hội thoại cá nhân hoặc nhóm" placeholder="Tìm người hoặc nhóm…" value="${esc(state.sideFilter||'')}" autocomplete="off"></div>
   <div class="inbox-filters" role="group" aria-label="Lọc hội thoại" data-filter="${state.inboxFilter||'all'}">${Object.entries(inboxFilters).map(([key,label])=>`<button type="button" data-act="inbox-filter" data-filter="${key}" aria-pressed="${key===(state.inboxFilter||'all')}">${label}</button>`).join('')}</div></div>
   <div class="side-scroll" id="side-items">${sideBody()}</div>
@@ -1114,13 +1114,13 @@ function settingsContent(){
  <section class="card studio-appearance"><h3>Hình nền hội thoại</h3><button class="btn ghost sm" type="button" data-studio="wallpaper">Chọn hình nền</button></section>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
-   <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>
+   <p class="hint">Truy cập hồ sơ, hỗ trợ và các mục khác của tài khoản.</p>
    <div class="rail-settings-actions">
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
-     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Lịch sử Chat thế giới</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="archive">${icon('archive',16)} Hội thoại đã lưu trữ</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Chat thế giới</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="profile">${icon('users',16)} Hồ sơ cá nhân</button>
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>

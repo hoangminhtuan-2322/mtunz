@@ -364,3 +364,12 @@
  .admin-shell:not(.admin-menu-open) .admin-nav{visibility:hidden}
  .admin-shell.admin-menu-open .admin-nav{visibility:visible}
 }
+
+.mobile-inbox-profile{display:none}
+@media(max-width:800px){
+ .shell .side-top .row:has(>.mobile-inbox-profile) h2{margin-right:auto}
+ .mobile-inbox-profile{
+  display:grid;place-items:center;width:44px;height:44px;padding:0;
+  border:1px solid #675a80;border-radius:50%;background:#25203b;color:inherit
+ }
+}

@@ -19,6 +19,11 @@ const {chromium}=require('playwright-core');
      groups:[{id:8,title:'Nhóm bạn',member_count:3,last_message:{body:'Chào nhóm',created_at:110}}]});
     v4WriteDraft('dm:12','Soạn tiếp');renderApp();
    });
+   if(width<=800){
+    await page.getByRole('button',{name:'Mở hồ sơ cá nhân'}).tap();
+    await page.locator('.profile-page').waitFor();
+    await page.locator('.rail-nav [data-tab="messages"]').tap();
+   }
    if(width>800)assert.match(await page.locator('.start-threads button').first().innerText(),/Nhóm bạn/);
    await page.locator('button[data-filter="drafts"]').click();
    assert.equal(await page.locator('#side-items [data-act="open-group"]').count(),0);
