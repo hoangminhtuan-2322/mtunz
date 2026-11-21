@@ -29,7 +29,7 @@ def test_real_css_bundle_keeps_source_and_original_order(tmp_path):
     transformed = (tmp_path / "index.html").read_text(encoding="utf8")
     assert transformed.count('<link rel="stylesheet"') == 1
     assert f'/static/{filename}' in transformed
-    assert '/static/app.js?v=20.1' in transformed, "JavaScript loading order unchanged"
+    assert '/static/app.js?v=20.2' in transformed, "JavaScript loading order unchanged"
     assert (source_dir / "index.html").read_text(encoding="utf8") == original_index
     assert hashlib.sha256(combined.encode("utf8")).hexdigest()[:16] in filename
 
