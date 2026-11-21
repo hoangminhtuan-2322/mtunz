@@ -8,15 +8,30 @@ const worldReasonNames={
 };
 const worldEscape=value=>esc(String(value??''));
 const worldOwnIds=new Set();
-/* Follow latest messages after layout without pulling readers from history. */
+/* Follow arriving bubbles through short reflows (font, media, scroll
+   anchoring). Cancel as soon as the user interacts with scrolling; never
+   force someone reading old messages back to the latest bubble. */
+let worldFollowToken=0;
 function worldFollowBottom(feed){
  if(!feed)return;
- feed.scrollTop=feed.scrollHeight;
- if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>{
-  if(!feed.isConnected)return;
-  const remaining=feed.scrollHeight-feed.scrollTop-feed.clientHeight;
-  if(remaining>=0&&remaining<130)feed.scrollTop=feed.scrollHeight;
- });
+ const token=++worldFollowToken;
+ let frames=0,stopped=false;
+ const events=['wheel','touchstart','pointerdown','keydown'];
+ const stop=()=>{
+  if(stopped)return;
+  stopped=true;
+  events.forEach(name=>feed.removeEventListener(name,stop));
+ };
+ events.forEach(name=>feed.addEventListener(name,stop,{passive:true}));
+ const follow=()=>{
+  if(stopped||token!==worldFollowToken||!feed.isConnected){stop();return;}
+  const gap=feed.scrollHeight-feed.scrollTop-feed.clientHeight;
+  if(gap>130){stop();return;}
+  feed.scrollTop=feed.scrollHeight;
+  if(++frames<18&&typeof requestAnimationFrame==='function')requestAnimationFrame(follow);
+  else stop();
+ };
+ follow();
 }
 
 let worldOwnIdsUser=null;
