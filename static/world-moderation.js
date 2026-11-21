@@ -368,8 +368,8 @@ document.addEventListener('click',async event=>{
   if(action==='admin-remove'){
    const mid=Number(target.dataset.worldMessage);
    modal({title:'Gỡ tin Chat thế giới',description:'Tin này sẽ bị ẩn khỏi lịch sử công cộng. Lưu bằng chứng báo cáo đã có.',danger:true,confirm:'Gỡ tin',
-    content:'<label>Lý do <input id="world-remove-reason" class="input" value="Nội dung không phù hợp"></label>'+adminProofFields(),
-    handler:async host=>{await post('/api/admin/world/messages/'+mid+'/remove',{reason:host.querySelector('#world-remove-reason').value,...adminProofValue(host)});toast('Đã gỡ tin.','ok');await loadAdmin();}});
+    content:'<label>Lý do <input id="world-remove-reason" class="input" value="Nội dung không phù hợp"></label>'+adminV3PinFields(),
+    handler:async host=>{await post('/api/admin/world/messages/'+mid+'/remove',{reason:host.querySelector('#world-remove-reason').value,...adminV3PinPayload(host)});toast('Đã gỡ tin.','ok');await loadAdmin();}});
    return;
   }
   if(action==='admin-review'){
@@ -379,10 +379,10 @@ document.addEventListener('click',async event=>{
     confirm:'Lưu quyết định',cancel:'Hủy',
     content:'<label>Ghi chú xử lý<input id="world-review-note" class="input" maxlength="600" value="'+
      (decision==='reviewed'?'Đã kiểm tra và xem xét nội dung báo cáo':'Không đủ bằng chứng để xử lý')+'"></label>'+
-     adminProofFields(),
+     adminV3PinFields(),
     handler:async host=>{const note=host.querySelector('#world-review-note').value.trim();
       if(note.length<5)throw Error('Ghi chú cần tối thiểu 5 ký tự.');
-      await post('/api/admin/reports/'+id+'/review',{decision,note,...adminProofValue(host)});
+      await post('/api/admin/reports/'+id+'/review',{decision,note,...adminV3PinPayload(host)});
       toast('Đã lưu quyết định kiểm duyệt.','ok');await loadAdmin();}});
    return;
   }
@@ -406,8 +406,8 @@ document.addEventListener('submit',async event=>{
     open_minute:minute(fd.get('open_at')),close_minute:minute(fd.get('close_at'))};
    if(cfg.schedule_enabled&&cfg.open_minute===cfg.close_minute)throw Error('Giờ mở và giờ đóng phải khác nhau.');
    modal({title:'Cập nhật lịch Chat thế giới',description:'Thiết lập sẽ có hiệu lực ngay trên máy chủ theo giờ Việt Nam.',
-    confirm:'Lưu cấu hình',content:adminProofFields(),
-    handler:async host=>{await post('/api/admin/world/config',{...cfg,...adminProofValue(host)});toast('Đã lưu cấu hình mở/đóng.','ok');await loadAdmin();}});
+    confirm:'Lưu cấu hình',content:adminV3PinFields(),
+    handler:async host=>{await post('/api/admin/world/config',{...cfg,...adminV3PinPayload(host)});toast('Đã lưu cấu hình mở/đóng.','ok');await loadAdmin();}});
   }
   if(action==='mute'){
    const fd=new FormData(form),uid=Number(fd.get('user_id')),minutes=Number(fd.get('minutes')),reason=String(fd.get('reason')||'').trim();
