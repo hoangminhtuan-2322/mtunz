@@ -1461,12 +1461,19 @@ async def read_messages(request:Request,other_id:int):
     return {'ok':True}
 
 
+PRIVATE_CHAT_NOTICE = 'Bạn có tin nhắn mới.'
+LEGACY_CHAT_NOTICE_PATTERNS = ('Tin nhắn từ %: %', 'Tin nhắn hẹn giờ từ %: %')
+
+
 @app.get('/api/notifications')
 async def get_notifications(request:Request):
     u=current_user(request)
     with db() as c:
-        rows=many(c,'''SELECT id,body,created_at,read_at FROM notifications
-                       WHERE user_id=? ORDER BY id DESC LIMIT 80''',(u['id'],))
+        # During a rolling deploy the previous process can still write a legacy preview.
+        rows=many(c,'''SELECT id,created_at,read_at,
+                       CASE WHEN body LIKE ? OR body LIKE ? THEN ? ELSE body END AS body
+                       FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 80''',
+                  (*LEGACY_CHAT_NOTICE_PATTERNS,PRIVATE_CHAT_NOTICE,u['id']))
     return {'notifications':rows}
 
 

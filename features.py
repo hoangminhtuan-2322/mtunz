@@ -72,7 +72,7 @@ def install(core):
             # of whether their source messages are still accessible.
             c.execute('''UPDATE notifications SET body=?
                          WHERE body LIKE ? OR body LIKE ?''',
-                      ('Bạn có tin nhắn mới.', 'Tin nhắn từ %: %', 'Tin nhắn hẹn giờ từ %: %'))
+                      (core.PRIVATE_CHAT_NOTICE, *core.LEGACY_CHAT_NOTICE_PATTERNS))
             column('sessions','created_at','INTEGER')
             for table in ('sessions', 'trusted_devices'):
                 for name, typ in (
