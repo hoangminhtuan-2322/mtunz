@@ -74,7 +74,7 @@ def install(core):
                     ('last_seen', 'INTEGER'), ('device_label', 'TEXT'),
                     ('device_name', 'TEXT'), ('device_type', 'TEXT'),
                     ('browser', 'TEXT'), ('os_name', 'TEXT'),
-                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT')):
+                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT'), ('ip_address', 'TEXT')):
                     column(table, name, typ)
             c.executescript('''
               CREATE TABLE IF NOT EXISTS attachments (

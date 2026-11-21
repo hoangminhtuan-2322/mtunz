@@ -46,6 +46,23 @@ const {chromium}=require('playwright-core');
    assert.equal(await text.inputValue(),'Bản nháp mới');
    assert.equal(await page.locator('#chat-messages').evaluate(el=>el.scrollTop),120);
    assert(await existing.evaluate(el=>el.isConnected));
+   assert(await page.locator('.main-head > [data-act="search-chat"]').isVisible());
+   await page.route('**/api/chat/search/v6?*',r=>r.fulfill({json:{results:[
+    {id:3,body:'Tin nhắn cần tìm',sender_id:9,created_at:now-60}
+   ]}}));
+   await page.locator('.main-head > [data-act="search-chat"]').click();
+   await page.locator('#v6-query').fill('cần tìm');
+   await page.locator('#v6-query').press('Enter');
+   await page.locator('[data-found-message="3"]').click();
+   await page.locator('#msg-dm-3.search-target').waitFor();
+   await page.route('**/api/messages/14',r=>r.fulfill({json:{messages:history.map(m=>({...m,recipient_id:14}))}}));
+   await page.evaluate(()=>{
+    state.friends.push({other_id:14,username:'Bạn thứ hai',state:'accepted'});
+    return openChat(14);
+   });
+   assert(await page.locator('#chat-messages').evaluate(el=>el.scrollHeight-el.scrollTop-el.clientHeight<=2));
+   await page.evaluate(()=>openChat(12));
+   assert(await page.locator('#chat-messages').evaluate(el=>el.scrollHeight-el.scrollTop-el.clientHeight<=2));
    const alerts=await page.evaluate(()=>{
     let tones=0;
     playChatSound=()=>tones++;

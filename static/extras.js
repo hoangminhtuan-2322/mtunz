@@ -112,7 +112,7 @@ function composerExtras(){
 function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
  if(!g)return groupLobby();
- return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages">${bubblesFor(state.groupMessages,true)}</div>
+ return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
@@ -130,7 +130,8 @@ function paintGroupThread(scroll=false){
  if(!box)return;
  const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
  box.innerHTML=bubblesFor(state.groupMessages,true);
- box.scrollTo({top:scroll||near?box.scrollHeight:position,behavior:'instant'});
+ if(scroll||near)followChatEnd(box);
+ else box.scrollTo({top:position,behavior:'instant'});
 }
 let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
@@ -514,7 +515,7 @@ function appendGroupMessage(groupId,message){
  if(capped)messages.splice(0,messages.length-100);
  const box=$('#chat-messages');
  if(box){
-  if(capped||outOfOrder)paintGroupThread();
+  if(capped||outOfOrder)paintGroupThread(message.sender_id===state.user?.id&&pos<0);
   else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
  }
  if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')

@@ -116,3 +116,11 @@
  .v6-world-ops .v6-control-card .btn{align-self:stretch}
 }
 @media(prefers-reduced-motion:reduce){.v6-room-pill,.v6-poll-option,.v6-feature-switch{transition:none!important}}
+
+button.v6-search-result{
+ width:100%;text-align:left;color:inherit;min-height:44px;cursor:pointer
+}
+button.v6-search-result:hover,button.v6-search-result:focus-visible{
+ border-color:#aaa1ff;outline:1px solid #aaa1ff
+}
+.bubble-wrap.search-target > .bubble{outline:2px solid #aaa1ff;outline-offset:3px}
