@@ -355,9 +355,7 @@ function connectSocket(){
      return;
    }
    if(t==='world-status'&&state.user&&!state.user.is_admin){
-     await loadWorldStatus().catch(()=>{});
-     if(state.tab==='world')await loadWorld(true).catch(()=>{});
-     else renderApp();
+     await refreshWorldNavigation().catch(()=>{});
      return;
    }
    if(t==='registration-updated'){
@@ -912,6 +910,26 @@ function appRail(){
     </div>
   </aside>`;
 }
+function updateWorldNavigation(){
+ const badge=$('.world-lobby-entrance .group-lobby-teaser-badge');
+ const open=Boolean(state.worldData?.status?.open);
+ if(badge)badge.textContent=open?'Đang mở':'Xem lịch sử';
+ const rail=$('.shell:not(.admin-shell) > .rail');
+ if(!rail||Boolean(rail.querySelector('.rail-extra [data-tab="world"]'))===open)return;
+ const template=document.createElement('template');
+ template.innerHTML=appRail();
+ const oldMenu=rail.querySelector('.rail-secondary');
+ const focused=oldMenu?.contains(document.activeElement);
+ oldMenu?.replaceWith(template.content.querySelector('.rail-secondary'));
+ if(focused)rail.querySelector('.rail-more')?.focus({preventScroll:true});
+}
+async function refreshWorldNavigation(){
+ const userId=state.user?.id;
+ await loadWorldStatus();
+ if(state.user?.id!==userId)return;
+ if(state.tab==='world')await loadWorld(true);
+ else updateWorldNavigation();
+}
 function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button><button type="button" class="mobile-inbox-profile" aria-label="Mở hồ sơ cá nhân" data-act="app-tab" data-tab="profile">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</button></div>
   <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" type="search" id="side-filter" aria-label="Tìm hội thoại cá nhân hoặc nhóm" placeholder="Tìm người hoặc nhóm…" value="${esc(state.sideFilter||'')}" autocomplete="off"></div>
   <div class="inbox-filters" role="group" aria-label="Lọc hội thoại" data-filter="${state.inboxFilter||'all'}">${Object.entries(inboxFilters).map(([key,label])=>`<button type="button" data-act="inbox-filter" data-filter="${key}" aria-pressed="${key===(state.inboxFilter||'all')}">${label}</button>`).join('')}</div></div>
@@ -1252,17 +1270,29 @@ function renderApp(){
 let memberNavigation=0;
 async function goTab(tab){
  const request=++memberNavigation,userId=state.user?.id;
- state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
- if(tab==='settings'){
-  state.accountDeletion=await api('/api/me/deletion');
-  try{await loadWorldStatus();}catch{}
+ const sourceTab=state.tab,sourceChat=state.selected,sourceGroup=state.groupSelected;
+ const current=()=>request===memberNavigation&&state.user?.id===userId&&
+   state.tab===sourceTab&&state.selected===sourceChat&&state.groupSelected===sourceGroup;
+ let deletion;
+ try{
+  if(tab==='settings'){
+   deletion=await api('/api/me/deletion');
+   if(current())await loadWorldStatus().catch(()=>{});
+  }
+  if(tab==='world')await loadWorld(false);
+  if(tab==='friends'&&typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
+  if(tab==='groups')await refreshGroups(false);
+  if(tab==='notices')await loadNotices();
+  if(tab==='support')await loadTickets();
+ }catch(e){
+  if(current())toast(e.message,'error');
+  return;
  }
- if(tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
- if(tab==='friends'&&typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
- if(tab==='groups')await refreshGroups(false);
- if(tab==='notices')await loadNotices();
- if(tab==='support'){state.mode='support';await loadTickets();}
- if(request===memberNavigation&&state.user?.id===userId&&state.tab===tab&&!state.selected)renderApp();
+ if(!current())return;
+ state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
+ if(tab==='settings')state.accountDeletion=deletion;
+ if(tab==='support')state.mode='support';
+ renderApp();
 }
 
 // ==== Administrator workspace ====

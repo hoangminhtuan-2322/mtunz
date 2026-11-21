@@ -116,6 +116,17 @@ const {chromium}=require('playwright-core');
    await page.getByRole('button',{name:'Gửi tin nhắn',exact:true}).click();
    await page.locator('#msg-group-104').waitFor();
    assert.equal(await page.locator('#chat-text').inputValue(),'');
+   const field=page.locator('#chat-text');
+   await field.fill('Bản nháp đang soạn');
+   await page.route('**/api/world/status',r=>r.fulfill({json:{open:true}}));
+   await page.evaluate(()=>refreshWorldNavigation());
+   assert.equal(await field.inputValue(),'Bản nháp đang soạn');
+   assert(await field.evaluate(el=>el===document.activeElement),'Status refresh keeps the composer focused');
+   await page.route('**/api/notifications',r=>r.fulfill({status:503,json:{detail:'Thông báo đang tạm gián đoạn'}}));
+   await page.locator('.rail-nav [data-tab="notices"]').click();
+   await page.getByText('Thông báo đang tạm gián đoạn',{exact:true}).waitFor();
+   assert.equal(await page.evaluate(()=>state.tab),'groups');
+   assert.equal(await field.inputValue(),'Bản nháp đang soạn');
    await page.close();
   }
  }finally{await browser.close();}
