@@ -37,7 +37,9 @@ async function v6SetDisappear(peerId){
 }
 async function v6ShowAdvancedSearch(){
  const group=state.tab==='groups'&&state.groupSelected;
- const chat=group?state.groupSelected:state.selected;
+ const chat=group?state.groupSelected:state.selected,owner=state.user.id;
+ const key=(group?'group-':'dm-')+chat;
+ const current=()=>state.user?.id===owner&&document.querySelector('#chat-messages')?.dataset.chatKey===key;
  if(!chat)throw Error('Hãy mở một cuộc trò chuyện để tìm kiếm.');
  const content='<div class="v6-search-filters">'+
  '<div class="field"><label for="v6-query">Từ khóa (có thể bỏ trống để lọc theo thời gian)</label>'+
@@ -51,7 +53,7 @@ async function v6ShowAdvancedSearch(){
  '<option value="all">Tất cả</option><option value="files">Ảnh / tệp / tin thoại</option><option value="text">Chỉ tin văn bản</option>'+
  '</select></div></div><div id="v6-search-results" class="v6-search-results" role="status" aria-live="polite">'+
  '<p class="hint">Tìm trong lịch sử mà bạn vẫn có quyền truy cập. Tin đã biến mất không xuất hiện.</p></div></div>';
- modal({title:'Tìm kiếm hội thoại nâng cao',description:'Lọc theo thời gian, người gửi và loại tin; không tìm qua các cuộc trò chuyện khác.',
+ modal({title:'Tìm tin nhắn',description:'Lọc theo thời gian, người gửi và loại tin; không tìm qua các cuộc trò chuyện khác.',
  content,confirm:'Tìm kiếm',handler:async host=>{
   const q=host.querySelector('#v6-query')?.value.trim()||'';
   const since=v6DateEpoch(host.querySelector('#v6-from').value);
@@ -64,17 +66,52 @@ async function v6ShowAdvancedSearch(){
    scope:group?'group':'dm',chat_id:String(chat),q,since:String(since),until:String(until),
    from_user:String(fromUser),media,limit:'40'
   });
-  const result=await api('/api/chat/search/v6?'+params.toString());
   const container=host.querySelector('#v6-search-results');
-  if(container){
+  const result=await api('/api/chat/search/v6?'+params.toString());
+  if(container?.isConnected&&current()){
    container.innerHTML=result.results.length?
-    result.results.map(item=>'<article class="v6-search-result"><span>'+
-     v6Stamp(item.created_at)+(item.sender_id===state.user.id?' · Bạn':' · Thành viên')+'</span>'+
-     '<p>'+esc(item.body||item.attachment_name||'Tệp đính kèm')+'</p></article>').join(''):
+    result.results.map(item=>'<button type="button" class="v6-search-result" data-found-message="'+Number(item.id)+'"><span>'+
+     v6Stamp(item.created_at)+(item.sender_id===owner?' · Bạn':' · Thành viên')+'</span>'+
+     '<p>'+esc(item.body||item.attachment_name||'Tệp đính kèm')+'</p></button>').join(''):
      '<p class="hint">Không tìm thấy tin nhắn phù hợp.</p>';
   }
   return false;
  }});
+ const query=document.querySelector('#v6-query');
+ query?.addEventListener('keydown',event=>{
+  if(event.key==='Enter'&&!event.isComposing){
+   event.preventDefault();document.querySelector('#modal-confirm')?.click();
+  }
+ });
+ query?.focus({preventScroll:true});
+ document.querySelector('#v6-search-results')?.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-found-message]');
+  if(!button||!current()||button.disabled)return;
+  const id=Number(button.dataset.foundMessage);
+  const thread=document.querySelector('#chat-messages');
+  const row=document.getElementById('msg-'+(group?'group':'dm')+'-'+id);
+  if(row&&thread.contains(row)){
+   document.querySelector('#modal-root').replaceChildren();
+   thread.dataset.followChatEnd='false';
+   row.scrollIntoView({block:'center',behavior:'instant'});
+   row.tabIndex=-1;row.focus({preventScroll:true});
+   row.classList.add('search-target');
+   setTimeout(()=>row.classList.remove('search-target'),1600);
+   return;
+  }
+  button.disabled=true;
+  try{
+   const url=group?'/api/groups/'+chat+'/messages':'/api/messages/'+chat;
+   const data=await api(url+'?before='+(id+1)+'&limit=1');
+   if(!current()||!button.isConnected)return;
+   const message=data.messages.find(item=>item.id===id&&!item.deleted_at);
+   if(!message){toast('Tin nhắn này không còn khả dụng.','info');return;}
+   modal({title:'Tin nhắn trong lịch sử',description:v6Stamp(message.created_at),
+    content:'<div class="original-message">'+esc(message.body||message.attachment?.name||'Tệp đính kèm')+'</div>',
+    confirm:'Đóng',cancel:null});
+  }catch(error){if(button.isConnected)toast(error.message,'error');}
+  finally{button.disabled=false;}
+ });
 }
 async function v6MessageVersions(btn){
  const group=btn.dataset.v6Scope==='group',chat=group?state.groupSelected:state.selected;

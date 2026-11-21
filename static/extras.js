@@ -164,7 +164,9 @@ function paintGroupThread(scroll=false){
  if(!box)return;
  const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
  box.innerHTML=bubblesFor(state.groupMessages,true);
- box.scrollTo({top:scroll||near?box.scrollHeight:position,behavior:'instant'});
+ if(scroll)settleChatEnd(box);
+ else if(near)followChatEnd(box);
+ else box.scrollTo({top:position,behavior:'instant'});
  syncThreadJump(box);
 }
 let groupHistoryRequest=0;
@@ -566,7 +568,7 @@ function appendGroupMessage(groupId,message){
  if(capped)messages.splice(0,messages.length-100);
  const box=$('#chat-messages');
  if(box){
-  if(capped||outOfOrder)paintGroupThread();
+  if(capped||outOfOrder)paintGroupThread(message.sender_id===state.user?.id&&pos<0);
   else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
   syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
  }
