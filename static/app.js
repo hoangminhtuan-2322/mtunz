@@ -746,8 +746,8 @@ function authSupport(){
  ${state.tickets.length?`<div class="sep"></div><span class="eyebrow">CUỘC TRÒ CHUYỆN GẦN ĐÂY</span><div class="stack" style="margin-top:12px">${state.tickets.slice(0,5).map(t=>`<button class="btn ghost full" style="justify-content:space-between" data-act="support-open" data-id="${t.id}">#${t.id} · ${esc(t.kind)} <span class="pill">${esc(t.status)}</span></button>`).join('')}</div>`:''}`;
  return `<div class="row between" style="margin-bottom:17px"><button class="linkbtn" data-act="support-back">${icon('back',15)} Các yêu cầu</button><span class="pill">Phiếu hỗ trợ #${state.supportTicket}</span></div>
  <h1>Trò chuyện với admin</h1><p class="hint">Đối thoại này chỉ hiển thị cho trình duyệt đã mở yêu cầu và quản trị viên. Không chia sẻ mã khôi phục với người khác.</p>
- <div class="support-list" id="support-list" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
- <form data-form="support-reply" style="margin-top:12px"><div class="row"><input name="body" class="input" maxlength="1500" placeholder="Nhắn cho admin..." required><button class="btn primary circle" title="Gửi">${icon('send')}</button></div></form>
+ <div class="support-list" id="support-list" data-ticket-id="${state.supportTicket}" role="log" aria-live="polite" aria-label="Tin nhắn hỗ trợ" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
+ <form data-form="support-reply" class="support-chat-composer" data-ticket-id="${state.supportTicket}" style="margin-top:12px"><div class="row"><textarea name="body" class="input support-chat-entry" rows="1" maxlength="1500" placeholder="Nhắn cho admin..." aria-label="Nhắn cho admin" required></textarea><button class="btn primary circle" type="submit" title="Gửi tin nhắn" aria-label="Gửi tin nhắn">${icon('send')}</button></div></form>
  <div class="sep"></div><h3>Đặt lại mật khẩu hoặc PIN</h3><p class="hint">Sau khi xác minh, admin sẽ cấp mã dùng một lần trong cuộc trò chuyện trên.</p>
  <form data-form="support-reset">${inputField('Mã khôi phục từ admin','code','text','','autocomplete="off"')}
  <div class="field"><label>Đặt lại loại thông tin</label><select name="kind" class="select" id="reset-kind"><option value="password">Mật khẩu</option><option value="pin">Mã PIN</option></select></div>
@@ -756,6 +756,50 @@ function authSupport(){
  <button class="btn ghost full">Xác nhận đặt lại</button></form>`;
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
+
+/* Stable thread updates: do not unmount the reply field on every send/socket. */
+function supportThreadBox(admin,ticketId){
+ const box=$(admin?'#admin-ticket-messages':'#support-list');
+ return box&&Number(box.dataset.ticketId)===Number(ticketId)?box:null;
+}
+function supportThreadAtBottom(box){
+ return box.scrollHeight-box.scrollTop-box.clientHeight<110;
+}
+function paintSupportMessages(admin,ticketId,messages){
+ const box=supportThreadBox(admin,ticketId);
+ if(!box)return false;
+ const follow=supportThreadAtBottom(box),oldTop=box.scrollTop;
+ box.innerHTML=renderTicketBubbles(messages);
+ if(follow)box.scrollTop=box.scrollHeight;else box.scrollTop=oldTop;
+ return true;
+}
+function appendSupportMessage(admin,ticketId,message,own=false){
+ if(!message||!Number.isSafeInteger(Number(message.id)))return false;
+ if(admin){
+  if(!state.user?.is_admin||state.adminTab!=='tickets'||state.adminTicket!==ticketId)return false;
+ }else if(state.supportTicket!==ticketId)return false;
+ const list=admin?state.adminTicketMessages:state.ticketMessages;
+ if(list.some(x=>Number(x.id)===Number(message.id)))return true;
+ const box=supportThreadBox(admin,ticketId);
+ list.push(message);
+ list.sort((a,b)=>Number(a.id)-Number(b.id));
+ if(box){
+  const follow=own||supportThreadAtBottom(box);
+  if(box.querySelector('.empty'))box.replaceChildren();
+  if(list[list.length-1]===message)box.insertAdjacentHTML('beforeend',renderTicketBubbles([message]));
+  else box.innerHTML=renderTicketBubbles(list);
+  if(follow)box.scrollTop=box.scrollHeight;
+ }
+ return true;
+}
+function finishSupportReply(form,sentText){
+ const field=form.querySelector('.support-chat-entry');
+ if(!field?.isConnected)return;
+ // Preserve any new text typed before the server responds.
+ if(field.value.trim()===sentText)field.value='';
+ field.focus({preventScroll:true});
+}
+
 function renderAuth(){
  // Keep the left-side hero DOM mounted across login/register/support transitions.
  // Rebuilding #app here restarted every decorative animation in the opposite column.
@@ -1446,8 +1490,8 @@ function adminTickets(){const tickets=state.adminData||[];
  <button class="btn ghost sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="${chosen.status==='open'?'closed':'open'}">${chosen.status==='open'?'Đóng':'Mở lại'}</button>
  ${chosen.status==='spam'?'':`<button class="btn danger sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="spam">${icon('ban',14)} Đánh dấu spam</button>`}
  </div></div>
- <div class="support-list grow" id="admin-ticket-messages" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
- <form data-form="admin-ticket-reply"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>
+ <div class="support-list grow" id="admin-ticket-messages" data-ticket-id="${chosen.id}" role="log" aria-live="polite" aria-label="Tin nhắn hỗ trợ của người dùng" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
+ <form data-form="admin-ticket-reply" class="support-chat-composer" data-ticket-id="${chosen.id}"><div class="row"><textarea class="input support-chat-entry" name="body" rows="1" placeholder="Trả lời người dùng..." aria-label="Trả lời người dùng" required maxlength="1500"></textarea><button type="submit" class="btn primary circle" title="Gửi tin nhắn" aria-label="Gửi tin nhắn">${icon('send')}</button></div></form>
  ${['password','pin'].includes(chosen.kind)?`<div class="info-strip" style="margin:0">Chỉ cấp mã đặt lại khi đã <b>xác minh danh tính bằng kênh độc lập</b>. Không dựa đơn thuần vào thông tin mà người lạ tự khai trong chat.</div>
  <button class="btn ghost" data-act="admin-recovery-grant" data-id="${chosen.id}">${icon('lock',16)} Cấp mã khôi phục một lần (15 phút)</button>`:
  '<div class="hint">Nếu người dùng quên tên đăng nhập, xác minh danh tính rồi trả lời tên tài khoản trong chat.</div>'}
