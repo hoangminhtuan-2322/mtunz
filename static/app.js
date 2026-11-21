@@ -1258,6 +1258,7 @@ function renderApp(){
  globalThis.markViewMotion?.(root().querySelector(inbox?'.side':'.main'),
    ['member',state.user.id,state.tab,state.tab==='groups'?state.groupSelected:state.selected].join(':'));
  window.applyChatPhoto?.();
+ window.applyChatBubble?.();
  const thread=$('#chat-messages');
  if(thread){
   const resume=reading&&thread.dataset.chatKey===reading.key;

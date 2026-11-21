@@ -16,6 +16,50 @@
   const data=storedPhoto(state.user.id);
   thread.style.backgroundImage=data?'linear-gradient(#08122599,#08122599),url('+data+')':'';
  };
+ const bubbleStyles={
+  default:'Mặc định',ink:'Nét Bút',cloud:'Mây Tím',firefly:'Đom Đóm',cat:'Mèo Trốn',
+  puffer:'Cá Nóc',mushroom:'Vườn Nấm',postcard:'Bưu Thiếp',wave:'Sóng Biển',
+  pixel:'Pixel 8-bit',moon:'Trăng Khuyết'
+ };
+ function bubbleChoiceKey(owner,chat){return 'mtunz.bubble.'+owner+'.'+chat;}
+ function savedBubble(key){
+  try{
+   const value=localStorage.getItem(key);
+   if(Object.hasOwn(bubbleStyles,value))return value;
+  }catch{}
+  return 'default';
+ }
+ window.applyChatBubble=()=>{
+  const thread=document.querySelector('.thread[data-chat-key]');
+  if(thread&&state.user)thread.dataset.bubbleStyle=savedBubble(bubbleChoiceKey(state.user.id,thread.dataset.chatKey));
+ };
+ function chooseBubble(){
+  const thread=document.querySelector('.thread[data-chat-key]');
+  if(!thread)return;
+  const owner=state.user.id,chat=thread.dataset.chatKey,key=bubbleChoiceKey(owner,chat),selected=savedBubble(key);
+  modal({title:'Kiểu bong bóng',description:'Lưu riêng cho hội thoại này trên trình duyệt của bạn.',confirm:'Lưu kiểu bong bóng',
+   content:`<div class="bubble-preview" data-bubble-style="${selected}">
+    <div class="bubble">Tối nay mình trò chuyện nhé?</div>
+    <div class="bubble mine">Được chứ! Mình vừa tìm thấy một kiểu bong bóng mới cho cuộc trò chuyện này.</div>
+   </div><fieldset class="bubble-style-grid"><legend>Chọn mẫu</legend>${Object.entries(bubbleStyles).map(([id,label])=>
+   `<label data-bubble-style="${id}"><input type="radio" name="chat-bubble" value="${id}" ${selected===id?'checked':''}>
+     <span class="bubble mine" aria-hidden="true">Aa</span><span>${label}</span>
+   </label>`).join('')}</fieldset>`,
+   handler:host=>{
+    const current=document.querySelector('.thread[data-chat-key]');
+    if(state.user?.id!==owner||current?.dataset.chatKey!==chat)throw Error('Hãy mở lại bộ chọn trong hội thoại cần đổi kiểu.');
+    const value=host.querySelector('[name="chat-bubble"]:checked')?.value;
+    if(!Object.hasOwn(bubbleStyles,value))return false;
+    try{localStorage.setItem(key,value);}catch{throw Error('Trình duyệt không thể lưu kiểu bong bóng.');}
+    window.applyChatBubble();
+   }});
+  const preview=document.querySelector('.bubble-preview');
+  preview.dataset.paper=thread.dataset.paper;
+  preview.style.backgroundImage=thread.style.backgroundImage;
+  preview.nextElementSibling.addEventListener('change',e=>{
+   if(e.target.name==='chat-bubble')preview.dataset.bubbleStyle=e.target.value;
+  });
+ }
  async function bitmap(file){
   if(!file||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>6*1024*1024)
    throw Error('Chọn ảnh JPG, PNG hoặc WebP dưới 6 MB.');
@@ -136,6 +180,7 @@
  document.addEventListener('click',e=>{
   const b=e.target.closest('[data-studio]');if(!b||!state.user||state.user.is_admin)return;
   if(b.dataset.studio==='wallpaper')wallpaper();
+  if(b.dataset.studio==='bubble')chooseBubble();
   if(b.dataset.studio==='sticker')sticker();
  });
 })();

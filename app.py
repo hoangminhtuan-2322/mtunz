@@ -126,6 +126,16 @@ def normalize_phone(value: str) -> str:
     return number
 
 
+def ensure_phone_available(c, phone: str, owner_id: int = 0):
+    """Serialize phone claims, including on databases with legacy duplicates."""
+    if POSTGRES_MODE:
+        c.execute('SELECT pg_advisory_xact_lock(CAST(? AS BIGINT))', (-int(phone[1:]),))
+    else:
+        c.execute('BEGIN IMMEDIATE')
+    if one(c, 'SELECT id FROM users WHERE phone=? AND id<>?', (phone, owner_id)):
+        raise HTTPException(409, 'Số điện thoại này đã liên kết với tài khoản khác.')
+
+
 def normalize_login(value: str) -> str:
     """Accept a username or canonical VN/E.164 phone without revealing username."""
     raw = str(value or '').strip()
@@ -769,8 +779,7 @@ async def register_complete(request: Request, body: RegisterComplete):
             raise HTTPException(422,'Bạn cần đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.')
         phone=normalize_phone(r['phone'] or body.phone)
         email=normalize_email(r['email'])
-        if one(c,'SELECT 1 FROM users WHERE phone=?',(phone,)):
-            raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng liên hệ hỗ trợ.')
+        ensure_phone_available(c, phone)
         total, reserved, max_users = registration_capacity(c)
         if total >= max_users:
             raise HTTPException(409,'Hệ thống đã đạt giới hạn người dùng.')
@@ -2001,8 +2010,7 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
         user=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
         if not user:
             raise HTTPException(404,'Không tìm thấy người dùng hợp lệ.')
-        if one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,uid)):
-            raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
+        ensure_phone_available(c, phone, uid)
         c.execute('''UPDATE users SET display_name=?,bio=?,phone=?,email=?
                      WHERE id=? AND is_admin=0''',
                   (body.display_name.strip(),body.bio.strip(),phone,email,uid))

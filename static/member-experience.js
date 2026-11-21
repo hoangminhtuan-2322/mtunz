@@ -309,7 +309,8 @@ function mountHeader(header){
  summary.setAttribute('aria-label','Mở thêm tùy chọn hội thoại');
  const list=make('div','chat-header-menu');list.setAttribute('role','group');list.setAttribute('aria-label','Tùy chọn hội thoại');
  const paper=make('button','btn ghost sm','Hình nền hội thoại');paper.type='button';paper.dataset.studio='wallpaper';
- list.append(paper);
+ const bubble=make('button','btn ghost sm','Kiểu bong bóng');bubble.type='button';bubble.dataset.studio='bubble';
+ list.append(paper,bubble);
  for(const button of buttons)list.append(button);
  details.append(summary,list);header.append(details);
  header.classList.add('chat-header-refined');

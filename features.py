@@ -204,12 +204,13 @@ def install(core):
         email=core.normalize_email(body.email) if body.email is not None else u['email']
         name=core.validate_display_name(body.display_name,u['username'])
         with db() as c:
-            if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
-                raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
+            if body.phone is not None:
+                core.ensure_phone_available(c, phone, u['id'])
             c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
-                          phone=?,email=? WHERE id=?''',
+                          phone=COALESCE(?,phone),email=COALESCE(?,email) WHERE id=?''',
                       (name,body.bio.strip(),int(body.show_online),
-                       int(body.show_receipts),phone,email,u['id']))
+                       int(body.show_receipts),phone if body.phone is not None else None,
+                       email if body.email is not None else None,u['id']))
         return {'ok':True}
 
     @app.get('/api/profile/{uid}')

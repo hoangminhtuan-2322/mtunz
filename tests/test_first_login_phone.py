@@ -92,6 +92,11 @@ def test_phone_uniqueness_and_existing_login_compatibility():
     duplicate=guest.post('/api/registration/request',json={
         'username':'second_account','phone':phone})
     assert duplicate.status_code==409,duplicate.text
+    other=register_user(admin,'other_account')
+    local_phone='0'+phone[3:]
+    conflict=other.patch('/api/me/profile',json={'display_name':'Tên khác','phone':local_phone})
+    assert conflict.status_code==409,conflict.text
+    assert other.get('/api/me').json()['user']['phone']!=phone
     assert first.get('/api/me').json()['user']['onboarding_required'] is False
 
 
