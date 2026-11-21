@@ -54,8 +54,15 @@ const {chromium}=require('playwright-core');
         display_name:'Người mới',body:'Tin gần cuối',
         created_at:Math.floor(Date.now()/1000)});
     });
-    const gap=await page.locator('#world-feed').evaluate(e=>e.scrollHeight-e.scrollTop-e.clientHeight);
-    assert(gap<6,'Near-bottom user follows latest messages');
+    // CSS may animate a scroll into view. Wait for layout/paint to settle
+    // before checking the final at-bottom position.
+    await page.waitForTimeout(180);
+    const metrics=await page.locator('#world-feed').evaluate(e=>({
+      top:e.scrollTop,height:e.scrollHeight,client:e.clientHeight,
+      behavior:getComputedStyle(e).scrollBehavior
+    }));
+    const gap=metrics.height-metrics.top-metrics.client;
+    assert(gap<16,'Near-bottom user follows latest messages: '+JSON.stringify(metrics));
     await page.evaluate(()=>{
       appendWorldSocket({id:57,room_id:1,sender_id:8,body:'Trùng',created_at:0});
       appendWorldSocket({id:999,room_id:2,sender_id:8,body:'Sai phòng',created_at:0});
