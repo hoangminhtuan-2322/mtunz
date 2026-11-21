@@ -179,3 +179,21 @@ def test_ops_restricted_flags_and_factory_reset_scopes():
         assert c.execute('SELECT COUNT(*) n FROM world_poll_votes').fetchone()['n']==0
         assert c.execute('SELECT COUNT(*) n FROM message_edit_history').fetchone()['n']==0
         assert c.execute('SELECT enabled FROM feature_flags WHERE code=?',('calls',)).fetchone()['enabled']==1
+
+
+def test_recall_updates_notices_and_unread_without_affecting_other_messages():
+    _,sender,recipient,sender_id,recipient_id=setup()
+    def notices():
+        return [n['body'] for n in recipient.get('/api/notifications').json()['notifications']]
+    original=sender.post('/api/messages',json={'recipient_id':recipient_id,'body':'Bản nháp'})
+    mid=original.json()['message']['id']
+    sender.post('/api/messages',json={'recipient_id':recipient_id,'body':'Giữ lại'})
+    assert any('Bản nháp' in body for body in notices())
+    assert sender.patch(f'/api/messages/{mid}',json={'body':'Đã chỉnh sửa'}).status_code==200
+    assert any('Đã chỉnh sửa' in body for body in notices())
+    assert sender.delete(f'/api/messages/{mid}').status_code==200
+    remaining=notices()
+    assert not any('Bản nháp' in body or 'Đã chỉnh sửa' in body for body in remaining)
+    assert any('Giữ lại' in body for body in remaining)
+    friend=next(f for f in recipient.get('/api/friends').json()['friends'] if f['other_id']==sender_id)
+    assert friend['unread']==1

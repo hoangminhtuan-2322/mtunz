@@ -1133,25 +1133,28 @@ async def change_password(request: Request, body: ChangePassword):
 
 # --- Friends and blocking ---
 @app.get('/api/people/search')
-async def people_search(request: Request,q: str=''):
+def people_search(request: Request,q: str=''):
     u=current_user(request)
     if not q.strip(): return {'users':[]}
     with db() as c:
         search = q.strip()[:24]
         numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
-        rows = many(c, '''SELECT id,public_id,avatar_attachment_id,profile_visibility,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
-                          FROM users WHERE is_admin=0 AND id!=? AND needs_display_name=0
-                          AND (display_name LIKE ? OR public_id=?)
-                          AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
-                          AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id=?)
-                          LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
+        rows = many(c, '''SELECT u.id,u.public_id,u.avatar_attachment_id,u.profile_visibility,
+                     COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,u.display_name,
+                     COALESCE(f.state,'none') AS friend_state,f.requested_by
+                     FROM users u LEFT JOIN friendships f ON
+                       ((f.u1=? AND f.u2=u.id) OR (f.u2=? AND f.u1=u.id))
+                     WHERE u.is_admin=0 AND u.id!=? AND u.needs_display_name=0
+                       AND (u.display_name LIKE ? OR u.public_id=?)
+                       AND NOT EXISTS (SELECT 1 FROM blocks WHERE
+                         (blocker_id=? AND blocked_id=u.id) OR (blocked_id=? AND blocker_id=u.id))
+                     ORDER BY u.id LIMIT 20''',
+                    (u['id'],u['id'],u['id'],'%'+search+'%',numeric_id,u['id'],u['id']))
         for r in rows:
-            fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
             r['avatar_url'] = f'/api/profile/{r["id"]}/avatar' if r['avatar_attachment_id'] and r['profile_visibility']=='everyone' else None
             r.pop('avatar_attachment_id',None)
             r.pop('profile_visibility',None)
-            r['friend_state'] = fr['state'] if fr else 'none'
-            r['requested_by_me'] = bool(fr and fr['requested_by']==u['id'])
+            r['requested_by_me'] = r.pop('requested_by') == u['id']
     return {'users':rows}
 
 
@@ -1186,7 +1189,7 @@ async def get_friends(request: Request):
                      AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
                    ORDER BY id DESC LIMIT 1) AS last_sender,
                  (SELECT count(*) FROM messages
-                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL
+                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL AND deleted_at IS NULL
                    AND (expires_at IS NULL OR expires_at>?)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
@@ -1403,7 +1406,8 @@ async def send_message(request:Request,body:SendMessage):
                     notify_user_persist(c,body.recipient_id,
                        (f'Tin nhắn tự biến mất từ {u["display_name"] or "Thành viên"}.'
                         if vanish else
-                        f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}'))
+                        f'Tin nhắn từ {u["display_name"] or "Thành viên"}'),
+                       message_id=msg['id'],preview_kind=None if vanish else 'direct')
     if not replay:
         await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
                              hub.user(u['id'],'message',message=msg))
@@ -1430,7 +1434,18 @@ async def read_messages(request:Request,other_id:int):
 @app.get('/api/notifications')
 async def get_notifications(request:Request):
     u=current_user(request)
-    with db() as c:return {'notifications':many(c,'SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 80',(u['id'],))}
+    with db() as c:
+        notices=many(c,'''SELECT n.id,n.user_id,n.created_at,n.read_at,
+                  CASE WHEN n.preview_kind='legacy' THEN 'Bạn có tin nhắn.'
+                       WHEN n.preview_kind IN ('direct','scheduled') THEN
+                         n.body || ': ' || COALESCE(NULLIF(substr(m.body,1,120),''),
+                           CASE WHEN n.preview_kind='scheduled' THEN 'Có tệp đính kèm' ELSE 'Đã gửi một tệp' END)
+                       ELSE n.body END AS body
+                  FROM notifications n LEFT JOIN messages m ON m.id=n.message_id AND m.recipient_id=n.user_id
+                  WHERE n.user_id=? AND (n.message_id IS NULL OR
+                      (m.id IS NOT NULL AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?)))
+                  ORDER BY n.id DESC LIMIT 80''',(u['id'],now()))
+    return {'notifications':notices}
 
 
 

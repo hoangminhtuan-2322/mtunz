@@ -68,6 +68,15 @@ def install(core):
             for col, typ in [('attachment_id','INTEGER'),('reply_to','INTEGER'),('edited_at','INTEGER'),('deleted_at','INTEGER')]:
                 column('messages', col, typ)
             column('notifications', 'read_at','INTEGER')
+            column('notifications','message_id','INTEGER REFERENCES messages(id) ON DELETE CASCADE')
+            if 'preview_kind' not in {r['name'] for r in c.execute('PRAGMA table_info(notifications)')}:
+                column('notifications','preview_kind','TEXT')
+                # Old previews have no reliable message ID. Keep the original rows
+                # and show a generic label instead of guessing the conversation.
+                c.execute("""UPDATE notifications SET preview_kind='legacy'
+                             WHERE body LIKE ? OR body LIKE ?""",
+                          ('Tin nhắn từ %: %','Tin nhắn hẹn giờ từ %: %'))
+            c.execute('CREATE INDEX IF NOT EXISTS notifications_message_idx ON notifications(message_id) WHERE message_id IS NOT NULL')
             column('sessions','created_at','INTEGER')
             for table in ('sessions', 'trusted_devices'):
                 for name, typ in (
@@ -173,8 +182,9 @@ def install(core):
             result['reactions']=reactions_for(c,scope,row['id'])
         return result
 
-    def notify(c, uid, body):
-        c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',(uid,body[:500],now()))
+    def notify(c, uid, body, message_id=None, preview_kind=None):
+        c.execute('''INSERT INTO notifications(user_id,body,created_at,message_id,preview_kind)
+                     VALUES(?,?,?,?,?)''',(uid,body[:500],now(),message_id,preview_kind))
 
     class Profile(BaseModel):
         display_name:str=Field(default='',max_length=50)
@@ -776,6 +786,7 @@ def install(core):
         with db() as c:
             m=dm_message_owner(c,mid,u['id'])
             c.execute("UPDATE messages SET deleted_at=COALESCE(deleted_at,?), body='' WHERE id=?",(now(),mid))
+            c.execute('DELETE FROM notifications WHERE message_id=?',(mid,))
             c.execute("DELETE FROM message_pins WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM message_edit_history WHERE scope='dm' AND message_id=?",(mid,))
@@ -913,7 +924,7 @@ def install(core):
                 pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
                          (body.target_id,u['id']))
                 if not pref or not pref['muted']:
-                    notify(c,body.target_id,f'{u["display_name"] or "Thành viên"} đã chuyển tiếp một tin nhắn.')
+                    notify(c,body.target_id,f'{u["display_name"] or "Thành viên"} đã chuyển tiếp một tin nhắn.',message_id=cur.lastrowid)
             else:
                 active_member(c,body.target_id,u['id'])
                 cur=c.execute('''INSERT INTO group_messages

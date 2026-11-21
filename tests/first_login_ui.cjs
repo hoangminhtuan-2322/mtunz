@@ -20,7 +20,7 @@ assert(app.includes('await logout();'));
 assert(app.includes('Đăng xuất và đăng nhập lại'));
 assert(app.includes('Tên đăng nhập hoặc số điện thoại'));
 assert(app.includes('placeholder="Tên tài khoản hoặc UID"'));
-assert(backend.includes('display_name LIKE ? OR public_id=?'),'Public search preserves display-name and seven-digit public-ID lookup');
+assert(backend.includes('u.display_name LIKE ? OR u.public_id=?'),'Public search preserves display-name and seven-digit public-ID lookup');
 assert(!backend.includes('display_name LIKE ? OR username LIKE ? OR id=?'),'Never expose private login usernames through public search');
 assert(backend.includes('def normalize_login('));
 assert(backend.includes('def login_user('));

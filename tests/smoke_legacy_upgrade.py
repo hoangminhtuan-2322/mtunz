@@ -45,6 +45,13 @@ with psycopg.connect(url,row_factory=dict_row) as c:
                               VALUES('admin',%s,1,%s) RETURNING id""",
                           (existing_hash,int(time.time()))).fetchone()['id']
 
+    c.execute("""CREATE TABLE notifications (
+        id BIGSERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id),
+        body TEXT NOT NULL, created_at INTEGER NOT NULL)""")
+    for body in ('Tin nhắn từ An: Nội dung cũ','Tin nhắn hẹn giờ từ An: Hẹn gặp','Thông báo bảo trì'):
+        c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(%s,%s,%s)',
+                  (prior_admin,body,int(time.time())))
+
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from app import app,db
@@ -53,6 +60,12 @@ with TestClient(app,base_url='https://testserver') as client:
     assert client.get('/health').status_code==200
     assert client.get('/terms').status_code==200
     assert client.get('/privacy').status_code==200
+    assert client.post('/api/auth/password',json={
+        'username':'admin','password':os.environ['ADMIN_PASSWORD']}).status_code==200
+    notices=client.get('/api/notifications').json()['notifications']
+    assert [n['body'] for n in notices]==['Thông báo bảo trì','Bạn có tin nhắn.','Bạn có tin nhắn.']
+
+    assert client.post('/api/auth/logout').status_code==200
 
 with db() as c:
     admin=c.execute('SELECT id,password_hash,terms_accepted_at,terms_accepted_version FROM users WHERE username=?',('admin',)).fetchone()

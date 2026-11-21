@@ -423,7 +423,14 @@ async function extraSocket(data){
   }
  }
  if(t==='group-message-updated'&&state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
- if(t==='message-updated'&&state.selected&&state.tab==='messages')await loadMessages(false);
+ if(t==='message-updated'){
+  scheduleFriendsRefresh();
+  if(state.selected&&state.tab==='messages')await loadMessages(false);
+  if(state.tab==='notices'){
+   await loadNotices();
+   if(state.tab==='notices')renderApp();
+  }
+ }
  if(t==='group-typing'&&state.tab==='groups'&&state.groupSelected===data.group_id){
   const el=$('#typing-text');if(el)el.textContent=data.on?'Một thành viên đang nhập tin nhắn…':'';
  }

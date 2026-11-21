@@ -232,7 +232,8 @@ def install(core):
                         core.notify_user_persist(c,recipient_id,
                             (f'Tin nhắn tự biến mất từ {sender["display_name"] or "Thành viên"}.'
                              if lifespan else
-                             f'Tin nhắn hẹn giờ từ {sender["display_name"] or "Thành viên"}: {row["body"][:120] if row["body"] else "Có tệp đính kèm"}'))
+                             f'Tin nhắn hẹn giờ từ {sender["display_name"] or "Thành viên"}'),
+                            message_id=saved.lastrowid,preview_kind=None if lifespan else 'scheduled')
                 except HTTPException as exc:
                     c.execute('''UPDATE scheduled_messages SET state='failed',updated_at=?,
                                failure_reason=? WHERE id=?''',

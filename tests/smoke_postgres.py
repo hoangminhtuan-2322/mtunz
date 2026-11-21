@@ -3,6 +3,7 @@
 Run only with a disposable database and TEST_POSTGRES_URL set.
 Never run this against a database with real user data.
 """
+from contextlib import closing
 import os
 from pathlib import Path
 import sys
@@ -34,7 +35,7 @@ with TestClient(app, base_url="https://testserver") as admin:
     assert login.json().get("admin") is True, login.text
     assert admin.get("/api/me").json()["user"]["is_admin"] is True
 
-    with TestClient(app, base_url="https://testserver") as guest:
+    with closing(TestClient(app, base_url="https://testserver")) as guest:
         guest.get("/")
         req = guest.post("/api/registration/request", json={"username": "render_ci_user", "phone": "0912345678"})
         assert req.status_code == 200, req.text
@@ -84,7 +85,7 @@ with TestClient(app, base_url="https://testserver") as admin:
         assert guest.get("/api/world/messages").json()["messages"][0]["id"]==message_id
         assert admin.get("/api/admin/world").json()["total_messages"]==1
 
-        with TestClient(app,base_url="https://testserver") as peer:
+        with closing(TestClient(app,base_url="https://testserver")) as peer:
             peer.get("/")
             req2=peer.post("/api/registration/request",json={
                 "username":"render_ci_peer","phone":"0901234567"})
