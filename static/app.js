@@ -422,7 +422,10 @@ function connectSocket(){
    }
    if(t==='support-updated'){
      if(state.user?.is_admin&&state.adminTab==='tickets')await refreshAdminTicketsSidebar();
-     else if(state.supportTicket&&!state.user)await loadTickets();
+     else if(state.supportTicket){
+       await loadTickets();
+       await loadTicketMessages(); // Updates only the thread; keeps composer mounted.
+     }
      return;
    }
  };
