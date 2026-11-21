@@ -196,11 +196,8 @@ def test_pin_only_routine_admin_actions_preserve_strong_recovery_stepup():
         'reason':'Yêu cầu bảo mật thành viên','admin_pin':'2345'}).status_code==200
 
     # PIN-only is also enough to moderate World Chat; no password field.
-    message=admin.post('/api/world/messages',json={'body':'Thông báo cần xử lý'})
-    # Admin may be excluded from member-only World sends; use a fresh member.
-    if message.status_code!=200:
-        member=register_user(admin,'pin_routine_writer')
-        message=member.post('/api/world/messages',json={'body':'Một tin thử nghiệm'})
+    writer=register_user(admin,'pin_routine_writer')
+    message=writer.post('/api/world/messages',json={'body':'Một tin thử nghiệm'})
     assert message.status_code==200,message.text
     mid=message.json()['message']['id']
     removed=admin.post(f'/api/admin/world/messages/{mid}/remove',json={
@@ -208,10 +205,10 @@ def test_pin_only_routine_admin_actions_preserve_strong_recovery_stepup():
     assert removed.status_code==200,removed.text
 
     # Credential-reset grants remain password+PIN even for an Admin with PIN.
-    from app import RecoveryGrantIn
-    from pydantic import ValidationError
-    try:
-        RecoveryGrantIn(username='target',verified=True,admin_pin='2345')
-    except ValidationError:
-        raise AssertionError('Recovery credential proof is validated at the endpoint')
+    grant=f'/api/admin/tickets/999999/grant'
+    assert admin.post(grant,json={'username':'example','verified':True,
+                                  'admin_pin':'2345'}).status_code==401
+    assert admin.post(grant,json={'username':'example','verified':True,
+                                  'admin_password':'mtunz7',
+                                  'admin_pin':'2345'}).status_code==400
     assert admin.get('/api/me').json()['user']['is_admin'] is True
