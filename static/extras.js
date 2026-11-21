@@ -144,17 +144,21 @@ async function openGroup(gid){
  state.tab='groups';state.selected=null;state.groupSelected=gid;state.groupMessages=[];state.replyTo=null;state.pendingAttachment=null;
  renderApp();await loadGroupMessages();
 }
+let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
- const gid=state.groupSelected;if(!gid)return;
+ const gid=state.groupSelected;if(!gid||state.tab!=='groups')return;
+ const request=++groupHistoryRequest,uid=state.user?.id;
+ const current=()=>request===groupHistoryRequest&&state.tab==='groups'&&state.groupSelected===gid&&state.user?.id===uid;
  try{
   const result=await api(`/api/groups/${gid}/messages`);
-  if(state.groupSelected!==gid)return;
+  if(!current())return;
   state.groupMessages=result.messages;
   const box=$('#chat-messages');if(box){const near=box.scrollHeight-box.scrollTop-box.clientHeight<120;box.innerHTML=bubblesFor(state.groupMessages,true);if(scroll||near)box.scrollTop=box.scrollHeight;}
   await post(`/api/groups/${gid}/read`);
+  if(!current())return;
   const g=state.groups.find(x=>x.id===gid);if(g)g.unread=0;
   renderSideItems();
- }catch(e){toast(e.message,'error');}
+ }catch(e){if(current())toast(e.message,'error');}
 }
 function notificationsContent(){
  const ns=state.notices||[];

@@ -782,6 +782,7 @@ function renderAuth(){
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
    </main></div>`;
+   globalThis.markViewMotion?.(host.querySelector('.auth'),['auth',state.mode,state.step,state.regStatus,state.supportTicket].join(':'));
    // Brand artwork stays static; no pointer tracking or background motion.
    return;
  }
@@ -796,6 +797,7 @@ function renderAuth(){
  const screen=existing.querySelector('.auth-screen');
  if(screen){
    screen.innerHTML=screenMarkup;
+   globalThis.markViewMotion?.(screen.firstElementChild,['auth',state.mode,state.step,state.regStatus,state.supportTicket].join(':'));
    // Never scroll the entire page: only the form's own scroll pane may move.
    const main=existing.querySelector('.auth-main');
    if(main && main.scrollTop>0 && screen.getBoundingClientRect().top<main.getBoundingClientRect().top){
@@ -1230,6 +1232,9 @@ function renderApp(){
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
+ const inbox=state.tab==='messages'&&!state.selected&&matchMedia('(max-width:800px)').matches;
+ globalThis.markViewMotion?.(root().querySelector(inbox?'.side':'.main'),
+   ['member',state.user.id,state.tab,state.tab==='groups'?state.groupSelected:state.selected].join(':'));
  window.applyChatPhoto?.();
  const thread=$('#chat-messages');
  if(thread){
@@ -1240,8 +1245,9 @@ function renderApp(){
  }
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
+let memberNavigation=0;
 async function goTab(tab){
- const changed=tab!==state.tab;
+ const request=++memberNavigation,userId=state.user?.id;
  state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
  if(tab==='settings'){
   state.accountDeletion=await api('/api/me/deletion');
@@ -1252,8 +1258,7 @@ async function goTab(tab){
  if(tab==='groups')await refreshGroups(false);
  if(tab==='notices')await loadNotices();
  if(tab==='support'){state.mode='support';await loadTickets();}
- renderApp();
- if(changed)document.querySelector('.shell > .main')?.classList.add('view-enter');
+ if(request===memberNavigation&&state.user?.id===userId&&state.tab===tab&&!state.selected)renderApp();
 }
 
 // ==== Administrator workspace ====
@@ -1646,6 +1651,7 @@ function renderAdmin(){
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='ops'&&typeof adminOpsV6==='function'?adminOpsV6():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():state.adminTab==='world'?adminWorldContent():state.adminTab==='reports'?adminReportsContent():adminAudit();
  root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${adminQueueToolbar(state.adminTab)}${content}</main></div>`;
  saveCurrentView();
+ globalThis.markViewMotion?.(root().querySelector('.admin-page'),['admin',state.user.id,state.adminTab].join(':'));
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
 function showCancelDeletionDialog(){
@@ -1992,9 +1998,9 @@ async function clickAction(button){
    }
    case 'mode-login':state.mode='login';state.step='username';renderAuth();break;
   case 'mode-register':state.mode='register';renderAuth();break;
-  case 'mode-support':state.mode='support';state.supportTicket=null;await loadTickets();renderAuth();break;
+  case 'mode-support':state.mode='support';state.supportTicket=null;await loadTickets();if(state.mode==='support'&&!state.user)renderAuth();break;
   case 'forgot-username':case 'forgot-password':case 'forgot-pin':
-   state.supportKind=act.slice(7);state.mode='support';state.supportTicket=null;await loadTickets();renderAuth();break;
+   state.supportKind=act.slice(7);state.mode='support';state.supportTicket=null;await loadTickets();if(state.mode==='support'&&!state.user)renderAuth();break;
   case 'back-login':state.step='username';state.challenge='';renderAuth();break;
   case 'forget-remembered':{
    await post('/api/auth/remembered/forget');
