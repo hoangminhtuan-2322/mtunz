@@ -72,7 +72,9 @@ jobs:
       - name: Verify optional support memory field
         run: node tests/support_optional_ui.cjs
       - name: Verify detailed Admin audit and protected account actions
-        run: node tests/admin_audit_ui.cjs
+        run: |
+          node tests/admin_audit_ui.cjs
+          node tests/admin_join_date_ui.cjs
       - name: Verify readable admin audit record explanations
         run: node tests/audit_readable_details.cjs
       - name: Verify Admin Clarity enhancements
@@ -198,6 +200,7 @@ jobs:
           trap 'kill "$server_pid" || true' EXIT
           curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
           node tests/admin_workspace_browser.cjs
+          node tests/admin_join_date_browser.cjs
           node tests/member_inbox_browser.cjs
           node tests/auth_entry_browser.cjs
           node tests/world_experience_browser.cjs
