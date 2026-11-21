@@ -21,19 +21,29 @@ Object.assign(Ipaths,{
 const fmtSize = n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.ceil(n/1024))+' KB';
 const safeImage = f=>f?.mime?.startsWith('image/');
 
+let groupsRequest=0;
 async function refreshGroups(redraw=false){
  if(!state.user||state.user.is_admin)return;
- const r=await api('/api/groups');state.groups=r.groups;
+ const userId=state.user.id,request=++groupsRequest;
+ const r=await api('/api/groups');
+ if(state.user?.id!==userId||request!==groupsRequest)return;
+ state.groups=r.groups;
  if(state.groupSelected&&!state.groups.some(x=>x.id===state.groupSelected)){
-    state.groupSelected=null;state.groupDetail=null;state.tab='groups';
+    state.groupSelected=null;state.groupDetail=null;
+    if(state.tab==='groups'){renderApp();return;}
  }
- if(redraw){renderSideItems();if(state.tab==='groups')renderApp();}
+ if(redraw){
+  renderSideItems();
+  if(state.tab==='groups'&&!state.groupSelected)renderApp();
+  else if(state.tab==='groups'){
+   const header=$('#chat-header');
+   if(header)header.innerHTML=groupHeader();
+  }
+ }
 }
-function groupSideItems(){
- const q=(state.sideFilter||'').toLowerCase();
- const list=state.groups.filter(g=>g.title.toLowerCase().includes(q));
- return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<div class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
- <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></div>`).join('')}`;
+function groupSideItems(list,drafts={}){
+ return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<button type="button" class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
+ <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${drafts['group:'+g.id]?`<b class="draft-label">Nháp</b> ${esc(short(drafts['group:'+g.id],38))}`:g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></button>`).join('')}`;
 }
 function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
@@ -64,22 +74,44 @@ function groupHeader(){
 function uploadMarkup(m){
  const a=m.attachment;if(!a)return '';
  if(String(a.mime||'').startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
- if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
+ if(a.mime==='image/png'&&a.name==='mtunz-sticker.png')return `<img class="member-sticker" loading="lazy" src="${esc(a.url)}" alt="Sticker tự tạo">`;
+ if(safeImage(a))return `<a data-image-preview href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh trong hội thoại"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
  return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
+}
+document.addEventListener('click',event=>{
+ const link=event.target.closest('a[data-image-preview]');
+ if(!link||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+ event.preventDefault();
+ const photo=link.querySelector('img');
+ modal({title:'Ảnh trong hội thoại',description:photo.alt||'Ảnh đính kèm',
+   content:`<figure class="chat-photo-preview"><img src="${esc(link.href)}" alt="${esc(photo.alt)}"></figure>
+      <a class="photo-original" href="${esc(link.href)}" target="_blank" rel="noopener">Mở ảnh gốc ↗</a>`,
+   confirm:'Đóng',cancel:null});
+});
+function replyAuthor(message,isGroup){
+ if(!message)return 'Tin nhắn gốc';
+ if(message.sender_id===state.user.id)return 'Bạn';
+ if(isGroup)return message.username||'Thành viên';
+ const peer=state.friends.find(f=>f.other_id===message.sender_id);
+ return peer?.display_name||peer?.username||'Thành viên';
 }
 function bubblesFor(messages,isGroup=false,context=messages){
  if(!messages.length)return '<div class="spacer"></div><div class="empty">Chưa có tin nhắn. Hãy bắt đầu trò chuyện! ✨</div>';
  let html='<div class="spacer"></div>',prevDay='';
  const scope=isGroup?'group':'dm';
+ const byId=new Map(context.map(m=>[m.id,m]));
+ const current=new Date(),today=dayFormatter.format(current);
+ current.setDate(current.getDate()-1);
+ const yesterday=dayFormatter.format(current);
  for(const m of messages){
   const day=dayFormatter.format(m.created_at*1000);
-  if(prevDay!==day){html+=`<div class="day-label">${esc(day)}</div>`;prevDay=day;}
+  if(prevDay!==day){html+=`<div class="day-label" title="${esc(day)}">${day===today?'Hôm nay':day===yesterday?'Hôm qua':esc(day)}</div>`;prevDay=day;}
   const mine=m.sender_id===state.user.id;
-  const reference=m.reply_to?context.find(x=>x.id===m.reply_to):null;
+  const reference=byId.get(m.reply_to);
   const reacted=[...new Set((m.reactions||[]).map(r=>r.emoji))];
   const actions=(!m.deleted_at&&m.id>0)?`<div class="bubble-actions">
-   <button type="button" data-social-action="pin" data-message-id="${Number(m.id)}" aria-label="Ghim hoặc bỏ ghim tin nhắn">📌</button>
-   <button type="button" data-social-action="forward" data-message-id="${Number(m.id)}" aria-label="Chuyển tiếp tin nhắn">↗</button>
+   <button type="button" data-social-action="pin" data-message-id="${Number(m.id)}" title="Ghim hoặc bỏ ghim tin này" aria-label="Ghim hoặc bỏ ghim tin nhắn">📌</button>
+   <button type="button" data-social-action="forward" data-message-id="${Number(m.id)}" title="Chuyển tiếp tin nhắn" aria-label="Chuyển tiếp tin nhắn">↗</button>
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
@@ -90,7 +122,9 @@ function bubblesFor(messages,isGroup=false,context=messages){
     ${isGroup&&!mine?`<div class="group-sender">${esc(m.username||'Thành viên')}</div>`:''}
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
     ${m.forwarded&&!m.deleted_at&&m.id>0?'<small class="mt-forwarded-label">↪ Đã chuyển tiếp</small>':''}
-    ${m.reply_to?`<div class="reply-inline">↳ ${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||(reference.attachment?'Tệp đính kèm':'Tin nhắn'),80)):'Đã trả lời tin nhắn'}</div>`:''}
+    ${m.reply_to&&!m.deleted_at?`<button type="button" class="reply-inline reply-link" data-act="reply-origin" data-id="${Number(m.reply_to)}" title="Xem tin nhắn gốc">
+      <span class="reply-author">${icon('reply',13)} ${esc(replyAuthor(reference,isGroup))}</span>
+      <span class="reply-excerpt">${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||'Tệp đính kèm',90)):'Mở tin nhắn gốc'} </span></button>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
      ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${clock(m.expires_at)}</span>`:''}
@@ -104,7 +138,7 @@ function bubblesFor(messages,isGroup=false,context=messages){
 function composerExtras(){
  const a=state.pendingAttachment,m=state.replyTo;
  return `<div class="compose-extra" id="compose-extra">
- ${m?`<div class="compose-reply">↳ Đang trả lời: ${esc(short(m.body||'Tệp đính kèm',80))}<button class="icon-only" data-act="cancel-reply">${icon('x',13)}</button></div>`:''}
+ ${m?`<div class="compose-reply">↳ Đang trả lời: ${esc(short(m.body||'Tệp đính kèm',80))}<button class="icon-only" data-act="cancel-reply" aria-label="Hủy trả lời">${icon('x',13)}</button></div>`:''}
  ${a?`<div class="compose-file">${icon('paperclip',15)} ${esc(short(a.name,45))} (${fmtSize(a.size)})<button class="icon-only" data-act="cancel-file">${icon('x',13)}</button></div>`:''}
  ${state.uploading?'<div class="compose-file">Đang tải tệp lên…</div>':''}
  ${typeof v4VoiceComposer==='function'?v4VoiceComposer():''}</div>`;
@@ -112,13 +146,13 @@ function composerExtras(){
 function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
  if(!g)return groupLobby();
- return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>
+ return `<div class="conversation"><div id="chat-header">${groupHeader()}</div><div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
- <button type="submit" class="btn primary send" aria-label="Gửi tin nhắn">${icon('send',20)}</button>
+ <button type="submit" class="btn primary send" title="Gửi tin nhắn" aria-label="Gửi tin nhắn">${icon('send',20)}</button>
  <div class="hint" style="margin-top:7px;font-size:10px">Tối đa 12 MB/tệp · Enter gửi · Shift+Enter xuống dòng</div></div></div>`;
 }
 async function openGroup(gid){
@@ -133,6 +167,7 @@ function paintGroupThread(scroll=false){
  if(scroll)settleChatEnd(box);
  else if(near)followChatEnd(box);
  else box.scrollTo({top:position,behavior:'instant'});
+ syncThreadJump(box);
 }
 let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
@@ -149,19 +184,23 @@ async function loadGroupMessages(scroll=true){
   }
   state.groupMessages=[...incoming.values()].sort((a,b)=>a.id-b.id).slice(-100);
   paintGroupThread(scroll);
-  await post(`/api/groups/${gid}/read`);
-  if(!current())return;
-  const g=state.groups.find(x=>x.id===gid);if(g)g.unread=0;
-  renderSideItems();
  }catch(e){if(current())toast(e.message,'error');}
 }
 function notificationsContent(){
  const ns=state.notices||[];
- return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">TRUNG TÂM THÔNG BÁO</span><h1 class="section-title">Thông báo của bạn</h1>
- <p class="section-lead">Lời mời, hoạt động mới và thông báo từ quản trị viên.</p><div class="row" style="gap:12px;margin-bottom:20px"><button class="btn primary sm" data-act="notice-read">Đánh dấu tất cả đã đọc</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button><button class="btn ghost sm" type="button" data-act="notice-sound" aria-pressed="${chatSoundEnabled()}">Âm báo tin nhắn</button></div>
- ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?'<span class="pill good">Mới</span>':''}</div>`).join(''):'<div class="empty">Chưa có thông báo nào.</div>'}</div></div>`;
+ return `<div class="main-body"><div class="section-wrap">
+ <div class="notice-tools"><button type="button" class="btn ghost sm" data-act="notice-filter" aria-pressed="${!!state.onlyUnreadNotices}">Chỉ chưa đọc</button>
+ <button class="btn ghost sm" data-act="notice-read">Đọc tất cả</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button>
+ <button class="btn ghost sm" type="button" data-act="notice-sound" aria-pressed="${chatSoundEnabled()}">Âm báo tin nhắn</button></div>
+ ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?`<button class="btn ghost sm" type="button" data-act="notice-read-one" data-id="${n.id}" aria-label="Đánh dấu thông báo đã đọc">${icon('check',16)}</button>`:''}</div>`).join(''):`<div class="empty">${state.onlyUnreadNotices?'Bạn đã đọc hết thông báo.':'Chưa có thông báo nào.'}</div>`}</div></div>`;
 }
-async function loadNotices(){if(!state.user||state.user.is_admin)return;state.notices=(await api('/api/notifications')).notifications;}
+let noticesRequest=0;
+async function loadNotices(){
+ if(!state.user||state.user.is_admin)return;
+ const request=++noticesRequest,userId=state.user.id;
+ const result=await api('/api/notifications'+(state.onlyUnreadNotices?'?unread_only=true':''));
+ if(request===noticesRequest&&state.user?.id===userId)state.notices=result.notifications;
+}
 function profileSettings(){
  const u=state.user;
  return `<section class="card" style="margin-bottom:18px"><h3>${icon('users',17)} Hồ sơ công khai</h3><form data-form="settings-profile" style="margin-top:14px">
@@ -171,7 +210,7 @@ function profileSettings(){
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
  <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
  <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
- <p class="hint" style="margin:10px 0 14px">Số điện thoại và email không hiển thị trên hồ sơ công khai.</p>
+ <p class="hint" style="margin:10px 0 14px">Email là thông tin riêng tư. Số điện thoại mặc định được ẩn, có thể đổi trong Hồ sơ nâng cao.</p>
  <form data-form="settings-contact">
   <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
   <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}"></div>
@@ -323,7 +362,15 @@ async function extraAction(btn){
  case 'cancel-reply':state.replyTo=null;$('#compose-extra').innerHTML=composerExtras();break;
  case 'cancel-file':state.pendingAttachment=null;$('#compose-extra').innerHTML=composerExtras();break;
  case 'search-chat':await showSearch();break;
- case 'notice-read':await post('/api/notifications/read');await loadNotices();renderApp();break;
+ case 'notice-filter':
+ case 'notice-read-one':
+ case 'notice-read':{
+   if(act==='notice-filter')state.onlyUnreadNotices=!state.onlyUnreadNotices;
+   else await post(act==='notice-read-one'?`/api/notifications/${id}/read`:'/api/notifications/read');
+   await loadNotices();
+   if(state.tab==='notices')renderApp();
+   break;
+ }
  case 'notice-permission':{
    if(!('Notification' in window))throw Error('Trình duyệt không hỗ trợ thông báo nền.');
    const result=await Notification.requestPermission();
@@ -352,6 +399,8 @@ async function extraAction(btn){
    ${r.private?'<p class="hint">Hồ sơ được chủ tài khoản giới hạn quyền xem.</p>':
      `<strong>${esc(r.headline||'')}</strong>
       <div class="social-profile-view-bio">${esc(r.bio||'Chưa có lời giới thiệu.')}</div>
+      ${r.login_username?`<div class="hint">Tên đăng nhập: <strong>${esc(r.login_username)}</strong></div>`:''}
+      ${r.phone?`<div class="hint">Số điện thoại: <strong>${esc(r.phone)}</strong></div>`:''}
       ${website?`<a href="${esc(website)}" target="_blank" rel="noopener noreferrer">Trang web của thành viên</a>`:''}`}
    <button class="btn ghost sm" type="button" data-world-report-user="${Number(r.id)}">${icon('shield',15)} Báo cáo người dùng</button>
    </div>`,confirm:'Đóng'});break;
@@ -409,11 +458,14 @@ async function extraAction(btn){
 }
 async function uploadSelected(file){
  if(file.size>12*1024*1024)throw Error('Tệp tối đa 12 MB.');
+ const owner=state.user?.id,chat=v4ChatKey();
+ if(state.uploading)throw Error('Một tệp đang được tải lên.');
  state.uploading=true;$('#compose-extra').innerHTML=composerExtras();
  try{
   const body=new FormData();body.append('file',file);
   const res=await fetch('/api/uploads',{method:'POST',body,credentials:'same-origin'});
   const payload=await res.json();if(!res.ok)throw Error(typeof payload.detail==='string'?payload.detail:'Không thể tải tệp lên.');
+  if(state.user?.id!==owner||v4ChatKey()!==chat)throw Error('Hội thoại đã thay đổi. Tệp chưa được đính kèm.');
   state.pendingAttachment=payload.attachment;
  }finally{state.uploading=false;if($('#compose-extra'))$('#compose-extra').innerHTML=composerExtras();}
 }
@@ -518,9 +570,8 @@ function appendGroupMessage(groupId,message){
  if(box){
   if(capped||outOfOrder)paintGroupThread(message.sender_id===state.user?.id&&pos<0);
   else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
+  syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
  }
- if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')
-  post('/api/groups/'+groupId+'/read').catch(()=>{});
 }
 async function extraSocket(data){
  const t=data.type;
@@ -530,8 +581,18 @@ async function extraSocket(data){
   scheduleGroupsRefresh();
   if(data.message.sender_id!==state.user?.id)alertChatMessage('group',data.group_id,data.message);
  }
- if(t==='group-message-updated'&&state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
- if(t==='message-updated'&&state.selected&&state.tab==='messages')await loadMessages(false);
+ if(t==='group-message-updated'){
+  scheduleGroupsRefresh();
+  if(state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
+ }
+ if(t==='message-updated'){
+  scheduleFriendsRefresh();
+  if(state.selected&&state.tab==='messages')await loadMessages(false);
+  if(state.tab==='notices'){
+   await loadNotices();
+   if(state.tab==='notices')renderApp();
+  }
+ }
  if(t==='group-typing'&&state.tab==='groups'&&state.groupSelected===data.group_id){
   const el=$('#typing-text');if(el)el.textContent=data.on?'Một thành viên đang nhập tin nhắn…':'';
  }
@@ -667,7 +728,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-permission','notice-sound',
+ 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-read-one','notice-filter','notice-permission','notice-sound',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}

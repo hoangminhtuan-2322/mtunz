@@ -39,7 +39,8 @@ def test_group_membership_edit_reactions_and_moderation():
     gid=response.json()['id']
     assert bob.get('/api/groups').json()['groups'][0]['id']==gid
     msg=alice.post(f'/api/groups/{gid}/messages',json={'body':'Chào nhóm'}).json()['message']
-    assert msg['body']=='Chào nhóm'
+    summary=bob.get('/api/groups').json()['groups'][0]
+    assert summary['unread']==1 and summary['last_message']['body']==msg['body']=='Chào nhóm'
     mid=msg['id']
     assert bob.post(f'/api/groups/{gid}/messages/{mid}/reaction',json={'emoji':'❤️'}).json()['ok']
     history=alice.get(f'/api/groups/{gid}/messages').json()['messages']
@@ -50,6 +51,7 @@ def test_group_membership_edit_reactions_and_moderation():
     assert bob.delete(f'/api/groups/{gid}/messages/{mid}').status_code==403
     assert alice.delete(f'/api/groups/{gid}/messages/{mid}').status_code==200
     assert bob.get(f'/api/groups/{gid}/messages').json()['messages'][0]['body']==''
+    assert bob.get('/api/groups').json()['groups'][0]['unread']==0
     assert bob.post(f'/api/groups/{gid}/read').status_code==200
     assert admin.get('/api/admin/groups').json()['groups'][0]['title']=='Nhóm đã đổi tên'
     assert admin.get(f'/api/admin/groups/{gid}/messages').status_code==200
@@ -215,3 +217,18 @@ def test_forwarding_images_preserves_attachment_permissions():
     assert forwarded.json()['message']['attachment']['id'] == file_id
     assert charlie.get(f'/api/attachments/{file_id}').status_code == 200
     assert stranger.get(f'/api/attachments/{file_id}').status_code == 403
+
+def test_single_notice_read_is_private_and_unread_filter_runs_before_limit():
+    _,alice,bob,a,_=setup_pair()
+    with db() as c:
+        target=c.execute("INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)",
+                         (a,'Tin chưa đọc',100)).lastrowid
+        for i in range(81):
+            c.execute('INSERT INTO notifications(user_id,body,created_at,read_at) VALUES(?,?,?,?)',
+                      (a,f'Tin đã đọc {i}',101+i,101+i))
+    path=f'/api/notifications/{target}/read'
+    assert bob.post(path).status_code==404
+    assert alice.get('/api/notifications?unread_only=true').json()['notifications'][0]['id']==target
+    assert alice.post(path).status_code==200
+    assert alice.post(path).status_code==200
+    assert all(n['id']!=target for n in alice.get('/api/notifications?unread_only=true').json()['notifications'])

@@ -46,7 +46,7 @@ function adminV5OverviewHtml(s){
 }
 function adminV5SecurityHtml(s){
  const result=adminV5Summary(s);
- const locked=!!s?.emergency_lockdown;
+ const locked=!!s?.emergency_lockdown,maintenance=!!s?.maintenance_mode;
  return '<section class="v5-security-center" aria-label="Lớp bảo vệ hệ thống">'+
  '<div class="v5-deck-head"><div><span class="v5-kicker">DEFENSE IN DEPTH</span>'+
  '<h2>Bảo vệ Admin và dữ liệu</h2>'+
@@ -58,6 +58,11 @@ function adminV5SecurityHtml(s){
    '<strong class="v5-action-state">'+(locked?'Đang bật — hệ thống tạm ngừng ghi nội dung mới':'Đang tắt — hệ thống hoạt động bình thường')+'</strong>'+
    '<button type="button" class="btn '+(locked?'ghost':'danger')+'" data-admin-v5="lockdown" data-v5-enable="'+(locked?'0':'1')+'">'+
     (locked?'Mở lại hệ thống':'Bật chế độ khẩn cấp')+'</button></article>'+
+  '<article class="v5-action-card"><div class="v5-action-card-head"><span>🔧</span><h3>Bảo trì hệ thống</h3></div>'+
+   '<p>Thông báo cho thành viên đang online, kết thúc phiên thành viên và tạm chặn đăng nhập.</p>'+
+   '<strong class="v5-action-state">'+(s?(maintenance?'Đang bảo trì':'Đang hoạt động'):'Đang tải')+'</strong>'+
+   '<button type="button" class="btn '+(maintenance?'ghost':'danger')+'" data-admin-v5="maintenance" data-v5-enable="'+(maintenance?'0':'1')+'" '+(s?'':'disabled')+'>'+
+    (maintenance?'Kết thúc bảo trì':'Bật bảo trì')+'</button></article>'+
   '<article class="v5-action-card"><div class="v5-action-card-head"><span>📱</span><h3>Thu hồi phiên khác</h3></div>'+
    '<p>Đăng xuất ngay mọi phiên Admin khác, hủy các thiết bị chờ phê duyệt và phiên ghi nhớ; giữ chính phiên Admin đang thao tác.</p>'+
    '<strong class="v5-action-state">'+(s?adminV5Num(s.admin_sessions):'—')+' phiên hiện đang hoạt động</strong>'+
@@ -164,6 +169,16 @@ function adminV5DoLockdown(enabled){
    await loadAdmin();
   });
 }
+function adminV5DoMaintenance(enabled){
+ adminV5ProofModal(enabled?'Bật bảo trì hệ thống':'Kết thúc bảo trì',
+  enabled?'Thành viên đang online sẽ thấy thông báo. Phiên thành viên sẽ hết hiệu lực và họ sẽ về màn hình đăng nhập sau khi bấm Đã hiểu.':
+   'Cho phép thành viên đăng nhập lại.',
+  enabled?'Bật bảo trì':'Kết thúc bảo trì',enabled,
+  async admin_pin=>{
+   await post('/api/admin/security/maintenance',{enabled,admin_pin});
+   toast(enabled?'Đã bật bảo trì hệ thống.':'Đã kết thúc bảo trì.','ok');
+  });
+}
 function adminV5DoRevoke(){
  adminV5ProofModal('Thu hồi mọi phiên Admin khác',
   'Các thiết bị khác và các yêu cầu đăng nhập đang chờ sẽ bị thu hồi. Chỉ phiên này tiếp tục hoạt động.',
@@ -185,6 +200,7 @@ document.addEventListener('click',async event=>{
    if(nav)nav.click();return;
   }
   if(action==='revoke-others')return adminV5DoRevoke();
+  if(action==='maintenance')return adminV5DoMaintenance(btn.dataset.v5Enable==='1');
   if(action==='lockdown')return adminV5DoLockdown(btn.dataset.v5Enable==='1');
  }catch(e){toast(e.message||'Không thể thực hiện thao tác Admin.','error');}
 });

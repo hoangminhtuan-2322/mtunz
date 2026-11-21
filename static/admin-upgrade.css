@@ -58,3 +58,22 @@
 @media(max-width:950px){.admin-shell{grid-template-columns:1fr!important}.admin-shell .admin-nav{width:min(290px,86vw)}.admin-shell .admin-page{padding:16px 16px 36px}.admin-shell .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:630px){.admin-shell .admin-page{padding:12px 12px 30px}.admin-shell .admin-priority-strip{padding:13px}.admin-shell .admin-priority-items{grid-template-columns:1fr}.admin-shell .admin-priority-card{min-height:63px}.admin-shell .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-shell .stat{padding:13px}.admin-shell .stat .stat-value{font-size:24px}.admin-shell .admin-workspace-top{padding:9px}.admin-shell .admin-priority-summary{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.admin-shell .admin-priority-card{transition:none}}
+.admin-shell .admin-nav{overflow-y:auto;scrollbar-width:thin}
+.admin-shell .admin-nav-group-label{text-transform:uppercase}
+.admin-shell .admin-priority-strip{
+ padding:clamp(16px,2vw,24px);background:linear-gradient(120deg,#202f4b,#182335 75%);
+ border-color:#415471;
+}
+.admin-shell .admin-priority-items{grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr))}
+.admin-shell .admin-priority-card{min-height:85px;position:relative;align-items:flex-start;flex-wrap:wrap}
+.admin-shell .admin-priority-number{min-width:34px;height:34px;font-size:18px}
+.admin-shell .admin-priority-card[data-count="0"] .admin-priority-number{background:#253349;color:#bfcce0}
+.admin-shell .admin-priority-card:focus-visible,.admin-queue-toolbar button:focus-visible{outline:2px solid #aeccff;outline-offset:2px}
+.admin-shell .admin-queue-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:0 0 16px}
+.admin-queue-toolbar button{border:1px solid #425775;background:#142339;color:#cbd8ed;padding:8px 14px;border-radius:9px;font:inherit;font-size:13px;min-height:38px}
+.admin-queue-toolbar button[aria-pressed="true"]{background:#353d65;border-color:#969ae3;color:#fff}
+@media(pointer:coarse){.admin-queue-toolbar button{min-height:44px}}
+@media(prefers-reduced-motion:no-preference){
+ .admin-priority-card,.admin-queue-toolbar button{transition:background-color .16s,border-color .16s,transform .16s}
+ .admin-priority-card:hover{transform:translateY(-2px)}
+}

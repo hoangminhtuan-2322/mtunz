@@ -15,7 +15,7 @@ for(const [script,version] of [['smart-v6.js','1.0'],['community-v6.js','1.1'],[
  assert(html.includes('/static/'+script+'?v='+version),'Missing V6 script '+script);
 }
 assert(html.includes('v6-experience.css?v=1.0'),'V6 responsive stylesheet linked');
-assert(app.includes("['ops','shield','Điều hành thông minh']"),'Admin V6 operations nav');
+assert(app.includes("['ops','grid','Vận hành hệ thống']"),'Admin V6 operations nav');
 assert(app.includes("api('/api/admin/ops/overview')"),'Admin V6 real metrics API');
 assert(app.includes("api('/api/admin/world/rooms')"),'World topics Admin API');
 assert(app.includes('data-v6-act="disappear"'),'Vanishing message setting in DM header');

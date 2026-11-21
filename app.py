@@ -21,12 +21,13 @@ from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from device_info import device_metadata
+import registration_email
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
@@ -125,6 +126,16 @@ def normalize_phone(value: str) -> str:
     if not re.fullmatch(r'\+[1-9][0-9]{7,14}',number):
         raise HTTPException(422,'Số điện thoại không hợp lệ.')
     return number
+
+
+def ensure_phone_available(c, phone: str, owner_id: int = 0):
+    """Serialize phone claims, including on databases with legacy duplicates."""
+    if POSTGRES_MODE:
+        c.execute('SELECT pg_advisory_xact_lock(CAST(? AS BIGINT))', (-int(phone[1:]),))
+    else:
+        c.execute('BEGIN IMMEDIATE')
+    if one(c, 'SELECT id FROM users WHERE phone=? AND id<>?', (phone, owner_id)):
+        raise HTTPException(409, 'Số điện thoại này đã liên kết với tài khoản khác.')
 
 
 def normalize_login(value: str) -> str:
@@ -438,7 +449,10 @@ async def cookies_and_origin(request: Request, call_next):
         expected_host = b.netloc if b else request.headers.get('host', '')
         for supplied in (origin, referer if not origin else None):
             if supplied:
-                a = urlsplit(supplied)
+                try:
+                    a = urlsplit(supplied)
+                except ValueError:
+                    return reject('Nguồn yêu cầu không hợp lệ.')
                 if (a.scheme, a.netloc) != (expected_scheme, expected_host):
                     return reject('Nguồn yêu cầu không hợp lệ.')
         # Reject oversized JSON and uploads early, before parsing or allocating.
@@ -500,7 +514,7 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
          "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; "
-         "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+         "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
     return result
 
 
@@ -551,12 +565,28 @@ async def public_privacy():
     return FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
 
 
+def maintenance_enabled(c, lock=False):
+    query = "SELECT value FROM settings WHERE key='maintenance_mode'"
+    if lock and POSTGRES_MODE:
+        query += ' FOR UPDATE'
+    row = one(c, query)
+    return bool(row and row['value'] == '1')
+
+
+def require_member_service(c, lock=False):
+    if maintenance_enabled(c, lock):
+        raise HTTPException(503, {'code':'maintenance',
+                                  'message':'Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'})
+
+
 def current_user(request: Request, require=True):
     t = request.cookies.get('s')
     with db() as c:
         row = one(c, '''SELECT u.*,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id
                        WHERE s.token_hash=?''', (digest(t),)) if t else None
         if not row or row['expires_at'] <= now():
+            if t:
+                require_member_service(c)
             if require:
                 raise HTTPException(401, 'Phiên đăng nhập đã hết hạn.')
             return None
@@ -611,8 +641,10 @@ def public_user(u):
             'website':u['website'] or '', 'profile_visibility':u['profile_visibility'],
             'avatar_url':f'/api/profile/{u["id"]}/avatar' if u['avatar_attachment_id'] else None,
             'cover_url':f'/api/profile/{u["id"]}/cover' if u['cover_attachment_id'] else None,
+            'show_phone_in_profile':bool(u['show_phone_in_profile']),
+            'show_login_in_profile':bool(u['show_login_in_profile']),
             'allow_message_requests':bool(u['allow_message_requests']),
-            'world_anonymous':bool(u['world_anonymous']),
+            'world_anonymous':bool(u['world_anonymous']), 'chat_wallpaper':u['chat_wallpaper'],
             'onboarding_required':bool(u['needs_display_name']),
             'phone':u['phone'] or '', 'email':u['email'] or '',
             'show_online':bool(u['show_online']), 'show_receipts':bool(u['show_receipts'])}
@@ -623,6 +655,8 @@ def issue_session(c, uid, request):
     info = device_metadata(request)
     created = now()
     is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(uid,))['is_admin'])
+    if not is_admin and POSTGRES_MODE:
+        require_member_service(c, lock=True)
     expires = created + (2 * 3600 if is_admin else 7 * 86400)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
                  device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
@@ -630,6 +664,8 @@ def issue_session(c, uid, request):
               (digest(raw), uid, expires, created, created,
                info['device_name'], info['device_type'], info['browser'], info['os_name'],
                info['location_hint'], info['network_hint'], info['ip_address']))
+    if not is_admin and not POSTGRES_MODE:
+        require_member_service(c)
     return raw
 
 
@@ -723,6 +759,9 @@ async def registration_request(request: Request, body: RegistrationRequest):
     email = normalize_email(body.email)
     throttle(request, 'signup', 6, 3600)
     with db() as c:
+        require_member_service(c)
+        if not v6_feature_on(c,'registration_intake'):
+            raise HTTPException(423,'Admin đã tạm dừng tiếp nhận yêu cầu đăng ký.')
         if one(c,'SELECT id FROM users WHERE phone=?',(phone,)):
             raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng dùng số khác hoặc liên hệ hỗ trợ.')
         if name == 'admin' or one(c,'SELECT 1 FROM users WHERE username=?',(name,)):
@@ -733,14 +772,20 @@ async def registration_request(request: Request, body: RegistrationRequest):
                 raise HTTPException(409,'Tên này đang được chờ xét duyệt.')
             if existing['guest_id'] == request.state.gid and existing['status'] in ('pending','approved'):
                 # Existing requests from older versions can add contact details.
-                c.execute('UPDATE registrations SET phone=?,email=? WHERE id=?',(phone,email,existing['id']))
+                if email != (existing['email'] or ''):
+                    if existing['status']=='approved' and registration_email.enabled():
+                        raise HTTPException(409,'Không thể thay email của yêu cầu đã duyệt. Vui lòng liên hệ hỗ trợ.')
+                    c.execute('''UPDATE registrations SET phone=?,email=?,email_verified_at=NULL,email_code_hash=NULL,
+                                 email_code_attempts=0 WHERE id=?''',(phone,email,existing['id']))
+                else:
+                    c.execute('UPDATE registrations SET phone=? WHERE id=?',(phone,existing['id']))
                 return {'status': existing['status'], 'username': name,'phone':phone,'email':email}
             if existing['status'] == 'completed':
                 raise HTTPException(409,'Tên tài khoản đã được sử dụng.')
             c.execute('DELETE FROM registrations WHERE id=?', (existing['id'],))
         c.execute('INSERT INTO registrations(username,guest_id,created_at,phone,email) VALUES(?,?,?,?,?)',
                   (name,request.state.gid,now(),phone,email))
-    await hub.admins('registration-updated')
+    await hub.admins('registration-requested', username=name)
     return {'status':'pending','username':name,'phone':phone,'email':email}
 
 
@@ -748,7 +793,7 @@ async def registration_request(request: Request, body: RegistrationRequest):
 async def registration_status(request: Request):
     with db() as c:
         rows = many(c, "SELECT username,status,created_at,phone,email FROM registrations WHERE guest_id=? AND status!='completed' ORDER BY id DESC LIMIT 5", (request.state.gid,))
-    return {'requests':rows}
+    return {'requests':rows,'email_verification_enabled':registration_email.enabled()}
 
 
 class RegisterComplete(BaseModel):
@@ -758,6 +803,69 @@ class RegisterComplete(BaseModel):
     pin_length: int
     phone: str | None = Field(default=None,max_length=40)
     accepted_terms: bool = False
+    email_code: str = Field(default='',max_length=6)
+
+
+def issue_registration_email_code(rid, email):
+    sent = now()
+    code = f'{secrets.randbelow(1000000):06d}'
+    with db() as c:
+        result=c.execute("""UPDATE registrations SET email_code_hash=?,email_code_sent=?,email_code_attempts=0
+            WHERE id=? AND email=? AND status='approved' AND email_verified_at IS NULL AND email_code_sent<=?""",
+            (hash_secret(code),sent,rid,email,sent-60))
+        if not result.rowcount:
+            raise HTTPException(429,'Vui lòng đợi 60 giây trước khi gửi lại mã.')
+    try:
+        registration_email.send_code(email,code)
+    except OSError as exc:
+        raise HTTPException(503,'Chưa gửi được email. Vui lòng thử lại sau.') from exc
+
+
+def send_approved_registration_code(rid,email):
+    try:
+        issue_registration_email_code(rid,email)
+    except HTTPException:
+        pass  # The member can use the resend button after approval.
+
+
+@app.post('/api/registration/email-code')
+async def resend_registration_code(request:Request,body:UsernameIn):
+    name=norm_username(body.username)
+    if not registration_email.enabled():
+        raise HTTPException(503,'Chức năng xác nhận email chưa được cấu hình.')
+    throttle(request,'registration-email',8,3600,request.state.gid)
+    with db() as c:
+        require_member_service(c)
+        row=one(c,'SELECT id,email,email_verified_at FROM registrations WHERE username=? AND guest_id=? AND status=?',
+                (name,request.state.gid,'approved'))
+    if not row or not row['email']:
+        raise HTTPException(403,'Yêu cầu chưa được duyệt hoặc chưa có email.')
+    if not row['email_verified_at']:
+        await asyncio.to_thread(issue_registration_email_code,row['id'],row['email'])
+    return {'ok':True,'already_verified':bool(row['email_verified_at'])}
+
+
+def verify_registration_email(request,name,code):
+    if not registration_email.enabled():
+        return
+    with db() as c:
+        r=one(c,"SELECT * FROM registrations WHERE username=? AND guest_id=? AND status='approved'",
+              (name,request.state.gid))
+        if not r or not r['email'] or r['email_verified_at']:
+            return
+        if not re.fullmatch(r'[0-9]{6}',code) or not r['email_code_hash']:
+            raise HTTPException(422,'Nhập mã xác nhận email gồm 6 chữ số.')
+        attempt=c.execute("""UPDATE registrations SET email_code_attempts=email_code_attempts+1
+            WHERE id=? AND status='approved' AND email_code_hash=? AND email_code_sent>? AND email_code_attempts<5""",
+            (r['id'],r['email_code_hash'],now()-600))
+        if not attempt.rowcount:
+            raise HTTPException(422,'Mã hết hạn hoặc đã thử quá 5 lần. Hãy gửi lại mã.')
+        valid=verify_secret(r['email_code_hash'],code)
+        if valid:
+            c.execute('UPDATE registrations SET email_verified_at=?,email_code_hash=NULL WHERE id=?',
+                      (now(),r['id']))
+    if not valid:
+        raise HTTPException(422,'Mã xác nhận email không chính xác.')
 
 
 @app.post('/api/registration/complete')
@@ -765,7 +873,10 @@ async def register_complete(request: Request, body: RegisterComplete):
     name = norm_username(body.username)
     ensure_password(body.password)
     ensure_pin(body.pin,body.pin_length)
+    if body.accepted_terms:
+        verify_registration_email(request,name,body.email_code)
     with db() as c:
+        require_member_service(c)
         r = one(c, 'SELECT * FROM registrations WHERE username=? AND guest_id=?', (name,request.state.gid))
         if not r or r['status'] != 'approved':
             raise HTTPException(403,'Yêu cầu của bạn chưa được admin chấp thuận.')
@@ -773,8 +884,9 @@ async def register_complete(request: Request, body: RegisterComplete):
             raise HTTPException(422,'Bạn cần đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.')
         phone=normalize_phone(r['phone'] or body.phone)
         email=normalize_email(r['email'])
-        if one(c,'SELECT 1 FROM users WHERE phone=?',(phone,)):
-            raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng liên hệ hỗ trợ.')
+        if registration_email.enabled() and email and not r['email_verified_at']:
+            raise HTTPException(422,'Email chưa được xác nhận.')
+        ensure_phone_available(c, phone)
         total, reserved, max_users = registration_capacity(c)
         if total >= max_users:
             raise HTTPException(409,'Hệ thống đã đạt giới hạn người dùng.')
@@ -802,6 +914,8 @@ async def auth_start(request: Request, body: UsernameIn):
     throttle(request, 'auth-start', 60, 900)
     with db() as c:
         u = login_user(c, name, 'id,is_admin')
+        if not u or not u['is_admin']:
+            require_member_service(c)
     if not u:
         raise HTTPException(404,'Không tìm thấy tài khoản hoặc số điện thoại chưa liên kết duy nhất.')
     return {'username':name,'is_admin':bool(u['is_admin']),'next':'password'}
@@ -818,6 +932,8 @@ async def auth_password(request: Request, body: PasswordLogin):
     throttle(request, 'password-login', 15, 900, name)
     with db() as c:
         u = login_user(c, name)
+        if not u or not u['is_admin']:
+            require_member_service(c)
         if not u or not verify_secret(u['password_hash'],body.password):
             raise HTTPException(401,'Tên tài khoản hoặc mật khẩu không đúng.')
         if u['sanction_kind'] and (not u['sanction_until'] or u['sanction_until'] > now()):
@@ -854,11 +970,13 @@ class PinLogin(BaseModel):
 async def auth_pin(request: Request, body: PinLogin):
     throttle(request, 'pin-login', 12, 900, request.state.gid)
     with db() as c:
-        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until
+        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until,u.is_admin
                      FROM login_challenges l JOIN users u ON u.id=l.user_id WHERE l.token_hash=?''',
                 (digest(body.challenge),))
         if not r or r['guest_id'] != request.state.gid or r['expires_at'] <= now():
             raise HTTPException(401,'Phiên xác minh PIN hết hạn, vui lòng đăng nhập lại.')
+        if not r['is_admin']:
+            require_member_service(c)
         pin_valid = (len(body.pin) == r['pin_length'] and body.pin.isascii()
                      and body.pin.isdigit() and verify_secret(r['pin_hash'],body.pin))
         if not pin_valid:
@@ -969,6 +1087,7 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
     raw = None
     is_admin = False
     with db() as c:
+        require_member_service(c)
         r = one(c, '''SELECT d.*,u.pin_hash,u.pin_length,u.is_admin,u.sanction_kind,u.sanction_until
                       FROM trusted_devices d JOIN users u ON u.id=d.user_id
                       WHERE d.token_hash=?''',(digest(saved),))
@@ -1142,25 +1261,28 @@ async def change_password(request: Request, body: ChangePassword):
 
 # --- Friends and blocking ---
 @app.get('/api/people/search')
-async def people_search(request: Request,q: str=''):
+def people_search(request: Request,q: str=''):
     u=current_user(request)
     if not q.strip(): return {'users':[]}
     with db() as c:
         search = q.strip()[:24]
         numeric_id = int(search) if search.isascii() and search.isdigit() and len(search) <= 9 else -1
-        rows = many(c, '''SELECT id,public_id,avatar_attachment_id,profile_visibility,COALESCE(NULLIF(display_name,''),'Thành viên') AS username,display_name
-                          FROM users WHERE is_admin=0 AND id!=? AND needs_display_name=0
-                          AND (display_name LIKE ? OR public_id=?)
-                          AND id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id=?)
-                          AND id NOT IN (SELECT blocker_id FROM blocks WHERE blocked_id=?)
-                          LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
+        rows = many(c, '''SELECT u.id,u.public_id,u.avatar_attachment_id,u.profile_visibility,
+                     COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,u.display_name,
+                     COALESCE(f.state,'none') AS friend_state,f.requested_by
+                     FROM users u LEFT JOIN friendships f ON
+                       ((f.u1=? AND f.u2=u.id) OR (f.u2=? AND f.u1=u.id))
+                     WHERE u.is_admin=0 AND u.id!=? AND u.needs_display_name=0
+                       AND (u.display_name LIKE ? OR u.public_id=?)
+                       AND NOT EXISTS (SELECT 1 FROM blocks WHERE
+                         (blocker_id=? AND blocked_id=u.id) OR (blocked_id=? AND blocker_id=u.id))
+                     ORDER BY u.id LIMIT 20''',
+                    (u['id'],u['id'],u['id'],'%'+search+'%',numeric_id,u['id'],u['id']))
         for r in rows:
-            fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
             r['avatar_url'] = f'/api/profile/{r["id"]}/avatar' if r['avatar_attachment_id'] and r['profile_visibility']=='everyone' else None
             r.pop('avatar_attachment_id',None)
             r.pop('profile_visibility',None)
-            r['friend_state'] = fr['state'] if fr else 'none'
-            r['requested_by_me'] = bool(fr and fr['requested_by']==u['id'])
+            r['requested_by_me'] = r.pop('requested_by') == u['id']
     return {'users':rows}
 
 
@@ -1195,7 +1317,7 @@ async def get_friends(request: Request):
                      AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
                    ORDER BY id DESC LIMIT 1) AS last_sender,
                  (SELECT count(*) FROM messages
-                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL
+                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL AND deleted_at IS NULL
                    AND (expires_at IS NULL OR expires_at>?)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
@@ -1325,8 +1447,9 @@ class SendMessage(BaseModel):
 
 
 @app.get('/api/messages/{other_id}')
-async def message_history(request:Request,other_id:int,before:int=0):
+async def message_history(request:Request,other_id:int,before:int=0,limit:int=70):
     u=current_user(request)
+    if not 1<=limit<=70:raise HTTPException(422,'Giới hạn lịch sử không hợp lệ.')
     with db() as c:
         require_peer(c,u['id'],other_id)
         sql='''SELECT id,sender_id,recipient_id,body,created_at,read_at FROM messages WHERE
@@ -1336,7 +1459,7 @@ async def message_history(request:Request,other_id:int,before:int=0):
         params.append(now())
         if before>0:
             sql+=' AND id<?';params.append(before)
-        sql+=' ORDER BY id DESC LIMIT 70'
+        sql+=' ORDER BY id DESC LIMIT ?';params.append(limit)
         result=many(c,sql.replace('SELECT id,sender_id,recipient_id,body,created_at,read_at',
                                   'SELECT *'),params)
         result=[message_details(c,r) for r in result[::-1]]
@@ -1412,7 +1535,8 @@ async def send_message(request:Request,body:SendMessage):
                     notify_user_persist(c,body.recipient_id,
                        (f'Tin nhắn tự biến mất từ {u["display_name"] or "Thành viên"}.'
                         if vanish else
-                        f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}'))
+                        f'Tin nhắn từ {u["display_name"] or "Thành viên"}'),
+                       message_id=msg['id'],preview_kind=None if vanish else 'direct')
     if not replay:
         await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
                              hub.user(u['id'],'message',message=msg))
@@ -1420,26 +1544,36 @@ async def send_message(request:Request,body:SendMessage):
 
 
 @app.post('/api/messages/read/{other_id}')
-async def read_messages(request:Request,other_id:int):
+async def read_messages(request:Request,other_id:int,
+                        up_to:int=Query(default=9223372036854775807,ge=1,le=9223372036854775807)):
     u=current_user(request)
     with db() as c:
         require_peer(c,u['id'],other_id)
         t=now()
-        c.execute('''UPDATE messages SET delivered_at=? WHERE recipient_id=?
-                     AND sender_id=? AND delivered_at IS NULL''',(t,u['id'],other_id))
-        cursor=c.execute('UPDATE messages SET read_at=? WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
-                         (t,u['id'],other_id))
-        peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(u['id'],))
-        suppress=is_restricted(c,u['id'],other_id) or not peer['show_receipts']
+        cursor=c.execute("""UPDATE messages SET read_at=?, delivered_at=COALESCE(delivered_at,?)
+                            WHERE recipient_id=? AND sender_id=? AND id<=? AND read_at IS NULL""",
+                         (t,t,u['id'],other_id,up_to))
+        suppress=is_restricted(c,u['id'],other_id) or not u['show_receipts']
     if cursor.rowcount and not suppress:
-        await hub.user(other_id,'read',by=u['id'],at=t)
+        await hub.user(other_id,'read',by=u['id'],at=t,up_to=up_to)
     return {'ok':True}
 
 
 @app.get('/api/notifications')
-async def get_notifications(request:Request):
+def get_notifications(request:Request,unread_only:bool=False):
     u=current_user(request)
-    with db() as c:return {'notifications':many(c,'SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 80',(u['id'],))}
+    with db() as c:
+        notices=many(c,'''SELECT n.id,n.user_id,n.created_at,n.read_at,
+                  CASE WHEN n.preview_kind='legacy' THEN 'Bạn có tin nhắn.'
+                       WHEN n.preview_kind IN ('direct','scheduled') THEN
+                         n.body || ': ' || COALESCE(NULLIF(substr(m.body,1,120),''),
+                           CASE WHEN n.preview_kind='scheduled' THEN 'Có tệp đính kèm' ELSE 'Đã gửi một tệp' END)
+                       ELSE n.body END AS body
+                  FROM notifications n LEFT JOIN messages m ON m.id=n.message_id AND m.recipient_id=n.user_id
+                  WHERE n.user_id=? AND (NOT ? OR n.read_at IS NULL) AND (n.message_id IS NULL OR
+                      (m.id IS NOT NULL AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?)))
+                  ORDER BY n.id DESC LIMIT 80''',(u['id'],unread_only,now()))
+    return {'notifications':notices}
 
 
 
@@ -1593,20 +1727,25 @@ async def admin_stats(request:Request):
     require_admin(request)
     with db() as c:
         total,reserved,maximum=registration_capacity(c)
-        deletion_pending = one(c,'SELECT count(*) n FROM account_deletion_requests')['n']
-        return {'total_users':total,'reserved_slots':reserved,'max_users':maximum,
-          'deletion_pending':deletion_pending,
-          'pending':one(c,"SELECT count(*) n FROM registrations WHERE status='pending'")['n'],
-          'tickets':one(c,"SELECT count(*) n FROM tickets WHERE status='open'")['n'],
-          'messages':one(c,'SELECT count(*) n FROM messages')['n']+one(c,'SELECT count(*) n FROM group_messages')['n'],
-          'groups':one(c,'SELECT count(*) n FROM chat_groups')['n'],
-          'online':sum(bool(v) for uid,v in hub.users.items() if uid!=1)}
+        counts=dict(one(c,'''SELECT
+            (SELECT count(*) FROM account_deletion_requests) AS deletion_pending,
+            (SELECT count(*) FROM registrations WHERE status='pending') AS pending,
+            (SELECT count(*) FROM tickets WHERE status='open') AS tickets,
+            (SELECT count(*) FROM user_reports WHERE status='pending') AS reports_pending,
+            (SELECT count(*) FROM messages)+(SELECT count(*) FROM group_messages) AS messages,
+            (SELECT count(*) FROM chat_groups) AS groups'''))
+        return {**counts,'total_users':total,'reserved_slots':reserved,'max_users':maximum,
+                'online':sum(bool(v) for uid,v in hub.users.items() if uid!=1)}
 
 
 @app.get('/api/admin/registrations')
-async def admin_registrations(request:Request):
+async def admin_registrations(request:Request,status:Literal['all','pending','approved','denied']='all',limit:int=100):
     require_admin(request)
-    with db() as c:return {'registrations':many(c,"SELECT id,username,status,created_at,phone,email FROM registrations WHERE status IN ('pending','approved','denied') ORDER BY id DESC LIMIT 100")}
+    if not 1<=limit<=100:raise HTTPException(422,'Giới hạn danh sách không hợp lệ.')
+    with db() as c:
+        return {'registrations':many(c,'''SELECT id,username,status,created_at,phone,email FROM registrations
+            WHERE status IN ('pending','approved','denied') AND (?='all' OR status=?)
+            ORDER BY id DESC LIMIT ?''',(status,status,limit))}
 
 
 class Decision(BaseModel):
@@ -1614,7 +1753,7 @@ class Decision(BaseModel):
 
 
 @app.post('/api/admin/registrations/{rid}/decision')
-async def admin_decision(request:Request,rid:int,body:Decision):
+async def admin_decision(request:Request,rid:int,body:Decision,background:BackgroundTasks):
     admin=require_admin(request)
     with db() as c:
         r=one(c,'SELECT * FROM registrations WHERE id=?',(rid,))
@@ -1626,7 +1765,11 @@ async def admin_decision(request:Request,rid:int,body:Decision):
         c.execute('UPDATE registrations SET status=?,decided_at=?,decided_by=? WHERE id=?',
                   (status,now(),admin['id'],rid))
         admin_log(c,admin['id'],'registration_'+status,r['username'])
-    await hub.guest(r['guest_id'],'registration-updated',username=r['username'],status=status)
+    email_required=bool(body.approve and r['email'] and registration_email.enabled())
+    if email_required:
+        background.add_task(send_approved_registration_code,rid,r['email'])
+    await hub.guest(r['guest_id'],'registration-updated',username=r['username'],status=status,
+                    email_verification_required=email_required)
     await hub.admins('registration-updated')
     return {'ok':True}
 
@@ -1656,15 +1799,14 @@ async def admin_users(request:Request,q:str=''):
     with db() as c:
         query=q.strip()[:24]
         numeric_id=int(query) if query.isascii() and query.isdigit() and len(query)<=9 else -1
-        rows=many(c,'''SELECT u.id,u.username,u.created_at,u.last_seen,u.pin_length,
+        rows=many(c,'''SELECT u.id,u.username,u.display_name,u.created_at,u.last_seen,u.pin_length,
                               u.sanction_kind,u.sanction_until,u.sanction_reason,
+                              (SELECT count(*) FROM messages m WHERE m.sender_id=u.id OR m.recipient_id=u.id) AS message_count,
+                              (SELECT count(*) FROM friendships f WHERE f.state='accepted' AND (f.u1=u.id OR f.u2=u.id)) AS friend_count,
                               d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                        FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
-                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.id=?)
-                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%',numeric_id))
-        for r in rows:
-            r['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(r['id'],r['id']))['n']
-            r['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(r['id'],r['id']))['n']
+                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ? OR u.id=?)
+                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%','%'+query+'%',numeric_id))
     return {'users':rows}
 
 
@@ -1692,9 +1834,21 @@ async def admin_user_details(request:Request,uid:int):
             raise HTTPException(404,'Không tìm thấy tài khoản người dùng.')
         detail=dict(user)
         detail['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid))['n']
-        detail['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(uid,uid))['n']
+        activity=one(c,'''SELECT count(*) AS message_count,
+                     count(CASE WHEN sender_id=? THEN 1 END) AS sent_count,
+                     count(CASE WHEN recipient_id=? THEN 1 END) AS received_count,
+                     max(created_at) AS last_message_at FROM messages
+                     WHERE sender_id=? OR recipient_id=?''',(uid,uid,uid,uid))
+        detail.update(dict(activity))
         detail['group_count']=one(c,'SELECT count(*) n FROM group_members WHERE user_id=?',(uid,))['n']
-        detail['file_count']=one(c,'SELECT count(*) n FROM attachments WHERE owner_id=?',(uid,))['n']
+        detail.update(dict(one(c,'''SELECT count(*) AS file_count, coalesce(sum(size),0) AS file_bytes
+                                  FROM attachments WHERE owner_id=?''',(uid,))))
+        marker=f'user_id={uid}'
+        placeholders=','.join('?' for _ in ACCOUNT_AUDIT_ACTIONS)
+        detail['recent_events']=many(c,f'''SELECT a.id,a.action,a.created_at,u.username AS actor
+                                    FROM audit a LEFT JOIN users u ON u.id=a.admin_id
+                                    WHERE a.action IN ({placeholders}) AND (a.detail=? OR a.detail LIKE ?)
+                                    ORDER BY a.id DESC LIMIT 5''',(*ACCOUNT_AUDIT_ACTIONS,marker,marker+';%'))
         detail['session_count']=one(c,'SELECT count(*) n FROM sessions WHERE user_id=? AND expires_at>?',(uid,now()))['n']
         detail['remembered_count']=one(c,'SELECT count(*) n FROM trusted_devices WHERE user_id=? AND expires_at>?',(uid,now()))['n']
         # Never expose passwords, PIN, secret hashes, or session/recovery tokens.
@@ -1773,9 +1927,9 @@ async def admin_user_messages(request:Request,uid:int):
 
 
 @app.get('/api/admin/tickets')
-async def admin_tickets(request:Request):
+async def admin_tickets(request:Request,status:Literal['all','open','closed','spam']='all'):
     require_admin(request)
-    with db() as c:return {'tickets':many(c,'SELECT * FROM tickets ORDER BY id DESC LIMIT 120')}
+    with db() as c:return {'tickets':many(c,"SELECT * FROM tickets WHERE (?='all' OR status=?) ORDER BY id DESC LIMIT 120",(status,status))}
 
 
 @app.get('/api/admin/tickets/{tid}/messages')
@@ -1869,7 +2023,7 @@ async def admin_broadcast(request:Request,body:Broadcast):
 # Security events are intentionally append-only. A privileged administrator can
 # inspect/export them, but cannot alter or erase evidence through the web API.
 AUDIT_HIGH_RISK = {
-    'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
+    'maintenance_mode', 'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
     'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin',
     'sanction_ban', 'sanction_lock', 'admin_password_change',
 }
@@ -1877,6 +2031,10 @@ AUDIT_MEDIUM_RISK = {
     'sanction_unban', 'broadcast', 'capacity', 'registration_denied',
     'admin_view_user_details', 'moderation_messages', 'moderation_group',
 }
+
+ACCOUNT_AUDIT_ACTIONS=('admin_view_user_details','admin_view_session_security','admin_edit_user',
+                       'admin_revoke_user_sessions','sanction_ban','sanction_lock','sanction_unban',
+                       'permanent_user_delete')
 
 def enrich_audit(row):
     item = dict(row)
@@ -1938,6 +2096,12 @@ async def admin_audit_detail(request:Request,event_id:int):
         if not row:
             raise HTTPException(404,'Không tìm thấy sự kiện quản trị.')
         result=enrich_audit(row)
+        if result['action'] in ACCOUNT_AUDIT_ACTIONS:
+            match=re.match(r'^user_id=([0-9]{1,18})(?:;|$)',result['detail'] or '')
+            if match:
+                uid=int(match[1])
+                target=one(c,'SELECT username FROM users WHERE id=? AND is_admin=0',(uid,))
+                result['target_user']={'id':uid,'username':target['username'] if target else None}
         admin_log(c,admin['id'],'audit_detail_view',f'event_id={event_id}')
     return {'event':result}
 
@@ -1963,8 +2127,7 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
         user=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
         if not user:
             raise HTTPException(404,'Không tìm thấy người dùng hợp lệ.')
-        if one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,uid)):
-            raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
+        ensure_phone_available(c, phone, uid)
         c.execute('''UPDATE users SET display_name=?,bio=?,phone=?,email=?
                      WHERE id=? AND is_admin=0''',
                   (body.display_name.strip(),body.bio.strip(),phone,email,uid))
@@ -2042,6 +2205,9 @@ async def websocket_events(ws:WebSocket):
                   (digest(sid),now()))
             if r and (not r['sanction_kind'] or (r['sanction_until'] and r['sanction_until']<=now())):
                 uid=r['id']
+            paused=uid is None and maintenance_enabled(c)
+        if paused:
+            await hub.send([ws], {'type':'maintenance-mode'})
     if uid is not None:
         was_online=bool(hub.users.get(uid))
         hub.users[uid].add(ws)

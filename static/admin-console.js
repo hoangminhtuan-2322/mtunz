@@ -4,7 +4,6 @@
  const pageSize=15;
  const rememberedFilters=Object.create(null);
  let autoRefresh=false,commandOpen=false,scheduled=false,lastKnownShell=null;
- let sortState={tab:'',index:-1,reverse:false};
  const q=(s,root=document)=>root.querySelector(s);
  const all=(s,root=document)=>Array.from(root.querySelectorAll(s));
  const activeTab=()=>typeof state!=='undefined'?state.adminTab:'overview';
@@ -20,7 +19,7 @@
   return b;
  }
  function valueFor(tab){
-  return rememberedFilters[tab]||(rememberedFilters[tab]={search:'',status:'all',page:0});
+  return rememberedFilters[tab]||(rememberedFilters[tab]={search:'',status:'all',page:0,sortIndex:-1,descending:false});
  }
  function fieldRows(tab){
   const container=q('.admin-page');
@@ -51,8 +50,8 @@
   if(!adminReady())return;
   const tab=activeTab(),settings=valueFor(tab);
   const rows=fieldRows(tab);
-  const search=settings.search.trim().toLocaleLowerCase('vi');
-  const filtered=rows.filter(row=>(!search||row.textContent.toLocaleLowerCase('vi').includes(search))&&
+  const search=inboxSearchText(settings.search);
+  const filtered=rows.filter(row=>(!search||inboxSearchText(row.textContent).includes(search))&&
    (settings.status==='all'||tableStatus(tab,row)===settings.status));
   const pages=Math.max(1,Math.ceil(filtered.length/pageSize));
   settings.page=Math.min(Math.max(0,settings.page),pages-1);
@@ -86,9 +85,7 @@
   search.value=filter.search;
   if(tab!=='audit')controls.append(search); // Audit has server-wide search and date/action filters.
   let choices=null;
-  if(tab==='registrations')choices=[['all','Tất cả trạng thái'],['pending','Chờ duyệt'],['approved','Đã duyệt'],['denied','Từ chối']];
   if(tab==='users')choices=[['all','Tất cả tài khoản'],['active','Hoạt động'],['restricted','Đã khóa / cấm'],['pending','Chờ xóa']];
-  if(tab==='tickets')choices=[['all','Tất cả phiếu'],['open','Đang mở'],['closed','Đã đóng']];
   if(tab==='audit')choices=[['all','Mọi mức độ'],['high','Quan trọng'],['medium','Cần theo dõi'],['info','Thông thường']];
   if(choices){
    const select=make('select',{class:'select','aria-label':'Lọc trạng thái','data-admin-filter':'status'});
@@ -109,11 +106,14 @@
   });
   if(['users','registrations','deletions','groups'].includes(tab)){
    all('thead th',anchor).forEach((th,index)=>{
+    if(index===th.parentElement.cells.length-1)return;
     th.setAttribute('title','Nhấn để sắp xếp theo cột');
     th.style.cursor='pointer';th.tabIndex=0;th.dataset.sortIndex=String(index);
     th.setAttribute('aria-label','Nhấn Enter để sắp xếp theo '+th.textContent.trim());
    });
   }
+  const selectedHeader=q('th[data-sort-index="'+filter.sortIndex+'"]',anchor);
+  if(selectedHeader)sortTable(selectedHeader,filter.descending);
   refreshList();
  }
  function navigate(tab){
@@ -127,7 +127,8 @@
   shell.insertBefore(make('div',{class:'admin-menu-backdrop','data-admin-ui':'close-menu','aria-hidden':'true'}),page);
   const top=make('div',{class:'admin-workspace-top'});
   const left=make('div',{class:'worktop-left'});
-  left.append(button('☰','menu',{class:'admin-mobile-toggle','aria-label':'Mở menu quản trị'}));
+  q('.admin-nav',shell).id='admin-navigation';
+  left.append(button('☰','menu',{class:'admin-mobile-toggle','aria-label':'Mở menu quản trị','aria-controls':'admin-navigation','aria-expanded':'false'}));
   left.append(make('span',{class:'work-label'},'MTUNZ  /  ADMIN CONSOLE'));
   left.append(make('span',{class:'admin-online'},'Phiên quản trị'));
   const right=make('div',{class:'worktop-right'});
@@ -160,11 +161,7 @@
     const fill=make('span');fill.style.width=Math.min(100,100*used/max)+'%';meter.append(fill);limit.before(meter);
     limit.before(make('p',{class:'admin-muted-note'},used+' / '+max+' suất đã dùng hoặc giữ chỗ ('+Math.round(100*used/max)+'%).'));
    }
-   const quick=make('section',{class:'admin-quick-links','aria-label':'Tác vụ nhanh'});
-   for(const [name,tab] of [['Duyệt tài khoản','registrations'],['Quản lý người dùng','users'],['Trả lời hỗ trợ','tickets'],['Nhật ký hệ thống','audit'],['Trung tâm bảo mật','security']]){
-    quick.append(button(name,'go-'+tab));
-   }
-   const cards=q('.stats-grid',page);if(cards)cards.before(quick);
+
   }
   if(activeTab()==='security'){
    const area=q('.admin-security',page);
@@ -177,7 +174,7 @@
   }
   insertFilterPanel();
  }
- function closeCommands(){q('#admin-command-overlay')?.remove();commandOpen=false;}
+ function closeCommands(){if(!commandOpen)return;q('#admin-command-overlay')?.remove();commandOpen=false;q('[data-admin-ui="commands"]')?.focus();}
  function showCommands(){
   if(!adminReady())return;
   if(commandOpen){closeCommands();return}
@@ -191,9 +188,9 @@
   dialog.append(results);overlay.append(dialog);document.body.append(overlay);
   function draw(){
    results.replaceChildren();
-   const term=input.value.trim().toLocaleLowerCase('vi');
+   const term=inboxSearchText(input.value);
    const tabs=typeof adminTabs!=='undefined'?adminTabs:[];
-   for(const [id,_,label]of tabs.filter(x=>x[2].toLocaleLowerCase('vi').includes(term))){
+   for(const [id,_,label]of tabs.filter(x=>inboxSearchText(x[2]).includes(term))){
     const b=button(label,'go-'+id);
     results.append(b);
    }
@@ -201,6 +198,15 @@
   }
   input.addEventListener('input',draw);
   input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();results.querySelector('button')?.focus();}else if(e.key==='Enter'){e.preventDefault();results.querySelector('button')?.click();}});
+  dialog.addEventListener('keydown',event=>{
+   const choices=[input,...results.querySelectorAll('button')];
+   const index=choices.indexOf(document.activeElement);
+   if(event.target===input&&event.key==='ArrowDown')return;
+   if(event.key==='Tab'||event.key==='ArrowDown'||event.key==='ArrowUp'){
+    const step=event.key==='ArrowUp'||(event.key==='Tab'&&event.shiftKey)?-1:1;
+    event.preventDefault();choices[(index+step+choices.length)%choices.length].focus();
+   }
+  });
   draw();input.focus();
   overlay.addEventListener('click',e=>{if(e.target===overlay)closeCommands();});
  }
@@ -220,8 +226,15 @@
   const a=make('a',{href:url,download:'mtunz-admin-audit-'+new Date().toISOString().slice(0,10)+'.csv'});
   document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
+ function setDrawer(open){
+  const shell=q('.admin-shell'),toggle=q('.admin-mobile-toggle');
+  if(!shell||!toggle||shell.classList.contains('admin-menu-open')===open)return;
+  shell.classList.toggle('admin-menu-open',open);
+  toggle.setAttribute('aria-expanded',String(open));
+  if(open)q('.admin-nav [aria-current="page"]',shell)?.focus();else toggle.focus();
+ }
  function mount(){
-  if(!adminReady()){lastKnownShell=null;return;}
+  if(!adminReady()){lastKnownShell=null;closeCommands();for(const tab of Object.keys(rememberedFilters))delete rememberedFilters[tab];autoRefresh=false;return;}
   const shell=q('.admin-shell');
   if(shell===lastKnownShell&&q('.admin-workspace-top'))return;
   lastKnownShell=shell;buildTopBar();
@@ -233,34 +246,47 @@
  document.addEventListener('click',e=>{
   const target=e.target.closest('[data-admin-ui]');if(!target)return;
   const action=target.dataset.adminUi;
-  if(action==='menu'){q('.admin-shell')?.classList.toggle('admin-menu-open');return}
-  if(action==='close-menu'){q('.admin-shell')?.classList.remove('admin-menu-open');return}
+  if(action==='menu'){setDrawer(true);return}
+  if(action==='close-menu'){setDrawer(false);return}
   if(action==='commands'){showCommands();return}
   if(action==='refresh'){if(typeof loadAdmin==='function')loadAdmin();return}
   if(action==='security'){navigate('security');return}
+  if(action.startsWith('queue-')){
+   const tab=action.slice(6);
+   if(adminQueueOptions[tab])(state.adminQueueFilters||={})[tab]=tab==='tickets'?'open':'pending';
+   Object.assign(valueFor(tab),{page:0,search:'',status:'all'});
+   navigate(tab);return;
+  }
   if(action.startsWith('go-')){closeCommands();navigate(action.slice(3));return}
   if(action==='export-audit'){exportAudit();return}
   if(action==='prev'||action==='next'){const state=valueFor(activeTab());state.page+=action==='next'?1:-1;refreshList();}
  });
- document.addEventListener('click',e=>{
-  const th=e.target.closest('.admin-shell th[data-sort-index]');if(!th)return;
-  const tab=activeTab(),index=Number(th.dataset.sortIndex),table=th.closest('table');
-  const body=table?.querySelector('tbody');if(!body)return;
-  if(sortState.tab!==tab||sortState.index!==index)sortState={tab,index,reverse:false};else sortState.reverse=!sortState.reverse;
+ function sortTable(th,descending){
+  const index=Number(th.dataset.sortIndex),table=th.closest('table');
+  const body=table.tBodies[0];
   const rows=all('tr',body);
   rows.sort((a,b)=>{
-   const left=a.cells[index]?.textContent.trim()||'',right=b.cells[index]?.textContent.trim()||'';
-   return (sortState.reverse?-1:1)*left.localeCompare(right,'vi',{numeric:true,sensitivity:'base'});
+   const left=a.cells[index],right=b.cells[index];
+   const first=left?.dataset.sortValue??left?.textContent.trim()??'';
+   const second=right?.dataset.sortValue??right?.textContent.trim()??'';
+   return (descending?-1:1)*first.localeCompare(second,'vi',{numeric:true,sensitivity:'base'});
   });
-  rows.forEach(x=>body.append(x));
-  all('th',table).forEach(x=>x.removeAttribute('aria-sort'));
-  th.setAttribute('aria-sort',sortState.reverse?'descending':'ascending');refreshList();
+  rows.forEach(row=>body.append(row));
+  all('th',table).forEach(header=>header.removeAttribute('aria-sort'));
+  th.setAttribute('aria-sort',descending?'descending':'ascending');
+ }
+ document.addEventListener('click',e=>{
+  const th=e.target.closest('.admin-shell th[data-sort-index]');if(!th)return;
+  const settings=valueFor(activeTab()),index=Number(th.dataset.sortIndex);
+  settings.descending=settings.sortIndex===index&&!settings.descending;
+  settings.sortIndex=index;settings.page=0;
+  sortTable(th,settings.descending);refreshList();
  });
  document.addEventListener('keydown',e=>{
   if(e.target.matches('.admin-shell th[data-sort-index]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.target.click();return;}
   const ticket=e.target.closest?.('.ticket-item[data-act="admin-open-ticket"]');
   if(ticket&&(e.key==='Enter'||e.key===' ')){e.preventDefault();ticket.click();return;}
-  if(e.key==='Escape'){closeCommands();q('.admin-shell')?.classList.remove('admin-menu-open');return;}
+  if(e.key==='Escape'){closeCommands();setDrawer(false);return;}
   if(!adminReady()||e.target.closest('input,select,textarea,[contenteditable="true"]'))return;
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showCommands();}
   if(e.key==='/'){e.preventDefault();q('.admin-list-tools input[type="search"]')?.focus();}

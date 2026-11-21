@@ -9,6 +9,8 @@ from typing import Literal
 import time
 
 FLAGS=(
+    ('registration_intake','Tiếp nhận đăng ký','Cho phép gửi yêu cầu đăng ký mới',1),
+    ('member_uploads','Tải tệp và sticker','Cho phép tải tệp, ảnh, sticker và ghi âm mới',1),
     ('calls','Gọi thoại / video','Cho phép bắt đầu cuộc gọi WebRTC giữa bạn bè',1),
     ('disappearing_dm','Tin nhắn tự biến mất','Cho phép cài thời hạn tự xóa cho các tin nhắn mới',1),
     ('community_polls','Bình chọn cộng đồng','Cho phép thành viên bình chọn trong Chat thế giới',1),
@@ -17,7 +19,7 @@ FLAGS=(
 FLAG_CODES={x[0] for x in FLAGS}
 
 class FlagChange(BaseModel):
-    code:Literal['calls','disappearing_dm','community_polls','world_rooms']
+    code:Literal['calls','disappearing_dm','community_polls','world_rooms','registration_intake','member_uploads']
     enabled:bool
     admin_pin:str=Field(min_length=4,max_length=6)
 
@@ -44,7 +46,7 @@ def install(core):
     async def member_feature_flags(request:Request):
         core.current_user(request)
         with db() as c:
-            return {'features':{x[0]:is_enabled(c,x[0]) for x in FLAGS}}
+            return {'features':{row['code']:bool(row['enabled']) for row in c.execute('SELECT code,enabled FROM feature_flags') if row['code'] in FLAG_CODES}}
 
     @app.get('/api/admin/ops/overview')
     async def admin_ops_overview(request:Request):

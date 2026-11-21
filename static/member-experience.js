@@ -256,7 +256,9 @@ function mountComposer(form){
  const emoji=tool('emoji','Emoji','emoji');emoji.setAttribute('aria-expanded','false');
  emoji.setAttribute('aria-controls','chat-emoji-picker');
  const geo=tool('location','Vị trí','map');
- toolbar.append(photo,emoji,geo);
+ const studio=document.createElement('button');studio.type='button';studio.className='chat-compose-tool';
+ studio.dataset.studio='sticker';studio.textContent='✎ Sticker';studio.setAttribute('aria-label','Tạo sticker');
+ toolbar.append(photo,emoji,studio,geo);
  if(original){
   original.classList.remove('btn','ghost','attachment-button');
   original.classList.add('chat-compose-tool','chat-file-tool');
@@ -265,9 +267,25 @@ function mountComposer(form){
   original.append(make('span','','Tệp'));toolbar.append(original);
   enableFileKeyboard(original);
  }
+ for(const btn of form.querySelectorAll('button[data-v4-act]')){
+  btn.classList.add('chat-compose-tool');toolbar.append(btn);
+ }
  const main=make('div','chat-compose-main');
- submit.addEventListener('mousedown',event=>{if(document.activeElement===textarea)event.preventDefault();});
- main.append(textarea,submit);form.replaceChildren(toolbar,main);
+ const toggle=make('button','compose-tools-toggle','＋');
+ toggle.type='button';toolbar.id='compose-attachments';
+ toggle.setAttribute('aria-controls',toolbar.id);
+ toggle.setAttribute('aria-label','Công cụ gửi tin');
+ toggle.setAttribute('aria-expanded','false');
+ toggle.onclick=()=>{
+  const expanded=form.classList.toggle('tools-open');
+  toggle.setAttribute('aria-expanded',String(expanded));
+  toggle.textContent=expanded?'−':'＋';
+  if(expanded)toolbar.querySelector('label,button')?.focus();else hidePicker();
+ };
+ submit.addEventListener('mousedown',event=>{
+  if(document.activeElement===textarea)event.preventDefault();
+ });
+ main.append(toggle,textarea,submit);form.replaceChildren(toolbar,main);
  form.classList.add('chat-compose-enhanced');
  textarea.placeholder='Viết tin nhắn…';
  textarea.setAttribute('aria-label','Nội dung tin nhắn');
@@ -304,6 +322,9 @@ function mountHeader(header){
  const summary=make('summary','','•••');summary.title='Tùy chọn hội thoại';
  summary.setAttribute('aria-label','Mở thêm tùy chọn hội thoại');
  const list=make('div','chat-header-menu');list.setAttribute('role','group');list.setAttribute('aria-label','Tùy chọn hội thoại');
+ const paper=make('button','btn ghost sm','Hình nền hội thoại');paper.type='button';paper.dataset.studio='wallpaper';
+ const bubble=make('button','btn ghost sm','Kiểu bong bóng');bubble.type='button';bubble.dataset.studio='bubble';
+ list.append(paper,bubble);
  for(const button of buttons){
   button.setAttribute('aria-label',button.title||button.textContent.trim());
   if(button.title&&!button.textContent.trim())button.append(make('span','',button.title));
@@ -359,7 +380,7 @@ function mount(){
  if(locationDialog&&!sameContext(locationDialog.context))closeLocation();
 }
 const observer=new MutationObserver(records=>{
- if(!records.some(({target})=>['app','chat-header','chat-messages','compose-extra'].includes(target.id)))return;
+ if(!records.some(({target})=>target.id==='app'||target.id==='chat-header'||target.id==='compose-extra'||target.id==='chat-messages'))return;
  if(scheduled)return;scheduled=true;
  requestAnimationFrame(()=>{scheduled=false;mount();});
 });
@@ -391,7 +412,13 @@ function openMessageTools(trigger){
 }
 document.addEventListener('click',event=>{
  const tools=event.target.closest('[data-message-tools]');
- if(tools)openMessageTools(tools);
+ if(!tools)return;
+ event.preventDefault();
+ event.stopPropagation();
+ hidePicker();
+ openMessageTools(tools);
+},true);
+document.addEventListener('click',event=>{
  if(picker&&!event.target.closest('.chat-emoji-picker,.chat-compose-tool[data-chat-ui="emoji"]'))hidePicker();
  const menu=event.target.closest('.chat-header-more');
  if(!menu)all('.chat-header-more[open]').forEach(item=>item.open=false);

@@ -21,8 +21,17 @@ const {chromium}=require('playwright-core');
    assert.equal(await row.locator('.bubble-actions').isVisible(),width>=800);
    await page.locator('.chat-header-more [data-act="call-video"]').waitFor({state:'attached'});
    if(width<800){
+    const errors=[];
+    page.on('pageerror',error=>errors.push(error.message));
     await row.getByRole('button',{name:'Tùy chọn tin nhắn'}).tap();
-    await page.getByRole('button',{name:'Trả lời',exact:true}).tap();
+    const menu=page.getByRole('dialog',{name:'Tùy chọn tin nhắn'});
+    try{
+     await menu.getByRole('button',{name:'Trả lời',exact:true}).tap({timeout:5000});
+    }catch(error){
+     error.message+=' at '+width+'px. Dialog: '+await page.locator('#modal-root').innerText()+
+      '. Page errors: '+errors.join(', ');
+     throw error;
+    }
     await page.locator('.compose-reply').waitFor();
    }
    const existing=await row.elementHandle();

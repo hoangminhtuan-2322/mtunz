@@ -58,8 +58,9 @@ def test_metadata_includes_browser_os_and_approximate_network(monkeypatch):
     assert meta['browser']=='Chrome'
     assert meta['os_name']=='Windows'
     assert meta['network_hint']=='8.8.8.*'
-    assert meta['location_hint']=='Không xác định'
     assert meta['ip_address']=='8.8.8.8'
+    assert meta['location_hint']=='Không xác định'
+    assert '8.8.8.8' not in repr({key:value for key,value in meta.items() if key!='ip_address'})
 
 
 def test_session_details_rename_revoke_only_other_session():
