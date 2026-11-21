@@ -202,3 +202,26 @@
  .admin-shell .admin-audit-header{padding:14px}
 }
 @media(prefers-reduced-motion:reduce){.admin-shell .admin-audit-entry{transition:none}}
+
+/* Complete membership timestamp: date + seconds + timezone on separate lines.
+   Preserve the sortable Unix timestamp on the wrapping table cell. */
+.admin-shell .admin-member-joined{
+ display:inline-flex;flex-direction:column;justify-content:center;align-items:flex-start;
+ gap:3px;min-width:132px;max-width:100%;white-space:nowrap;
+ font-variant-numeric:tabular-nums;line-height:1.4;
+}
+.admin-shell .admin-member-joined-date{
+ font-size:12px;font-weight:800;color:#f1f5ff;letter-spacing:.01em;
+}
+.admin-shell .admin-member-joined-clock{
+ display:inline-flex;align-items:baseline;gap:5px;
+ font-size:11px;color:#b6c9e9;font-weight:600;
+}
+.admin-shell .admin-member-joined-clock small{
+ font-size:9px;color:#91abd4;font-weight:650;
+}
+@media(max-width:630px){
+ .admin-shell .admin-member-joined{min-width:120px}
+ .admin-shell .admin-member-joined-date{font-size:11.5px}
+ .admin-shell .admin-member-joined-clock{font-size:10.5px}
+}
