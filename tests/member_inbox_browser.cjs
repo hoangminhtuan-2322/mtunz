@@ -115,9 +115,14 @@ const {chromium}=require('playwright-core');
    await page.locator('#chat-messages .bubble').filter({hasText:'Gửi ngay'}).waitFor();
    assert.equal(await page.locator('#chat-text').inputValue(),'');
    await page.locator('#chat-text').fill('Tin đang viết tiếp');
-   await page.evaluate(()=>{document.querySelector('#chat-messages').scrollTop=130;});
+   await page.evaluate(()=>{
+    const thread=document.querySelector('#chat-messages');thread.scrollTop=130;
+    const pending=state.messages.find(message=>message.pending);
+    appendDirectMessage({...pending,id:62,pending:false,created_at:202});
+   });
    finishSend();
-   await page.locator('#msg-dm-62').waitFor({state:'attached'});
+   await page.waitForFunction(()=>!document.querySelector('[data-form="send-message"] .send').disabled);
+   assert.equal(await page.locator('#msg-dm-62').count(),1);
    assert.equal(await page.locator('#chat-text').inputValue(),'Tin đang viết tiếp');
    assert(await keptRow.evaluate(el=>el.isConnected),'Sending does not rebuild the thread');
    assert.equal(await page.locator('#chat-messages').evaluate(el=>el.scrollTop),130);

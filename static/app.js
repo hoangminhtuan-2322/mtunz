@@ -511,6 +511,7 @@ function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  state.adminQueueFilters={};state.adminQuery='';state.adminTicket=null;
+ v4FailedSends.clear();
  state.sideFilter='';state.inboxFilter='all';state.onlyUnreadNotices=false;state.notices=[];
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
@@ -1086,7 +1087,7 @@ async function loadMessages(scroll=true){
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
   for(const message of r.messages)known.set(message.id,message);
   const failed=(typeof v4FailedSends==='object'?[...v4FailedSends.entries()]
-    .filter(([,entry])=>entry.recipient===friend)
+    .filter(([,entry])=>entry.owner===userId&&entry.recipient===friend)
     .map(([id,entry])=>({id,sender_id:state.user.id,recipient_id:friend,body:entry.payload.body,
           created_at:entry.created_at,failed:true,pending:false,
           attachment:entry.attachment||null,reactions:[],client_message_id:entry.payload.client_message_id})):[]);
@@ -2209,7 +2210,11 @@ document.addEventListener('change',event=>{
  }
 });
 document.addEventListener('keydown',e=>{
- if(e.target.id==='chat-text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();e.target.closest('form').requestSubmit();}
+ if(e.target.id==='chat-text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){
+  e.preventDefault();
+  const form=e.target.closest('form'),send=form?.querySelector('.send');
+  if(form&&send&&!send.disabled)form.requestSubmit(send);
+ }
 });
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('form[data-form]');if(!form)return;
@@ -2317,7 +2322,7 @@ document.addEventListener('submit',async event=>{
       if(state.user?.id!==owner)return;
       // A realtime confirmation can precede a lost HTTP response.
       if(current()&&state.messages.some(m=>m.id>0&&m.client_message_id===payload.client_message_id))return;
-      v4FailedSends.set(tmpId,{recipient,payload,attachment,created_at:optimistic.created_at,inFlight:false});
+      v4FailedSends.set(tmpId,{owner,recipient,payload,attachment,created_at:optimistic.created_at,inFlight:false});
       if(current())appendDirectMessage({...optimistic,pending:false,failed:true});
       toast('Chưa xác nhận được tin. Dùng nút Gửi lại trong bong bóng để thử lại.','warning');
     }finally{v4SendingChats.delete(sendingKey);}
