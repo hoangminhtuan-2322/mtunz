@@ -202,3 +202,10 @@
  .admin-shell .admin-audit-header{padding:14px}
 }
 @media(prefers-reduced-motion:reduce){.admin-shell .admin-audit-entry{transition:none}}
+
+.notify-content .notify-action {
+  align-self:flex-start;min-height:36px;padding-inline:0;text-align:left;
+}
+@media (max-width:800px) {
+  .notify-content .notify-action {min-height:44px}
+}

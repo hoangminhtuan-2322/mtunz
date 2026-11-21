@@ -141,7 +141,7 @@ async function api(url,{method='GET',data}={}){
 const post=(url,data={})=>api(url,{method:'POST',data});
 const del=url=>api(url,{method:'DELETE'});
 const root=()=>$('#app');
-function toast(message,type='info'){
+function toast(message,type='info',action){
   const host=$('#toast-root');
   if(!host)return;
   const kind=type==='ok'||type==='success'?'ok':type==='error'?'error':type==='warning'?'warning':'info';
@@ -187,6 +187,12 @@ function toast(message,type='info'){
     started=performance.now();
     track.style.animationPlayState='running';
     timer=setTimeout(dismiss,remaining);
+  }
+  if(action){
+    const open=document.createElement('button');
+    open.type='button';open.className='linkbtn notify-action';open.textContent=action.label;
+    open.addEventListener('click',()=>{dismiss();action.run();});
+    content.append(open);
   }
   close.addEventListener('click',dismiss);
   el.addEventListener('mouseenter',pause);
@@ -374,6 +380,15 @@ function connectSocket(){
    }
    if(t==='world-status'&&state.user&&!state.user.is_admin){
      await refreshWorldNavigation().catch(()=>{});
+     return;
+   }
+   if(t==='registration-requested'&&state.user?.is_admin){
+     toast('Yêu cầu đăng ký mới từ @'+data.username,'info',{
+       label:'Mở hàng chờ duyệt',
+       run:()=>document.querySelector('.admin-nav [data-tab="registrations"]')?.click()
+     });
+     if(document.hidden)void notifyBrowser('Có yêu cầu đăng ký mới.','admin-registrations');
+     if(['overview','registrations'].includes(state.adminTab))await loadAdmin();
      return;
    }
    if(t==='registration-updated'){

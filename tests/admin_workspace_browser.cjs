@@ -12,6 +12,8 @@ const {chromium}=require('playwright-core');
   const {user}=await (await context.request.get('/api/me')).json();
   await context.addInitScript(uid=>sessionStorage.setItem('mtunz.active-tab.v1',JSON.stringify({uid})),user.id);
   const page=await context.newPage();
+  const visitor=await browser.newContext({baseURL:'http://127.0.0.1:8791'});
+  await visitor.request.get('/');
   for(const width of [1440,390,320]){
    await page.setViewportSize({width,height:850});
    await page.goto('/');
@@ -35,6 +37,15 @@ const {chromium}=require('playwright-core');
    await queue.waitFor();
    assert.equal(await page.locator('.admin-nav-group').count(),4);
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   await page.waitForFunction(()=>state.ws?.readyState===WebSocket.OPEN);
+   const username='new_member_'+width;
+   const registration=await visitor.request.post('/api/registration/request',{
+    data:{username,phone:'+8491234'+String(width).padStart(4,'0')}
+   });
+   assert.equal(registration.status(),200);
+   const notice=page.locator('.notify-toast').filter({hasText:'Yêu cầu đăng ký mới từ @'+username});
+   await notice.getByRole('button',{name:'Mở hàng chờ duyệt'}).click();
+   await page.locator('.admin-page .data-table').getByText(username,{exact:true}).waitFor();
   }
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

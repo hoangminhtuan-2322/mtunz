@@ -776,7 +776,7 @@ async def registration_request(request: Request, body: RegistrationRequest):
             c.execute('DELETE FROM registrations WHERE id=?', (existing['id'],))
         c.execute('INSERT INTO registrations(username,guest_id,created_at,phone,email) VALUES(?,?,?,?,?)',
                   (name,request.state.gid,now(),phone,email))
-    await hub.admins('registration-updated')
+    await hub.admins('registration-requested', username=name)
     return {'status':'pending','username':name,'phone':phone,'email':email}
 
 
