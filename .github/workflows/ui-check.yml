@@ -196,3 +196,4 @@ jobs:
           curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
           node tests/admin_workspace_browser.cjs
           node tests/member_inbox_browser.cjs
+          node tests/auth_entry_browser.cjs

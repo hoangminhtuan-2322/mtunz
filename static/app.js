@@ -650,6 +650,10 @@ function authTabs(){return `<div class="auth-nav" role="group" aria-label="Đi�
  <button type="button" class="${state.mode==='register'?'active':''}" aria-pressed="${state.mode==='register'}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
  <button type="button" class="${state.mode==='support'?'active':''}" aria-pressed="${state.mode==='support'}" data-act="mode-support">${icon('inbox',16)}<span>Hỗ trợ</span></button>
  </div>`;}
+function authProgress(labels,current){
+ return `<ol class="auth-progress" aria-label="Các bước thực hiện">${labels.map((label,index)=>
+   `<li${index===current?' aria-current="step"':''} class="${index<current?'done':''}">${label}</li>`).join('')}</ol>`;
+}
 function authLogin(){
  const step=state.step;
  if(step==='approval')return adminApprovalWaiting();
@@ -664,18 +668,18 @@ function authLogin(){
 
  const forms={
  username:`<span class="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h1>Tiếp tục cuộc trò chuyện.</h1>
- <p class="hint">Dùng tên đăng nhập hoặc số điện thoại đã liên kết với tài khoản.</p><div class="auth-step"><span class="active"></span><span></span><span></span></div>
+ <p class="hint">Dùng tên đăng nhập hoặc số điện thoại đã liên kết với tài khoản.</p>${authProgress(['Tài khoản','Mật khẩu','Xác minh'],0)}
  <form data-form="login-username">${inputField('Tên đăng nhập hoặc số điện thoại','username','text','','autocomplete="username" maxlength="40" value="'+esc(state.username)+'"')}
  <button class="btn primary full" type="submit">Tiếp tục ${icon('chevron',17)}</button></form>`,
  password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${state.username.startsWith('+')?'bạn':esc(state.username)} 👋</h1>
  <p class="hint">Nhập mật khẩu để tiếp tục. Tài khoản có PIN sẽ cần xác minh thêm một bước.</p>
- <div class="auth-step"><span class="active"></span><span class="active"></span><span></span></div>
+ ${authProgress(['Tài khoản','Mật khẩu','Xác minh'],1)}
  <form data-form="login-password" autocomplete="off">${inputField('Mật khẩu','password','password','','autocomplete="off" readonly data-manual-password="1"')}
  <button type="submit" class="btn primary full">Xác nhận mật khẩu ${icon('chevron',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi cách đăng nhập</button>`,
  pin:`<span class="eyebrow">BƯỚC 3/3 · XÁC MINH</span><h1>Thêm một lớp an toàn.</h1>
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
- <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
+ ${authProgress(['Tài khoản','Mật khẩu','Xác minh'],2)}
  <form data-form="login-pin">${inputField('Mã PIN','pin','password','',`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
 ${state.loginIsAdmin?'':` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Sau khi đóng tab, lần mở phiên mới có thể dùng PIN. Tải lại tab đang mở không cần xác thực lại.</small></span></label>`}
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
@@ -687,6 +691,7 @@ ${state.loginIsAdmin?'':` <label class="auth-remember-choice"><input type="check
 function authRegister(){
  if(state.regStatus==='pending')return `<div class="onboard-center"><div class="wait-orbit"></div><span class="eyebrow">ĐANG CHỜ PHÊ DUYỆT</span>
  <h1>Yêu cầu đã được gửi!</h1><p class="hint" style="margin-top:15px">Tài khoản <b>${esc(state.regName)}</b> đang chờ xét duyệt. Sau khi được chấp thuận, bạn có thể thiết lập mật khẩu và mã PIN.</p>
+ ${authProgress(['Gửi yêu cầu','Xét duyệt','Thiết lập'],1)}
  <p class="hint">Trạng thái yêu cầu sẽ được cập nhật tự động.</p>
  <button class="btn ghost full" data-act="refresh-registration">${icon('refresh')} Kiểm tra trạng thái</button></div>`;
  if(state.regStatus==='denied')return `<span class="eyebrow">YÊU CẦU BỊ TỪ CHỐI</span><h1>Chưa thể đăng ký.</h1><p class="hint">Yêu cầu đăng ký <b>${esc(state.regName)}</b> chưa được chấp thuận. Bạn có thể gửi yêu cầu mới với tên khác.</p><button class="btn primary full" data-act="retry-registration">Gửi yêu cầu khác</button>`;
@@ -694,6 +699,7 @@ function authRegister(){
  <div class="registration-approved">${icon('check',15)} <span>ĐÃ ĐƯỢC PHÊ DUYỆT</span></div>
  <h1>Hoàn tất tài khoản.</h1>
  <p class="hint registration-lead">Tên tài khoản <strong>${esc(state.regName)}</strong> đã được giữ chỗ. Tạo mật khẩu và PIN bảo mật để bắt đầu sử dụng mtunz.</p>
+ ${authProgress(['Gửi yêu cầu','Xét duyệt','Thiết lập'],2)}
  <form data-form="register-complete" class="registration-form">
    <section class="registration-section" aria-labelledby="registration-password-heading">
      <div class="registration-section-heading">
@@ -720,7 +726,7 @@ function authRegister(){
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
  return `<span class="eyebrow">THAM GIA MTUNZ</span><h1>Bắt đầu một kết nối mới.</h1>
- <div class="auth-step"><span class="active"></span><span></span><span></span></div>
+ ${authProgress(['Gửi yêu cầu','Xét duyệt','Thiết lập'],0)}
  <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
  ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
  <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254"></div></div>
