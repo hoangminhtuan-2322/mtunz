@@ -29,6 +29,14 @@ assert(rail.includes('position:fixed'),'Mobile bottom navigation is preserved');
 assert(member.includes('function mountComposer(')&&member.includes('function openPicker('));
 assert(extras.includes('function groupConversation(')&&extras.includes('data-act="message-delete"'));
 assert(app.includes("['messages','chat','Tin nhắn']"),'Existing five primary tabs remain');
+const profileCss=read('static/profile-separation.css');
+assert(app.includes('class="mobile-profile-top"')&&app.includes('data-tab="profile"'),
+ 'Mobile Profile must be a tappable account card at the top of the inbox');
+assert(!app.includes('rail-mobile-profile'), 'Do not add a sixth mobile bottom tab');
+assert(profileCss.includes('.side-top>.mobile-profile-top'), 'Mobile Profile CSS must target top of message list');
+assert(profileCss.includes('max-width:800px'), 'Only mobile should show top Profile card');
+assert(html.includes('/static/profile-separation.css?v=1.2'), 'Cache-bust the updated mobile profile styles');
+
 assert(html.includes('/static/mobile-polish.css?v=1.0'));
 assert(html.includes('/static/mobile-polish.js?v=1.0'));
 assert(html.indexOf('mobile-polish.css')>html.indexOf('group-lobby.css'),'Mobile CSS must be last for targeted overrides');
