@@ -1065,7 +1065,7 @@ function appendDirectMessage(message){
  else state.messages.push(message);
  const box=$('#chat-messages');
  if(box){
-   if(currentIndex<0&&previous&&previous.id>0&&message.id<previous.id)renderMessageThread(false);
+   if(currentIndex<0&&previous&&previous.id>0&&message.id>0&&message.id<previous.id)renderMessageThread(false);
    else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread,message.pending&&currentIndex<0);
  }
  syncThreadJump(box,currentIndex<0&&message.sender_id!==state.user?.id);
