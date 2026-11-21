@@ -42,6 +42,7 @@ jobs:
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
+          node --check static/world-experience.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -99,7 +100,9 @@ jobs:
       - name: Verify first-login name and phone sign-in interface
         run: node tests/first_login_ui.cjs
       - name: Verify World Chat, reports, and separate Profile
-        run: node tests/world_moderation_ui.cjs
+        run: |
+          node tests/world_moderation_ui.cjs
+          node tests/world_experience_ui.cjs
       - name: Verify private session manager and Admin-only security details
         run: node tests/device_sessions_ui.cjs
       - name: Check theme wiring
@@ -197,3 +200,4 @@ jobs:
           node tests/admin_workspace_browser.cjs
           node tests/member_inbox_browser.cjs
           node tests/auth_entry_browser.cjs
+          node tests/world_experience_browser.cjs
