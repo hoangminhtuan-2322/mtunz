@@ -346,14 +346,23 @@
 .message-tool-list .btn{min-height:44px;white-space:normal}
 .shell:not(.admin-shell) .conversation .thread{scroll-behavior:auto;overflow-anchor:none}
 @media(max-width:800px), (hover:none) and (pointer:coarse){
- .shell:not(.admin-shell) .conversation .bubble-wrap{position:relative;max-width:calc(100% - 44px)}
+ .shell:not(.admin-shell) .conversation .bubble-wrap:has(> .bubble-more){
+   display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:3px 4px;max-width:100%
+ }
+ .shell:not(.admin-shell) .conversation .bubble-wrap.mine:has(> .bubble-more){
+   grid-template-columns:44px minmax(0,1fr)
+ }
+ .shell:not(.admin-shell) .bubble-wrap:has(> .bubble-more) > .bubble{grid-column:1;grid-row:2}
+ .shell:not(.admin-shell) .bubble-wrap.mine:has(> .bubble-more) > .bubble{grid-column:2}
+ .shell:not(.admin-shell) .bubble-wrap:has(> .bubble-more) > .group-sender{grid-column:1/-1;grid-row:1}
+ .shell:not(.admin-shell) .bubble-wrap:has(> .bubble-more) > .reaction-row{grid-column:1/-1;grid-row:3}
  .shell:not(.admin-shell) .bubble-wrap > .bubble-actions{display:none}
  .shell:not(.admin-shell) .bubble-wrap > .bubble-more{
-   display:grid;place-items:center;position:absolute;top:0;left:100%;
+   display:grid;place-items:center;grid-column:2;grid-row:2;align-self:center;
    min-width:44px;min-height:44px;padding:0;border:0;border-radius:12px;
    background:transparent;color:#b8c8e4;font-size:23px;line-height:1
  }
- .shell:not(.admin-shell) .bubble-wrap.mine > .bubble-more{left:auto;right:100%}
+ .shell:not(.admin-shell) .bubble-wrap.mine > .bubble-more{grid-column:1}
  .shell:not(.admin-shell) .bubble-more:is(:hover,:focus-visible){background:#243450}
 }
 @media(max-width:800px){
