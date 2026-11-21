@@ -56,6 +56,19 @@ const {chromium}=require('playwright-core');
       return feed&&feed.scrollHeight-feed.scrollTop-feed.clientHeight<8;
     });
     await page.evaluate(()=>{
+      window.__worldScrollTrace=[];
+      const f=document.querySelector('#world-feed');
+      window.__worldScrollTrace.push({phase:'before',top:f.scrollTop,height:f.scrollHeight,client:f.clientHeight});
+      const previous=worldFollowBottom;
+      worldFollowBottom=function(feed){
+        window.__worldScrollTrace.push({phase:'called',top:feed.scrollTop,height:feed.scrollHeight,client:feed.clientHeight});
+        previous(feed);
+        window.__worldScrollTrace.push({phase:'after',top:feed.scrollTop,height:feed.scrollHeight,client:feed.clientHeight});
+        requestAnimationFrame(()=>window.__worldScrollTrace.push({
+          phase:'raf',top:feed.scrollTop,height:feed.scrollHeight,client:feed.clientHeight,
+          connected:feed.isConnected
+        }));
+      };
       appendWorldSocket({id:57,room_id:1,sender_id:8,
         display_name:'Người mới',body:'Tin gần cuối',
         created_at:Math.floor(Date.now()/1000)});
@@ -68,7 +81,8 @@ const {chromium}=require('playwright-core');
       behavior:getComputedStyle(e).scrollBehavior
     }));
     const gap=metrics.height-metrics.top-metrics.client;
-    assert(gap<16,'Near-bottom user follows latest messages: '+JSON.stringify(metrics));
+    assert(gap<16,'Near-bottom user follows latest messages: '+JSON.stringify(metrics)+
+      ' trace='+JSON.stringify(await page.evaluate(()=>window.__worldScrollTrace)));
     await page.evaluate(()=>{
       appendWorldSocket({id:57,room_id:1,sender_id:8,body:'Trùng',created_at:0});
       appendWorldSocket({id:999,room_id:2,sender_id:8,body:'Sai phòng',created_at:0});
