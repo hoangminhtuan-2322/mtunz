@@ -52,7 +52,7 @@ const {chromium,webkit}=require('playwright-core');
       await page.locator('.rail-mobile-profile').waitFor({state:'hidden'});
       const shell=page.locator('.shell.world-desktop-full');
       await shell.waitFor();
-      assert.equal(await shell.locator('>.side').evaluate(el=>getComputedStyle(el).display),'none');
+      assert.equal(await shell.locator(':scope > .side').evaluate(el=>getComputedStyle(el).display),'none');
      }
      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),
        true,name+' viewport '+width+' must not overflow');
