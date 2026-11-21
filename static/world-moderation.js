@@ -8,6 +8,17 @@ const worldReasonNames={
 };
 const worldEscape=value=>esc(String(value??''));
 const worldOwnIds=new Set();
+/* Follow latest messages after layout without pulling readers from history. */
+function worldFollowBottom(feed){
+ if(!feed)return;
+ feed.scrollTop=feed.scrollHeight;
+ if(typeof requestAnimationFrame==='function')requestAnimationFrame(()=>{
+  if(!feed.isConnected)return;
+  const remaining=feed.scrollHeight-feed.scrollTop-feed.clientHeight;
+  if(remaining>=0&&remaining<130)feed.scrollTop=feed.scrollHeight;
+ });
+}
+
 let worldOwnIdsUser=null;
 // Deliberately omit server_time: a ticking clock is not a reason to replace
 // the composer, scroll container or 70 message bubbles every few seconds.
@@ -222,7 +233,7 @@ function appendWorldSocket(message){
    const empty=feed.querySelector('.world-empty');if(empty)empty.remove();
    feed.insertAdjacentHTML('beforeend',worldBubble(message));
    while(feed.querySelectorAll('.world-message').length>70)feed.querySelector('.world-message')?.remove();
-   if(near)feed.scrollTop=feed.scrollHeight;
+   if(near)worldFollowBottom(feed);
    feed.dataset.worldPaintKey=worldFeedPaintKey(data.messages);
   }
  }
