@@ -205,4 +205,5 @@ jobs:
           node tests/admin_join_date_browser.cjs
           node tests/member_inbox_browser.cjs
           node tests/auth_entry_browser.cjs
+          node tests/url_cleanup_browser.cjs
           node tests/world_experience_browser.cjs
