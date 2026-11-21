@@ -91,6 +91,23 @@ const {chromium}=require('playwright-core');
    await page.locator('#modal-confirm').click();
    await page.locator('#chat-messages[data-paper="lagoon"]').waitFor();
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   const groupHistory=[{id:101,sender_id:12,username:'Minh',body:'Tin nhóm cũ',created_at:300}];
+   await page.route('**/api/groups/8/read',r=>r.fulfill({json:{ok:true}}));
+   let finishHistory;
+   const delayedHistory=new Promise(resolve=>{finishHistory=resolve;});
+   await page.route('**/api/groups/8/messages',async r=>{
+    await delayedHistory;
+    return r.fulfill({json:{messages:groupHistory}});
+   });
+   await page.evaluate(()=>{void openGroup(8);});
+   await page.evaluate(()=>appendGroupMessage(8,{id:102,sender_id:12,username:'Minh',body:'Tin đến trong lúc tải',created_at:301}));
+   finishHistory();
+   await page.locator('#msg-group-101').waitFor();
+   await page.locator('#msg-group-102').waitFor();
+   const original=await page.locator('#msg-group-101').elementHandle();
+   await page.evaluate(()=>appendGroupMessage(8,{id:103,sender_id:12,username:'Minh',body:'Tin đến tiếp theo',created_at:302}));
+   await page.locator('#msg-group-103').waitFor();
+   assert(await original.evaluate(el=>el.isConnected),'Ordinary group arrivals preserve existing message DOM');
    await page.close();
   }
  }finally{await browser.close();}

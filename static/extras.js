@@ -21,13 +21,25 @@ Object.assign(Ipaths,{
 const fmtSize = n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.ceil(n/1024))+' KB';
 const safeImage = f=>f?.mime?.startsWith('image/');
 
+let groupsRequest=0;
 async function refreshGroups(redraw=false){
  if(!state.user||state.user.is_admin)return;
- const r=await api('/api/groups');state.groups=r.groups;
+ const userId=state.user.id,request=++groupsRequest;
+ const r=await api('/api/groups');
+ if(state.user?.id!==userId||request!==groupsRequest)return;
+ state.groups=r.groups;
  if(state.groupSelected&&!state.groups.some(x=>x.id===state.groupSelected)){
-    state.groupSelected=null;state.groupDetail=null;state.tab='groups';
+    state.groupSelected=null;state.groupDetail=null;
+    if(state.tab==='groups'){renderApp();return;}
  }
- if(redraw){renderSideItems();if(state.tab==='groups')renderApp();}
+ if(redraw){
+  renderSideItems();
+  if(state.tab==='groups'&&!state.groupSelected)renderApp();
+  else if(state.tab==='groups'){
+   const header=$('#chat-header');
+   if(header)header.innerHTML=groupHeader();
+  }
+ }
 }
 function groupSideItems(list,drafts={}){
  return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<button type="button" class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
@@ -134,7 +146,7 @@ function composerExtras(){
 function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
  if(!g)return groupLobby();
- return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>${threadJump()}
+ return `<div class="conversation"><div id="chat-header">${groupHeader()}</div><div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
@@ -147,16 +159,29 @@ async function openGroup(gid){
  state.tab='groups';state.selected=null;state.groupSelected=gid;state.groupMessages=[];state.replyTo=null;state.pendingAttachment=null;
  renderApp();await loadGroupMessages();
 }
+function paintGroupThread(scroll=false){
+ const box=$('#chat-messages');
+ if(!box)return;
+ const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
+ box.innerHTML=bubblesFor(state.groupMessages,true);
+ box.scrollTop=scroll||near?box.scrollHeight:position;
+ syncThreadJump(box);
+}
 let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
  const gid=state.groupSelected;if(!gid||state.tab!=='groups')return;
  const request=++groupHistoryRequest,uid=state.user?.id;
+ const existing=new Map(state.groupMessages.map(message=>[message.id,message]));
  const current=()=>request===groupHistoryRequest&&state.tab==='groups'&&state.groupSelected===gid&&state.user?.id===uid;
  try{
   const result=await api(`/api/groups/${gid}/messages`);
   if(!current())return;
-  state.groupMessages=result.messages;
-  const box=$('#chat-messages');if(box){const near=box.scrollHeight-box.scrollTop-box.clientHeight<120;box.innerHTML=bubblesFor(state.groupMessages,true);if(scroll||near)box.scrollTop=box.scrollHeight;}
+  const incoming=new Map(result.messages.map(message=>[message.id,message]));
+  for(const message of state.groupMessages){
+   if(existing.get(message.id)!==message)incoming.set(message.id,message);
+  }
+  state.groupMessages=[...incoming.values()].sort((a,b)=>a.id-b.id).slice(-100);
+  paintGroupThread(scroll);
   await post(`/api/groups/${gid}/read`);
   if(!current())return;
   const g=state.groups.find(x=>x.id===gid);if(g)g.unread=0;
@@ -443,22 +468,23 @@ function scheduleGroupsRefresh(delay=450){
  groupRefreshTimer=setTimeout(()=>refreshGroups(false).then(()=>renderSideItems()).catch(()=>{}),delay);
 }
 function appendGroupMessage(groupId,message){
- if(!message||state.groupSelected!==groupId)return;
- const pos=state.groupMessages.findIndex(item=>item.id===message.id);
- if(pos<0)state.groupMessages.push(message);else state.groupMessages[pos]=message;
- state.groupMessages.sort((a,b)=>a.id-b.id);
- if(state.groupMessages.length>100)state.groupMessages.splice(0,state.groupMessages.length-100);
- if(state.tab==='groups'){
-  const box=$('#chat-messages');
-  if(box){
-   const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<140;
-   const scroll=box.scrollTop;
-   box.innerHTML=bubblesFor(state.groupMessages,true);
-   box.scrollTop=atBottom?box.scrollHeight:scroll;
-   syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
-  }
-  if(message.sender_id!==state.user?.id)post('/api/groups/'+groupId+'/read').catch(()=>{});
+ if(!message||state.groupSelected!==groupId||state.tab!=='groups')return;
+ const messages=state.groupMessages;
+ const pos=messages.findIndex(item=>item.id===message.id);
+ const previous=messages.at(-1);
+ if(pos<0)messages.push(message);else messages[pos]=message;
+ const outOfOrder=pos<0&&previous&&message.id<previous.id;
+ if(outOfOrder)messages.sort((a,b)=>a.id-b.id);
+ const capped=messages.length>100;
+ if(capped)messages.splice(0,messages.length-100);
+ const box=$('#chat-messages');
+ if(box){
+  if(capped||outOfOrder)paintGroupThread();
+  else patchThreadRow(box,message,previous,messages,'group',pos>=0,paintGroupThread);
+  syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
  }
+ if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')
+  post('/api/groups/'+groupId+'/read').catch(()=>{});
 }
 async function extraSocket(data){
  const t=data.type;
@@ -646,13 +672,14 @@ document.addEventListener('submit',async event=>{
     if(!body&&!state.pendingAttachment)return;
     const gid=state.groupSelected,owner=state.user.id;
     const field=form.querySelector('#chat-text'),submitted=field.value;
-    await post(`/api/groups/${gid}/messages`,{body,attachment_id:state.pendingAttachment?.id||null,reply_to:state.replyTo?.scope==='group'?state.replyTo.id:null});
+    const {message}=await post(`/api/groups/${gid}/messages`,{body,attachment_id:state.pendingAttachment?.id||null,reply_to:state.replyTo?.scope==='group'?state.replyTo.id:null});
     if(state.user?.id!==owner)return;
     if(field.value===submitted){v4WriteDraft('group:'+gid,'');field.value='';}
     if(state.tab!=='groups'||state.groupSelected!==gid)return;
     state.replyTo=null;state.pendingAttachment=null;
     if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'group-typing',group_id:gid,on:false}));
-    await loadGroupMessages();await refreshGroups();
+    appendGroupMessage(gid,message);
+    scheduleGroupsRefresh();
     const extra=$('#compose-extra');if(state.tab==='groups'&&state.groupSelected===gid&&extra)extra.innerHTML=composerExtras();
   }
   if(key==='settings-profile'){

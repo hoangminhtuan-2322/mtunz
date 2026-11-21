@@ -1001,37 +1001,37 @@ function renderMessageThread(scroll=false){
  box.innerHTML=renderBubbles();
  if(scroll||near)box.scrollTop=box.scrollHeight;else box.scrollTop=previousPosition;
 }
+function patchThreadRow(box,message,previous,messages,scope,replace,redraw){
+ const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
+ const position=box.scrollTop;
+ const template=document.createElement('template');
+ template.innerHTML=bubblesFor([message],scope==='group',messages);
+ const row=template.content.querySelector('.bubble-wrap');
+ if(!row){redraw();return;}
+ if(replace){
+   const existing=document.getElementById('msg-'+scope+'-'+message.id);
+   if(!existing||!box.contains(existing)){redraw();return;}
+   existing.replaceWith(row);
+ }else{
+   box.querySelector('.empty')?.remove();
+   if(!previous||dayFormatter.format(previous.created_at*1000)!==dayFormatter.format(message.created_at*1000)){
+     box.append(template.content.querySelector('.day-label'));
+   }
+   box.append(row);
+ }
+ box.scrollTop=near?box.scrollHeight:position;
+}
 function appendDirectMessage(message){
- if(!message||!state.selected)return;
+ if(!message||!state.selected||state.tab!=='messages')return;
  if(![message.sender_id,message.recipient_id].includes(state.selected))return;
  const currentIndex=state.messages.findIndex(x=>x.id===message.id);
  const previous=state.messages[state.messages.length-1];
  if(currentIndex>=0)state.messages[currentIndex]=message;
  else state.messages.push(message);
  const box=$('#chat-messages');
- if(!box||currentIndex<0&&previous&&previous.id>0&&message.id<previous.id){
-   renderMessageThread(false);
- }else{
-   const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
-   const oldPosition=box.scrollTop;
-   const template=document.createElement('template');
-   template.innerHTML=bubblesFor([message],false,state.messages);
-   const row=template.content.querySelector('.bubble-wrap');
-   if(currentIndex>=0){
-     const existing=box.querySelector('#msg-dm-'+message.id);
-     if(existing&&row)existing.replaceWith(row);
-     else renderMessageThread(false);
-   }else if(row){
-     const previousDay=previous?dayFormatter.format(previous.created_at*1000):'';
-     const nextDay=dayFormatter.format(message.created_at*1000);
-     box.querySelector('.empty')?.remove();
-     if(previousDay!==nextDay){
-       const day=template.content.querySelector('.day-label');
-       if(day)box.appendChild(day);
-     }
-     box.appendChild(row);
-   }
-   if(near)box.scrollTop=box.scrollHeight;else box.scrollTop=oldPosition;
+ if(box){
+   if(currentIndex<0&&previous&&previous.id>0&&message.id<previous.id)renderMessageThread(false);
+   else patchThreadRow(box,message,previous,state.messages,'dm',currentIndex>=0,renderMessageThread);
  }
  syncThreadJump(box,currentIndex<0&&message.sender_id!==state.user?.id);
  if(state.messages.length>110){
@@ -1044,10 +1044,11 @@ function appendDirectMessage(message){
 }
 async function loadMessages(scroll=true){
  const friend=state.selected;if(!friend)return;
- const seq=++dmLoadGeneration;
+ const seq=++dmLoadGeneration,userId=state.user?.id;
+ const current=()=>seq===dmLoadGeneration&&state.selected===friend&&state.tab==='messages'&&state.user?.id===userId;
  try{
   const r=await api('/api/messages/'+friend);
-  if(seq!==dmLoadGeneration||state.selected!==friend)return;
+  if(!current())return;
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
   for(const message of r.messages)known.set(message.id,message);
   const failed=(typeof v4FailedSends==='object'?[...v4FailedSends.entries()]
@@ -1064,7 +1065,7 @@ async function loadMessages(scroll=true){
   }
   const item=state.friends.find(x=>x.other_id===friend);
   if(item&&item.unread){item.unread=0;renderSideItems();}
- }catch(e){toast(e.message,'error');}
+ }catch(e){if(current())toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
