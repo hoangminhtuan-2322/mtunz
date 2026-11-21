@@ -3,6 +3,10 @@ name: Verify deployed mtunz release
 # Run after Render has deployed the intended main commit.
 # Read-only: no authentication, no database writes, no synthetic signups.
 on:
+  # External Render deploys happen AFTER CI succeeds. Do not put this job on
+  # push/main: that would risk a checksPass deployment deadlock.
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions:
@@ -19,8 +23,8 @@ jobs:
         run: |
           set -euo pipefail
           base="https://mtunz.onrender.com"
-          for path in /health /terms /privacy; do
-            name="${path#/}"
+          for path in /health /terms /privacy /; do
+            name="${path#/}"; name="${name:-home}"
             # Render Free may cold-start; tolerate startup but fail on HTTP errors.
             curl --silent --show-error --fail --location \
               --max-time 90 --retry 3 --retry-delay 10 \
@@ -42,5 +46,7 @@ jobs:
           assert 'Điều khoản sử dụng' in terms, 'Terms page not deployed'
           assert 'Chính sách quyền riêng tư' in privacy, 'Privacy page not deployed'
           assert 'không có mã hóa đầu-cuối (E2EE)' in privacy, 'Privacy disclosure missing'
+          home=Path('/tmp/mtunz-home').read_text()
+          assert '<script ' in home and '/static/app.js' in home, 'App shell missing'
           print(f'Production read-only checks passed. Git commit {expected}; terms and privacy reachable.')
           PY
