@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const js=fs.readFileSync('static/app.js','utf8');
 const css=fs.readFileSync('static/admin-console.css','utf8');
-const start=js.indexOf('function adminJoinedAt(');
+const start=js.indexOf('const adminJoinedFormatter=');
 const end=js.indexOf('\nfunction adminUsers(){',start);
 assert(start>=0&&end>start,'Dedicated Admin join-date formatter is present');
 const ctx={Intl,Date,Object,Number};
