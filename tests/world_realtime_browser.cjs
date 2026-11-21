@@ -47,9 +47,15 @@ const {chromium}=require('playwright-core');
     assert.equal(await page.locator('.world-message').count(),56);
     assert.equal(await page.locator('#world-feed').evaluate(e=>e.scrollTop),0,
       'Receiving messages while reading older history does not scroll-jump');
-    await page.evaluate(()=>{
+    // First let a simulated *user scroll* settle in a separate frame.
+    // Assigning scrollTop and appending in one JS turn can be undone by
+    // browser scroll anchoring before the layout flush.
+    await page.locator('#world-feed').evaluate(feed=>{feed.scrollTop=feed.scrollHeight;});
+    await page.waitForFunction(()=>{
       const feed=document.querySelector('#world-feed');
-      feed.scrollTop=feed.scrollHeight;
+      return feed&&feed.scrollHeight-feed.scrollTop-feed.clientHeight<8;
+    });
+    await page.evaluate(()=>{
       appendWorldSocket({id:57,room_id:1,sender_id:8,
         display_name:'Người mới',body:'Tin gần cuối',
         created_at:Math.floor(Date.now()/1000)});
