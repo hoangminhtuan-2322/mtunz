@@ -3,6 +3,7 @@ import asyncio
 import io
 
 import pytest
+from fastapi.testclient import TestClient
 import app as core
 from app import db, now, RATE_BUCKETS
 from test_flows import logged_admin, register_user
@@ -46,7 +47,11 @@ def test_idempotent_chat_and_collision_rejected():
     assert second.status_code==200,second.text
     assert second.json()['replayed'] is True
     assert second.json()['message']['id']==first.json()['message']['id']
-    assert len(bob.get('/api/messages/'+str(aid)).json()['messages'])==1
+    sender_history=alice.get(f'/api/messages/{bid}').json()['messages']
+    recipient_history=bob.get(f'/api/messages/{aid}').json()['messages']
+    assert len(sender_history)==len(recipient_history)==1
+    assert sender_history[0]['client_message_id']==payload['client_message_id']
+    assert 'client_message_id' not in recipient_history[0]
     wrong=alice.post('/api/messages',json={**payload,'body':'Other text'})
     assert wrong.status_code==409
     assert alice.post('/api/messages',json={**payload,'client_message_id':'invalid'}).status_code==422
@@ -92,6 +97,9 @@ def test_scheduled_send_edit_cancel_and_exactly_once_restart():
     assert asyncio.run(core.messaging_v4_deliver_due())==0
     texts=[m['body'] for m in bob.get('/api/messages/'+str(aid)).json()['messages']]
     assert texts==['Happy birthday 🎉']
+    notices=bob.get('/api/notifications').json()['notifications']
+    assert notices[0]['body'].startswith('Tin nhắn hẹn giờ mới từ ')
+    assert all('Happy birthday' not in notice['body'] for notice in notices)
     assert alice.delete('/api/scheduled-messages/'+str(sid)).status_code==409
     another=alice.post('/api/scheduled-messages',json={'recipient_id':bid,'body':'Cancel','send_at':future})
     assert another.status_code==200
@@ -128,3 +136,58 @@ def test_authenticated_voice_media_waveform_and_size_limits():
     bad=alice.post('/api/uploads',files={'file':('fake.webm',io.BytesIO(b'NOT_MEDIA'),'audio/webm')},
        data={'waveform':'0'*32,'duration_ms':'999'})
     assert bad.status_code==415
+
+
+def test_private_data_stays_with_chat_participants():
+    admin,alice,bob,aid,bid=pair()
+    other=register_user(admin,'outside_chat')
+    upload=alice.post('/api/uploads',files={
+        'file':('private.txt',io.BytesIO(b'Private attachment.'),'text/plain')
+    })
+    assert upload.status_code==200,upload.text
+    attachment_id=upload.json()['attachment']['id']
+
+    body='Private message that should never appear in notifications'
+    payload={'recipient_id':bid,'body':body,'attachment_id':attachment_id,
+             'client_message_id':'c_999999999999999999999999'}
+    with bob.websocket_connect('/ws') as socket:
+        send=alice.post('/api/messages',json=payload)
+        assert send.status_code==200,send.text
+        event=socket.receive_json()
+        assert event['type']=='message' and event['message']['body']==body
+        assert 'client_message_id' not in event['message']
+
+    private_paths=[f'/api/messages/{aid}',f'/api/attachments/{attachment_id}']
+    for path in private_paths:
+        assert TestClient(core.app).get(path).status_code==401
+        assert other.get(path).status_code==403
+        authorized=bob.get(path)
+        assert authorized.status_code==200,authorized.text
+        assert 'no-store' in authorized.headers['Cache-Control']
+    assert other.get(f'/api/admin/users/{aid}/messages').status_code==403
+
+    mid=send.json()['message']['id']
+    assert alice.delete(f'/api/messages/{mid}').status_code==200
+    recalled=bob.get(f'/api/messages/{aid}').json()['messages'][0]
+    assert recalled['body']=='' and recalled['attachment_id'] is None
+    assert bob.get(f'/api/attachments/{attachment_id}').status_code==403
+    notices=bob.get('/api/notifications').json()['notifications']
+    assert set(notices[0])=={'id','body','created_at','read_at'}
+    assert body not in str(notices)
+
+
+def test_profile_and_friends_do_not_expose_hidden_activity_or_contacts():
+    _,alice,bob,aid,bid=pair()
+    with db() as c:
+        c.execute('UPDATE users SET last_seen=?,show_online=0 WHERE id=?',(now(),aid))
+    for path in (f'/api/profile/{aid}', '/api/friends'):
+        payload=bob.get(path).json()
+        view=payload['profile'] if 'profile' in payload else payload['friends'][0]
+        assert view['last_seen'] is None
+        assert {'phone','email','password_hash','pin_hash'}.isdisjoint(view)
+    with db() as c:
+        c.execute('UPDATE users SET show_online=1 WHERE id=?',(aid,))
+    assert bob.get(f'/api/profile/{aid}').json()['profile']['last_seen']
+    assert alice.post(f'/api/restrict/{bid}').status_code==200
+    assert bob.get(f'/api/profile/{aid}').json()['profile']['last_seen'] is None
+    assert bob.get('/api/friends').json()['friends'][0]['last_seen'] is None

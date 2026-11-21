@@ -45,6 +45,15 @@ with psycopg.connect(url,row_factory=dict_row) as c:
                               VALUES('admin',%s,1,%s) RETURNING id""",
                           (existing_hash,int(time.time()))).fetchone()['id']
 
+    c.execute('''CREATE TABLE notifications (
+        id BIGSERIAL PRIMARY KEY, user_id BIGINT NOT NULL REFERENCES users(id),
+        body TEXT NOT NULL, created_at INTEGER NOT NULL)''')
+    c.execute('''INSERT INTO notifications(user_id,body,created_at)
+                 VALUES (%s,%s,1),(%s,%s,2),(%s,%s,3)''',
+              (prior_admin,'Tin nhắn từ Thành viên: nội dung cũ',
+               prior_admin,'Tin nhắn hẹn giờ từ Thành viên: nội dung cũ',
+               prior_admin,'Thông báo hệ thống'))
+
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 from app import app,db
@@ -60,6 +69,10 @@ with db() as c:
     assert admin['password_hash']==existing_hash,'Upgrade changed the preexisting password hash'
     assert admin['terms_accepted_at'] is None,'Legacy users may not be force-consented'
     assert admin['terms_accepted_version'] is None
+    notices=c.execute('SELECT body FROM notifications ORDER BY id').fetchall()
+    assert [row['body'] for row in notices]==[
+        'Bạn có tin nhắn mới.', 'Bạn có tin nhắn mới.', 'Thông báo hệ thống']
+    c.execute('DELETE FROM notifications')
     assert c.execute("""SELECT count(*) AS n FROM information_schema.columns
                          WHERE table_name='users' AND column_name='needs_display_name'""").fetchone()['n']==1
     assert c.execute('SELECT count(*) AS n FROM message_pins').fetchone()['n']==0
