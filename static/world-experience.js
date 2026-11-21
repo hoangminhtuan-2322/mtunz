@@ -51,7 +51,7 @@ worldPage=function enhancedWorldPage(){
         '<div class="world-chat-top"><span class="world-chat-room-icon" aria-hidden="true">#</span>'+
           '<div class="world-chat-room-title"><span class="world-room-eyebrow">ĐANG XEM PHÒNG</span>'+
             '<h2>'+roomName+'</h2><p>'+(closed?'Phòng chỉ đọc · Bạn vẫn xem được lịch sử':'Hội thoại trực tiếp · Một không gian dành cho tất cả')+'</p></div>'+
-          '<span class="world-recent-badge">'+messages.length+' tin gần đây</span></div>'+
+          '<span class="world-recent-badge">Phòng cộng đồng</span></div>'+
         (status.announcement?'<div class="v6-world-announcement" role="note">📌 <strong>Thông báo Admin:</strong> '+worldEscape(status.announcement)+'</div>':'')+
         '<div class="world-live-toolbar"><span class="world-hours">'+icon('clock',14)+' '+worldEscape(worldTimeLabel(status))+
           (status.slow_seconds?' · Chế độ chậm '+Number(status.slow_seconds)+' giây/tin':'')+'</span>'+
