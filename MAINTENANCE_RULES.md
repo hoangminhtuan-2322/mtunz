@@ -11,7 +11,7 @@
 
 ## V9 World Chat + Mobile Profile
 
-- Nút Profile trên mobile phải hiển thị trong thanh điều hướng dưới; nút Profile desktop giữ nguyên.
+- Profile trên mobile phải hiển thị thành **thẻ tài khoản (avatar, tên, @username) ở đầu danh sách Tin nhắn, phía trên tiêu đề Tin nhắn**, không nằm trong thanh điều hướng dưới. Thanh dưới luôn giữ đúng 5 mục cũ; nút Profile desktop ở cuối menu trái giữ nguyên.
 - Chat thế giới nâng cấp phần trình bày, đồng thời giữ nguyên luồng dữ liệu và xử lý của các module World cũ.
 - Không thêm giả lập người dùng online hoặc số liệu không có trên backend.
 
