@@ -881,7 +881,7 @@ function welcomeEmpty(){return `<div class="hero-empty"><div><div class="illustr
  <button class="btn primary" data-act="app-tab" data-tab="friends">${icon('add')} Tìm bạn bè</button></div></div>`;}
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
- ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
+ ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':f.last_seen?`Hoạt động gần nhất: ${date(f.last_seen)}`: ''}</div></div>
  <button class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}" title="Xem hồ sơ">${icon('users',15)}</button>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin">${icon('search',15)}</button>
  <button type="button" class="btn ghost sm v6-disappear-control" data-v6-act="disappear"

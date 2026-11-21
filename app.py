@@ -317,8 +317,10 @@ class Hub:
         self.session_hashes: dict[WebSocket, str] = {}
         self.valid_session_until: dict[str, int] = {}
 
-    async def send(self, sockets, payload):
+    async def send(self, sockets, payload, *, member=False):
         async def deliver(ws):
+            if member and ws not in self.session_hashes:
+                return
             try:
                 await asyncio.wait_for(ws.send_json(payload), timeout=2)
             except Exception:
@@ -339,12 +341,15 @@ class Hub:
             if ws not in valid:
                 try: await ws.close(code=1008)
                 except Exception: pass
-        await self.send(valid, {'type':event, **data})
+        await self.send(valid, {'type':event, **data}, member=True)
 
     async def user(self, uid, event, **data):
         sockets = list(self.users.get(uid, ()))
         # Critical events must be delivered once even after the session is revoked.
-        if event not in ('account-sanction', 'session-ended') and sockets:
+        if event in ('account-sanction', 'session-ended'):
+            for ws in sockets:
+                self.valid_session_until.pop(self.session_hashes.get(ws), None)
+        elif sockets:
             current = now()
             cached = {self.session_hashes.get(ws) for ws in sockets
                       if self.valid_session_until.get(self.session_hashes.get(ws,''),0)>current}
@@ -352,9 +357,12 @@ class Hub:
                 active = cached
             else:
                 with db() as c:
-                    active = {r['token_hash'] for r in c.execute(
-                        'SELECT token_hash FROM sessions WHERE user_id=? AND expires_at>?', (uid,current))}
-                for sid in active:self.valid_session_until[sid]=current+3
+                    active = {}
+                    for row in c.execute('SELECT token_hash,expires_at FROM sessions WHERE user_id=? AND expires_at>?',
+                                         (uid,current)):
+                        active[row['token_hash']]=row['expires_at']
+                for sid in {self.session_hashes.get(ws) for ws in sockets} & active.keys():
+                    self.valid_session_until[sid]=min(current+3,active[sid])
             good = []
             for ws in sockets:
                 if self.session_hashes.get(ws) in active:
@@ -363,20 +371,33 @@ class Hub:
                     try: await ws.close(code=1008)
                     except Exception: pass
             sockets = good
-        await self.send(sockets, {'type': event, **data})
+        await self.send(sockets, {'type': event, **data}, member=True)
 
-    async def terminate_user(self, uid, except_hash=None):
-        for ws in list(self.users.get(uid, ())):
-            if except_hash and self.session_hashes.get(ws) == except_hash:
-                continue
+    def detach_session(self, ws):
+        sid = self.session_hashes.pop(ws, None)
+        self.valid_session_until.pop(sid, None)
+
+    async def close_sockets(self, sockets, notice=None):
+        # Stop dispatch as a batch before awaiting sends or closes.
+        for ws in sockets:
+            self.detach_session(ws)
+        if notice:
+            await self.send(sockets, {'type':'session-ended', 'reason':notice})
+
+        async def close(ws):
             try: await ws.close(code=1008)
             except Exception: pass
+        if sockets:
+            await asyncio.gather(*(close(ws) for ws in sockets))
 
-    async def terminate_session(self, session_hash):
-        for ws, token_hash in list(self.session_hashes.items()):
-            if token_hash == session_hash:
-                try: await ws.close(code=1008)
-                except Exception: pass
+    async def terminate_user(self, uid, except_hash=None):
+        sockets = [ws for ws in self.users.get(uid, ())
+                   if not except_hash or self.session_hashes.get(ws) != except_hash]
+        await self.close_sockets(sockets)
+
+    async def terminate_session(self, session_hash, notice=None):
+        sockets = [ws for ws, sid in self.session_hashes.items() if sid == session_hash]
+        await self.close_sockets(sockets, notice=notice)
 
     async def guest(self, gid, event, **data):
         await self.send(self.guests.get(gid, ()), {'type': event, **data})
@@ -1208,7 +1229,10 @@ async def get_friends(request: Request):
              u['id'],u['id'],now(),u['id'],now(),
              u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
         for r in allrows:
-            r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
+            show_activity=bool(r['show_online']) and not bool(r.pop('peer_restricted'))
+            r['online']=show_activity and bool(hub.users.get(r['other_id']))
+            if not show_activity:
+                r['last_seen']=None
             r['muted']=bool(r['muted'])
             r['archived']=bool(r['archived'])
             r['pinned']=bool(r['pinned'])
@@ -1339,7 +1363,7 @@ async def message_history(request:Request,other_id:int,before:int=0):
         sql+=' ORDER BY id DESC LIMIT 70'
         result=many(c,sql.replace('SELECT id,sender_id,recipient_id,body,created_at,read_at',
                                   'SELECT *'),params)
-        result=[message_details(c,r) for r in result[::-1]]
+        result=[message_details(c,r,viewer_id=u['id']) for r in result[::-1]]
         # Hide read receipts when the reader opted out or restricted the sender.
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
         if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
@@ -1371,7 +1395,7 @@ async def send_message(request:Request,body:SendMessage):
             if (previous['recipient_id']!=body.recipient_id or previous['body']!=text or
                     previous['attachment_id']!=body.attachment_id or previous['reply_to']!=body.reply_to):
                 raise HTTPException(409,'Mã tin nhắn đã được dùng cho nội dung khác.')
-            msg=message_details(c,previous)
+            msg=message_details(c,previous,viewer_id=u['id'])
             replay=True
         else:
             file_for_message(c,body.attachment_id,u['id'])
@@ -1402,19 +1426,20 @@ async def send_message(request:Request,body:SendMessage):
                 if (old['recipient_id']!=body.recipient_id or old['body']!=text or
                         old['attachment_id']!=body.attachment_id or old['reply_to']!=body.reply_to):
                     raise HTTPException(409,'Mã tin nhắn đã được dùng cho nội dung khác.')
-                msg=message_details(c,old)
+                msg=message_details(c,old,viewer_id=u['id'])
                 replay=True
             else:
-                msg=message_details(c,one(c,'SELECT * FROM messages WHERE id=?',(cursor.lastrowid,)))
+                msg=message_details(c,one(c,'SELECT * FROM messages WHERE id=?',(cursor.lastrowid,)),viewer_id=u['id'])
                 pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
                          (body.recipient_id,u['id']))
                 if not pref or not pref['muted']:
                     notify_user_persist(c,body.recipient_id,
                        (f'Tin nhắn tự biến mất từ {u["display_name"] or "Thành viên"}.'
                         if vanish else
-                        f'Tin nhắn từ {u["display_name"] or "Thành viên"}: {text[:120] if text else "Đã gửi một tệp"}'))
+                        f'Tin nhắn mới từ {u["display_name"] or "Thành viên"}.'))
     if not replay:
-        await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
+        recipient_message={key:value for key,value in msg.items() if key!='client_message_id'}
+        await asyncio.gather(hub.user(body.recipient_id,'message',message=recipient_message),
                              hub.user(u['id'],'message',message=msg))
     return {'message':msg,'replayed':replay}
 
@@ -1439,7 +1464,10 @@ async def read_messages(request:Request,other_id:int):
 @app.get('/api/notifications')
 async def get_notifications(request:Request):
     u=current_user(request)
-    with db() as c:return {'notifications':many(c,'SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 80',(u['id'],))}
+    with db() as c:
+        rows=many(c,'''SELECT id,body,created_at,read_at FROM notifications
+                       WHERE user_id=? ORDER BY id DESC LIMIT 80''',(u['id'],))
+    return {'notifications':rows}
 
 
 
@@ -2022,7 +2050,11 @@ async def websocket_events(ws:WebSocket):
         return
     if origin:
         from urllib.parse import urlsplit
-        actual = urlsplit(origin)
+        try:
+            actual = urlsplit(origin)
+        except ValueError:
+            await ws.close(code=1008)
+            return
         expected = urlsplit(PUBLIC_ORIGIN) if PUBLIC_ORIGIN else None
         expected_scheme = expected.scheme if expected else ('https' if COOKIE_SECURE else ('https' if ws.url.scheme == 'wss' else 'http'))
         expected_host = expected.netloc if expected else ws.headers.get('host', '')
@@ -2037,10 +2069,11 @@ async def websocket_events(ws:WebSocket):
     uid=None
     if sid:
         with db() as c:
-            r=one(c,'''SELECT u.id,u.sanction_kind,u.sanction_until FROM sessions s
+            r=one(c,'''SELECT u.id,u.sanction_kind,u.sanction_until,u.needs_display_name FROM sessions s
                        JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?''',
                   (digest(sid),now()))
-            if r and (not r['sanction_kind'] or (r['sanction_until'] and r['sanction_until']<=now())):
+            if r and not r['needs_display_name'] and (not r['sanction_kind'] or
+                    (r['sanction_until'] and r['sanction_until']<=now())):
                 uid=r['id']
     if uid is not None:
         was_online=bool(hub.users.get(uid))
@@ -2120,7 +2153,7 @@ async def websocket_events(ws:WebSocket):
     finally:
         if uid is not None:
             hub.users[uid].discard(ws)
-            hub.session_hashes.pop(ws, None)
+            hub.detach_session(ws)
             if not hub.users[uid]:
                 with db() as c:c.execute('UPDATE users SET last_seen=? WHERE id=?',(now(),uid))
                 await notify_presence(uid,False)

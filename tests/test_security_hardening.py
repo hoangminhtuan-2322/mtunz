@@ -88,3 +88,32 @@ def test_websocket_refuses_oversized_and_invalid_json_events():
         with pytest.raises(WebSocketDisconnect) as caught:
             socket.receive_json()
         assert caught.value.code == 1009
+
+
+def test_revoked_websocket_cannot_receive_private_events_while_closing():
+    import asyncio
+    from app import Hub
+
+    async def check():
+        hub=Hub()
+
+        class Socket:
+            def __init__(self):
+                self.events=[]
+
+            async def send_json(self, payload):
+                self.events.append(payload)
+
+            async def close(self, code):
+                assert code==1008
+                await hub.send([self], {'type':'message'}, member=True)
+
+        socket=Socket()
+        hub.users[17].add(socket)
+        hub.session_hashes[socket]='revoked-session'
+        hub.valid_session_until['revoked-session']=2**31
+        await hub.terminate_session('revoked-session', notice='Phiên đã bị thu hồi.')
+        assert socket.events==[{'type':'session-ended','reason':'Phiên đã bị thu hồi.'}]
+        assert 'revoked-session' not in hub.valid_session_until
+
+    asyncio.run(check())

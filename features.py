@@ -68,6 +68,11 @@ def install(core):
             for col, typ in [('attachment_id','INTEGER'),('reply_to','INTEGER'),('edited_at','INTEGER'),('deleted_at','INTEGER')]:
                 column('messages', col, typ)
             column('notifications', 'read_at','INTEGER')
+            # Remove message excerpts written by older releases independently
+            # of whether their source messages are still accessible.
+            c.execute('''UPDATE notifications SET body=?
+                         WHERE body LIKE ? OR body LIKE ?''',
+                      ('Bạn có tin nhắn mới.', 'Tin nhắn từ %: %', 'Tin nhắn hẹn giờ từ %: %'))
             column('sessions','created_at','INTEGER')
             for table in ('sessions', 'trusted_devices'):
                 for name, typ in (
@@ -162,12 +167,18 @@ def install(core):
         rows = many(c,'SELECT user_id,emoji FROM reactions WHERE scope=? AND message_id=?',(scope,mid))
         return rows
 
-    def message_dict(c, row, scope='dm'):
-        result=dict(row)
+    def message_dict(c, row, scope='dm', viewer_id=None):
+        fields = ('id', 'sender_id', 'body', 'created_at', 'attachment_id',
+                  'reply_to', 'edited_at', 'deleted_at', 'forwarded')
+        if scope=='dm':
+            fields += ('recipient_id', 'read_at', 'delivered_at', 'expires_at')
+        else:
+            fields += ('group_id', 'username')
+        result={field:row[field] for field in fields}
+        if scope=='dm' and viewer_id==row['sender_id']:
+            result['client_message_id']=row['client_message_id']
         if row['deleted_at'] or (scope=='dm' and result.get('expires_at') and result['expires_at']<=now()):
-            result['body']=''
-            result['attachment']=None
-            result['reactions']=[]
+            result.update(body='', attachment_id=None, attachment=None, reactions=[])
         else:
             result['attachment']=file_meta(c,row['attachment_id'])
             result['reactions']=reactions_for(c,scope,row['id'])
@@ -211,7 +222,8 @@ def install(core):
             allowed=(uid==u['id'] or bool(u['is_admin']) or r['profile_visibility']=='everyone' or
                      (r['profile_visibility']=='friends' and friends(c,uid,u['id'])))
             p=dict(r)
-            p['last_seen']=r['last_seen'] if r['show_online'] or uid==u['id'] else None
+            if uid!=u['id'] and (not allowed or not r['show_online'] or core.is_restricted(c,uid,u['id'])):
+                p['last_seen']=None
             p['avatar_url']=f'/api/profile/{uid}/avatar' if allowed and r['avatar_attachment_id'] else None
             p['cover_url']=f'/api/profile/{uid}/cover' if allowed and r['cover_attachment_id'] else None
             p['headline']=r['headline'] if allowed else ''
@@ -281,13 +293,7 @@ def install(core):
                 raise HTTPException(409,'Không thể thu hồi phiên hiện tại. Hãy chọn Đăng xuất.')
             c.execute(f'DELETE FROM {table} WHERE token_hash=? AND user_id=?',(stored_hash,u['id']))
         if kind == 'session':
-            for ws, connected_hash in list(hub.session_hashes.items()):
-                if connected_hash == stored_hash:
-                    try:
-                        await ws.send_json({'type':'session-ended','reason':'Phiên đăng nhập đã bị thu hồi.'})
-                    except Exception:
-                        pass
-            await hub.terminate_session(stored_hash)
+            await hub.terminate_session(stored_hash, notice='Phiên đăng nhập đã bị thu hồi.')
         response=JSONResponse({'ok':True})
         if kind == 'remembered' and stored_hash == saved_hash:
             response.delete_cookie(core.REMEMBER_COOKIE,path='/')
@@ -1045,7 +1051,7 @@ def install(core):
         return {'ok':True}
 
     # Upgraded payloads include caption, attachment, reactions and reply references.
-    core.message_details = lambda c, r: message_dict(c,r,'dm')
+    core.message_details = message_dict
     core.file_for_message = safe_attachment
     core.notify_user_persist = notify
     core.profile_upgrade = True
