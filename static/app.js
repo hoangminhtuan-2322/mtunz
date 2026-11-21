@@ -1086,6 +1086,7 @@ function latestChatButton(){
 }
 
 const chatEndGeometry=new WeakMap();
+const chatEndSettling=new WeakMap();
 function followingChatEnd(box){
  return box.dataset.followChatEnd==='true'||chatNearEnd(box);
 }
@@ -1102,17 +1103,24 @@ function followChatEnd(box){
 function pauseChatFollow(box){
  if(!box)return;
  box.dataset.followChatEnd='false';
+ chatEndSettling.delete(box);
  delete box.dataset.positioningChat;
  delete box.dataset.openingChat;
 }
 function settleChatEnd(box){
- followChatEnd(box);
+ const settle={};
+ chatEndSettling.set(box,settle);
  box.dataset.positioningChat='true';
+ followChatEnd(box);
  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-  if(!box.isConnected)return;
-  if(box.dataset.positioningChat==='true')followChatEnd(box);
-  delete box.dataset.positioningChat;
+  if(box.isConnected&&chatEndSettling.get(box)===settle)followChatEnd(box);
  }));
+ setTimeout(()=>{
+  if(!box.isConnected||chatEndSettling.get(box)!==settle)return;
+  followChatEnd(box);
+  chatEndSettling.delete(box);
+  delete box.dataset.positioningChat;
+ },250);
 }
 function renderChatOpening(){
  renderApp();
@@ -1131,7 +1139,8 @@ function applyChatHistoryPosition(){
 }
 document.addEventListener('scroll',event=>{
  const box=event.target;
- if(box.id!=='chat-messages'||box.dataset.positioningChat)return;
+ if(box.id!=='chat-messages')return;
+ if(box.dataset.positioningChat){followChatEnd(box);return;}
  const previous=chatEndGeometry.get(box);
  // A queued scroll event at the old bottom can arrive after a layout change.
  // If the position itself moved away from that bottom, leave the reader there.

@@ -74,11 +74,20 @@ const {chromium}=require('playwright-core');
    await page.locator('[data-found-message="3"]').click({timeout:8000});
    await page.locator('#msg-dm-3.search-target').waitFor();
    // Use the real sidebar and back controls, including the collapsed mobile sidebar.
-   const latest=()=>page.waitForFunction(()=>{
-    const thread=document.querySelector('#chat-messages');
-    return thread&&thread.scrollHeight>thread.clientHeight&&
-      thread.scrollHeight-thread.scrollTop-thread.clientHeight<=2&&!thread.dataset.positioningChat;
-   });
+   const latest=async()=>{
+    try{
+     await page.waitForFunction(()=>{
+      const thread=document.querySelector('#chat-messages');
+      return thread&&thread.scrollHeight-thread.scrollTop-thread.clientHeight<=2&&!thread.dataset.positioningChat;
+     },null,{timeout:8000});
+    }catch(error){
+     const metrics=await page.locator('#chat-messages').evaluate(el=>({
+      ...el.dataset,top:el.scrollTop,height:el.scrollHeight,viewport:el.clientHeight,
+      rows:el.querySelectorAll('.bubble-wrap').length
+     }));
+     throw Error('Latest message was not reached on '+width+'px '+JSON.stringify(metrics),{cause:error});
+    }
+   };
    const selectChat=async id=>{
     if(width<800)await page.locator('.main-head [data-act="back-to-list"]').click();
     await page.locator('.side-item[data-act="open-chat"][data-id="'+id+'"]').click();
@@ -94,6 +103,7 @@ const {chromium}=require('playwright-core');
     renderSideItems();
    });
    await selectChat(14);
+   assert.equal(await page.locator('#chat-messages .bubble-wrap').count(),40);
    await selectChat(12);
    assert.equal(await text.inputValue(),'Bản nháp mới');
 
