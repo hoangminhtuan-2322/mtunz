@@ -182,10 +182,6 @@ async function loadGroupMessages(scroll=true){
   }
   state.groupMessages=[...incoming.values()].sort((a,b)=>a.id-b.id).slice(-100);
   paintGroupThread(scroll);
-  await post(`/api/groups/${gid}/read`);
-  if(!current())return;
-  const g=state.groups.find(x=>x.id===gid);if(g)g.unread=0;
-  renderSideItems();
  }catch(e){if(current())toast(e.message,'error');}
 }
 function notificationsContent(){
@@ -556,8 +552,6 @@ function appendGroupMessage(groupId,message){
   else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
   syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
  }
- if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')
-  post('/api/groups/'+groupId+'/read').catch(()=>{});
 }
 async function extraSocket(data){
  const t=data.type;

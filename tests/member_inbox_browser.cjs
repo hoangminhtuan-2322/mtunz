@@ -42,14 +42,22 @@ const {chromium}=require('playwright-core');
    await page.keyboard.press('Escape');
    await page.locator('.chat-photo-preview').waitFor({state:'hidden'});
    await page.evaluate(()=>{document.querySelector('#chat-messages').scrollTop=0;});
+   const receipts=[];
+   await page.route('**/api/messages/read/12?*',r=>{
+    receipts.push(new URL(r.request().url()).searchParams.get('up_to'));
+    return r.fulfill({json:{ok:true}});
+   });
    const jump=page.locator('[data-act="thread-latest"]');
    await jump.waitFor();
    await page.evaluate(()=>appendDirectMessage({id:61,sender_id:12,recipient_id:9,body:'Tin đến',created_at:201}));
    assert.match(await jump.innerText(),/1 tin mới/);
+   assert(!receipts.includes('61'));
    const latest=page.locator('#msg-dm-61');
    assert.equal(await latest.locator('[data-social-action="pin"]').count(),1);
    assert.equal(await latest.locator('[data-social-action="forward"]').count(),1);
+   const seen=page.waitForResponse(r=>r.url().endsWith('/api/messages/read/12?up_to=61')&&r.ok());
    await jump.click();
+   await seen;
    await jump.waitFor({state:'hidden'});
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    if(width<=800){
@@ -139,7 +147,7 @@ const {chromium}=require('playwright-core');
    });
    assert.equal(await page.evaluate(()=>window.testChatSounds),1);
    const groupHistory=[{id:101,sender_id:12,username:'Minh',body:'Tin nhóm cũ',created_at:300}];
-   await page.route('**/api/groups/8/read',r=>r.fulfill({json:{ok:true}}));
+   await page.route('**/api/groups/8/read?*',r=>r.fulfill({json:{ok:true}}));
    let finishHistory;
    const delayedHistory=new Promise(resolve=>{finishHistory=resolve;});
    await page.route('**/api/groups/8/messages',async r=>{

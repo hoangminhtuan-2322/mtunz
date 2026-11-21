@@ -16,7 +16,7 @@ import asyncio
 import logging
 from urllib.parse import quote
 
-from fastapi import HTTPException, Request, UploadFile, File, Form
+from fastapi import HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -771,11 +771,12 @@ def install(core):
         return {'message':msg}
 
     @app.post('/api/groups/{gid}/read')
-    async def group_read(request:Request,gid:int):
+    async def group_read(request:Request,gid:int,
+                         up_to:int=Query(default=9223372036854775807,ge=1,le=9223372036854775807)):
         u=current_user(request)
         with db() as c:
             active_member(c,gid,u['id'])
-            latest=one(c,'SELECT MAX(id) AS n FROM group_messages WHERE group_id=?',(gid,))['n'] or 0
+            latest=one(c,'SELECT MAX(id) AS n FROM group_messages WHERE group_id=? AND id<=?',(gid,up_to))['n'] or 0
             c.execute('UPDATE group_members SET last_read_id=MAX(last_read_id,?) WHERE group_id=? AND user_id=?',(latest,gid,u['id']))
         return {'ok':True}
 

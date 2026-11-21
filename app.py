@@ -21,7 +21,7 @@ from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
@@ -1544,19 +1544,18 @@ async def send_message(request:Request,body:SendMessage):
 
 
 @app.post('/api/messages/read/{other_id}')
-async def read_messages(request:Request,other_id:int):
+async def read_messages(request:Request,other_id:int,
+                        up_to:int=Query(default=9223372036854775807,ge=1,le=9223372036854775807)):
     u=current_user(request)
     with db() as c:
         require_peer(c,u['id'],other_id)
         t=now()
-        c.execute('''UPDATE messages SET delivered_at=? WHERE recipient_id=?
-                     AND sender_id=? AND delivered_at IS NULL''',(t,u['id'],other_id))
-        cursor=c.execute('UPDATE messages SET read_at=? WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
-                         (t,u['id'],other_id))
-        peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(u['id'],))
-        suppress=is_restricted(c,u['id'],other_id) or not peer['show_receipts']
+        cursor=c.execute("""UPDATE messages SET read_at=?, delivered_at=COALESCE(delivered_at,?)
+                            WHERE recipient_id=? AND sender_id=? AND id<=? AND read_at IS NULL""",
+                         (t,t,u['id'],other_id,up_to))
+        suppress=is_restricted(c,u['id'],other_id) or not u['show_receipts']
     if cursor.rowcount and not suppress:
-        await hub.user(other_id,'read',by=u['id'],at=t)
+        await hub.user(other_id,'read',by=u['id'],at=t,up_to=up_to)
     return {'ok':True}
 
 

@@ -430,7 +430,7 @@ function connectSocket(){
    if(t==='read' && state.selected===data.by){
      let changed=false;
      for(const message of state.messages){
-       if(message.sender_id===state.user?.id&&!message.read_at){message.read_at=data.at;changed=true;}
+       if(message.sender_id===state.user?.id&&message.id>0&&message.id<=(data.up_to??Infinity)&&!message.read_at){message.read_at=data.at;changed=true;}
      }
      if(changed){
        for(const m of state.messages){if(m.read_at&&!m.delivered_at)m.delivered_at=m.read_at;}
@@ -545,7 +545,7 @@ function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  state.adminQueueFilters={};state.adminQuery='';state.adminTicket=null;
- v4FailedSends.clear();
+ v4FailedSends.clear();threadReadWatermarks.clear();
  state.sideFilter='';state.inboxFilter='all';state.onlyUnreadNotices=false;state.notices=[];
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
@@ -996,6 +996,31 @@ function welcomeEmpty(){
 function threadJump(){
  return '<div class="thread-jump"><button hidden type="button" data-act="thread-latest">↓ Tin mới nhất</button></div>';
 }
+const threadReadWatermarks=new Map();
+function acknowledgeVisibleThread(box){
+ if(!state.user||document.visibilityState!=='visible')return;
+ const group=state.tab==='groups',id=group?state.groupSelected:state.selected;
+ if(!id||(!group&&state.tab!=='messages'))return;
+ const scope=group?'group':'dm';
+ if(box.dataset.chatKey!==scope+'-'+id)return;
+ const rows=group?state.groupMessages:state.messages;
+ const latest=rows.reduce((max,m)=>Math.max(max,m.sender_id!==state.user.id?m.id:0),0);
+ const owner=state.user.id,key=owner+':'+box.dataset.chatKey;
+ if(latest<=(threadReadWatermarks.get(key)||0))return;
+ if(threadReadWatermarks.size>=256&&!threadReadWatermarks.has(key))
+  threadReadWatermarks.delete(threadReadWatermarks.keys().next().value);
+ threadReadWatermarks.set(key,latest);
+ const path=group?'/api/groups/'+id+'/read':'/api/messages/read/'+id;
+ post(path+'?up_to='+latest).then(()=>{
+   if(state.user?.id!==owner||threadReadWatermarks.get(key)!==latest)return;
+   const currentRows=group?state.groupMessages:state.messages;
+   if(!box.isConnected||currentRows.some(m=>m.sender_id!==owner&&m.id>latest))return;
+   const item=group?state.groups.find(g=>g.id===id):state.friends.find(f=>f.other_id===id);
+   if(item?.unread){item.unread=0;renderSideItems();}
+ }).catch(()=>{
+   if(threadReadWatermarks.get(key)===latest)threadReadWatermarks.delete(key);
+ });
+}
 function syncThreadJump(box,arrived=false){
  const button=box?.parentElement?.querySelector('[data-act="thread-latest"]');
  if(!button)return;
@@ -1005,10 +1030,12 @@ function syncThreadJump(box,arrived=false){
  button.hidden=!away;
  const label=count?'↓ '+count+' tin mới':'↓ Tin mới nhất';
  if(button.textContent!==label)button.textContent=label;
+ if(!away)acknowledgeVisibleThread(box);
 }
 document.addEventListener('scroll',event=>{
  if(event.target.id==='chat-messages')syncThreadJump(event.target);
 },true);
+document.addEventListener('visibilitychange',()=>syncThreadJump($('#chat-messages')));
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
  ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
@@ -1112,9 +1139,6 @@ function appendDirectMessage(message){
    state.messages.splice(0,state.messages.length-100);
    renderMessageThread(false);
  }
- if(message.sender_id!==state.user?.id&&state.tab==='messages'&&document.visibilityState==='visible'){
-   post('/api/messages/read/'+state.selected).catch(()=>{});
- }
 }
 async function loadMessages(scroll=true){
  const friend=state.selected;if(!friend)return;
@@ -1139,11 +1163,6 @@ async function loadMessages(scroll=true){
   renderMessageThread(scroll);
   const inbound=[...r.messages].reverse().find(m=>m.sender_id===friend);
   if(inbound&&typeof v4AckIncoming==='function')v4AckIncoming(inbound);
-  if(state.messages.some(m=>m.sender_id===friend&&!m.read_at)){
-   post('/api/messages/read/'+friend).catch(()=>{});
-  }
-  const item=state.friends.find(x=>x.other_id===friend);
-  if(item&&item.unread){item.unread=0;renderSideItems();}
  }catch(e){if(current())toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
