@@ -38,22 +38,27 @@ const {chromium,webkit}=require('playwright-core');
      });
      await page.locator('#world-feed .world-message').waitFor();
      if(mobile){
-      const profile=page.locator('.rail-mobile-profile');
-      await profile.waitFor({state:'visible'});
-      const tabs=await page.locator('.rail-nav>.rail-btn').count();
-      assert(tabs>=6,'Six mobile navigation destinations are present');
+      assert.equal(await page.locator('.rail-nav>.rail-btn').count(),5,
+       'Exactly five mobile bottom destinations remain');
       const field=page.locator('#world-compose-text');
       await field.fill('Tin nhắn thử');
       await field.press('Enter');
-      assert.equal(await field.inputValue(),'Tin nhắn thử\n',name+' mobile Enter must remain newline');
-      // The existing mobile layout intentionally hides bottom navigation
-      // while the keyboard is focused. Dismiss editing before changing tabs.
+      assert.equal(await field.inputValue(),'Tin nhắn thử\\n',name+' mobile Enter must remain newline');
       await field.evaluate(el=>el.blur());
       await page.waitForFunction(()=>!document.body.classList.contains('mt-mobile-editing'));
+      await page.locator('.rail-nav>[data-tab="messages"]').click();
+      const profile=page.locator('.side-top>.mobile-profile-top');
+      await profile.waitFor({state:'visible'});
+      assert.match(await profile.innerText(),/Thử nghiệm/);
+      assert(await page.evaluate(()=>{
+       const p=document.querySelector('.side-top>.mobile-profile-top').getBoundingClientRect();
+       const h=document.querySelector('.side-top h2').getBoundingClientRect();
+       return p.bottom<h.top;
+      }),name+' top Profile must appear above Tin nhắn at '+width);
       await profile.click();
       await page.locator('.profile-page').waitFor({state:'visible'});
      }else{
-      await page.locator('.rail-mobile-profile').waitFor({state:'hidden'});
+      await page.locator('.mobile-profile-top').waitFor({state:'hidden'});
       const shell=page.locator('.shell.world-desktop-full');
       await shell.waitFor();
       assert.equal(await shell.locator(':scope > .side').evaluate(el=>getComputedStyle(el).display),'none');
