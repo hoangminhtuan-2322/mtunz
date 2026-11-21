@@ -46,6 +46,32 @@ const {chromium}=require('playwright-core');
    assert.equal(await text.inputValue(),'Bản nháp mới');
    assert.equal(await page.locator('#chat-messages').evaluate(el=>el.scrollTop),120);
    assert(await existing.evaluate(el=>el.isConnected));
+   const alerts=await page.evaluate(()=>{
+    let tones=0;
+    playChatSound=()=>tones++;
+    state.friends.push({other_id:13,muted:true});
+    alertChatMessage('dm',12,{id:201});
+    alertChatMessage('dm',13,{id:202});
+    alertChatMessage('group',7,{id:203});
+    alertChatMessage('group',7,{id:203});
+    localStorage.setItem(chatSoundKey(),'off');
+    alertChatMessage('group',7,{id:204});
+    return tones;
+   });
+   assert.equal(alerts,1);
+   if(width===390){
+    await page.context().grantPermissions(['notifications']);
+    const background=await page.evaluate(async ()=>{
+     Object.defineProperty(document,'hidden',{value:true,configurable:true});
+     const registration=await chatNotificationRegistration();
+     await notifyBrowser('Bạn có tin nhắn mới.','chat:verification',true);
+     const notifications=await registration.getNotifications({tag:'chat:verification'});
+     const shown=notifications.map(n=>[n.body,n.silent]);
+     notifications.forEach(n=>n.close());
+     return shown;
+    });
+    assert.deepEqual(background,[['Bạn có tin nhắn mới.',true]]);
+   }
    await page.close();
   }
  }finally{await browser.close();}

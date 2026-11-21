@@ -156,7 +156,7 @@ async function loadGroupMessages(scroll=true){
 function notificationsContent(){
  const ns=state.notices||[];
  return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">TRUNG TÂM THÔNG BÁO</span><h1 class="section-title">Thông báo của bạn</h1>
- <p class="section-lead">Lời mời, hoạt động mới và thông báo từ quản trị viên.</p><div class="row" style="gap:12px;margin-bottom:20px"><button class="btn primary sm" data-act="notice-read">Đánh dấu tất cả đã đọc</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button></div>
+ <p class="section-lead">Lời mời, hoạt động mới và thông báo từ quản trị viên.</p><div class="row" style="gap:12px;margin-bottom:20px"><button class="btn primary sm" data-act="notice-read">Đánh dấu tất cả đã đọc</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button><button class="btn ghost sm" type="button" data-act="notice-sound" aria-pressed="${chatSoundEnabled()}">Âm báo tin nhắn</button></div>
  ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?'<span class="pill good">Mới</span>':''}</div>`).join(''):'<div class="empty">Chưa có thông báo nào.</div>'}</div></div>`;
 }
 async function loadNotices(){if(!state.user||state.user.is_admin)return;state.notices=(await api('/api/notifications')).notifications;}
@@ -324,7 +324,18 @@ async function extraAction(btn){
  case 'notice-read':await post('/api/notifications/read');await loadNotices();renderApp();break;
  case 'notice-permission':{
    if(!('Notification' in window))throw Error('Trình duyệt không hỗ trợ thông báo nền.');
-   const result=await Notification.requestPermission();toast(result==='granted'?'Đã bật thông báo khi tab còn hoạt động.':'Trình duyệt chưa cấp quyền.',result==='granted'?'ok':'info');break;
+   const result=await Notification.requestPermission();
+   if(result==='granted')void chatNotificationRegistration();
+   toast(result==='granted'?'Đã bật thông báo khi tab còn hoạt động.':'Trình duyệt chưa cấp quyền.',result==='granted'?'ok':'info');break;
+ }
+ case 'notice-sound':{
+   const btn=document.querySelector('[data-act="notice-sound"]');
+   const enabled=!chatSoundEnabled();
+   localStorage.setItem(chatSoundKey(),enabled?'on':'off');
+   btn?.setAttribute('aria-pressed',String(enabled));
+   if(enabled){await unlockChatSound();playChatSound();}
+   toast(enabled?'Đã bật âm báo tin nhắn.':'Đã tắt âm báo tin nhắn.','ok');
+   break;
  }
  case 'profile-view':{
   const r=(await api('/api/profile/'+id)).profile;
@@ -404,10 +415,87 @@ async function uploadSelected(file){
   state.pendingAttachment=payload.attachment;
  }finally{state.uploading=false;if($('#compose-extra'))$('#compose-extra').innerHTML=composerExtras();}
 }
-function notifyBrowser(message){
- if(document.hidden&&typeof Notification!=='undefined'&&Notification.permission==='granted'){
-   try{const n=new Notification('mtunz',{body:message,icon:'/static/favicon.svg'});n.onclick=()=>window.focus();}catch{}
- }
+let notificationWorker;
+function chatNotificationRegistration(){
+ if(!('serviceWorker' in navigator))return Promise.resolve(null);
+ if(!notificationWorker)notificationWorker=navigator.serviceWorker.register('/static/chat-alert-worker.js')
+   .then(async registration=>{
+    const worker=registration.installing||registration.waiting;
+    if(!registration.active&&worker){
+     await new Promise(resolve=>{
+      const finish=()=>{
+       clearTimeout(timeout);
+       worker.removeEventListener('statechange',check);
+       resolve();
+      };
+      const check=()=>{
+       if(registration.active||worker.state==='redundant')finish();
+      };
+      const timeout=setTimeout(finish,4000);
+      worker.addEventListener('statechange',check);
+      check();
+     });
+    }
+    return registration;
+   }).catch(()=>{notificationWorker=null;return null;});
+ return notificationWorker;
+}
+async function notifyBrowser(message,tag='mtunz',silent=false){
+ if(!document.hidden||typeof Notification==='undefined'||Notification.permission!=='granted')return;
+ const options={body:message,tag,silent,icon:'/static/favicon.svg'};
+ try{
+  const registration=await chatNotificationRegistration();
+  if(!document.hidden)return;
+  if(registration?.active){await registration.showNotification('mtunz',options);return;}
+  const notice=new Notification('mtunz',options);
+  notice.onclick=()=>window.focus();
+ }catch{}
+}
+let chatSoundContext,lastChatSound=-Infinity;
+const seenChatAlerts=new Set();
+function chatSoundKey(){return 'mtunz.chat-sound.'+state.user?.id;}
+function chatSoundEnabled(){
+ try{return localStorage.getItem(chatSoundKey())!=='off';}catch{return true;}
+}
+async function unlockChatSound(){
+ if(!state.user||state.user.is_admin||!chatSoundEnabled())return;
+ const Audio=window.AudioContext||window.webkitAudioContext;
+ if(!Audio)return;
+ try{
+  chatSoundContext ||= new Audio();
+  if(chatSoundContext.state==='suspended')await chatSoundContext.resume();
+ }catch{}
+}
+document.addEventListener('pointerup',unlockChatSound,{passive:true});
+document.addEventListener('keydown',unlockChatSound);
+function playChatSound(){
+ const ctx=chatSoundContext;
+ if(!ctx||ctx.state!=='running'||performance.now()-lastChatSound<1800)return;
+ lastChatSound=performance.now();
+ const now=ctx.currentTime,oscillator=ctx.createOscillator(),gain=ctx.createGain();
+ oscillator.type='sine';
+ oscillator.frequency.setValueAtTime(640,now);
+ oscillator.frequency.setValueAtTime(840,now+.075);
+ gain.gain.setValueAtTime(.001,now);
+ gain.gain.exponentialRampToValueAtTime(.075,now+.025);
+ gain.gain.exponentialRampToValueAtTime(.001,now+.19);
+ oscillator.connect(gain).connect(ctx.destination);
+ oscillator.start(now);oscillator.stop(now+.2);
+ oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+}
+function alertChatMessage(scope,id,message){
+ const key=state.user.id+':'+scope+':'+id+':'+message.id;
+ if(seenChatAlerts.has(key))return;
+ seenChatAlerts.add(key);
+ if(seenChatAlerts.size>120)seenChatAlerts.delete(seenChatAlerts.keys().next().value);
+ const direct=scope==='dm';
+ if(direct&&state.friends.find(friend=>friend.other_id===id)?.muted)return;
+ const viewing=direct?state.tab==='messages'&&state.selected===id:state.tab==='groups'&&state.groupSelected===id;
+ const text=direct?'Bạn có tin nhắn mới.':'Bạn có tin nhắn mới trong nhóm.';
+ if(document.hidden){void notifyBrowser(text,'chat:'+scope+':'+id,!chatSoundEnabled());return;}
+ if(viewing)return;
+ toast(text,'info');
+ if(chatSoundEnabled())playChatSound();
 }
 let groupRefreshTimer=0;
 function scheduleGroupsRefresh(delay=450){
@@ -438,9 +526,7 @@ async function extraSocket(data){
  if(t==='group-message'){
   if(state.groupSelected===data.group_id)appendGroupMessage(data.group_id,data.message);
   scheduleGroupsRefresh();
-  if(data.message.sender_id!==state.user?.id&&!(state.groupSelected===data.group_id&&state.tab==='groups')){
-    toast('Có tin nhắn mới trong nhóm.');notifyBrowser('Tin nhắn mới trong nhóm');
-  }
+  if(data.message.sender_id!==state.user?.id)alertChatMessage('group',data.group_id,data.message);
  }
  if(t==='group-message-updated'&&state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
  if(t==='message-updated'&&state.selected&&state.tab==='messages')await loadMessages(false);
@@ -579,7 +665,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-permission',
+ 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-permission','notice-sound',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}
