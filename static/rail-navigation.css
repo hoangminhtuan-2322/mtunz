@@ -134,3 +134,8 @@
 @media(prefers-reduced-motion:reduce){
   .shell:not(.admin-shell) .rail-btn,.rail-more-chevron{transition:none}
 }
+@media(max-width:360px){
+  .shell:not(.admin-shell) .rail-nav > .rail-btn .rail-text{
+    font-size:8.8px;letter-spacing:-.12px
+  }
+}

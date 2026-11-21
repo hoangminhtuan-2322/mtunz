@@ -159,3 +159,57 @@ def test_audit_cleanup_and_full_member_reset_require_correct_pin():
         assert c.execute('SELECT count(*) n FROM sessions WHERE user_id=(SELECT id FROM users WHERE is_admin=1)').fetchone()['n']==1
     assert admin.get('/api/me').json()['user']['is_admin']
     assert member.get('/api/me').json()['user'] is None
+
+
+def test_pin_only_routine_admin_actions_preserve_strong_recovery_stepup():
+    """PIN-only workflows require a configured PIN; a password cannot bypass it.
+
+    The autouse fixture isolates all mutations inside the disposable CI DB.
+    """
+    admin=admin_with_pin()
+    config={'enabled':True,'schedule_enabled':False,'open_minute':540,
+            'close_minute':1320}
+    world_url='/api/admin/world/config'
+    missing=admin.post(world_url,json={**config,'admin_password':'mtunz7'})
+    assert missing.status_code==401,missing.text
+    wrong=admin.post(world_url,json={**config,'admin_pin':'0000'})
+    assert wrong.status_code==401,wrong.text
+    good=admin.post(world_url,json={**config,'admin_pin':'2345'})
+    assert good.status_code==200,good.text
+    assert good.json()['config']['open'] is True
+
+    # Global settings and announcements use the same PIN-only step-up.
+    assert admin.post('/api/admin/capacity',json={
+        'max_users':120,'admin_pin':'2345'}).status_code==200
+    assert admin.post('/api/admin/broadcast',json={
+        'body':'Thông báo PIN-only','admin_pin':'2345'}).status_code==200
+
+    member=register_user(admin,'pin_routine_member')
+    uid=member.get('/api/me').json()['user']['id']
+    user_edit={
+        'display_name':'Tên được duyệt','bio':'Hồ sơ đã chỉnh',
+        'phone':'0912345678','email':'pin-routine@example.com','reason':'Yêu cầu thay đổi thông tin'}
+    url=f'/api/admin/users/{uid}/edit'
+    assert admin.post(url,json={**user_edit,'admin_password':'mtunz7'}).status_code==401
+    edited=admin.post(url,json={**user_edit,'admin_pin':'2345'})
+    assert edited.status_code==200,edited.text
+    assert admin.post(f'/api/admin/users/{uid}/sessions/revoke',json={
+        'reason':'Yêu cầu bảo mật thành viên','admin_pin':'2345'}).status_code==200
+
+    # PIN-only is also enough to moderate World Chat; no password field.
+    writer=register_user(admin,'pin_routine_writer')
+    message=writer.post('/api/world/messages',json={'body':'Một tin thử nghiệm'})
+    assert message.status_code==200,message.text
+    mid=message.json()['message']['id']
+    removed=admin.post(f'/api/admin/world/messages/{mid}/remove',json={
+        'reason':'Kiểm tra kiểm duyệt bằng PIN','admin_pin':'2345'})
+    assert removed.status_code==200,removed.text
+
+    # Credential-reset grants remain password+PIN even for an Admin with PIN.
+    grant=f'/api/admin/tickets/999999/grant'
+    assert admin.post(grant,json={'username':'example','verified':True,
+                                  'admin_pin':'2345'}).status_code==401
+    assert admin.post(grant,json={'username':'example','verified':True,
+                                  'admin_password':'mtunz7',
+                                  'admin_pin':'2345'}).status_code==400
+    assert admin.get('/api/me').json()['user']['is_admin'] is True

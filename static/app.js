@@ -909,7 +909,13 @@ function appRail(){
     </div>
   </aside>`;
 }
-function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
+function sideBar(){return `<aside class="side"><div class="side-top">
+  <button type="button" class="mobile-profile-top" data-act="app-tab" data-tab="profile" title="Mở hồ sơ cá nhân" aria-label="Mở hồ sơ cá nhân của ${esc(state.user.display_name||state.user.username)}">
+    <span class="mobile-profile-avatar">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</span>
+    <span class="mobile-profile-identity"><strong>${esc(state.user.display_name||state.user.username)}</strong><small>@${esc(state.user.username)} · Xem hồ sơ</small></span>
+    <span class="mobile-profile-arrow" aria-hidden="true">${icon('chevron',17)}</span>
+  </button>
+  <div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
   <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" type="search" id="side-filter" aria-label="Tìm hội thoại cá nhân hoặc nhóm" placeholder="Tìm người hoặc nhóm…" value="${esc(state.sideFilter||'')}" autocomplete="off"></div>
   <div class="inbox-filters" role="group" aria-label="Lọc hội thoại" data-filter="${state.inboxFilter||'all'}">${Object.entries(inboxFilters).map(([key,label])=>`<button type="button" data-act="inbox-filter" data-filter="${key}" aria-pressed="${key===(state.inboxFilter||'all')}">${label}</button>`).join('')}</div></div>
   <div class="side-scroll" id="side-items">${sideBody()}</div>
@@ -1230,7 +1236,7 @@ function renderApp(){
   state.tab==='settings'?`${memberHeader('Cài đặt','Bảo mật và tùy chọn hệ thống') }<div class="main-body">${settingsContent()}</div>`:
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
- root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-desktop-full':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
  const inbox=state.tab==='messages'&&!state.selected&&matchMedia('(max-width:800px)').matches;
  globalThis.markViewMotion?.(root().querySelector(inbox?'.side':'.main'),
@@ -1381,11 +1387,30 @@ function adminRegistrations(){const rows=state.adminData||[];
  ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td data-sort-value="${Number(r.created_at)}">${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
+/* Admin join timestamps must be unambiguous and independent of browser timezone.
+   Only this column uses the complete date; compact dates elsewhere stay unchanged. */
+const adminJoinedFormatter=new Intl.DateTimeFormat('en-GB',{
+ timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric',
+ hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+});
+function adminJoinedAt(timestamp){
+ const seconds=Number(timestamp);
+ if(!Number.isFinite(seconds)||seconds<=0)return '<span class="hint">Chưa có dữ liệu</span>';
+ const instant=new Date(seconds*1000);
+ if(!Number.isFinite(instant.getTime()))return '<span class="hint">Chưa có dữ liệu</span>';
+ const parts=Object.fromEntries(adminJoinedFormatter.formatToParts(instant).map(({type,value})=>[type,value]));
+ const fullDate=parts.day+'/'+parts.month+'/'+parts.year;
+ const fullTime=parts.hour+':'+parts.minute+':'+parts.second;
+ return '<time class="admin-member-joined" datetime="'+instant.toISOString()+
+  '" title="'+fullTime+' '+fullDate+' (UTC+7)">'+
+  '<strong class="admin-member-joined-date">'+fullDate+'</strong>'+
+  '<span class="admin-member-joined-clock">'+fullTime+' <small>UTC+7</small></span></time>';
+}
 function adminUsers(){const data=state.adminData||[];
  return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên đăng nhập, tên hiển thị hoặc ID" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">${u.display_name?esc(u.display_name)+' · ':''}#${u.id}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${adminJoinedAt(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
@@ -1723,7 +1748,9 @@ function showPermanentDeleteDialog(target=null){
   }
  });
 }
-function adminProofFields(){
+function adminProofFields(requirePassword=false){
+  if(!requirePassword&&state.user?.pin_length&&typeof adminV3PinFields==='function')
+   return adminV3PinFields();
  return `<div class="admin-proof-box">
  <p class="hint">Xác minh lại trước khi thực hiện. Mật khẩu và PIN chỉ gửi tới máy chủ để kiểm tra.</p>
  <div class="field"><label for="admin-confirm-password">Mật khẩu Admin</label>
@@ -1738,7 +1765,9 @@ function unlockAdminProof(input){
 }
 document.addEventListener('pointerdown',event=>unlockAdminProof(event.target),true);
 document.addEventListener('focusin',event=>unlockAdminProof(event.target));
-function adminProofValue(host){
+function adminProofValue(host,requirePassword=false){
+  if(!requirePassword&&state.user?.pin_length&&typeof adminV3PinPayload==='function')
+   return adminV3PinPayload(host);
  const password=host.querySelector('#admin-confirm-password')?.value||'';
  const pin=host.querySelector('#admin-confirm-pin')?.value||'';
  if(!password||(state.user?.pin_length&&!pin))throw Error('Cần nhập mật khẩu và PIN Admin để xác nhận.');
@@ -1929,9 +1958,9 @@ async function userMessageLog(uid){
 function grantDialog(tid){
  modal({title:'Cấp mã khôi phục',description:'Xác minh danh tính người yêu cầu bằng kênh độc lập trước khi cấp quyền đặt lại. Mã chỉ hiệu lực 15 phút và được gửi qua cuộc trò chuyện hỗ trợ.',
  confirm:'Cấp mã một lần',content:`<div class="field"><label>Tên tài khoản cần đặt lại</label><input id="grant-username" class="input"></div>
- <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>${adminProofFields()}`,
+ <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>${adminProofFields(true)}`,
  handler:async host=>{if(!$('#grant-verified').checked)throw Error('Bạn phải hoàn tất xác minh danh tính.');
-  const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true,...adminProofValue(host)});
+  const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true,...adminProofValue(host,true)});
   toast('Đã gửi mã khôi phục tới cuộc trò chuyện.','ok');await loadAdmin();}});
 }
 

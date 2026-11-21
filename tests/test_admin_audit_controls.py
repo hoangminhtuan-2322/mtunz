@@ -61,7 +61,7 @@ def test_sensitive_admin_user_edit_and_session_revoke():
     assert member.post(endpoint, json={**payload, 'admin_password': 'mtunz7'}).status_code == 403
     assert TestClient(app).post(endpoint, json={**payload, 'admin_password': 'mtunz7'}).status_code == 401
     assert admin.post(endpoint, json={**payload, 'admin_password': 'incorrect'}).status_code == 401
-    assert admin.post(endpoint, json=payload).status_code == 422
+    assert admin.post(endpoint, json=payload).status_code == 401  # proof is checked server-side
     assert admin.post(endpoint, json={**payload, 'admin_password': 'mtunz7'}).status_code == 200
     info = admin.get(f'/api/admin/users/{user_id}/details').json()['user']
     assert info['display_name'] == 'Tên được chỉnh'

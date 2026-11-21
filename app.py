@@ -597,6 +597,20 @@ def verify_admin_stepup(request: Request, admin: dict, password: str, pin: str =
         raise HTTPException(401, 'Xác minh bảo mật không đúng. Nhập lại mật khẩu quản trị và PIN.')
 
 
+
+def verify_admin_routine(request: Request, admin: dict, password: str = '', pin: str = ''):
+    """For routine Admin actions, require a fresh server-verified PIN if set.
+
+    Reuse the persistent wrong-PIN lockout and audit trail. Preserve the
+    historical password step-up only for an Admin who has not set up a PIN.
+    Credential recovery, account deletion and full resets remain separate.
+    """
+    if admin['pin_hash']:
+        verify_admin_pin_stepup(request, admin, pin)
+    else:
+        verify_admin_stepup(request, admin, password, pin)
+
+
 def public_user(u):
     return {'id': u['id'], 'username': u['username'], 'is_admin': bool(u['is_admin']),
             'pin_length': u['pin_length'], 'created_at': u['created_at'],
@@ -1657,7 +1671,7 @@ class Capacity(BaseModel):
 @app.post('/api/admin/capacity')
 async def set_capacity(request:Request,body:Capacity):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_routine(request,admin,body.admin_password,body.admin_pin)
     with db() as c:
         total,reserved,_=registration_capacity(c)
         if body.max_users<total+reserved:
@@ -1883,7 +1897,7 @@ class Broadcast(BaseModel):
 @app.post('/api/admin/broadcast')
 async def admin_broadcast(request:Request,body:Broadcast):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_routine(request,admin,body.admin_password,body.admin_pin)
     with db() as c:
         ids=[r['id'] for r in c.execute('SELECT id FROM users WHERE is_admin=0')]
         for uid in ids:
@@ -1986,14 +2000,14 @@ class AdminUserEdit(BaseModel):
     phone:str=Field(min_length=0,max_length=40)
     email:str=Field(default='',max_length=254)
     reason:str=Field(min_length=5,max_length=250)
-    admin_password:str=Field(min_length=1,max_length=128)
+    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/users/{uid}/edit')
 async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_routine(request,admin,body.admin_password,body.admin_pin)
     throttle(request,'admin-edit-user',30,3600,str(admin['id']))
     phone=normalize_phone(body.phone)
     email=normalize_email(body.email)
@@ -2015,14 +2029,14 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
 
 class AdminSessionRevoke(BaseModel):
     reason:str=Field(min_length=5,max_length=250)
-    admin_password:str=Field(min_length=1,max_length=128)
+    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/users/{uid}/sessions/revoke')
 async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRevoke):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_routine(request,admin,body.admin_password,body.admin_pin)
     throttle(request,'admin-revoke-user-sessions',15,3600,str(admin['id']))
     with db() as c:
         user=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(uid,))

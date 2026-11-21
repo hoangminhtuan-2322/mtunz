@@ -11,3 +11,52 @@
 .profile-page .profile-panel-grid>.card:last-child{grid-column:auto}
 @media(max-width:900px){.profile-page .profile-panel-grid{grid-template-columns:1fr}.profile-page .profile-panel-grid>.card:last-child{grid-column:auto}}
 @media(max-width:630px){.rail-profile-button{padding:9px 8px}.profile-page .row.card{flex-wrap:wrap;gap:12px}.profile-page .section-wrap{padding-left:10px;padding-right:10px}}
+
+/* Mobile: Profile belongs at the top of the inbox, not in the five-tab rail.
+   Desktop account entry remains in its original footer. */
+.shell:not(.admin-shell) .mobile-profile-top{display:none}
+@media(max-width:800px){
+ .shell:not(.admin-shell) .side-top>.mobile-profile-top{
+  display:flex;align-items:center;width:100%;min-width:0;min-height:58px;
+  gap:12px;padding:9px 12px;margin:0 0 16px;
+  color:#f2f5ff;text-align:left;cursor:pointer;
+  border:1px solid #7180ac66;border-radius:16px;
+  background:linear-gradient(115deg,#293958,#1a2945);
+  box-shadow:0 6px 22px #09152652;
+  -webkit-tap-highlight-color:transparent;
+  transition:border-color .16s ease,background-color .16s ease;
+ }
+ .shell:not(.admin-shell) .side-top>.mobile-profile-top:active{
+  background:#324269;border-color:#a49cff;
+ }
+ .shell:not(.admin-shell) .mobile-profile-avatar{
+  flex:0 0 42px;width:42px;height:42px;display:grid;place-items:center;
+ }
+ .shell:not(.admin-shell) .mobile-profile-avatar .avatar{
+  width:42px;height:42px;min-width:42px;border-radius:50%;
+  font-size:14px;box-shadow:0 0 0 2px #b9a7ff88;
+ }
+ .shell:not(.admin-shell) .mobile-profile-identity{
+  display:flex;flex:1 1 0;flex-direction:column;min-width:0;gap:3px;
+ }
+ .shell:not(.admin-shell) .mobile-profile-identity strong,
+ .shell:not(.admin-shell) .mobile-profile-identity small{
+  display:block;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+ }
+ .shell:not(.admin-shell) .mobile-profile-identity strong{font-size:14px;font-weight:750;line-height:1.25}
+ .shell:not(.admin-shell) .mobile-profile-identity small{font-size:11px;color:#bac9eb;line-height:1.25}
+ .shell:not(.admin-shell) .mobile-profile-arrow{
+  display:inline-flex;flex:0 0 auto;color:#b9b8f9;align-items:center;
+ }
+ .shell:not(.admin-shell) .mobile-profile-top:focus-visible{
+  outline:2px solid #9bdcf5;outline-offset:3px;
+ }
+}
+@media(max-width:360px){
+ .shell:not(.admin-shell) .side-top>.mobile-profile-top{padding:8px 10px;gap:10px;margin-bottom:12px}
+ .shell:not(.admin-shell) .mobile-profile-avatar,
+ .shell:not(.admin-shell) .mobile-profile-avatar .avatar{width:38px;height:38px;min-width:38px}
+}
+@media(prefers-reduced-motion:reduce){
+ .shell:not(.admin-shell) .mobile-profile-top{transition:none!important}
+}
