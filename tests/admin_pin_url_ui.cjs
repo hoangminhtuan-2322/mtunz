@@ -48,6 +48,8 @@ const cases=[
   expected:'/world?room=2#latest',changed:true},
  {uri:'https://mtunz.onrender.com/?room=2&utm_source=chatgpt.com&invite=hello#chat',
   expected:'/?room=2&invite=hello#chat',changed:true},
+ {uri:'https://mtunz.onrender.com/?utm_source=chatgpt.com#profile',
+  expected:'/#profile',changed:true},
  {uri:'https://mtunz.onrender.com/?utm_source=newsletter&room=3',
   expected:null,changed:false},
  {uri:'https://mtunz.onrender.com/chat?utm_campaign=hello#x',
