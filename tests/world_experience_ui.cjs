@@ -26,8 +26,11 @@ assert(css.includes('World full-width desktop v9.1')&&css.includes('@media (min-
 assert(app.includes("state.tab==='world'?'world-desktop-full':''"),
  'Only the World tab receives the expanded desktop layout');
 
-assert(railCSS.includes('rail-mobile-profile'),'Mobile Profile CSS is present');
-assert(railCSS.includes('display:flex;flex:1 1 0'),'Mobile Profile is visible');
+const profileCSS=load('static/profile-separation.css');
+assert(profileCSS.includes('.side-top>.mobile-profile-top'),'Top-of-inbox Profile CSS is present');
+assert(profileCSS.includes('@media(max-width:800px)'),'Mobile Profile is limited to mobile');
+assert(!railCSS.includes('rail-mobile-profile'),'Old sixth bottom Profile has been removed');
+assert(app.includes('class="mobile-profile-top"'),'Mobile Profile is in the inbox header');
 assert(app.includes('data-tab="profile"'),'Profile navigation route exists');
 const a=app.indexOf('function appRail(){'),b=app.indexOf('\nfunction sideBar()',a);
 assert(a>0&&b>a);
@@ -35,14 +38,14 @@ const state={tab:'messages',user:{id:7,username:'person',display_name:'Người 
 const navCtx={state,brandGlyph:()=>'<img>',avatar:()=>'<avatar>',icon:n=>'<svg>'+n+'</svg>',esc:v=>String(v)};
 vm.createContext(navCtx);vm.runInContext(app.slice(a,b),navCtx);
 const rail=navCtx.appRail();
-assert(rail.includes('class="rail-btn rail-mobile-profile '));
-assert(rail.includes('aria-label="Hồ sơ cá nhân"'));
-assert(rail.includes('data-tab="profile"'));
-assert(rail.includes('rail-profile-button'),'Desktop profile preserved');
+assert(!rail.includes('rail-mobile-profile'),'Mobile bottom rail contains only the five original tabs');
+assert(rail.includes('rail-profile-button'),'Desktop Profile preserved');
 assert(rail.includes('data-tab="messages"')&&rail.includes('data-tab="settings"'));
-assert.equal((rail.match(/data-tab="profile"/g)||[]).length,2,'Desktop and mobile Profile routes');
+assert.equal((rail.match(/data-tab="profile"/g)||[]).length,1,
+ 'Only desktop Profile is in rail; mobile Profile lives above Tin nhắn');
 state.tab='profile';
-assert(navCtx.appRail().includes('rail-mobile-profile active'),'Mobile selected state follows the real page');
+assert(navCtx.appRail().includes('rail-profile-button active'),
+ 'Desktop Profile selection follows the page');
 
 const calls=[];
 const worldState={
