@@ -83,7 +83,7 @@ worldPage=function enhancedWorldPage(){
                 '<button type="button" class="world-quick-emoji" data-world-experience="emoji" data-world-emoji="✨" aria-label="Chèn biểu cảm lấp lánh">✨</button>'+
                 '<button type="button" class="world-quick-emoji" data-world-experience="emoji" data-world-emoji="💜" aria-label="Chèn trái tim">💜</button>'+
                 '<button type="button" class="world-quick-emoji" data-world-experience="emoji" data-world-emoji="👋" aria-label="Chèn lời chào">👋</button>'+
-                '<span class="world-compose-hint">Tối đa 1.200 ký tự</span></div></div></form>')+
+                '<span class="world-compose-hint">Enter để gửi · Shift+Enter xuống dòng · 1.200 ký tự</span></div></div></form>')+
         '<div class="world-rule-footer">'+icon('shield',14)+' <span>5 tin trong 3 giây = 1 cảnh cáo · Đủ 3 cảnh cáo sẽ bị khóa gửi. <strong>'+
           Number(status.warnings||0)+'/3 cảnh cáo · Cấp '+Number(status.strikes||0)+'/5</strong></span></div>'+
       '</section>'+
@@ -110,5 +110,20 @@ document.addEventListener('click',event=>{
    field.dispatchEvent(new Event('input',{bubbles:true}));
    field.focus({preventScroll:true});
  }
+});
+/* Desktop keyboard behavior mirrors private chat:
+   Enter sends; Shift+Enter inserts a newline. Never change mobile keyboards. */
+document.addEventListener('keydown',event=>{
+ const field=event.target;
+ if(field?.id!=='world-compose-text'||event.key!=='Enter'||
+    event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||
+    event.isComposing||event.keyCode===229||event.repeat||
+    !window.matchMedia('(min-width: 801px) and (pointer: fine)').matches)return;
+ const form=field.closest('form[data-world-form="send"]');
+ if(!form)return;
+ event.preventDefault();
+ const submit=form.querySelector('button[type="submit"]');
+ if(field.disabled||!submit||submit.disabled||worldUploadBusy)return;
+ if(field.value.trim()||worldPendingAttachment)form.requestSubmit(submit);
 });
 })();
