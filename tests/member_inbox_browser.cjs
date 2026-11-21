@@ -96,6 +96,10 @@ const {chromium}=require('playwright-core');
    let finishHistory;
    const delayedHistory=new Promise(resolve=>{finishHistory=resolve;});
    await page.route('**/api/groups/8/messages',async r=>{
+    if(r.request().method()==='POST'){
+     const {body}=r.request().postDataJSON();
+     return r.fulfill({json:{message:{id:104,sender_id:9,body,created_at:303}}});
+    }
     await delayedHistory;
     return r.fulfill({json:{messages:groupHistory}});
    });
@@ -108,6 +112,10 @@ const {chromium}=require('playwright-core');
    await page.evaluate(()=>appendGroupMessage(8,{id:103,sender_id:12,username:'Minh',body:'Tin đến tiếp theo',created_at:302}));
    await page.locator('#msg-group-103').waitFor();
    assert(await original.evaluate(el=>el.isConnected),'Ordinary group arrivals preserve existing message DOM');
+   await page.locator('#chat-text').fill('Gửi từ khung chat nhóm');
+   await page.getByRole('button',{name:'Gửi tin nhắn',exact:true}).click();
+   await page.locator('#msg-group-104').waitFor();
+   assert.equal(await page.locator('#chat-text').inputValue(),'');
    await page.close();
   }
  }finally{await browser.close();}
