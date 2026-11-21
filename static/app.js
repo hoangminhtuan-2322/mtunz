@@ -249,7 +249,7 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
       }
     }
   });
-  requestAnimationFrame(()=>{if(panel.isConnected)panel.focus({preventScroll:true});});
+  panel.focus({preventScroll:true});
 }
 function ask(title,description,handler,confirm='Xác nhận',danger=false){modal({title,description,handler,confirm,danger});}
 function showSanction(d){
