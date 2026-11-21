@@ -52,7 +52,7 @@ assert(css.includes('.chat-shared-location')&&css.includes('.chat-location-dialo
 assert(css.includes('@media(max-width:800px)')&&css.includes('@media(max-width:420px)'));
 assert(css.includes('prefers-reduced-motion:reduce'));
 assert(!css.includes('display:none}\n .shell:not(.admin-shell) .conversation .main-head .btn[data-act="call-video"]'),'Video call must not be hidden on mobile');
-assert(html.includes('member-experience.js?v=1.1')&&html.includes('member-experience.css?v=1.0'));
+assert(html.includes('member-experience.js?v=1.1')&&html.includes('member-experience.css?v=1.2'));
 assert(html.indexOf('member-experience.js')>html.indexOf('extras.js'),'Use existing upload functions before member enhancement');
 const events={};
 let geolocationCalls=0;
