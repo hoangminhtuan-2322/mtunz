@@ -596,10 +596,15 @@ def install(core):
             if not allowed:
                 direct=many(c,'''SELECT m.sender_id,m.recipient_id FROM messages m
                                  WHERE m.attachment_id=? AND m.deleted_at IS NULL
-                                 AND (m.expires_at IS NULL OR m.expires_at>?)''',(file_id,now()))
+                                 AND (m.expires_at IS NULL OR m.expires_at>?)
+                                 AND NOT EXISTS(SELECT 1 FROM message_hidden h
+                                   WHERE h.user_id=? AND h.scope='dm' AND h.message_id=m.id)''',(file_id,now(),u['id']))
                 allowed=any(u['id'] in (m['sender_id'],m['recipient_id']) and friends(c,m['sender_id'],m['recipient_id']) and not has_block(c,m['sender_id'],m['recipient_id']) for m in direct)
             if not allowed:
-                grp=many(c,'SELECT group_id FROM group_messages WHERE attachment_id=? AND deleted_at IS NULL',(file_id,))
+                grp=many(c,"""SELECT m.group_id FROM group_messages m
+                         WHERE m.attachment_id=? AND m.deleted_at IS NULL
+                         AND NOT EXISTS(SELECT 1 FROM message_hidden h
+                           WHERE h.user_id=? AND h.scope='group' AND h.message_id=m.id)""",(file_id,u['id']))
                 allowed=any(one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',(g['group_id'],u['id'])) for g in grp)
             if not allowed:
                 allowed=bool(one(c,'''SELECT 1 FROM world_messages
@@ -1063,11 +1068,11 @@ def install(core):
             pattern='%'+q.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
             if group_id is not None:
                 active_member(c,group_id,u['id'])
-                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,pattern))
+                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=? AND h.scope='group' AND h.message_id=m.id) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,u['id'],pattern))
             else:
                 if other_id is None:raise HTTPException(422,'Cần chọn một cuộc trò chuyện.')
                 require_peer(c,u['id'],other_id)
-                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now()))
+                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages m WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=? AND h.scope='dm' AND h.message_id=m.id) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now(),u['id']))
         return {'results':rows}
 
     @app.post('/api/notifications/read')
