@@ -371,3 +371,28 @@
  }
  .shell:not(.admin-shell) .chat-header-menu .button-word{display:inline}
 }
+/* Keep navigation and the composer independent of message history scrolling. */
+.shell:not(.admin-shell) .conversation .composer{position:relative}
+.shell:not(.admin-shell) .chat-latest:not([hidden]){
+ position:absolute;z-index:2;bottom:calc(100% + 8px);right:12px;
+ display:inline-flex;align-items:center;gap:5px;min-height:44px;
+ padding:0 12px;border:1px solid #6177a9;border-radius:22px;
+ background:#1b2a47;color:#edf3ff;font-weight:700;cursor:pointer
+}
+.shell:not(.admin-shell) .chat-latest svg{transform:rotate(90deg)}
+@supports(field-sizing:content){
+ .shell:not(.admin-shell) .chat-compose-main textarea{
+  field-sizing:content;min-width:0;width:100%;min-height:44px;max-height:130px;overflow-y:auto
+ }
+}
+@media(max-width:800px){
+ .shell:not(.admin-shell) .chat-compose-toolbar .chat-compose-icon{
+  flex:0 0 44px;min-height:44px;min-width:44px
+ }
+}
+@media(max-width:400px){
+ .shell:not(.admin-shell) .chat-compose-toolbar .chat-compose-tool{
+  min-height:44px;min-width:44px;flex:1 0 44px;padding:4px
+ }
+ .shell:not(.admin-shell) .chat-compose-toolbar .chat-compose-tool > span{display:none}
+}

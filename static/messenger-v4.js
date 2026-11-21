@@ -3,7 +3,7 @@
    Session drafts are limited to this tab; no password, PIN or cookie storage. */
 'use strict';
 const v4FailedSends=new Map();
-const v4DraftTimers=new Map();
+const v4DraftEdits=new Map();
 let v4Recording=null,v4VoicePreview=null,v4VoiceURL=null,v4Audio=null,v4AudioPanel=null,v4PlayingUrl='';
 let v4VoiceAudioContext=null,v4VoiceSignal=[],v4VoiceRecordingTimer=null;
 const v4MaxRecordingMs=120000;
@@ -27,11 +27,14 @@ function v4ReadAllDrafts(){
 }
 function v4ReadDraft(scope,id){
  const k=scope+':'+id;
- const value=v4ReadAllDrafts()[k];
+ const edit=v4DraftEdits.get(k);
+ const value=edit&&edit.owner===state.user?.id?edit.value:v4ReadAllDrafts()[k];
  return typeof value==='string'?value.slice(0,2000):'';
 }
 function v4WriteDraft(chat,value){
  if(!chat||!state.user||state.user.is_admin)return;
+ clearTimeout(v4DraftEdits.get(chat)?.timer);
+ v4DraftEdits.delete(chat);
  try{
   const data=v4ReadAllDrafts();
   if(value)data[chat]=String(value).slice(0,2000);else delete data[chat];
@@ -349,12 +352,27 @@ async function v4RetryFailed(tempId){
   toast(err.message||'Chưa gửi lại được, vui lòng kiểm tra kết nối.','error');
  }finally{entry.inFlight=false;}
 }
+function v4ClearDraftTimers(){
+ for(const edit of v4DraftEdits.values())clearTimeout(edit.timer);
+ v4DraftEdits.clear();
+}
+window.addEventListener('pagehide',()=>{
+ for(const [chat,edit] of v4DraftEdits){
+  if(edit.owner===state.user?.id)v4WriteDraft(chat,edit.value);
+ }
+ v4ClearDraftTimers();
+});
 document.addEventListener('input',event=>{
  if(event.target.id!=='chat-text'||!state.user||state.user.is_admin)return;
- const ctx=v4ChatKey();
- if(!ctx)return;
- clearTimeout(v4DraftTimers.get(ctx));
- v4DraftTimers.set(ctx,setTimeout(()=>v4WriteDraft(ctx,event.target.value),250));
+ const chat=v4ChatKey();
+ if(!chat)return;
+ clearTimeout(v4DraftEdits.get(chat)?.timer);
+ const edit={owner:state.user.id,value:event.target.value,timer:setTimeout(()=>{
+  if(v4DraftEdits.get(chat)!==edit)return;
+  if(state.user?.id===edit.owner)v4WriteDraft(chat,edit.value);
+  else v4DraftEdits.delete(chat);
+ },250)};
+ v4DraftEdits.set(chat,edit);
 });
 document.addEventListener('click',async event=>{
  const button=event.target.closest('[data-v4-act]');

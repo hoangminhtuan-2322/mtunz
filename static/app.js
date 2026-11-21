@@ -121,10 +121,10 @@ function renderReconnect(){
 }
 
 
-async function api(url,{method='GET',data}={}){
+async function api(url,{method='GET',data,signal}={}){
   let response, payload;
   try{
-    response=await fetch(url,{method,credentials:'same-origin',headers:data!==undefined?{'Content-Type':'application/json'}:{},body:data!==undefined?JSON.stringify(data):undefined});
+    response=await fetch(url,{method,signal,credentials:'same-origin',headers:data!==undefined?{'Content-Type':'application/json'}:{},body:data!==undefined?JSON.stringify(data):undefined});
     payload=await response.json();
   }catch(e){throw Error('Không kết nối được máy chủ. Vui lòng thử lại.');}
   if(!response.ok){
@@ -322,12 +322,25 @@ async function setup(){
   }
  }
 }
-function connectSocket(){
+let socketRetryDelay=2500;
+function connectSocket(retry=false){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
  const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
  state.ws=socket;
+ if(!retry)socketRetryDelay=2500;
+ socket.onopen=()=>{
+  if(!retry||state.ws!==socket)return;
+  if(state.user&&!state.user.is_admin){
+   scheduleFriendsRefresh(0);
+   scheduleGroupsRefresh(0);
+   if(state.tab==='messages'&&state.selected)void loadMessages(false);
+   if(state.tab==='groups'&&state.groupSelected)void loadGroupMessages(false);
+  }
+ };
  socket.onmessage=async ev=>{
+   if(state.ws!==socket)return;
+   socketRetryDelay=2500;
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
    if(t==='account-sanction'){showSanction(data);return;}
@@ -398,7 +411,9 @@ function connectSocket(){
    if(t==='read' && state.selected===data.by){
      let changed=false;
      for(const message of state.messages){
-       if(message.sender_id===state.user?.id&&!message.read_at){message.read_at=data.at;changed=true;}
+       if(message.sender_id===state.user?.id&&message.id>0&&message.id<=(data.up_to??Infinity)&&!message.read_at){
+        message.read_at=data.at;changed=true;
+       }
      }
      if(changed){
        for(const m of state.messages){if(m.read_at&&!m.delivered_at)m.delivered_at=m.read_at;}
@@ -411,10 +426,17 @@ function connectSocket(){
    if(state.user&&!state.user.is_admin)await extraSocket(data);
    if(t==='support-updated'||t==='support-message'){
      if(state.user?.is_admin){await loadAdmin();}
-     else if(state.supportTicket && (!data.ticket_id||data.ticket_id===state.supportTicket)){await loadTicketMessages();}
+     else if(state.supportTicket&&(!data.ticket_id||data.ticket_id===state.supportTicket)){
+       if(data.message&&data.ticket_id===state.supportTicket)appendSupportMessage(data.ticket_id,data.message);
+       else await loadTicketMessages();
+     }
    }
  };
- socket.onclose=()=>{if(state.ws===socket)socketRetry=setTimeout(()=>connectSocket(),2500);};
+ socket.onclose=()=>{
+  if(state.ws!==socket)return;
+  socketRetry=setTimeout(()=>connectSocket(true),socketRetryDelay);
+  socketRetryDelay=Math.min(30000,socketRetryDelay*2);
+ };
 }
 function showRequiredDisplayName(){
  // Newly approved accounts must choose a public display name once.
@@ -478,11 +500,12 @@ async function enterApp(resume=false){
   state.adminTicket=Number.isSafeInteger(previous?.adminTicket)?previous.adminTicket:null;
   await loadAdmin();
  }else{
-  state.accountDeletion=await api('/api/me/deletion');
-  await refreshFriends(false);
-  await refreshGroups(false);
-  if(typeof loadWorldStatus==='function')await loadWorldStatus().catch(()=>{});
-  if(typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
+  const [deletion]=await Promise.all([
+   api('/api/me/deletion'),refreshFriends(false),refreshGroups(false),
+   typeof loadWorldStatus==='function'?loadWorldStatus().catch(()=>{}):null,
+   typeof loadMessageRequests==='function'?loadMessageRequests(false).catch(()=>{}):null
+  ]);
+  state.accountDeletion=deletion;
   const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
@@ -495,7 +518,6 @@ async function enterApp(resume=false){
   }
   if(state.tab==='notices')await loadNotices();
   if(state.tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
-  if(state.tab==='settings'){try{await loadWorldStatus();}catch{}}
   if(state.tab==='support'){
    state.mode='support';
    state.supportTicket=Number.isSafeInteger(previous?.supportTicket)?previous.supportTicket:null;
@@ -512,8 +534,9 @@ async function enterApp(resume=false){
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
- v4FailedSends.clear();
- state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
+ v4FailedSends.clear();directSendQueues.clear();clearChatReads();v4ClearDraftTimers();
+ state.user=null;state.selected=null;state.groupSelected=null;state.savedDevice=false;state.rememberedDevice=false;
+ state.supportTicket=null;state.tickets=[];state.ticketMessages=[];state.adminTicket=null;state.adminTicketMessages=[];
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
  clearActiveTab();
  state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();
@@ -741,7 +764,7 @@ function authSupport(){
  ${state.tickets.length?`<div class="sep"></div><span class="eyebrow">CUỘC TRÒ CHUYỆN GẦN ĐÂY</span><div class="stack" style="margin-top:12px">${state.tickets.slice(0,5).map(t=>`<button class="btn ghost full" style="justify-content:space-between" data-act="support-open" data-id="${t.id}">#${t.id} · ${esc(t.kind)} <span class="pill">${esc(t.status)}</span></button>`).join('')}</div>`:''}`;
  return `<div class="row between" style="margin-bottom:17px"><button class="linkbtn" data-act="support-back">${icon('back',15)} Các yêu cầu</button><span class="pill">Phiếu hỗ trợ #${state.supportTicket}</span></div>
  <h1>Trò chuyện với admin</h1><p class="hint">Đối thoại này chỉ hiển thị cho trình duyệt đã mở yêu cầu và quản trị viên. Không chia sẻ mã khôi phục với người khác.</p>
- <div class="support-list" id="support-list" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
+ <div class="support-list" id="support-list" data-ticket-id="${state.supportTicket}" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
  <form data-form="support-reply" style="margin-top:12px"><div class="row"><input name="body" class="input" maxlength="1500" placeholder="Nhắn cho admin..." required><button class="btn primary circle" title="Gửi">${icon('send')}</button></div></form>
  <div class="sep"></div><h3>Đặt lại mật khẩu hoặc PIN</h3><p class="hint">Sau khi xác minh, admin sẽ cấp mã dùng một lần trong cuộc trò chuyện trên.</p>
  <form data-form="support-reset">${inputField('Mã khôi phục từ admin','code','text','','autocomplete="off"')}
@@ -799,7 +822,37 @@ function renderAuth(){
  }
 }
 async function loadTickets(){const r=await api('/api/support/tickets');state.tickets=r.tickets;}
-async function loadTicketMessages(){if(!state.supportTicket)return;const r=await api(`/api/support/tickets/${state.supportTicket}/messages`);state.ticketMessages=r.messages;
+let supportHistoryRequest=0;
+function paintSupportMessages(ticket,follow=false){
+ const box=$('#support-list');
+ if(Number(box?.dataset.ticketId)!==ticket)return false;
+ const markup=renderTicketBubbles(state.ticketMessages);
+ if(box.supportMarkup!==markup){
+  const near=box.scrollHeight-box.clientHeight-box.scrollTop<100;
+  box.supportMarkup=markup;
+  box.innerHTML=markup;
+  if(follow||near)box.scrollTop=box.scrollHeight;
+ }
+ return true;
+}
+function appendSupportMessage(ticket,message){
+ if(state.supportTicket!==ticket||!message||state.ticketMessages.some(m=>m.id===message.id))return;
+ state.ticketMessages.push(message);
+ paintSupportMessages(ticket,!message.from_admin);
+}
+async function loadTicketMessages(){
+ const ticket=state.supportTicket,id=state.user?.id;
+ if(!ticket)return;
+ const request=++supportHistoryRequest;
+ const baseline=new Set(state.ticketMessages.map(m=>m.id));
+ const result=await api(`/api/support/tickets/${ticket}/messages`);
+ if(request!==supportHistoryRequest||state.supportTicket!==ticket||state.user?.id!==id)return;
+ const merged=new Map(result.messages.map(m=>[m.id,m]));
+ for(const message of state.ticketMessages){
+  if(!baseline.has(message.id))merged.set(message.id,message);
+ }
+ state.ticketMessages=[...merged.values()].sort((a,b)=>a.id-b.id);
+ if(paintSupportMessages(ticket))return;
  if(state.mode==='support'&&!state.user)renderAuth();
  else if(state.tab==='support')renderApp();
  const box=$('#support-list');if(box)box.scrollTop=box.scrollHeight;
@@ -814,12 +867,13 @@ function scheduleFriendsRefresh(delay=500){
 }
 async function refreshFriends(redraw=true){
   if(!state.user||state.user.is_admin)return;
+  const owner=state.user.id;
   const [fr,bl]=await Promise.all([api('/api/friends'),api('/api/blocks')]);
+  if(state.user?.id!==owner)return;
   state.friends=fr.friends;state.blocks=bl.users;
-  if(state.selected && !state.friends.some(f=>f.other_id===state.selected&&f.state==='accepted')){
-    state.selected=null;
-  }
-  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
+  const lostChat=state.selected && !state.friends.some(f=>f.other_id===state.selected&&f.state==='accepted');
+  if(lostChat)state.selected=null;
+  if(redraw){renderSideItems();if(lostChat||state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
 }
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
@@ -838,7 +892,16 @@ function sideBody(){
   ${state.friends.some(f=>f.archived&&f.state==='accepted')?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${state.friends.filter(f=>f.archived&&f.state==='accepted').length}</button>`:''}
   ${groupSideItems()}`;
 }
-function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
+function renderSideItems(){
+ const box=$('#side-items');
+ if(!box)return;
+ const markup=sideBody();
+ if(box.sidebarMarkup===markup)return;
+ const top=box.scrollTop;
+ box.sidebarMarkup=markup;
+ box.innerHTML=markup;
+ if(top)box.scrollTop=top;
+}
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
   const secondary=[['restricted','shield','Danh sách hạn chế'],
@@ -896,8 +959,15 @@ function convoHeader(f){if(!f)return '';
  <button class="btn danger sm" data-act="chat-block" data-id="${f.other_id}" title="Chặn tài khoản">${icon('ban',15)} <span class="button-word">Chặn</span></button></header>`;}
 function updateChatHeader(){
  const f=state.friends.find(x=>x.other_id===state.selected);
- if(f&&state.tab==='messages'){
-   const chat=$('#chat-header');if(chat)chat.innerHTML=convoHeader(f);
+ const chat=$('#chat-header');
+ if(f&&state.tab==='messages'&&chat){
+   const markup=convoHeader(f);
+   if(chat.headerMarkup!==markup){
+    const expanded=chat.querySelector('.chat-header-more')?.open;
+    chat.headerMarkup=markup;
+    chat.innerHTML=markup;
+    if(expanded)chat.querySelector('.main-head').dataset.restoreMenu='true';
+   }
  }
 }
 function renderBubbles(){return bubblesFor(state.messages,false);}
@@ -906,7 +976,7 @@ function conversation(){
  if(!f)return welcomeEmpty();
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
  <div class="thread" id="chat-messages" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>
- <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
+ <div class="composer">${latestChatButton()}<div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
@@ -917,10 +987,44 @@ function conversation(){
 async function openChat(uid){
  const f=state.friends.find(x=>x.other_id===uid&&x.state==='accepted');
  if(!f){toast('Chưa kết bạn hoặc tài khoản đã bị chặn.','error');return;}
- state.selected=uid;state.groupSelected=null;state.tab='messages';state.messages=[];state.replyTo=null;state.pendingAttachment=null;renderApp();await loadMessages();
+ state.selected=uid;state.groupSelected=null;state.tab='messages';
+ state.messages=queuedDirectMessages(state.user.id,uid);
+ state.replyTo=null;state.pendingAttachment=null;renderApp();await loadMessages();
 }
 let dmLoadGeneration=0;
-const v4SendingChats=new Set();
+const directSendQueues=new Map();
+let nextPendingMessageId=0;
+function queuedDirectMessages(owner,recipient){
+ return (directSendQueues.get(owner+':'+recipient)||[]).map(entry=>entry.message);
+}
+async function sendQueuedDirectMessages(key,queue){
+ try{
+  while(directSendQueues.get(key)===queue&&queue.length){
+   const {payload,message,attachment}=queue[0];
+   const {recipient_id:recipient}=payload,owner=message.sender_id;
+   const active=()=>directSendQueues.get(key)===queue&&state.user?.id===owner;
+   const inChat=()=>active()&&state.tab==='messages'&&state.selected===recipient;
+   const controller=new AbortController();
+   const timeout=setTimeout(()=>controller.abort(),20000);
+   try{
+    const result=await api('/api/messages',{method:'POST',data:payload,signal:controller.signal});
+    if(inChat())appendDirectMessage({...result.message,client_message_id:payload.client_message_id});
+    if(active())scheduleFriendsRefresh();
+   }catch{
+    if(!active())return;
+    if(inChat()&&state.messages.some(m=>m.id>0&&m.client_message_id===payload.client_message_id))continue;
+    v4FailedSends.set(message.id,{owner,recipient,payload,attachment,created_at:message.created_at,inFlight:false});
+    if(inChat())appendDirectMessage({...message,pending:false,failed:true});
+    else toast('Có tin nhắn chưa gửi được. Mở cuộc trò chuyện để gửi lại.','warning');
+   }finally{
+    clearTimeout(timeout);
+    queue.shift();
+   }
+  }
+ }finally{
+  if(directSendQueues.get(key)===queue)directSendQueues.delete(key);
+ }
+}
 function clearSentComposer(form,key){
  const field=form.querySelector('#chat-text');
  field.value='';
@@ -931,10 +1035,57 @@ function clearSentComposer(form,key){
  if(extra)extra.innerHTML=composerExtras();
 }
 function chatNearEnd(box){return box.scrollHeight-box.clientHeight-box.scrollTop<145;}
+let chatReadTimer=0;
+const chatReadThrough=new Map();
+function clearChatReads(){
+ clearTimeout(chatReadTimer);chatReadTimer=0;chatReadThrough.clear();
+}
+function queueChatRead(box){
+ if(!box?.isConnected||!state.user||document.visibilityState!=='visible'||!chatNearEnd(box))return;
+ if(chatReadTimer)return;
+ chatReadTimer=setTimeout(()=>{
+  chatReadTimer=0;
+  const owner=state.user?.id,group=state.tab==='groups',id=group?state.groupSelected:state.selected;
+  const key=(group?'group-':'dm-')+id;
+  if(!owner||!id||!box.isConnected||box.dataset.chatKey!==key||
+     document.visibilityState!=='visible'||!chatNearEnd(box)){
+   const next=$('#chat-messages');
+   if(next!==box)queueChatRead(next);
+   return;
+  }
+  const rows=group?state.groupMessages:state.messages;
+  const latest=rows.reduce((max,m)=>m.sender_id!==owner&&!m.deleted_at?Math.max(max,m.id):max,0);
+  const accountKey=owner+':'+key;
+  if(latest<=(chatReadThrough.get(accountKey)||0))return;
+  if(chatReadThrough.size>=256&&!chatReadThrough.has(accountKey))chatReadThrough.delete(chatReadThrough.keys().next().value);
+  chatReadThrough.set(accountKey,latest);
+  const path=group?'/api/groups/'+id+'/read':'/api/messages/read/'+id;
+  post(path+'?up_to='+latest).then(()=>{
+   if(state.user?.id!==owner||chatReadThrough.get(accountKey)!==latest||!box.isConnected)return;
+   const current=group?state.groupMessages:state.messages;
+   if(current.some(m=>m.sender_id!==owner&&m.id>latest))return;
+   const item=group?state.groups.find(g=>g.id===id):state.friends.find(f=>f.other_id===id);
+   if(item?.unread){item.unread=0;renderSideItems();}
+  }).catch(()=>{
+   if(chatReadThrough.get(accountKey)===latest)chatReadThrough.delete(accountKey);
+  });
+ },160);
+}
+function updateLatestButton(box){
+ const button=box.parentElement.querySelector('.chat-latest');
+ if(button)button.hidden=chatNearEnd(box);
+}
+function latestChatButton(){
+ return '<button type="button" class="chat-latest" data-act="chat-latest" aria-label="Về tin nhắn mới nhất" hidden>'+icon('chevron',15)+' Tin mới nhất</button>';
+}
+
 function followChatEnd(box){
  if(!box)return;
  box.dataset.followChatEnd='true';
- box.scrollTo({top:box.scrollHeight,behavior:'instant'});
+ const end=Math.max(0,box.scrollHeight-box.clientHeight);
+ if(Math.abs(box.scrollTop-end)>1)box.scrollTo({top:end,behavior:'instant'});
+ updateLatestButton(box);
+ queueChatRead(box);
 }
 function settleChatEnd(box){
  followChatEnd(box);
@@ -946,9 +1097,14 @@ function settleChatEnd(box){
  }));
 }
 document.addEventListener('scroll',event=>{
- if(event.target.id==='chat-messages'&&!event.target.dataset.positioningChat)
-  event.target.dataset.followChatEnd=String(chatNearEnd(event.target));
+ if(event.target.id==='chat-messages'&&!event.target.dataset.positioningChat){
+  const box=event.target;
+  box.dataset.followChatEnd=String(chatNearEnd(box));
+  updateLatestButton(box);
+  queueChatRead(box);
+ }
 },true);
+document.addEventListener('visibilitychange',()=>queueChatRead($('#chat-messages')));
 for(const eventName of ['wheel','touchmove']){
  document.addEventListener(eventName,event=>{
   const box=event.target.closest?.('#chat-messages');
@@ -966,7 +1122,7 @@ function renderMessageThread(scroll=false){
  box.innerHTML=renderBubbles();
  if(scroll)settleChatEnd(box);
  else if(near)followChatEnd(box);
- else box.scrollTo({top:previousPosition,behavior:'instant'});
+ else{box.scrollTo({top:previousPosition,behavior:'instant'});updateLatestButton(box);}
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
@@ -987,7 +1143,7 @@ function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,fol
    box.append(row);
  }
  if(follow||near)followChatEnd(box);
- else box.scrollTo({top:position,behavior:'instant'});
+ else{box.scrollTo({top:position,behavior:'instant'});updateLatestButton(box);}
 }
 function appendDirectMessage(message){
  if(!message||!state.selected||state.tab!=='messages')return;
@@ -996,35 +1152,44 @@ function appendDirectMessage(message){
  const currentIndex=state.messages.findIndex(x=>x.id===message.id||
    (nonce&&x.id<0&&x.client_message_id===nonce&&x.sender_id===message.sender_id));
  const replaced=state.messages[currentIndex];
- if(replaced?.id===message.id&&message.id>0){
-   message={...message,read_at:message.read_at||replaced.read_at,delivered_at:message.delivered_at||replaced.delivered_at};
- }
+ if(replaced?.id===message.id&&message.id>0)return;
  if(replaced?.id<0&&message.id>0)v4FailedSends.delete(replaced.id);
  const previous=state.messages[state.messages.length-1];
  if(currentIndex>=0)state.messages[currentIndex]=message;
  else state.messages.push(message);
  const box=$('#chat-messages');
  if(box){
-   if(currentIndex<0&&previous&&previous.id>0&&message.id>0&&message.id<previous.id)renderMessageThread(false);
-   else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread,message.pending&&currentIndex<0);
+   const index=currentIndex<0?state.messages.length-1:currentIndex;
+   const before=state.messages[index-1],after=state.messages[index+1];
+   if((before&&compareChatMessages(before,message)>0)||(after&&compareChatMessages(message,after)>0)){
+    state.messages.sort(compareChatMessages);
+    renderMessageThread(false);
+   }else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread,message.pending&&currentIndex<0);
  }
  if(state.messages.length>110){
    state.messages.splice(0,state.messages.length-100);
    renderMessageThread(false);
  }
- if(message.sender_id!==state.user?.id&&state.tab==='messages'&&document.visibilityState==='visible'){
-   post('/api/messages/read/'+state.selected).catch(()=>{});
- }
+ if(message.sender_id!==state.user?.id)queueChatRead(box);
+}
+function compareChatMessages(a,b){
+ if(a.id>0&&b.id>0)return a.id-b.id;
+ return (a.id<0)-(b.id<0)||b.id-a.id;
 }
 async function loadMessages(scroll=true){
  const friend=state.selected;if(!friend)return;
  const seq=++dmLoadGeneration,userId=state.user?.id;
+ const existing=new Map(state.messages.map(message=>[message.id,message]));
  const current=()=>seq===dmLoadGeneration&&state.selected===friend&&state.tab==='messages'&&state.user?.id===userId;
  try{
   const r=await api('/api/messages/'+friend);
   if(!current())return;
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
-  for(const message of r.messages)known.set(message.id,message);
+  for(const message of r.messages){
+   const realtime=known.get(message.id);
+   if(realtime&&existing.get(message.id)!==realtime)continue;
+   known.set(message.id,message);
+  }
   const failed=(typeof v4FailedSends==='object'?[...v4FailedSends.entries()]
     .filter(([,entry])=>entry.owner===userId&&entry.recipient===friend)
     .map(([id,entry])=>({id,sender_id:state.user.id,recipient_id:friend,body:entry.payload.body,
@@ -1032,18 +1197,13 @@ async function loadMessages(scroll=true){
           attachment:entry.attachment||null,reactions:[],client_message_id:entry.payload.client_message_id})):[]);
   const confirmed=new Set([...known.values()].map(message=>message.client_message_id).filter(Boolean));
   for(const message of failed)if(confirmed.has(message.client_message_id))v4FailedSends.delete(message.id);
-  const pending=state.messages.filter(m=>m.pending&&m.id<0&&!v4FailedSends.has(m.id));
+  const pending=queuedDirectMessages(userId,friend).filter(m=>!v4FailedSends.has(m.id));
   const local=[...failed,...pending].filter(m=>!confirmed.has(m.client_message_id));
-  state.messages=[...known.values(),...local].sort((a,b)=>a.created_at-b.created_at||
-   (a.id<0)-(b.id<0)||(a.id<0?b.id-a.id:a.id-b.id)).slice(-100);
+  state.messages=[...known.values(),...local].sort(compareChatMessages).slice(-100);
   renderMessageThread(scroll);
   const inbound=[...r.messages].reverse().find(m=>m.sender_id===friend);
   if(inbound&&typeof v4AckIncoming==='function')v4AckIncoming(inbound);
-  if(state.messages.some(m=>m.sender_id===friend&&!m.read_at)){
-   post('/api/messages/read/'+friend).catch(()=>{});
-  }
-  const item=state.friends.find(x=>x.other_id===friend);
-  if(item&&item.unread){item.unread=0;renderSideItems();}
+  queueChatRead($('#chat-messages'));
  }catch(e){if(current())toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
@@ -1212,26 +1372,46 @@ function renderApp(){
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ const sidebar=$('#side-items');
+ if(sidebar)sidebar.sidebarMarkup=sidebar.innerHTML;
+ const header=$('#chat-header');
+ if(header)header.headerMarkup=convoHeader(state.friends.find(f=>f.other_id===state.selected));
  saveCurrentView();
  const thread=$('#chat-messages');
  if(thread){
-  if(reading&&reading.key===thread.dataset.chatKey)thread.scrollTo({top:reading.top,behavior:'instant'});
-  else followChatEnd(thread);
+  if(reading&&reading.key===thread.dataset.chatKey){
+   thread.scrollTo({top:reading.top,behavior:'instant'});
+   updateLatestButton(thread);
+  }else followChatEnd(thread);
  }
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
+let memberTabRequest=0;
 async function goTab(tab){
- state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
- if(tab==='settings'){
-  state.accountDeletion=await api('/api/me/deletion');
-  try{await loadWorldStatus();}catch{}
- }
- if(tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
- if(tab==='friends'&&typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
- if(tab==='groups')await refreshGroups(false);
- if(tab==='notices')await loadNotices();
- if(tab==='support'){state.mode='support';await loadTickets();}
+ const request=++memberTabRequest,user=state.user?.id;
+ const current=()=>request===memberTabRequest&&state.user?.id===user&&state.tab===tab&&!state.selected&&!state.groupSelected;
+ state.tab=tab;state.selected=null;state.groupSelected=null;state.replyTo=null;state.pendingAttachment=null;
+ if(tab==='support'){state.mode='support';}
  renderApp();
+ try{
+  switch(tab){
+   case 'settings':{
+    const [deletion]=await Promise.all([api('/api/me/deletion'),loadWorldStatus().catch(()=>{})]);
+    if(current())state.accountDeletion=deletion;
+    break;
+   }
+   case 'world':await loadWorld(false);break;
+   case 'friends':await loadMessageRequests(false);break;
+   case 'groups':await refreshGroups(false);break;
+   case 'notices':await loadNotices();break;
+   case 'support':await loadTickets();break;
+   default:return;
+  }
+  if(current()){
+   const wasTyping=document.activeElement?.closest?.('.main input,.main textarea,.main select');
+   if(!wasTyping)renderApp();
+  }
+ }catch(error){if(current())toast(error.message,'error');}
 }
 
 // ==== Administrator workspace ====
@@ -1899,7 +2079,8 @@ async function clickAction(button){
   case 'lock-device':{
    await post('/api/auth/lock');
    clearActiveTab();
-   state.user=null;state.ws?.close();state.selected=null;
+   directSendQueues.clear();clearChatReads();v4ClearDraftTimers();v4FailedSends.clear();
+   state.user=null;state.ws?.close();state.selected=null;state.groupSelected=null;
    const remembered=await post('/api/auth/remembered');
    state.savedDevice=!!remembered.remembered;
    state.mode='login';state.step=remembered.remembered?'remembered':'username';
@@ -1908,7 +2089,7 @@ async function clickAction(button){
   }
   case 'refresh-registration':await refreshRegistration();break;
   case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';renderAuth();break;
-  case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
+  case 'support-open':state.supportTicket=id;state.ticketMessages=[];await loadTicketMessages();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
   case 'cancel-own-deletion':showCancelDeletionDialog();break;
@@ -1919,6 +2100,7 @@ async function clickAction(button){
     'Đăng xuất',true);
    break;
   }
+  case 'chat-latest':followChatEnd($('#chat-messages'));break;
   case 'app-tab':await goTab(button.dataset.tab);break;
   case 'rail-more':state.railMoreOpen=!state.railMoreOpen;renderApp();break;
   case 'back-to-list':state.selected=null;state.groupSelected=null;state.tab=state.tab==='groups'?'groups':'messages';renderApp();break;
@@ -2109,8 +2291,14 @@ document.addEventListener('submit',async event=>{
    }
    case 'support-reply':{
     if(!state.supportTicket)throw Error('Chưa mở phiếu hỗ trợ.');
-    await post(`/api/support/tickets/${state.supportTicket}/messages`,{body:val('body')});
-    await loadTicketMessages();break;
+    const ticket=state.supportTicket,owner=state.user?.id,field=form.elements.body;
+    const submitted=field.value;
+    const {message}=await post(`/api/support/tickets/${ticket}/messages`,{body:val('body')});
+    if(state.user?.id===owner&&state.supportTicket===ticket){
+     if(field.isConnected&&field.value===submitted)field.value='';
+     appendSupportMessage(ticket,message);
+    }
+    break;
    }
    case 'support-reset':{
     const pinLength=Number(fd.get('pin_length'));
@@ -2128,30 +2316,21 @@ document.addEventListener('submit',async event=>{
     if(!content&&!state.pendingAttachment)return;
     const recipient=state.selected,attachment=state.pendingAttachment,owner=state.user.id;
     if(!recipient)throw Error('Hãy chọn người nhận.');
-    const sendingKey=owner+':'+recipient;
-    if(v4SendingChats.has(sendingKey))return;
-    v4SendingChats.add(sendingKey);
+    const key=owner+':'+recipient;
+    const queue=directSendQueues.get(key)||[];
+    if(queue.length>=20)throw Error('Đang chờ gửi nhiều tin nhắn. Vui lòng đợi một chút.');
     const reply=state.replyTo?.scope==='dm'?state.replyTo.id:null;
-    const tmpId=-(Date.now()+Math.floor(Math.random()*1000));
     const payload={recipient_id:recipient,body:content,attachment_id:attachment?.id||null,
       reply_to:reply,client_message_id:v4Nonce()};
-    const optimistic={...payload,id:tmpId,sender_id:owner,created_at:Math.floor(Date.now()/1000),
-      reactions:[],pending:true,attachment};
-    const current=()=>state.user?.id===owner&&state.tab==='messages'&&state.selected===recipient;
+    const message={...payload,id:--nextPendingMessageId,sender_id:owner,
+      created_at:Math.floor(Date.now()/1000),reactions:[],pending:true,attachment};
     clearSentComposer(form,'dm:'+recipient);
-    appendDirectMessage(optimistic);
-    try{
-      const result=await post('/api/messages',payload);
-      if(current())appendDirectMessage({...result.message,client_message_id:payload.client_message_id});
-      if(state.user?.id===owner)scheduleFriendsRefresh();
-    }catch(e){
-      if(state.user?.id!==owner)return;
-      // A realtime confirmation can precede a lost HTTP response.
-      if(current()&&state.messages.some(m=>m.id>0&&m.client_message_id===payload.client_message_id))return;
-      v4FailedSends.set(tmpId,{owner,recipient,payload,attachment,created_at:optimistic.created_at,inFlight:false});
-      if(current())appendDirectMessage({...optimistic,pending:false,failed:true});
-      toast('Chưa xác nhận được tin. Dùng nút Gửi lại trong bong bóng để thử lại.','warning');
-    }finally{v4SendingChats.delete(sendingKey);}
+    appendDirectMessage(message);
+    queue.push({payload,message,attachment});
+    if(queue.length===1){
+      directSendQueues.set(key,queue);
+      void sendQueuedDirectMessages(key,queue);
+    }
     break;
    }
    case 'settings-pin':{

@@ -21,7 +21,7 @@ from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
@@ -1200,34 +1200,26 @@ async def get_friends(request: Request):
                  COALESCE(p.pinned,0) AS pinned,COALESCE(p.vanish_seconds,0) AS vanish_seconds,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
-                 (SELECT body FROM messages
-                   WHERE ((sender_id=? AND recipient_id=u.id) OR
-                         (sender_id=u.id AND recipient_id=?))
-                     AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
-                   ORDER BY id DESC LIMIT 1) AS last_body,
-                 (SELECT created_at FROM messages
-                   WHERE ((sender_id=? AND recipient_id=u.id) OR
-                         (sender_id=u.id AND recipient_id=?))
-                     AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
-                   ORDER BY id DESC LIMIT 1) AS last_created,
-                 (SELECT sender_id FROM messages
-                   WHERE ((sender_id=? AND recipient_id=u.id) OR
-                         (sender_id=u.id AND recipient_id=?))
-                     AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
-                   ORDER BY id DESC LIMIT 1) AS last_sender,
+                 last.body AS last_body, last.created_at AS last_created,
+                 last.sender_id AS last_sender,
                  (SELECT count(*) FROM messages
                    WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL
-                   AND (expires_at IS NULL OR expires_at>?)) AS unread
+                   AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
           LEFT JOIN restrictions r ON r.owner_id=? AND r.other_id=u.id
           LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
+          LEFT JOIN messages last ON last.id=(
+              SELECT m.id FROM messages m
+              WHERE ((m.sender_id=? AND m.recipient_id=u.id)
+                  OR (m.sender_id=u.id AND m.recipient_id=?))
+                AND (m.expires_at IS NULL OR m.expires_at>?) AND m.deleted_at IS NULL
+              ORDER BY m.id DESC LIMIT 1)
           WHERE f.u1=? OR f.u2=?
           ORDER BY f.created_at DESC
-        ''',(u['id'],u['id'],now(),u['id'],u['id'],now(),
-             u['id'],u['id'],now(),u['id'],now(),
-             u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
+        ''',(u['id'],now(),u['id'],u['id'],u['id'],u['id'],
+             u['id'],u['id'],now(),u['id'],u['id']))
         for r in allrows:
             show_activity=bool(r['show_online']) and not bool(r.pop('peer_restricted'))
             r['online']=show_activity and bool(hub.users.get(r['other_id']))
@@ -1353,7 +1345,7 @@ async def message_history(request:Request,other_id:int,before:int=0):
     u=current_user(request)
     with db() as c:
         require_peer(c,u['id'],other_id)
-        sql='''SELECT id,sender_id,recipient_id,body,created_at,read_at FROM messages WHERE
+        sql='''SELECT * FROM messages WHERE
              ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))'''
         params=[u['id'],other_id,other_id,u['id']]
         sql+=' AND (expires_at IS NULL OR expires_at>?)'
@@ -1361,9 +1353,7 @@ async def message_history(request:Request,other_id:int,before:int=0):
         if before>0:
             sql+=' AND id<?';params.append(before)
         sql+=' ORDER BY id DESC LIMIT 70'
-        result=many(c,sql.replace('SELECT id,sender_id,recipient_id,body,created_at,read_at',
-                                  'SELECT *'),params)
-        result=[message_details(c,r,viewer_id=u['id']) for r in result[::-1]]
+        result=message_page(c,many(c,sql,params)[::-1],viewer_id=u['id'])
         # Hide read receipts when the reader opted out or restricted the sender.
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
         if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
@@ -1445,19 +1435,18 @@ async def send_message(request:Request,body:SendMessage):
 
 
 @app.post('/api/messages/read/{other_id}')
-async def read_messages(request:Request,other_id:int):
+async def read_messages(request:Request,other_id:int,
+                        up_to:int=Query(default=9223372036854775807,ge=1,le=9223372036854775807)):
     u=current_user(request)
     with db() as c:
         require_peer(c,u['id'],other_id)
         t=now()
-        c.execute('''UPDATE messages SET delivered_at=? WHERE recipient_id=?
-                     AND sender_id=? AND delivered_at IS NULL''',(t,u['id'],other_id))
-        cursor=c.execute('UPDATE messages SET read_at=? WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
-                         (t,u['id'],other_id))
-        peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(u['id'],))
-        suppress=is_restricted(c,u['id'],other_id) or not peer['show_receipts']
+        cursor=c.execute('''UPDATE messages SET read_at=?,delivered_at=COALESCE(delivered_at,?)
+                            WHERE recipient_id=? AND sender_id=? AND id<=? AND read_at IS NULL''',
+                         (t,t,u['id'],other_id,up_to))
+        suppress=is_restricted(c,u['id'],other_id) or not u['show_receipts']
     if cursor.rowcount and not suppress:
-        await hub.user(other_id,'read',by=u['id'],at=t)
+        await hub.user(other_id,'read',by=u['id'],at=t,up_to=up_to)
     return {'ok':True}
 
 

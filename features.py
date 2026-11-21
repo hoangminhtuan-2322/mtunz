@@ -16,7 +16,7 @@ import asyncio
 import logging
 from urllib.parse import quote
 
-from fastapi import HTTPException, Request, UploadFile, File, Form
+from fastapi import HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -154,20 +154,27 @@ def install(core):
             raise HTTPException(409, 'Tệp đã được gửi. Vui lòng tải lên lại.')
         return file
 
-    def file_meta(c, file_id):
-        if file_id is None:return None
-        f = one(c, 'SELECT id,original_name,mime,size,waveform,duration_ms FROM attachments WHERE id=?',(file_id,))
-        if not f:return None
+    file_meta_columns = 'id,original_name,mime,size,waveform,duration_ms'
+
+    def format_file_meta(f):
         return {'id':f['id'],'name':f['original_name'],'mime':f['mime'],'size':f['size'],
                 'duration_ms':f['duration_ms'] or 0,
                 'waveform':f['waveform'] or '',
                 'url':f'/api/attachments/{f["id"]}'}
 
-    def reactions_for(c, scope, mid):
-        rows = many(c,'SELECT user_id,emoji FROM reactions WHERE scope=? AND message_id=?',(scope,mid))
-        return rows
+    def file_meta(c, file_id):
+        if file_id is None:return None
+        f=one(c,f'SELECT {file_meta_columns} FROM attachments WHERE id=?',(file_id,))
+        return format_file_meta(f) if f else None
 
-    def message_dict(c, row, scope='dm', viewer_id=None):
+    def reactions_for(c, scope, mid):
+        return many(c,'SELECT user_id,emoji FROM reactions WHERE scope=? AND message_id=?',(scope,mid))
+
+    def live_message(row, scope, at):
+        return not row['deleted_at'] and (
+            scope!='dm' or row['expires_at'] is None or row['expires_at']>at)
+
+    def message_dict(c, row, scope='dm', viewer_id=None, metadata=None):
         fields = ('id', 'sender_id', 'body', 'created_at', 'attachment_id',
                   'reply_to', 'edited_at', 'deleted_at', 'forwarded')
         if scope=='dm':
@@ -177,12 +184,35 @@ def install(core):
         result={field:row[field] for field in fields}
         if scope=='dm' and viewer_id==row['sender_id']:
             result['client_message_id']=row['client_message_id']
-        if row['deleted_at'] or (scope=='dm' and result.get('expires_at') and result['expires_at']<=now()):
+        at=now() if metadata is None else metadata[0]
+        if not live_message(row,scope,at):
             result.update(body='', attachment_id=None, attachment=None, reactions=[])
-        else:
+        elif metadata is None:
             result['attachment']=file_meta(c,row['attachment_id'])
             result['reactions']=reactions_for(c,scope,row['id'])
+        else:
+            _,files,reactions=metadata
+            result['attachment']=files.get(row['attachment_id'])
+            result['reactions']=reactions.get(row['id'],[])
         return result
+
+    def message_page(c, rows, scope='dm', viewer_id=None):
+        at=now()
+        visible=[row for row in rows if live_message(row,scope,at)]
+        file_ids=tuple({row['attachment_id'] for row in visible if row['attachment_id']})
+        files={}
+        if file_ids:
+            placeholders=','.join('?' for _ in file_ids)
+            for file in many(c,f'SELECT {file_meta_columns} FROM attachments WHERE id IN ({placeholders})',file_ids):
+                files[file['id']]=format_file_meta(file)
+        reactions={}
+        if visible:
+            placeholders=','.join('?' for _ in visible)
+            for reaction in many(c,f'''SELECT message_id,user_id,emoji FROM reactions
+                                       WHERE scope=? AND message_id IN ({placeholders})''',
+                                 (scope,*(row['id'] for row in visible))):
+                reactions.setdefault(reaction.pop('message_id'),[]).append(reaction)
+        return [message_dict(c,row,scope,viewer_id,(at,files,reactions)) for row in rows]
 
     def notify(c, uid, body):
         c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',(uid,body[:500],now()))
@@ -620,7 +650,7 @@ def install(core):
         with db() as c:
             rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,
                            (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
-                           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.sender_id!=?) AS unread
+                           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.deleted_at IS NULL AND m.sender_id!=?) AS unread
                            FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
                            WHERE gm.user_id=? ORDER BY g.id DESC''',(u['id'],u['id']))
             for g in rows:
@@ -708,7 +738,7 @@ def install(core):
             args=[gid]
             if before>0:sql+=' AND m.id<?';args.append(before)
             messages=many(c,sql+' ORDER BY m.id DESC LIMIT 70',args)
-            result=[message_dict(c,x,'group') for x in messages[::-1]]
+            result=message_page(c,messages[::-1],'group')
         return {'messages':result}
 
     @app.post('/api/groups/{gid}/messages')
@@ -731,11 +761,12 @@ def install(core):
         return {'message':msg}
 
     @app.post('/api/groups/{gid}/read')
-    async def group_read(request:Request,gid:int):
+    async def group_read(request:Request,gid:int,
+                         up_to:int=Query(default=9223372036854775807,ge=1,le=9223372036854775807)):
         u=current_user(request)
         with db() as c:
             active_member(c,gid,u['id'])
-            latest=one(c,'SELECT MAX(id) AS n FROM group_messages WHERE group_id=?',(gid,))['n'] or 0
+            latest=one(c,'SELECT MAX(id) AS n FROM group_messages WHERE group_id=? AND id<=?',(gid,up_to))['n'] or 0
             c.execute('UPDATE group_members SET last_read_id=MAX(last_read_id,?) WHERE group_id=? AND user_id=?',(latest,gid,u['id']))
         return {'ok':True}
 
@@ -1052,6 +1083,7 @@ def install(core):
 
     # Upgraded payloads include caption, attachment, reactions and reply references.
     core.message_details = message_dict
+    core.message_page = message_page
     core.file_for_message = safe_attachment
     core.notify_user_persist = notify
     core.profile_upgrade = True

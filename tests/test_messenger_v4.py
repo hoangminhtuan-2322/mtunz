@@ -73,10 +73,14 @@ def test_real_device_delivery_ack_and_read_privacy():
     with db() as c:c.execute('UPDATE users SET show_receipts=0 WHERE id=?',(bid,))
     hidden=alice.get('/api/messages/'+str(bid)).json()['messages'][0]
     assert hidden['delivered_at'] is None and hidden['read_at'] is None
-    assert bob.post('/api/messages/read/'+str(aid)).status_code==200
+    newer=alice.post('/api/messages',json={'recipient_id':bid,'body':'Tin đến sau'})
+    assert newer.status_code==200
+    assert bob.post(f'/api/messages/read/{aid}?up_to={mid}').status_code==200
     with db() as c:c.execute('UPDATE users SET show_receipts=1 WHERE id=?',(bid,))
-    read=alice.get('/api/messages/'+str(bid)).json()['messages'][0]
+    read,unread=alice.get('/api/messages/'+str(bid)).json()['messages']
     assert read['read_at'] and read['delivered_at']
+    assert unread['read_at'] is None and unread['delivered_at'] is None
+    assert alice.get('/api/friends').json()['friends'][0]['last_message']['body']=='Tin đến sau'
 
 
 def test_scheduled_send_edit_cancel_and_exactly_once_restart():

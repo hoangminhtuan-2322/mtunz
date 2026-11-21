@@ -265,14 +265,33 @@ function mountComposer(form){
   original.append(make('span','','Tệp'));toolbar.append(original);
   enableFileKeyboard(original);
  }
+ for(const action of ['record','schedule-new']){
+  const button=q('[data-v4-act="'+action+'"]',form);
+  if(button){
+   button.classList.remove('btn','ghost');
+   button.classList.add('chat-compose-tool','chat-compose-icon');
+   toolbar.append(button);
+  }
+ }
  const main=make('div','chat-compose-main');
  submit.addEventListener('mousedown',event=>{if(document.activeElement===textarea)event.preventDefault();});
  main.append(textarea,submit);form.replaceChildren(toolbar,main);
  form.classList.add('chat-compose-enhanced');
  textarea.placeholder='Viết tin nhắn…';
  textarea.setAttribute('aria-label','Nội dung tin nhắn');
- const resize=()=>{textarea.style.height='auto';textarea.style.height=Math.min(130,Math.max(46,textarea.scrollHeight))+'px';};
- textarea.addEventListener('input',resize);resize();
+ if(!window.CSS?.supports('field-sizing','content')){
+  let resizeFrame=0;
+  const resize=()=>{
+   if(resizeFrame)return;
+   resizeFrame=requestAnimationFrame(()=>{
+    resizeFrame=0;
+    if(!textarea.isConnected)return;
+    textarea.style.height='auto';
+    textarea.style.height=Math.min(130,Math.max(46,textarea.scrollHeight))+'px';
+   });
+  };
+  textarea.addEventListener('input',resize);resize();
+ }
  if(typeof ResizeObserver==='function'){
   const thread=q('#chat-messages',form.closest('.conversation'));
   if(thread){
@@ -309,6 +328,7 @@ function mountHeader(header){
   if(button.title&&!button.textContent.trim())button.append(make('span','',button.title));
   list.append(button);
  }
+ details.open=header.dataset.restoreMenu==='true';
  details.append(summary,list);header.append(details);
  header.classList.add('chat-header-refined');
 }
