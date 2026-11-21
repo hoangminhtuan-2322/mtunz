@@ -967,7 +967,7 @@ function conversation(){
  const f=state.friends.find(x=>x.other_id===state.selected&&x.state==='accepted');
  if(!f)return welcomeEmpty();
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
- <div class="thread" id="chat-messages" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>${threadJump()}
+ <div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
@@ -1102,7 +1102,8 @@ function profileContent(){
 }
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
- <p class="section-lead">Chỉ quản lý bảo mật, thiết bị và quyền truy cập. Hồ sơ công khai và liên hệ đã được chuyển sang mục riêng.</p>
+ <p class="section-lead">Tùy chỉnh giao diện trò chuyện, bảo mật và thiết bị đăng nhập.</p>
+ <section class="card studio-appearance"><h3>Hình nền hội thoại</h3><button class="btn ghost sm" type="button" data-studio="wallpaper">Chọn hình nền</button></section>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>

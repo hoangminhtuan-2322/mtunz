@@ -62,6 +62,7 @@ function groupHeader(){
 function uploadMarkup(m){
  const a=m.attachment;if(!a)return '';
  if(String(a.mime||'').startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
+ if(a.mime==='image/png'&&a.name==='mtunz-sticker.png')return `<img class="member-sticker" loading="lazy" src="${esc(a.url)}" alt="Sticker tự tạo">`;
  if(safeImage(a))return `<a data-image-preview href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh trong hội thoại"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
  return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
 }
@@ -130,7 +131,7 @@ function composerExtras(){
 function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
  if(!g)return groupLobby();
- return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>${threadJump()}
+ return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
@@ -413,11 +414,14 @@ async function extraAction(btn){
 }
 async function uploadSelected(file){
  if(file.size>12*1024*1024)throw Error('Tệp tối đa 12 MB.');
+ const owner=state.user?.id,chat=v4ChatKey();
+ if(state.uploading)throw Error('Một tệp đang được tải lên.');
  state.uploading=true;$('#compose-extra').innerHTML=composerExtras();
  try{
   const body=new FormData();body.append('file',file);
   const res=await fetch('/api/uploads',{method:'POST',body,credentials:'same-origin'});
   const payload=await res.json();if(!res.ok)throw Error(typeof payload.detail==='string'?payload.detail:'Không thể tải tệp lên.');
+  if(state.user?.id!==owner||v4ChatKey()!==chat)throw Error('Hội thoại đã thay đổi. Tệp chưa được đính kèm.');
   state.pendingAttachment=payload.attachment;
  }finally{state.uploading=false;if($('#compose-extra'))$('#compose-extra').innerHTML=composerExtras();}
 }

@@ -437,7 +437,10 @@ async def cookies_and_origin(request: Request, call_next):
         expected_host = b.netloc if b else request.headers.get('host', '')
         for supplied in (origin, referer if not origin else None):
             if supplied:
-                a = urlsplit(supplied)
+                try:
+                    a = urlsplit(supplied)
+                except ValueError:
+                    return reject('Nguồn yêu cầu không hợp lệ.')
                 if (a.scheme, a.netloc) != (expected_scheme, expected_host):
                     return reject('Nguồn yêu cầu không hợp lệ.')
         # Reject oversized JSON and uploads early, before parsing or allocating.
@@ -499,7 +502,7 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
          "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; "
-         "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+         "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
     return result
 
 
@@ -603,7 +606,7 @@ def public_user(u):
             'avatar_url':f'/api/profile/{u["id"]}/avatar' if u['avatar_attachment_id'] else None,
             'cover_url':f'/api/profile/{u["id"]}/cover' if u['cover_attachment_id'] else None,
             'allow_message_requests':bool(u['allow_message_requests']),
-            'world_anonymous':bool(u['world_anonymous']),
+            'world_anonymous':bool(u['world_anonymous']), 'chat_wallpaper':u['chat_wallpaper'],
             'onboarding_required':bool(u['needs_display_name']),
             'phone':u['phone'] or '', 'email':u['email'] or '',
             'show_online':bool(u['show_online']), 'show_receipts':bool(u['show_receipts'])}
@@ -714,6 +717,8 @@ async def registration_request(request: Request, body: RegistrationRequest):
     email = normalize_email(body.email)
     throttle(request, 'signup', 6, 3600)
     with db() as c:
+        if not v6_feature_on(c,'registration_intake'):
+            raise HTTPException(423,'Admin đã tạm dừng tiếp nhận yêu cầu đăng ký.')
         if one(c,'SELECT id FROM users WHERE phone=?',(phone,)):
             raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng dùng số khác hoặc liên hệ hỗ trợ.')
         if name == 'admin' or one(c,'SELECT 1 FROM users WHERE username=?',(name,)):

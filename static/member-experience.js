@@ -256,7 +256,9 @@ function mountComposer(form){
  const emoji=tool('emoji','Emoji','emoji');emoji.setAttribute('aria-expanded','false');
  emoji.setAttribute('aria-controls','chat-emoji-picker');
  const geo=tool('location','Vị trí','map');
- toolbar.append(photo,emoji,geo);
+ const studio=document.createElement('button');studio.type='button';studio.className='chat-compose-tool';
+ studio.dataset.studio='sticker';studio.textContent='✎ Sticker';studio.setAttribute('aria-label','Tạo sticker');
+ toolbar.append(photo,emoji,studio,geo);
  if(original){
   original.classList.remove('btn','ghost','attachment-button');
   original.classList.add('chat-compose-tool','chat-file-tool');
@@ -292,6 +294,8 @@ function mountHeader(header){
  const summary=make('summary','','•••');summary.title='Tùy chọn hội thoại';
  summary.setAttribute('aria-label','Mở thêm tùy chọn hội thoại');
  const list=make('div','chat-header-menu');list.setAttribute('role','group');list.setAttribute('aria-label','Tùy chọn hội thoại');
+ const paper=make('button','btn ghost sm','Hình nền hội thoại');paper.type='button';paper.dataset.studio='wallpaper';
+ list.append(paper);
  for(const button of buttons)list.append(button);
  details.append(summary,list);header.append(details);
  header.classList.add('chat-header-refined');

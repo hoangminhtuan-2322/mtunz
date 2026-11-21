@@ -54,6 +54,7 @@ def install(core):
                 column('users', col, typ)
             # Legacy accounts remain usable. Only newly completed registrations
             # require the first-login display-name onboarding step.
+            column('users','chat_wallpaper',"TEXT NOT NULL DEFAULT 'midnight'")
             column('users','needs_display_name','INTEGER NOT NULL DEFAULT 0')
             # Only explicit approved-registration consent is recorded. Legacy
             # accounts have NULL; never claim acceptance on their behalf.
@@ -481,10 +482,23 @@ def install(core):
         resp.headers['Content-Disposition']="attachment; filename=mtunz-my-data.json"
         return resp
 
+    class ChatAppearance(BaseModel):
+        wallpaper:Literal['midnight','lagoon','dusk','grove']
+
+    @app.patch('/api/me/appearance')
+    def set_appearance(request:Request,body:ChatAppearance):
+        user=current_user(request)
+        with db() as c:
+            c.execute('UPDATE users SET chat_wallpaper=? WHERE id=?',(body.wallpaper,user['id']))
+        return {'wallpaper':body.wallpaper}
+
     @app.post('/api/uploads')
     async def upload(request:Request, file:UploadFile=File(...), waveform:str=Form(''), duration_ms:int=Form(0)):
         u=current_user(request)
         throttle(request, 'upload', 35, 3600, str(u['id']))
+        with db() as c:
+            if not core.v6_feature_on(c,'member_uploads'):
+                raise HTTPException(423,'Admin đã tạm dừng tải tệp và sticker mới.')
         mime=(file.content_type or '').lower().split(';')[0]
         if mime not in ALLOWED:
             raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
@@ -529,6 +543,8 @@ def install(core):
                 raise HTTPException(415,'Nội dung tệp không đúng định dạng đã khai báo.')
             with db() as c:
                 if hosted:
+                    # Serialize quota checks and inserts for simultaneous uploads by one account.
+                    c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(u['id'],)).fetchone()
                     used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=?',(u['id'],))['total']
                     if used + total > 25*1024*1024:
                         raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')

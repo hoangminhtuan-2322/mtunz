@@ -42,6 +42,25 @@ const {chromium}=require('playwright-core');
    await jump.click();
    await jump.waitFor({state:'hidden'});
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   await page.locator('[data-studio="sticker"]').click();
+   await page.locator('[data-caption]').fill('Xin chào ✨');
+   await page.locator('[data-save]').click();
+   assert.equal(await page.locator('.sticker-shelf img').count(),1);
+   let uploaded=false;
+   await page.route('**/api/uploads',r=>{
+    uploaded=r.request().postDataBuffer().includes(Buffer.from('mtunz-sticker.png'));
+    return r.fulfill({json:{attachment:{id:17,name:'mtunz-sticker.png',mime:'image/png',size:1024,url:'/api/attachments/17'}}});
+   });
+   await page.locator('#modal-confirm').click();
+   await page.locator('.compose-file').waitFor();
+   assert(uploaded);
+   await page.locator('.chat-header-more summary').click();
+   await page.locator('[data-studio="wallpaper"]').click();
+   await page.locator('[name="chat-paper"][value="lagoon"]').check();
+   await page.route('**/api/me/appearance',r=>r.fulfill({json:{wallpaper:r.request().postDataJSON().wallpaper}}));
+   await page.locator('#modal-confirm').click();
+   await page.locator('#chat-messages[data-paper="lagoon"]').waitFor();
+   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
    await page.close();
   }
  }finally{await browser.close();}
