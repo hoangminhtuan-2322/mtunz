@@ -899,6 +899,9 @@ function appRail(){
           ${secondary.map(item).join('')}
         </div>
       </div>
+      <button type="button" class="rail-btn rail-mobile-profile ${state.tab==='profile'?'active':''}" data-act="app-tab" data-tab="profile" aria-label="Hồ sơ cá nhân" aria-current="${state.tab==='profile'?'page':'false'}" title="Hồ sơ cá nhân">
+        <span class="rail-icon" aria-hidden="true">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</span><span class="rail-text">Hồ sơ</span>
+      </button>
     </nav>
     <div class="rail-foot">
       <button type="button" class="rail-account rail-profile-button ${state.tab==='profile'?'active':''}" data-act="app-tab" data-tab="profile" aria-label="Hồ sơ cá nhân">
