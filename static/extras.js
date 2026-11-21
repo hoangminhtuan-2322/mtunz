@@ -131,7 +131,7 @@ function bubblesFor(messages,isGroup=false,context=messages){
      ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
-    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}</div>`;
+    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}${actions?'<button type="button" class="bubble-more" data-message-tools aria-label="Tùy chọn tin nhắn" aria-haspopup="dialog">⋯</button>':''}</div>`;
  }
  return html;
 }

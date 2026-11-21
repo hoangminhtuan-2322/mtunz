@@ -373,3 +373,25 @@
   border:1px solid #675a80;border-radius:50%;background:#25203b;color:inherit
  }
 }
+
+.bubble-more{display:none}
+.message-tool-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.message-tool-list .btn{min-height:44px;white-space:normal}
+.shell:not(.admin-shell) .conversation .thread{scroll-behavior:auto;overflow-anchor:none}
+@media(max-width:800px), (hover:none) and (pointer:coarse){
+ .shell:not(.admin-shell) .conversation .bubble-wrap{position:relative;max-width:calc(100% - 44px)}
+ .shell:not(.admin-shell) .bubble-wrap > .bubble-actions{display:none}
+ .shell:not(.admin-shell) .bubble-wrap > .bubble-more{
+   display:grid;place-items:center;position:absolute;top:0;left:100%;
+   min-width:44px;min-height:44px;padding:0;border:0;border-radius:12px;
+   background:transparent;color:#b8c8e4;font-size:23px;line-height:1
+ }
+ .shell:not(.admin-shell) .bubble-wrap.mine > .bubble-more{left:auto;right:100%}
+ .shell:not(.admin-shell) .bubble-more:is(:hover,:focus-visible){background:#243450}
+}
+@media(max-width:800px){
+ .shell:not(.admin-shell) .conversation .main-head .chat-header-menu .btn{
+   width:100%;height:auto;min-height:44px;white-space:normal
+ }
+ .shell:not(.admin-shell) .chat-header-menu .button-word{display:inline}
+}
