@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import atexit
+import os
+import threading
 from contextlib import contextmanager
 
 SERIAL_TABLES = {
@@ -93,12 +96,50 @@ class PGConnection:
                 self.execute(statement)
 
 
+# One small pool per worker: avoids repeated Neon TLS handshakes on each query.
+# Never create one pool per HTTP request; keep transaction boundaries unchanged.
+_POOL = None
+_POOL_URL = None
+_POOL_LOCK = threading.Lock()
+
+
+def _postgres_pool(database_url: str):
+    from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+    global _POOL, _POOL_URL
+    if _POOL is not None and _POOL_URL == database_url:
+        return _POOL
+    with _POOL_LOCK:
+        if _POOL is not None and _POOL_URL == database_url:
+            return _POOL
+        if _POOL is not None:
+            _POOL.close()
+        try:
+            size = int(os.getenv("PG_POOL_SIZE", "3"))
+        except ValueError:
+            size = 3
+        size = max(1, min(size, 6))
+        pool = ConnectionPool(
+            conninfo=database_url,
+            kwargs={
+                "row_factory": dict_row,
+                "connect_timeout": 12,
+                # PgBouncer/Neon transaction pooling must not depend on the
+                # session-level state created by implicit prepared statements.
+                "prepare_threshold": None,
+            },
+            min_size=0, max_size=size, max_idle=120, timeout=12,
+            open=False,
+        )
+        pool.open(wait=False)
+        _POOL, _POOL_URL = pool, database_url
+        atexit.register(pool.close)
+        return pool
+
+
 @contextmanager
 def postgres_db(database_url: str):
-    import psycopg
-    from psycopg.rows import dict_row
-    # Neon pooled URLs are recommended for HTTP traffic. One Render worker
-    # holds realtime websocket clients; a new short DB transaction is opened
-    # for each operation and is always closed afterwards.
-    with psycopg.connect(database_url, row_factory=dict_row, connect_timeout=12) as connection:
+    # Same commit/rollback semantics as the old psycopg connection context.
+    # Connections return to the pool only after the transaction completes.
+    with _postgres_pool(database_url).connection() as connection:
         yield PGConnection(connection)

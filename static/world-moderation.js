@@ -8,6 +8,32 @@ const worldReasonNames={
 };
 const worldEscape=value=>esc(String(value??''));
 const worldOwnIds=new Set();
+/* Follow arriving bubbles through short reflows (font, media, scroll
+   anchoring). Cancel as soon as the user interacts with scrolling; never
+   force someone reading old messages back to the latest bubble. */
+let worldFollowToken=0;
+function worldFollowBottom(feed){
+ if(!feed)return;
+ const token=++worldFollowToken;
+ let frames=0,stopped=false;
+ const events=['wheel','touchstart','pointerdown','keydown'];
+ const stop=()=>{
+  if(stopped)return;
+  stopped=true;
+  events.forEach(name=>feed.removeEventListener(name,stop));
+ };
+ events.forEach(name=>feed.addEventListener(name,stop,{passive:true}));
+ const follow=()=>{
+  if(stopped||token!==worldFollowToken||!feed.isConnected){stop();return;}
+  const gap=feed.scrollHeight-feed.scrollTop-feed.clientHeight;
+  if(gap>130){stop();return;}
+  feed.scrollTop=feed.scrollHeight;
+  if(++frames<18&&typeof requestAnimationFrame==='function')requestAnimationFrame(follow);
+  else stop();
+ };
+ follow();
+}
+
 let worldOwnIdsUser=null;
 // Deliberately omit server_time: a ticking clock is not a reason to replace
 // the composer, scroll container or 70 message bubbles every few seconds.
@@ -222,7 +248,7 @@ function appendWorldSocket(message){
    const empty=feed.querySelector('.world-empty');if(empty)empty.remove();
    feed.insertAdjacentHTML('beforeend',worldBubble(message));
    while(feed.querySelectorAll('.world-message').length>70)feed.querySelector('.world-message')?.remove();
-   if(near)feed.scrollTop=feed.scrollHeight;
+   if(near)worldFollowBottom(feed);
    feed.dataset.worldPaintKey=worldFeedPaintKey(data.messages);
   }
  }

@@ -10,3 +10,8 @@ __pycache__/
 .pytest_cache/
 *.pyc
 *.zip
+
+# Generated build-time CSS and private PostgreSQL dumps.
+static/mtunz-styles-*.css
+*.dump
+*.dump.partial

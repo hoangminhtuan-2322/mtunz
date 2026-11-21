@@ -1,0 +1,41 @@
+name: Cross-browser mobile & desktop regression
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-engines:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install app dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Install WebKit (Safari engine) and Chromium
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/cross-browser" playwright@1.56.1
+          "$RUNNER_TEMP/cross-browser/node_modules/.bin/playwright" install --with-deps webkit chromium
+      - name: Run production CSS build and browser regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NODE_PATH="$RUNNER_TEMP/cross-browser/node_modules"
+          export DATA_DIR="$(mktemp -d)"
+          python scripts/build_css.py
+          python -m uvicorn app:app --host 127.0.0.1 --port 8791 > "$RUNNER_TEMP/cross-browser.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true; rm -rf "$DATA_DIR"' EXIT
+          curl --retry 18 --retry-delay 2 --retry-connrefused --fail --silent \
+               http://127.0.0.1:8791/health >/dev/null
+          node tests/cross_browser_mobile.cjs
