@@ -1673,15 +1673,14 @@ async def admin_users(request:Request,q:str=''):
     with db() as c:
         query=q.strip()[:24]
         numeric_id=int(query) if query.isascii() and query.isdigit() and len(query)<=9 else -1
-        rows=many(c,'''SELECT u.id,u.username,u.created_at,u.last_seen,u.pin_length,
+        rows=many(c,'''SELECT u.id,u.username,u.display_name,u.created_at,u.last_seen,u.pin_length,
                               u.sanction_kind,u.sanction_until,u.sanction_reason,
+                              (SELECT count(*) FROM messages m WHERE m.sender_id=u.id OR m.recipient_id=u.id) AS message_count,
+                              (SELECT count(*) FROM friendships f WHERE f.state='accepted' AND (f.u1=u.id OR f.u2=u.id)) AS friend_count,
                               d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                        FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
-                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.id=?)
-                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%',numeric_id))
-        for r in rows:
-            r['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(r['id'],r['id']))['n']
-            r['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(r['id'],r['id']))['n']
+                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ? OR u.id=?)
+                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%','%'+query+'%',numeric_id))
     return {'users':rows}
 
 
@@ -1709,9 +1708,21 @@ async def admin_user_details(request:Request,uid:int):
             raise HTTPException(404,'Không tìm thấy tài khoản người dùng.')
         detail=dict(user)
         detail['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid))['n']
-        detail['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(uid,uid))['n']
+        activity=one(c,'''SELECT count(*) AS message_count,
+                     count(CASE WHEN sender_id=? THEN 1 END) AS sent_count,
+                     count(CASE WHEN recipient_id=? THEN 1 END) AS received_count,
+                     max(created_at) AS last_message_at FROM messages
+                     WHERE sender_id=? OR recipient_id=?''',(uid,uid,uid,uid))
+        detail.update(dict(activity))
         detail['group_count']=one(c,'SELECT count(*) n FROM group_members WHERE user_id=?',(uid,))['n']
-        detail['file_count']=one(c,'SELECT count(*) n FROM attachments WHERE owner_id=?',(uid,))['n']
+        detail.update(dict(one(c,'''SELECT count(*) AS file_count, coalesce(sum(size),0) AS file_bytes
+                                  FROM attachments WHERE owner_id=?''',(uid,))))
+        marker=f'user_id={uid}'
+        placeholders=','.join('?' for _ in ACCOUNT_AUDIT_ACTIONS)
+        detail['recent_events']=many(c,f'''SELECT a.id,a.action,a.created_at,u.username AS actor
+                                    FROM audit a LEFT JOIN users u ON u.id=a.admin_id
+                                    WHERE a.action IN ({placeholders}) AND (a.detail=? OR a.detail LIKE ?)
+                                    ORDER BY a.id DESC LIMIT 5''',(*ACCOUNT_AUDIT_ACTIONS,marker,marker+';%'))
         detail['session_count']=one(c,'SELECT count(*) n FROM sessions WHERE user_id=? AND expires_at>?',(uid,now()))['n']
         detail['remembered_count']=one(c,'SELECT count(*) n FROM trusted_devices WHERE user_id=? AND expires_at>?',(uid,now()))['n']
         # Never expose passwords, PIN, secret hashes, or session/recovery tokens.
@@ -1895,6 +1906,10 @@ AUDIT_MEDIUM_RISK = {
     'admin_view_user_details', 'moderation_messages', 'moderation_group',
 }
 
+ACCOUNT_AUDIT_ACTIONS=('admin_view_user_details','admin_view_session_security','admin_edit_user',
+                       'admin_revoke_user_sessions','sanction_ban','sanction_lock','sanction_unban',
+                       'permanent_user_delete')
+
 def enrich_audit(row):
     item = dict(row)
     action = item['action']
@@ -1955,6 +1970,12 @@ async def admin_audit_detail(request:Request,event_id:int):
         if not row:
             raise HTTPException(404,'Không tìm thấy sự kiện quản trị.')
         result=enrich_audit(row)
+        if result['action'] in ACCOUNT_AUDIT_ACTIONS:
+            match=re.match(r'^user_id=([0-9]{1,18})(?:;|$)',result['detail'] or '')
+            if match:
+                uid=int(match[1])
+                target=one(c,'SELECT username FROM users WHERE id=? AND is_admin=0',(uid,))
+                result['target_user']={'id':uid,'username':target['username'] if target else None}
         admin_log(c,admin['id'],'audit_detail_view',f'event_id={event_id}')
     return {'event':result}
 

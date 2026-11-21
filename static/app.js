@@ -1371,9 +1371,9 @@ function adminRegistrations(){const rows=state.adminData||[];
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
 function adminUsers(){const data=state.adminData||[];
- return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
+ return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên đăng nhập, tên hiển thị hoặc ID" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
- ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id}</div></div></div></td>
+ ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">${u.display_name?esc(u.display_name)+' · ':''}#${u.id}</div></div></div></td>
  <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
@@ -1619,6 +1619,9 @@ async function adminAuditDetail(eventId){
    </section>
    <section class="admin-audit-section" aria-label="Nội dung được ghi nhận">
      <h4>Phạm vi và thông tin liên quan</h4>
+     ${e.target_user?adminDetailRow('Tài khoản liên quan',e.target_user.username?
+       `<button type="button" class="btn ghost sm" data-act="admin-user-detail" data-id="${Number(e.target_user.id)}">${esc(e.target_user.username)} · #${Number(e.target_user.id)}</button>`:
+       'Tài khoản #'+Number(e.target_user.id)+' hiện không còn trong danh sách người dùng'):''}
      ${facts||'<p class="admin-audit-note">Nhật ký không cung cấp thêm đối tượng hoặc số lượng cụ thể cho sự kiện này.</p>'}
      <p class="admin-audit-note">${esc(info.note)}</p>
    </section>
@@ -1748,7 +1751,7 @@ function adminDetailRow(label,value){
  return `<div class="admin-detail-row"><span class="muted">${esc(label)}</span><strong>${value}</strong></div>`;
 }
 async function userDetails(uid){
- const summary=(state.adminData||[]).find(x=>x.id===uid);
+ const summary=Array.isArray(state.adminData)?state.adminData.find(x=>x.id===uid):null;
  modal({
   title:`Hồ sơ quản trị: ${summary?.username||'#'+uid}`,
   description:'Thông tin chỉ dành cho quản trị viên. Lượt xem này được ghi vào nhật ký kiểm toán.',
@@ -1792,10 +1795,19 @@ async function userDetails(uid){
      <h3>${icon('grid',17)} Hoạt động & tài nguyên</h3>
      ${adminDetailRow('Bạn bè',String(u.friend_count))}
      ${adminDetailRow('Tin nhắn riêng liên quan',String(u.message_count))}
+     ${adminDetailRow('Đã gửi / Đã nhận',Number(u.sent_count)+' / '+Number(u.received_count))}
+     ${adminDetailRow('Tin nhắn riêng gần nhất',u.last_message_at?deadlineDate(u.last_message_at):'Chưa có tin nhắn')}
      ${adminDetailRow('Nhóm đã tham gia',String(u.group_count))}
-     ${adminDetailRow('Tệp tải lên',String(u.file_count))}
+     ${adminDetailRow('Tệp tải lên',String(u.file_count)+' · '+Number(u.file_bytes).toLocaleString('vi-VN')+' byte')}
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
      ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('clock',17)} Nhật ký liên quan đến tài khoản</h3>
+     ${(u.recent_events||[]).map(e=>adminDetailRow(esc(auditLabel(e.action)),
+       `<button type="button" class="btn ghost sm" data-act="admin-audit-detail" data-id="${Number(e.id)}">#${Number(e.id)} · ${deadlineDate(e.created_at)}</button><div class="hint">${esc(e.actor||'Chưa rõ người thực hiện')}</div>`)).join('')||
+       '<p class="hint">Chưa có sự kiện quản trị gắn với ID tài khoản này.</p>'}
+     <p class="hint">Hiển thị tối đa 5 sự kiện trước lần mở hồ sơ này.</p>
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Kiểm tra bảo mật thiết bị</h3>
