@@ -113,7 +113,7 @@ function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
  if(!g)return groupLobby();
  return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>
- <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
+ <div class="composer">${latestChatButton()}<div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
@@ -132,7 +132,7 @@ function paintGroupThread(scroll=false){
  box.innerHTML=bubblesFor(state.groupMessages,true);
  if(scroll)settleChatEnd(box);
  else if(near)followChatEnd(box);
- else box.scrollTo({top:position,behavior:'instant'});
+ else{box.scrollTo({top:position,behavior:'instant'});updateLatestButton(box);}
 }
 let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
@@ -149,10 +149,7 @@ async function loadGroupMessages(scroll=true){
   }
   state.groupMessages=[...incoming.values()].sort((a,b)=>a.id-b.id).slice(-100);
   paintGroupThread(scroll);
-  await post(`/api/groups/${gid}/read`);
-  if(!current())return;
-  const g=state.groups.find(x=>x.id===gid);if(g)g.unread=0;
-  renderSideItems();
+  queueChatRead($('#chat-messages'));
  }catch(e){if(current())toast(e.message,'error');}
 }
 function notificationsContent(){
@@ -508,19 +505,19 @@ function appendGroupMessage(groupId,message){
  if(!message||state.groupSelected!==groupId||state.tab!=='groups')return;
  const messages=state.groupMessages;
  const pos=messages.findIndex(item=>item.id===message.id);
+ if(pos>=0)return;
  const previous=messages.at(-1);
  if(pos<0)messages.push(message);else messages[pos]=message;
- const outOfOrder=pos<0&&previous&&message.id<previous.id;
+ const outOfOrder=previous&&message.id<previous.id;
  if(outOfOrder)messages.sort((a,b)=>a.id-b.id);
  const capped=messages.length>100;
  if(capped)messages.splice(0,messages.length-100);
  const box=$('#chat-messages');
  if(box){
-  if(capped||outOfOrder)paintGroupThread(message.sender_id===state.user?.id&&pos<0);
-  else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
+  if(capped||outOfOrder)paintGroupThread(message.sender_id===state.user?.id);
+  else patchThreadRow(box,message,previous,messages,'group',null,paintGroupThread,message.sender_id===state.user?.id);
  }
- if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')
-  post('/api/groups/'+groupId+'/read').catch(()=>{});
+ if(message.sender_id!==state.user?.id)queueChatRead(box);
 }
 async function extraSocket(data){
  const t=data.type;
