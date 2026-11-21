@@ -116,7 +116,7 @@ const {chromium}=require('playwright-core');
    assert.equal(await page.locator('#chat-text').inputValue(),'');
    await page.locator('#chat-text').fill('Tin đang viết tiếp');
    await page.evaluate(()=>{
-    const thread=document.querySelector('#chat-messages');thread.scrollTop=130;
+    const thread=document.querySelector('#chat-messages');thread.scrollTo({top:130,behavior:'instant'});
     const pending=state.messages.find(message=>message.pending);
     appendDirectMessage({...pending,id:62,pending:false,created_at:202});
    });

@@ -104,7 +104,7 @@
 .shell:not(.admin-shell) .chat-header-menu .btn.danger{color:#ff9ba7}
 .shell:not(.admin-shell) .conversation .thread{
  flex:1;min-height:0;gap:11px;padding:25px clamp(16px,4.2vw,65px);
- overscroll-behavior:contain;scrollbar-width:thin;
+ overscroll-behavior:contain;scrollbar-width:thin;scroll-behavior:auto;overflow-anchor:none;
 }
 .shell:not(.admin-shell) .bubble-wrap{max-width:min(73%,610px);gap:4px}
 .shell:not(.admin-shell) .bubble-wrap .bubble{

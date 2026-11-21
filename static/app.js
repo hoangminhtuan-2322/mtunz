@@ -1026,7 +1026,7 @@ function renderMessageThread(scroll=false){
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
  const previousPosition=box.scrollTop;
  box.innerHTML=renderBubbles();
- if(scroll||near)box.scrollTop=box.scrollHeight;else box.scrollTop=previousPosition;
+ box.scrollTo({top:scroll||near?box.scrollHeight:previousPosition,behavior:'instant'});
  syncThreadJump(box);
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
@@ -1047,7 +1047,7 @@ function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,fol
    }
    box.append(row);
  }
- box.scrollTop=follow||near?box.scrollHeight:position;
+ box.scrollTo({top:follow||near?box.scrollHeight:position,behavior:'instant'});
 }
 function appendDirectMessage(message){
  if(!message||!state.selected||state.tab!=='messages')return;

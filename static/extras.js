@@ -164,7 +164,7 @@ function paintGroupThread(scroll=false){
  if(!box)return;
  const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
  box.innerHTML=bubblesFor(state.groupMessages,true);
- box.scrollTop=scroll||near?box.scrollHeight:position;
+ box.scrollTo({top:scroll||near?box.scrollHeight:position,behavior:'instant'});
  syncThreadJump(box);
 }
 let groupHistoryRequest=0;
