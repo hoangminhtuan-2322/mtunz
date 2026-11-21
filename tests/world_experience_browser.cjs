@@ -21,13 +21,28 @@ const {chromium}=require('playwright-core');
     renderApp();
    });
    const mobile=width<=800;
-   const profile=page.locator('.rail-mobile-profile');
+   const profile=page.locator('.side-top>.mobile-profile-top');
+   assert.equal(await page.locator('.rail-mobile-profile').count(),0,
+     'Profile must not be duplicated as a sixth bottom tab');
    if(mobile){
     await profile.waitFor({state:'visible'});
+    assert.equal(await page.locator('.rail-nav>.rail-btn').count(),5,
+      'Exactly five original bottom destinations on mobile');
     assert.equal(await profile.getAttribute('data-tab'),'profile');
+    const order=await page.evaluate(()=>{
+      const top=document.querySelector('.side-top>.mobile-profile-top').getBoundingClientRect();
+      const heading=document.querySelector('.side-top h2').getBoundingClientRect();
+      return {top:top.top,bottom:top.bottom,heading:heading.top};
+    });
+    assert(order.top>=0&&order.bottom<order.heading,
+      'Mobile profile identity appears above Tin nhắn at '+width);
+    assert.match(await profile.innerText(),/Mình/);
+    assert.match(await profile.innerText(),/demo/);
     await profile.click();
     await page.locator('.profile-page').waitFor({state:'visible'});
-    assert((await profile.getAttribute('class')).includes('active'));
+    assert.equal(await page.evaluate(()=>state.tab),'profile');
+    await page.locator('.rail-nav>[data-tab="messages"]').click();
+    await profile.waitFor({state:'visible'});
    }else{
     await profile.waitFor({state:'hidden'});
     await page.locator('.rail-profile-button').waitFor({state:'visible'});
