@@ -1042,7 +1042,9 @@ def install(core):
         with db() as c:
             m=one(c,'''SELECT * FROM messages WHERE id=? AND (sender_id=? OR recipient_id=?)
                       AND (expires_at IS NULL OR expires_at>?)''',(mid,u['id'],u['id'],now()))
-            if not m or m['deleted_at']:raise HTTPException(404,'Tin nhắn không tồn tại.')
+            if not m or m['deleted_at'] or one(c,'''SELECT 1 FROM message_hidden
+                    WHERE user_id=? AND scope='dm' AND message_id=?''',(u['id'],mid)):
+                raise HTTPException(404,'Tin nhắn không tồn tại.')
             require_peer(c,m['sender_id'],m['recipient_id'])
             toggle_reaction(c,'dm',mid,u['id'],body.emoji)
         await dm_changed(m)
@@ -1054,7 +1056,9 @@ def install(core):
         with db() as c:
             active_member(c,gid,u['id'])
             m=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',(mid,gid))
-            if not m:raise HTTPException(404,'Tin nhắn không tồn tại.')
+            if not m or one(c,'''SELECT 1 FROM message_hidden
+                    WHERE user_id=? AND scope='group' AND message_id=?''',(u['id'],mid)):
+                raise HTTPException(404,'Tin nhắn không tồn tại.')
             toggle_reaction(c,'group',mid,u['id'],body.emoji)
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
