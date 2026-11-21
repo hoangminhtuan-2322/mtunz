@@ -313,7 +313,11 @@
           button.removeAttribute('aria-busy');
         }
       }
-      if (mutation.type === 'childList' && mutation.addedNodes.length) needsEnhance = true;
+      if (mutation.type === 'childList') {
+        const selector='form[data-form],.field input[type="password"]';
+        needsEnhance ||= Array.from(mutation.addedNodes).some(node=>
+          node.matches?.(selector)||node.querySelector?.(selector));
+      }
     }
     if (needsEnhance) scheduleEnhance();
   });

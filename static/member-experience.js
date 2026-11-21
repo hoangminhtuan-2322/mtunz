@@ -360,7 +360,8 @@ function mount(){
  if(form){renderLocations(shell);addImagePreview(shell);}
  if(locationDialog&&!sameContext(locationDialog.context))closeLocation();
 }
-const observer=new MutationObserver(()=>{
+const observer=new MutationObserver(records=>{
+ if(!records.some(({target})=>target.id==='app'||target.id==='chat-header'||target.id==='compose-extra'||target.id==='chat-messages'))return;
  if(scheduled)return;scheduled=true;
  requestAnimationFrame(()=>{scheduled=false;mount();});
 });

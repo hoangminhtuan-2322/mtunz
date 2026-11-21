@@ -209,8 +209,8 @@
  #modal-root .premium-dialog .modal-actions{
   position:sticky;bottom:0;z-index:2;gap:8px;
   padding:11px 0 max(2px,env(safe-area-inset-bottom,0px));
-  margin-top:10px;background:#18253bbf;
-  backdrop-filter:blur(9px)
+  margin-top:10px;background:#18253b;
+  backdrop-filter:none
  }
  #modal-root .premium-dialog .modal-actions .btn{
   min-height:44px;white-space:normal

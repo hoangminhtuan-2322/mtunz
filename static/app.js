@@ -1,8 +1,11 @@
 'use strict';
 const $ = (s,root=document)=>root.querySelector(s);
 const esc = (v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const date = t=>t?new Date(t*1000).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-const clock = t=>t?new Date(t*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'';
+const dateFormatter=new Intl.DateTimeFormat('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const clockFormatter=new Intl.DateTimeFormat('vi-VN',{hour:'2-digit',minute:'2-digit'});
+const dayFormatter=new Intl.DateTimeFormat('vi-VN');
+const date=t=>t&&Number.isFinite(Number(t))?dateFormatter.format(t*1000):'—';
+const clock=t=>t&&Number.isFinite(Number(t))?clockFormatter.format(t*1000):'';
 const deadlineDate = t=>t?new Date(t*1000).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
 const daysUntil = t=>Math.max(0,Math.ceil((Number(t)*1000-Date.now())/(86400*1000)));
 const short = (s,n=34)=>String(s??'').length>n?String(s).slice(0,n-1)+'…':String(s??'');
@@ -1019,8 +1022,8 @@ function appendDirectMessage(message){
      if(existing&&row)existing.replaceWith(row);
      else renderMessageThread(false);
    }else if(row){
-     const previousDay=previous?new Date(previous.created_at*1000).toLocaleDateString('vi-VN'):'';
-     const nextDay=new Date(message.created_at*1000).toLocaleDateString('vi-VN');
+     const previousDay=previous?dayFormatter.format(previous.created_at*1000):'';
+     const nextDay=dayFormatter.format(message.created_at*1000);
      box.querySelector('.empty')?.remove();
      if(previousDay!==nextDay){
        const day=template.content.querySelector('.day-label');

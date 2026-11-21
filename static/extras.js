@@ -88,16 +88,18 @@ function bubblesFor(messages,isGroup=false,context=messages){
  let html='<div class="spacer"></div>',prevDay='';
  const scope=isGroup?'group':'dm';
  const byId=new Map(context.map(m=>[m.id,m]));
- const current=new Date(),today=current.toLocaleDateString('vi-VN');
+ const current=new Date(),today=dayFormatter.format(current);
  current.setDate(current.getDate()-1);
- const yesterday=current.toLocaleDateString('vi-VN');
+ const yesterday=dayFormatter.format(current);
  for(const m of messages){
-  const day=new Date(m.created_at*1000).toLocaleDateString('vi-VN');
+  const day=dayFormatter.format(m.created_at*1000);
   if(prevDay!==day){html+=`<div class="day-label" title="${esc(day)}">${day===today?'Hôm nay':day===yesterday?'Hôm qua':esc(day)}</div>`;prevDay=day;}
   const mine=m.sender_id===state.user.id;
   const reference=byId.get(m.reply_to);
   const reacted=[...new Set((m.reactions||[]).map(r=>r.emoji))];
   const actions=(!m.deleted_at&&m.id>0)?`<div class="bubble-actions">
+   <button type="button" data-social-action="pin" data-message-id="${Number(m.id)}" title="Ghim hoặc bỏ ghim tin này" aria-label="Ghim hoặc bỏ ghim tin nhắn">📌</button>
+   <button type="button" data-social-action="forward" data-message-id="${Number(m.id)}" title="Chuyển tiếp tin nhắn" aria-label="Chuyển tiếp tin nhắn">↗</button>
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
@@ -107,12 +109,13 @@ function bubblesFor(messages,isGroup=false,context=messages){
   html+=`<div class="bubble-wrap ${mine?'mine':''}" id="msg-${scope}-${m.id}">
     ${isGroup&&!mine?`<div class="group-sender">${esc(m.username||'Thành viên')}</div>`:''}
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
+    ${m.forwarded&&!m.deleted_at&&m.id>0?'<small class="mt-forwarded-label">↪ Đã chuyển tiếp</small>':''}
     ${m.reply_to&&!m.deleted_at?`<button type="button" class="reply-inline reply-link" data-act="reply-origin" data-id="${Number(m.reply_to)}" title="Xem tin nhắn gốc">
       <span class="reply-author">${icon('reply',13)} ${esc(replyAuthor(reference,isGroup))}</span>
       <span class="reply-excerpt">${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||'Tệp đính kèm',90)):'Mở tin nhắn gốc'} </span></button>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
-     ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${new Date(Number(m.expires_at)*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`:''}
+     ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${clock(m.expires_at)}</span>`:''}
      ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
