@@ -1745,7 +1745,9 @@ function showPermanentDeleteDialog(target=null){
   }
  });
 }
-function adminProofFields(){
+function adminProofFields(requirePassword=false){
+  if(!requirePassword&&state.user?.pin_length&&typeof adminV3PinFields==='function')
+   return adminV3PinFields();
  return `<div class="admin-proof-box">
  <p class="hint">Xác minh lại trước khi thực hiện. Mật khẩu và PIN chỉ gửi tới máy chủ để kiểm tra.</p>
  <div class="field"><label for="admin-confirm-password">Mật khẩu Admin</label>
@@ -1760,7 +1762,9 @@ function unlockAdminProof(input){
 }
 document.addEventListener('pointerdown',event=>unlockAdminProof(event.target),true);
 document.addEventListener('focusin',event=>unlockAdminProof(event.target));
-function adminProofValue(host){
+function adminProofValue(host,requirePassword=false){
+  if(!requirePassword&&state.user?.pin_length&&typeof adminV3PinPayload==='function')
+   return adminV3PinPayload(host);
  const password=host.querySelector('#admin-confirm-password')?.value||'';
  const pin=host.querySelector('#admin-confirm-pin')?.value||'';
  if(!password||(state.user?.pin_length&&!pin))throw Error('Cần nhập mật khẩu và PIN Admin để xác nhận.');
@@ -1951,9 +1955,9 @@ async function userMessageLog(uid){
 function grantDialog(tid){
  modal({title:'Cấp mã khôi phục',description:'Xác minh danh tính người yêu cầu bằng kênh độc lập trước khi cấp quyền đặt lại. Mã chỉ hiệu lực 15 phút và được gửi qua cuộc trò chuyện hỗ trợ.',
  confirm:'Cấp mã một lần',content:`<div class="field"><label>Tên tài khoản cần đặt lại</label><input id="grant-username" class="input"></div>
- <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>${adminProofFields()}`,
+ <label class="row" style="align-items:flex-start;margin:16px 0;color:var(--muted);font-size:12px"><input type="checkbox" id="grant-verified" style="margin-top:4px"><span>Tôi xác nhận đã kiểm tra và xác thực người yêu cầu qua bằng chứng độc lập, không chỉ dựa vào lời khai trong chat.</span></label>${adminProofFields(true)}`,
  handler:async host=>{if(!$('#grant-verified').checked)throw Error('Bạn phải hoàn tất xác minh danh tính.');
-  const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true,...adminProofValue(host)});
+  const username=$('#grant-username').value;await post(`/api/admin/tickets/${tid}/grant`,{username,verified:true,...adminProofValue(host,true)});
   toast('Đã gửi mã khôi phục tới cuộc trò chuyện.','ok');await loadAdmin();}});
 }
 
