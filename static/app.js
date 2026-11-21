@@ -1233,7 +1233,7 @@ function renderApp(){
   state.tab==='settings'?`${memberHeader('Cài đặt','Bảo mật và tùy chọn hệ thống') }<div class="main-body">${settingsContent()}</div>`:
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
- root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-desktop-full':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
  const inbox=state.tab==='messages'&&!state.selected&&matchMedia('(max-width:800px)').matches;
  globalThis.markViewMotion?.(root().querySelector(inbox?'.side':'.main'),
