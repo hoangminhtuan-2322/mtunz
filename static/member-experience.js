@@ -402,7 +402,13 @@ function openMessageTools(trigger){
 }
 document.addEventListener('click',event=>{
  const tools=event.target.closest('[data-message-tools]');
- if(tools)openMessageTools(tools);
+ if(!tools)return;
+ event.preventDefault();
+ event.stopPropagation();
+ hidePicker();
+ openMessageTools(tools);
+},true);
+document.addEventListener('click',event=>{
  if(picker&&!event.target.closest('.chat-emoji-picker,.chat-compose-tool[data-chat-ui="emoji"]'))hidePicker();
  const menu=event.target.closest('.chat-header-more');
  if(!menu)all('.chat-header-more[open]').forEach(item=>item.open=false);
