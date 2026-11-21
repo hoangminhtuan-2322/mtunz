@@ -1384,11 +1384,29 @@ function adminRegistrations(){const rows=state.adminData||[];
  ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td data-sort-value="${Number(r.created_at)}">${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
+/* Admin join timestamps must be unambiguous and independent of browser timezone.
+   Only this column uses the complete date; compact dates elsewhere stay unchanged. */
+function adminJoinedAt(timestamp){
+ const seconds=Number(timestamp);
+ if(!Number.isFinite(seconds)||seconds<=0)return '<span class="hint">Chưa có dữ liệu</span>';
+ const instant=new Date(seconds*1000);
+ if(!Number.isFinite(instant.getTime()))return '<span class="hint">Chưa có dữ liệu</span>';
+ const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
+  timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric',
+  hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+ }).formatToParts(instant).map(({type,value})=>[type,value]));
+ const fullDate=parts.day+'/'+parts.month+'/'+parts.year;
+ const fullTime=parts.hour+':'+parts.minute+':'+parts.second;
+ return '<time class="admin-member-joined" datetime="'+instant.toISOString()+
+  '" title="'+fullTime+' '+fullDate+' (UTC+7)">'+
+  '<strong class="admin-member-joined-date">'+fullDate+'</strong>'+
+  '<span class="admin-member-joined-clock">'+fullTime+' <small>UTC+7</small></span></time>';
+}
 function adminUsers(){const data=state.adminData||[];
  return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên đăng nhập, tên hiển thị hoặc ID" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">${u.display_name?esc(u.display_name)+' · ':''}#${u.id}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${adminJoinedAt(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
