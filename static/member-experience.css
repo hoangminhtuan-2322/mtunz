@@ -340,3 +340,7 @@
  .shell:not(.admin-shell) .chat-header-more summary,
  .shell:not(.admin-shell) .chat-priority-card{transition:none!important}
 }
+
+.shell:not(.admin-shell) .conversation .main-head > [data-act="search-chat"] {
+ display:inline-flex;align-items:center;justify-content:center;flex:none;
+}

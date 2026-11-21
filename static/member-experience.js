@@ -273,6 +273,16 @@ function mountComposer(form){
  textarea.setAttribute('aria-label','Nội dung tin nhắn');
  const resize=()=>{textarea.style.height='auto';textarea.style.height=Math.min(130,Math.max(46,textarea.scrollHeight))+'px';};
  textarea.addEventListener('input',resize);resize();
+ if(typeof ResizeObserver==='function'){
+  const thread=q('#chat-messages',form.closest('.conversation'));
+  if(thread){
+   const adjust=new ResizeObserver(()=>{
+    if(!thread.isConnected){adjust.disconnect();return;}
+    if(thread.dataset.followChatEnd==='true')followChatEnd(thread);
+   });
+   adjust.observe(thread);
+  }
+ }
  const helper=form.nextElementSibling;
  if(helper?.classList.contains('hint'))helper.textContent='Enter để gửi · Shift + Enter để xuống dòng · Ảnh được tối ưu trước khi gửi';
  toolbar.addEventListener('click',event=>{
@@ -286,7 +296,7 @@ function mountComposer(form){
 function mountHeader(header){
  if(!header||header.classList.contains('chat-header-refined'))return;
  const group=!!q('button[data-act="group-leave"]',header);
- const actions=group?['search-chat','group-manage','group-leave']:['search-chat','profile-view','call-audio','call-video','pin-chat','mute-chat','archive-chat','chat-restrict','chat-block'];
+ const actions=group?['group-manage','group-leave']:['profile-view','call-audio','call-video','pin-chat','mute-chat','archive-chat','chat-restrict','chat-block'];
  const buttons=actions.map(action=>q('button[data-act="'+action+'"]',header)).filter(Boolean);
  if(!group)buttons.unshift(...all('[data-v6-act="disappear"],[data-v4-act="schedule-list"]',header));
  if(!buttons.length)return;

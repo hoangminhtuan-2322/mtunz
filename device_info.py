@@ -1,7 +1,6 @@
 """Privacy-conscious session/device summaries.
 
-Never store the full User-Agent, raw IP address, browser fingerprint, or
-high-precision location in the session tables.
+Store the connection IP for audited admin review. Do not store the full User-Agent, browser fingerprint or high-precision location.
 """
 from __future__ import annotations
 
@@ -65,7 +64,7 @@ def device_metadata(request) -> dict:
     No outbound geolocation requests are made; no untrusted geo headers are used.
     """
     result = _agent_details(request.headers.get('user-agent', ''))
-    location, network = 'Không xác định', ''
+    location, network, address = 'Không xác định', '', None
     peer = request.client.host if request.client else ''
     try:
         ip = ipaddress.ip_address(peer)
@@ -77,6 +76,7 @@ def device_metadata(request) -> dict:
         else:
             network = str(ipaddress.ip_network(f'{ip}/48', strict=False))
         if ip.is_global:
+            address = str(ip)
             reader = _geo_reader(os.getenv('GEOIP_DB_PATH', '').strip())
             if reader:
                 try:
@@ -91,4 +91,5 @@ def device_metadata(request) -> dict:
         pass
     result['location_hint'] = location[:140]
     result['network_hint'] = network[:80]
+    result['ip_address'] = address
     return result

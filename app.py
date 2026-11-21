@@ -625,11 +625,11 @@ def issue_session(c, uid, request):
     is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(uid,))['is_admin'])
     expires = created + (2 * 3600 if is_admin else 7 * 86400)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
-                 device_name,device_type,browser,os_name,location_hint,network_hint)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                 device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
               (digest(raw), uid, expires, created, created,
                info['device_name'], info['device_type'], info['browser'], info['os_name'],
-               info['location_hint'], info['network_hint']))
+               info['location_hint'], info['network_hint'], info['ip_address']))
     return raw
 
 
@@ -878,11 +878,11 @@ async def auth_pin(request: Request, body: PinLogin):
             info = device_metadata(request)
             created = now()
             c.execute('''INSERT INTO trusted_devices(token_hash,user_id,expires_at,created_at,last_seen,
-                         device_name,device_type,browser,os_name,location_hint,network_hint)
-                         VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                         device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (digest(saved),r['user_id'],created+REMEMBER_SECONDS,created,created,
                        info['device_name'],info['device_type'],info['browser'],info['os_name'],
-                       info['location_hint'],info['network_hint']))
+                       info['location_hint'],info['network_hint'],info['ip_address']))
     if pending:
         await hub.admins('admin-approval-request')
         return pending
@@ -996,9 +996,9 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
                 info = device_metadata(request)
                 c.execute('''UPDATE trusted_devices SET failed_attempts=0,locked_until=0,
                              last_seen=?,device_name=?,device_type=?,browser=?,os_name=?,
-                             location_hint=?,network_hint=? WHERE token_hash=?''',
+                             location_hint=?,network_hint=?,ip_address=? WHERE token_hash=?''',
                           (now(),info['device_name'],info['device_type'],info['browser'],
-                           info['os_name'],info['location_hint'],info['network_hint'],digest(saved)))
+                           info['os_name'],info['location_hint'],info['network_hint'],info['ip_address'],digest(saved)))
                 raw = issue_session(c,r['user_id'],request)
                 is_admin = bool(r['is_admin'])
     if error:
@@ -1704,7 +1704,7 @@ async def admin_user_details(request:Request,uid:int):
 
 @app.get('/api/admin/users/{uid}/session-security')
 async def admin_user_session_security(request:Request,uid:int):
-    """Admin-only, audited review of stored truncated network and optional GeoIP hints."""
+    """Admin-only, audited review of connection IP and optional GeoIP hints."""
     admin=require_admin(request)
     throttle(request,'admin-session-security',30,3600,str(admin['id']))
     with db() as c:
@@ -1712,7 +1712,7 @@ async def admin_user_session_security(request:Request,uid:int):
         if not target:
             raise HTTPException(404,'Không tìm thấy người dùng.')
         fields=('device_label,device_name,device_type,browser,os_name,'
-                'network_hint,location_hint,created_at,last_seen,expires_at')
+                'ip_address,network_hint,location_hint,created_at,last_seen,expires_at')
         sessions=many(c,f'''SELECT {fields} FROM sessions
                           WHERE user_id=? AND expires_at>?
                           ORDER BY created_at DESC LIMIT 30''',(uid,now()))

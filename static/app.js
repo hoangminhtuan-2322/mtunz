@@ -905,7 +905,7 @@ function conversation(){
  const f=state.friends.find(x=>x.other_id===state.selected&&x.state==='accepted');
  if(!f)return welcomeEmpty();
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
- <div class="thread" id="chat-messages">${renderBubbles()}</div>
+ <div class="thread" id="chat-messages" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
@@ -930,12 +930,43 @@ function clearSentComposer(form,key){
  const extra=$('#compose-extra');
  if(extra)extra.innerHTML=composerExtras();
 }
+function chatNearEnd(box){return box.scrollHeight-box.clientHeight-box.scrollTop<145;}
+function followChatEnd(box){
+ if(!box)return;
+ box.dataset.followChatEnd='true';
+ box.scrollTo({top:box.scrollHeight,behavior:'instant'});
+}
+function settleChatEnd(box){
+ followChatEnd(box);
+ box.dataset.positioningChat='true';
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  if(!box.isConnected)return;
+  if(box.dataset.positioningChat==='true')followChatEnd(box);
+  delete box.dataset.positioningChat;
+ }));
+}
+document.addEventListener('scroll',event=>{
+ if(event.target.id==='chat-messages'&&!event.target.dataset.positioningChat)
+  event.target.dataset.followChatEnd=String(chatNearEnd(event.target));
+},true);
+for(const eventName of ['wheel','touchmove']){
+ document.addEventListener(eventName,event=>{
+  const box=event.target.closest?.('#chat-messages');
+  if(box)delete box.dataset.positioningChat;
+ },{capture:true,passive:true});
+}
+document.addEventListener('load',event=>{
+ const box=event.target.closest?.('#chat-messages');
+ if(box?.dataset.followChatEnd==='true')followChatEnd(box);
+},true);
 function renderMessageThread(scroll=false){
  const box=$('#chat-messages');if(!box)return;
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
  const previousPosition=box.scrollTop;
  box.innerHTML=renderBubbles();
- box.scrollTo({top:scroll||near?box.scrollHeight:previousPosition,behavior:'instant'});
+ if(scroll)settleChatEnd(box);
+ else if(near)followChatEnd(box);
+ else box.scrollTo({top:previousPosition,behavior:'instant'});
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
@@ -955,7 +986,8 @@ function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,fol
    }
    box.append(row);
  }
- box.scrollTo({top:follow||near?box.scrollHeight:position,behavior:'instant'});
+ if(follow||near)followChatEnd(box);
+ else box.scrollTo({top:position,behavior:'instant'});
 }
 function appendDirectMessage(message){
  if(!message||!state.selected||state.tab!=='messages')return;
@@ -1165,6 +1197,8 @@ function worldComingSoon(){
  </div>`;
 }
 function renderApp(){
+ const oldThread=$('#chat-messages');
+ const reading=oldThread&&!chatNearEnd(oldThread)?{key:oldThread.dataset.chatKey,top:oldThread.scrollTop}:null;
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
@@ -1179,7 +1213,11 @@ function renderApp(){
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
- $('#chat-messages')?.scrollTo(0,1e7);
+ const thread=$('#chat-messages');
+ if(thread){
+  if(reading&&reading.key===thread.dataset.chatKey)thread.scrollTo({top:reading.top,behavior:'instant'});
+  else followChatEnd(thread);
+ }
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
 async function goTab(tab){
@@ -1723,7 +1761,7 @@ async function userDetails(uid){
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Kiểm tra bảo mật thiết bị</h3>
-     <p class="hint">IP rút gọn và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
+     <p class="hint">Địa chỉ IP và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
      <button type="button" class="btn ghost sm" data-act="admin-device-security" data-id="${u.id}">${icon('lock',15)} Xem thông tin bảo mật phiên</button>
    </div>
    <div class="admin-user-actions">
@@ -1771,7 +1809,7 @@ async function showAdminSessionSecurity(uid){
   return entries.map(s=>`<article class="admin-device-security-entry">
    <strong>${esc(s.device_label||s.device_name||'Thiết bị chưa đặt tên')}</strong>
    <small>${esc(kind)} · ${esc(s.os_name||'Không rõ hệ điều hành')} · ${esc(s.browser||'Không rõ trình duyệt')}</small>
-   ${adminDetailRow('Mạng (IP rút gọn)',esc(s.network_hint||'Không có dữ liệu'))}
+   ${adminDetailRow(s.ip_address?'Địa chỉ IP':'Mạng (dữ liệu phiên cũ)',esc(s.ip_address||s.network_hint||'Không có dữ liệu'))}
    ${adminDetailRow('Vị trí ước tính',esc(s.location_hint||'Không xác định'))}
    ${adminDetailRow('Hoạt động gần nhất',deadlineDate(s.last_seen))}
    ${adminDetailRow('Hết hạn',deadlineDate(s.expires_at))}
@@ -1779,7 +1817,7 @@ async function showAdminSessionSecurity(uid){
  };
  modal({
   title:'Bảo mật phiên · '+data.username,
-  description:'Chỉ Admin có quyền truy cập. Dữ liệu mạng đã rút gọn, vị trí GeoIP có thể không xác định. Lượt xem được ghi nhật ký.',
+  description:'Chỉ Admin có quyền truy cập. Phiên cũ có thể chỉ có IP rút gọn. Vị trí GeoIP là ước tính. Lượt xem được ghi nhật ký.',
   content:`<div class="admin-device-security-view">
    <h3>Phiên đăng nhập (${data.sessions.length})</h3>
    ${summary(data.sessions,'Phiên đăng nhập')}
