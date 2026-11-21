@@ -88,3 +88,22 @@ def test_websocket_refuses_oversized_and_invalid_json_events():
         with pytest.raises(WebSocketDisconnect) as caught:
             socket.receive_json()
         assert caught.value.code == 1009
+
+
+def test_only_public_static_assets_can_be_cached_without_cookie_leakage():
+    # A static response is identical for Admin, members and guests. No guest
+    # identifier should ever be issued in a shared-cacheable response.
+    guest = TestClient(app)
+    asset = guest.get("/static/favicon.svg?v=8.0")
+    assert asset.status_code == 200
+    assert asset.headers["Cache-Control"] == "public, max-age=600"
+    assert "set-cookie" not in asset.headers
+    assert asset.headers["X-Content-Type-Options"] == "nosniff"
+    assert "frame-ancestors 'none'" in asset.headers["Content-Security-Policy"]
+
+    page = guest.get("/")
+    assert page.headers["Cache-Control"] == "no-store"
+    assert "set-cookie" in page.headers
+    assert guest.get("/api/me").headers["Cache-Control"] == "no-store"
+    assert guest.get("/terms").headers["Cache-Control"] == "no-store"
+    assert guest.get("/privacy").headers["Cache-Control"] == "no-store"
