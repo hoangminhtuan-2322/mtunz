@@ -407,9 +407,23 @@ function connectSocket(){
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
    if(t==='message'&&data.message.sender_id!==state.user?.id)notifyBrowser('Có tin nhắn từ bạn bè');
    if(state.user&&!state.user.is_admin)await extraSocket(data);
-   if(t==='support-updated'||t==='support-message'){
-     if(state.user?.is_admin){await loadAdmin();}
-     else if(state.supportTicket && (!data.ticket_id||data.ticket_id===state.supportTicket)){await loadTicketMessages();}
+   if(t==='support-message'){
+     const ticketId=Number(data.ticket_id);
+     if(state.user?.is_admin){
+       if(state.adminTab==='tickets'&&state.adminTicket===ticketId){
+         if(data.message)appendSupportMessage(true,ticketId,data.message);
+         else await refreshAdminTicketThread(ticketId);
+       }
+     }else if(state.supportTicket===ticketId){
+       if(data.message)appendSupportMessage(false,ticketId,data.message);
+       else await loadTicketMessages();
+     }
+     return;
+   }
+   if(t==='support-updated'){
+     if(state.user?.is_admin&&state.adminTab==='tickets')await refreshAdminTicketsSidebar();
+     else if(state.supportTicket&&!state.user)await loadTickets();
+     return;
    }
  };
  socket.onclose=()=>{if(state.ws===socket)socketRetry=setTimeout(()=>connectSocket(),2500);};
@@ -850,10 +864,15 @@ function renderAuth(){
  }
 }
 async function loadTickets(){const r=await api('/api/support/tickets');state.tickets=r.tickets;}
-async function loadTicketMessages(){if(!state.supportTicket)return;const r=await api(`/api/support/tickets/${state.supportTicket}/messages`);state.ticketMessages=r.messages;
+async function loadTicketMessages(){
+ const ticketId=state.supportTicket;if(!ticketId)return;
+ const r=await api(`/api/support/tickets/${ticketId}/messages`);
+ if(state.supportTicket!==ticketId)return;
+ state.ticketMessages=r.messages;
+ if(paintSupportMessages(false,ticketId,r.messages))return;
  if(state.mode==='support'&&!state.user)renderAuth();
  else if(state.tab==='support')renderApp();
- const box=$('#support-list');if(box)box.scrollTop=box.scrollHeight;
+ const box=supportThreadBox(false,ticketId);if(box)box.scrollTop=box.scrollHeight;
 }
 async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
 
@@ -1476,6 +1495,28 @@ function adminDeletionQueue(){
   <td><span class="pill ${item.purge_at*1000<=Date.now()?'bad':'warn'}">${item.purge_at*1000<=Date.now()?'Đến hạn xử lý':'Trong thời gian cân nhắc'}</span></td>
   <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
   </tbody></table></div></div>`;
+}
+async function refreshAdminTicketThread(ticketId){
+ if(state.adminTab!=='tickets'||state.adminTicket!==ticketId)return;
+ const r=await api(`/api/admin/tickets/${ticketId}/messages`);
+ if(state.adminTab!=='tickets'||state.adminTicket!==ticketId)return;
+ state.adminTicketMessages=r.messages;
+ paintSupportMessages(true,ticketId,r.messages);
+}
+async function refreshAdminTicketsSidebar(){
+ if(!state.user?.is_admin||state.adminTab!=='tickets')return;
+ const selected=state.adminTicket;
+ const filter=encodeURIComponent(state.adminQueueFilters?.tickets||'all');
+ const result=await api('/api/admin/tickets?status='+filter);
+ if(state.adminTab!=='tickets'||state.adminTicket!==selected)return;
+ state.adminData=result.tickets;
+ const oldList=$('.admin-ticket-layout .ticket-list');
+ if(!oldList)return;
+ const scroll=oldList.scrollTop;
+ const template=document.createElement('template');
+ template.innerHTML=adminTickets();
+ const fresh=template.content.querySelector('.ticket-list');
+ if(fresh){oldList.innerHTML=fresh.innerHTML;oldList.scrollTop=scroll;}
 }
 function adminTickets(){const tickets=state.adminData||[];
  const visible=tickets;
