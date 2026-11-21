@@ -218,3 +218,4 @@ jobs:
           node tests/url_cleanup_browser.cjs
           node tests/world_experience_browser.cjs
           node tests/css_bundle_browser.cjs
+          node tests/world_realtime_browser.cjs
