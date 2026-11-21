@@ -21,3 +21,15 @@
 - **Enter** gửi tin (không tạo dòng trống), **Shift+Enter** xuống dòng. Trong lúc bộ gõ IME đang ghép chữ, giữ phím lặp, tải tệp hoặc nút Gửi bị vô hiệu hóa, không kích hoạt gửi bất thường.
 - Ở viewport tối đa **800px** và thiết bị cảm ứng không có con trỏ chính xác, **không thay đổi** bố cục hiện hữu hay hành vi Enter trên bàn phím mobile.
 - Kiểm thử hồi quy cả trạng thái mở/đóng phòng, lớp quyền, thao tác gửi bằng chuột, danh sách phòng, bình chọn và báo cáo. Không cần thay đổi backend để sửa hai hành vi giao diện này.
+
+## Quy ước xác minh PIN Admin
+
+- Khi Admin đã thiết lập PIN, **các thao tác quản trị thường xuyên** (cấu hình Chat thế giới, xử lý báo cáo, giới hạn tài khoản, điều chỉnh thông tin người dùng, gửi thông báo, thu hồi phiên) chỉ hiện một ô PIN; máy chủ bắt buộc xác minh PIN mới chấp nhận thay đổi.
+- Không giảm bảo mật vì thay UI: dùng bộ xác thực PIN phía máy chủ, giới hạn lần nhập sai, khóa tạm và ghi nhật ký; không lưu PIN trên browser.
+- Các hoạt động nhạy cảm như cấp mã đặt lại mật khẩu/PIN cho người khác hoặc xóa tài khoản/dữ liệu không thể hoàn tác giữ xác minh mạnh hơn (mật khẩu và PIN hoặc quy trình xác nhận đặc biệt).
+- Trong trường hợp tài khoản Admin cũ chưa thiết lập PIN, luồng mật khẩu trước đây vẫn hoạt động để tránh làm gián đoạn tính năng; nên thiết lập PIN để sử dụng giao diện mới.
+
+## Quy ước URL sạch
+
+- Nếu người dùng truy cập kèm `utm_source=chatgpt.com`, loại bỏ **duy nhất** tham số này bằng History API và không reload, không đổi đường dẫn, không xóa query khác hoặc hash fragment.
+- Không thay đổi hệ thống đăng nhập, session cookie, bộ định tuyến hay API khi làm sạch URL.
