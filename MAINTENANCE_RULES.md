@@ -33,3 +33,12 @@
 
 - Nếu người dùng truy cập kèm `utm_source=chatgpt.com`, loại bỏ **duy nhất** tham số này bằng History API và không reload, không đổi đường dẫn, không xóa query khác hoặc hash fragment.
 - Không thay đổi hệ thống đăng nhập, session cookie, bộ định tuyến hay API khi làm sạch URL.
+
+## Xóa tin nhắn riêng và nhóm (V11)
+
+- Mỗi tin nhắn trong chat cá nhân/nhóm (kể cả tin đã thu hồi) phải có lối tắt **Xóa** dễ nhìn, dùng được trên desktop lẫn mobile. Không giấu hoàn toàn phía sau hover.
+- Phân biệt rõ: **Xóa ở phía tôi** chỉ ẩn ở tài khoản đang sử dụng (sender hoặc recipient/member có quyền), không xóa tin cho người khác; **Thu hồi với mọi người** chỉ người gửi được làm, theo API DELETE cũ.
+- Quyền ẩn/thu hồi phải được máy chủ kiểm tra; chỉ xóa riêng không sửa nội dung gốc, ID tin nhắn, người gửi hay quyền quản trị. Cấm ẩn tin của người lạ hoặc nhóm không còn là thành viên.
+- Tin bị ẩn không được lộ lại qua lịch sử, xem trước hội thoại, bộ đếm chưa đọc, tìm kiếm, bookmark hoặc đường dẫn tải đính kèm của người đã ẩn. Tự đồng bộ giữa các phiên của cùng tài khoản; không thông báo việc ẩn riêng cho người khác.
+- Migrations chỉ **bổ sung** bảng `message_hidden`; không xóa dữ liệu trước đây, không đổi schema hai bảng tin nhắn cũ. Xóa người dùng/nhóm rỗng phải dọn các bản ghi ẩn mồ côi.
+- Kiểm thử API/migration trên SQLite và Neon PostgreSQL CI; kiểm thử xác nhận xóa trên 320/390/768/1440px; không tự merge hoặc thử xóa dữ liệu thật trên Render.
