@@ -28,3 +28,17 @@ def test_chat_image_compression_allowed_by_csp_without_untrusted_scripts():
         assert "script-src 'self'" in csp
         assert "object-src 'none'" in csp
         assert "frame-ancestors 'none'" in csp
+
+
+def test_home_removes_only_chatgpt_referral_query():
+    with TestClient(app) as client:
+        response = client.get('/?utm_source=chatgpt.com')
+        assert response.status_code == 200
+        assert response.url.path == '/' and not response.url.query
+        assert len(response.history) == 1
+
+        response = client.get('/?label=a%20b&utm_source=chatgpt.com&utm_source=other&tag=1&tag=2',
+                              follow_redirects=False)
+        assert response.status_code == 302
+        assert response.headers['location'] == '/?label=a%20b&utm_source=other&tag=1&tag=2'
+        assert client.get('/?utm_source=other', follow_redirects=False).status_code == 200

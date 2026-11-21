@@ -22,7 +22,8 @@ from typing import Literal
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from device_info import device_metadata
@@ -528,7 +529,15 @@ async def health():
     return result
 
 @app.get('/')
-async def home():
+async def home(request: Request):
+    if 'chatgpt.com' in request.query_params.getlist('utm_source'):
+        remaining = []
+        for part in request.url.query.split('&'):
+            key, _, value = part.partition('=')
+            if (unquote_plus(key), unquote_plus(value)) != ('utm_source', 'chatgpt.com'):
+                remaining.append(part)
+        query = '&'.join(remaining)
+        return RedirectResponse('/?' + query if query else '/', status_code=302)
     return FileResponse(ROOT / 'static' / 'index.html')
 
 
