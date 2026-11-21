@@ -188,10 +188,11 @@ def test_pin_only_routine_admin_actions_preserve_strong_recovery_stepup():
     uid=member.get('/api/me').json()['user']['id']
     user_edit={
         'display_name':'Tên được duyệt','bio':'Hồ sơ đã chỉnh',
-        'phone':'','email':'','reason':'Yêu cầu thay đổi thông tin'}
+        'phone':'0912345678','email':'pin-routine@example.com','reason':'Yêu cầu thay đổi thông tin'}
     url=f'/api/admin/users/{uid}/edit'
     assert admin.post(url,json={**user_edit,'admin_password':'mtunz7'}).status_code==401
-    assert admin.post(url,json={**user_edit,'admin_pin':'2345'}).status_code==200
+    edited=admin.post(url,json={**user_edit,'admin_pin':'2345'})
+    assert edited.status_code==200,edited.text
     assert admin.post(f'/api/admin/users/{uid}/sessions/revoke',json={
         'reason':'Yêu cầu bảo mật thành viên','admin_pin':'2345'}).status_code==200
 
