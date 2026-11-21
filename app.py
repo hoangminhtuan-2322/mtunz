@@ -486,7 +486,10 @@ async def cookies_and_origin(request: Request, call_next):
                 return JSONResponse({'detail':'Hệ thống đang ở chế độ an toàn khẩn cấp. Chỉ cho phép xem dữ liệu.'},
                                     status_code=423,headers={'Cache-Control':'no-store'})
     result = await call_next(request)
-    if request.cookies.get('g') != gid:
+    # Static CSS/JS/images are public, identical for all users and must never
+    # set/rotate a guest cookie: that would make shared proxy caches unsafe.
+    is_public_asset = request.method == 'GET' and request.url.path.startswith('/static/')
+    if not is_public_asset and request.cookies.get('g') != gid:
         result.set_cookie('g', gid, max_age=365*86400, httponly=True, secure=COOKIE_SECURE, samesite='lax', path='/')
     result.headers['X-Content-Type-Options'] = 'nosniff'
     if COOKIE_SECURE:
@@ -497,7 +500,11 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
     result.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
     result.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
-    result.headers['Cache-Control'] = 'no-store'
+    # Cache only public static assets for a short, bounded time. Never cache
+    # HTML, API responses, private downloads, sign-in or user-generated media.
+    result.headers['Cache-Control'] = (
+        'public, max-age=600' if is_public_asset else 'no-store'
+    )
     result.headers['X-Robots-Tag'] = 'noindex, nofollow'
     result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
