@@ -899,9 +899,6 @@ function appRail(){
           ${secondary.map(item).join('')}
         </div>
       </div>
-      <button type="button" class="rail-btn rail-mobile-profile ${state.tab==='profile'?'active':''}" data-act="app-tab" data-tab="profile" aria-label="Hồ sơ cá nhân" aria-current="${state.tab==='profile'?'page':'false'}" title="Hồ sơ cá nhân">
-        <span class="rail-icon" aria-hidden="true">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</span><span class="rail-text">Hồ sơ</span>
-      </button>
     </nav>
     <div class="rail-foot">
       <button type="button" class="rail-account rail-profile-button ${state.tab==='profile'?'active':''}" data-act="app-tab" data-tab="profile" aria-label="Hồ sơ cá nhân">
@@ -912,7 +909,13 @@ function appRail(){
     </div>
   </aside>`;
 }
-function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
+function sideBar(){return `<aside class="side"><div class="side-top">
+  <button type="button" class="mobile-profile-top" data-act="app-tab" data-tab="profile" title="Mở hồ sơ cá nhân" aria-label="Mở hồ sơ cá nhân của ${esc(state.user.display_name||state.user.username)}">
+    <span class="mobile-profile-avatar">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</span>
+    <span class="mobile-profile-identity"><strong>${esc(state.user.display_name||state.user.username)}</strong><small>@${esc(state.user.username)} · Xem hồ sơ</small></span>
+    <span class="mobile-profile-arrow" aria-hidden="true">${icon('chevron',17)}</span>
+  </button>
+  <div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
   <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" type="search" id="side-filter" aria-label="Tìm hội thoại cá nhân hoặc nhóm" placeholder="Tìm người hoặc nhóm…" value="${esc(state.sideFilter||'')}" autocomplete="off"></div>
   <div class="inbox-filters" role="group" aria-label="Lọc hội thoại" data-filter="${state.inboxFilter||'all'}">${Object.entries(inboxFilters).map(([key,label])=>`<button type="button" data-act="inbox-filter" data-filter="${key}" aria-pressed="${key===(state.inboxFilter||'all')}">${label}</button>`).join('')}</div></div>
   <div class="side-scroll" id="side-items">${sideBody()}</div>
