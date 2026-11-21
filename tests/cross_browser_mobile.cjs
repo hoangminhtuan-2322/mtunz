@@ -46,6 +46,10 @@ const {chromium,webkit}=require('playwright-core');
       await field.fill('Tin nhắn thử');
       await field.press('Enter');
       assert.equal(await field.inputValue(),'Tin nhắn thử\n',name+' mobile Enter must remain newline');
+      // The existing mobile layout intentionally hides bottom navigation
+      // while the keyboard is focused. Dismiss editing before changing tabs.
+      await field.evaluate(el=>el.blur());
+      await page.waitForFunction(()=>!document.body.classList.contains('mt-mobile-editing'));
       await profile.click();
       await page.locator('.profile-page').waitFor({state:'visible'});
      }else{
