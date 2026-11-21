@@ -21,12 +21,13 @@ from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from device_info import device_metadata
+import registration_email
 
 ROOT = Path(__file__).resolve().parent
 DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
@@ -658,11 +659,11 @@ def issue_session(c, uid, request):
         require_member_service(c, lock=True)
     expires = created + (2 * 3600 if is_admin else 7 * 86400)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
-                 device_name,device_type,browser,os_name,location_hint,network_hint)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                 device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
               (digest(raw), uid, expires, created, created,
                info['device_name'], info['device_type'], info['browser'], info['os_name'],
-               info['location_hint'], info['network_hint']))
+               info['location_hint'], info['network_hint'], info['ip_address']))
     if not is_admin and not POSTGRES_MODE:
         require_member_service(c)
     return raw
@@ -771,7 +772,13 @@ async def registration_request(request: Request, body: RegistrationRequest):
                 raise HTTPException(409,'Tên này đang được chờ xét duyệt.')
             if existing['guest_id'] == request.state.gid and existing['status'] in ('pending','approved'):
                 # Existing requests from older versions can add contact details.
-                c.execute('UPDATE registrations SET phone=?,email=? WHERE id=?',(phone,email,existing['id']))
+                if email != (existing['email'] or ''):
+                    if existing['status']=='approved' and registration_email.enabled():
+                        raise HTTPException(409,'Không thể thay email của yêu cầu đã duyệt. Vui lòng liên hệ hỗ trợ.')
+                    c.execute('''UPDATE registrations SET phone=?,email=?,email_verified_at=NULL,email_code_hash=NULL,
+                                 email_code_attempts=0 WHERE id=?''',(phone,email,existing['id']))
+                else:
+                    c.execute('UPDATE registrations SET phone=? WHERE id=?',(phone,existing['id']))
                 return {'status': existing['status'], 'username': name,'phone':phone,'email':email}
             if existing['status'] == 'completed':
                 raise HTTPException(409,'Tên tài khoản đã được sử dụng.')
@@ -786,7 +793,7 @@ async def registration_request(request: Request, body: RegistrationRequest):
 async def registration_status(request: Request):
     with db() as c:
         rows = many(c, "SELECT username,status,created_at,phone,email FROM registrations WHERE guest_id=? AND status!='completed' ORDER BY id DESC LIMIT 5", (request.state.gid,))
-    return {'requests':rows}
+    return {'requests':rows,'email_verification_enabled':registration_email.enabled()}
 
 
 class RegisterComplete(BaseModel):
@@ -796,6 +803,69 @@ class RegisterComplete(BaseModel):
     pin_length: int
     phone: str | None = Field(default=None,max_length=40)
     accepted_terms: bool = False
+    email_code: str = Field(default='',max_length=6)
+
+
+def issue_registration_email_code(rid, email):
+    sent = now()
+    code = f'{secrets.randbelow(1000000):06d}'
+    with db() as c:
+        result=c.execute("""UPDATE registrations SET email_code_hash=?,email_code_sent=?,email_code_attempts=0
+            WHERE id=? AND email=? AND status='approved' AND email_verified_at IS NULL AND email_code_sent<=?""",
+            (hash_secret(code),sent,rid,email,sent-60))
+        if not result.rowcount:
+            raise HTTPException(429,'Vui lòng đợi 60 giây trước khi gửi lại mã.')
+    try:
+        registration_email.send_code(email,code)
+    except OSError as exc:
+        raise HTTPException(503,'Chưa gửi được email. Vui lòng thử lại sau.') from exc
+
+
+def send_approved_registration_code(rid,email):
+    try:
+        issue_registration_email_code(rid,email)
+    except HTTPException:
+        pass  # The member can use the resend button after approval.
+
+
+@app.post('/api/registration/email-code')
+async def resend_registration_code(request:Request,body:UsernameIn):
+    name=norm_username(body.username)
+    if not registration_email.enabled():
+        raise HTTPException(503,'Chức năng xác nhận email chưa được cấu hình.')
+    throttle(request,'registration-email',8,3600,request.state.gid)
+    with db() as c:
+        require_member_service(c)
+        row=one(c,'SELECT id,email,email_verified_at FROM registrations WHERE username=? AND guest_id=? AND status=?',
+                (name,request.state.gid,'approved'))
+    if not row or not row['email']:
+        raise HTTPException(403,'Yêu cầu chưa được duyệt hoặc chưa có email.')
+    if not row['email_verified_at']:
+        await asyncio.to_thread(issue_registration_email_code,row['id'],row['email'])
+    return {'ok':True,'already_verified':bool(row['email_verified_at'])}
+
+
+def verify_registration_email(request,name,code):
+    if not registration_email.enabled():
+        return
+    with db() as c:
+        r=one(c,"SELECT * FROM registrations WHERE username=? AND guest_id=? AND status='approved'",
+              (name,request.state.gid))
+        if not r or not r['email'] or r['email_verified_at']:
+            return
+        if not re.fullmatch(r'[0-9]{6}',code) or not r['email_code_hash']:
+            raise HTTPException(422,'Nhập mã xác nhận email gồm 6 chữ số.')
+        attempt=c.execute("""UPDATE registrations SET email_code_attempts=email_code_attempts+1
+            WHERE id=? AND status='approved' AND email_code_hash=? AND email_code_sent>? AND email_code_attempts<5""",
+            (r['id'],r['email_code_hash'],now()-600))
+        if not attempt.rowcount:
+            raise HTTPException(422,'Mã hết hạn hoặc đã thử quá 5 lần. Hãy gửi lại mã.')
+        valid=verify_secret(r['email_code_hash'],code)
+        if valid:
+            c.execute('UPDATE registrations SET email_verified_at=?,email_code_hash=NULL WHERE id=?',
+                      (now(),r['id']))
+    if not valid:
+        raise HTTPException(422,'Mã xác nhận email không chính xác.')
 
 
 @app.post('/api/registration/complete')
@@ -803,6 +873,8 @@ async def register_complete(request: Request, body: RegisterComplete):
     name = norm_username(body.username)
     ensure_password(body.password)
     ensure_pin(body.pin,body.pin_length)
+    if body.accepted_terms:
+        verify_registration_email(request,name,body.email_code)
     with db() as c:
         require_member_service(c)
         r = one(c, 'SELECT * FROM registrations WHERE username=? AND guest_id=?', (name,request.state.gid))
@@ -812,6 +884,8 @@ async def register_complete(request: Request, body: RegisterComplete):
             raise HTTPException(422,'Bạn cần đồng ý với Điều khoản sử dụng và Chính sách quyền riêng tư.')
         phone=normalize_phone(r['phone'] or body.phone)
         email=normalize_email(r['email'])
+        if registration_email.enabled() and email and not r['email_verified_at']:
+            raise HTTPException(422,'Email chưa được xác nhận.')
         ensure_phone_available(c, phone)
         total, reserved, max_users = registration_capacity(c)
         if total >= max_users:
@@ -922,11 +996,11 @@ async def auth_pin(request: Request, body: PinLogin):
             info = device_metadata(request)
             created = now()
             c.execute('''INSERT INTO trusted_devices(token_hash,user_id,expires_at,created_at,last_seen,
-                         device_name,device_type,browser,os_name,location_hint,network_hint)
-                         VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                         device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
                       (digest(saved),r['user_id'],created+REMEMBER_SECONDS,created,created,
                        info['device_name'],info['device_type'],info['browser'],info['os_name'],
-                       info['location_hint'],info['network_hint']))
+                       info['location_hint'],info['network_hint'],info['ip_address']))
     if pending:
         await hub.admins('admin-approval-request')
         return pending
@@ -1041,9 +1115,9 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
                 info = device_metadata(request)
                 c.execute('''UPDATE trusted_devices SET failed_attempts=0,locked_until=0,
                              last_seen=?,device_name=?,device_type=?,browser=?,os_name=?,
-                             location_hint=?,network_hint=? WHERE token_hash=?''',
+                             location_hint=?,network_hint=?,ip_address=? WHERE token_hash=?''',
                           (now(),info['device_name'],info['device_type'],info['browser'],
-                           info['os_name'],info['location_hint'],info['network_hint'],digest(saved)))
+                           info['os_name'],info['location_hint'],info['network_hint'],info['ip_address'],digest(saved)))
                 raw = issue_session(c,r['user_id'],request)
                 is_admin = bool(r['is_admin'])
     if error:
@@ -1680,7 +1754,7 @@ class Decision(BaseModel):
 
 
 @app.post('/api/admin/registrations/{rid}/decision')
-async def admin_decision(request:Request,rid:int,body:Decision):
+async def admin_decision(request:Request,rid:int,body:Decision,background:BackgroundTasks):
     admin=require_admin(request)
     with db() as c:
         r=one(c,'SELECT * FROM registrations WHERE id=?',(rid,))
@@ -1692,7 +1766,11 @@ async def admin_decision(request:Request,rid:int,body:Decision):
         c.execute('UPDATE registrations SET status=?,decided_at=?,decided_by=? WHERE id=?',
                   (status,now(),admin['id'],rid))
         admin_log(c,admin['id'],'registration_'+status,r['username'])
-    await hub.guest(r['guest_id'],'registration-updated',username=r['username'],status=status)
+    email_required=bool(body.approve and r['email'] and registration_email.enabled())
+    if email_required:
+        background.add_task(send_approved_registration_code,rid,r['email'])
+    await hub.guest(r['guest_id'],'registration-updated',username=r['username'],status=status,
+                    email_verification_required=email_required)
     await hub.admins('registration-updated')
     return {'ok':True}
 
@@ -1781,7 +1859,7 @@ async def admin_user_details(request:Request,uid:int):
 
 @app.get('/api/admin/users/{uid}/session-security')
 async def admin_user_session_security(request:Request,uid:int):
-    """Admin-only, audited review of stored truncated network and optional GeoIP hints."""
+    """Admin-only, audited review of connection IP and optional GeoIP hints."""
     admin=require_admin(request)
     throttle(request,'admin-session-security',30,3600,str(admin['id']))
     with db() as c:
@@ -1789,7 +1867,7 @@ async def admin_user_session_security(request:Request,uid:int):
         if not target:
             raise HTTPException(404,'Không tìm thấy người dùng.')
         fields=('device_label,device_name,device_type,browser,os_name,'
-                'network_hint,location_hint,created_at,last_seen,expires_at')
+                'ip_address,network_hint,location_hint,created_at,last_seen,expires_at')
         sessions=many(c,f'''SELECT {fields} FROM sessions
                           WHERE user_id=? AND expires_at>?
                           ORDER BY created_at DESC LIMIT 30''',(uid,now()))

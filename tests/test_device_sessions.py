@@ -58,6 +58,7 @@ def test_metadata_includes_browser_os_and_approximate_network(monkeypatch):
     assert meta['browser']=='Chrome'
     assert meta['os_name']=='Windows'
     assert meta['network_hint']=='8.8.8.*'
+    assert meta['ip_address']=='8.8.8.8'
     assert meta['location_hint']=='Không xác định'
     assert '8.8.8.8' not in repr(meta)
 
@@ -137,8 +138,8 @@ def test_admin_session_metadata_is_private_and_audited():
     login(owner)
     uid=owner.get('/api/me').json()['user']['id']
     with db() as c:
-        c.execute("""UPDATE sessions SET network_hint=?,location_hint=?
-                     WHERE user_id=?""",('42.117.29.*','Thành phố Hồ Chí Minh',uid))
+        c.execute("""UPDATE sessions SET network_hint=?,location_hint=?,ip_address=?
+                     WHERE user_id=?""",('42.117.29.*','Thành phố Hồ Chí Minh','42.117.29.104',uid))
         c.execute("""UPDATE trusted_devices SET network_hint=?,location_hint=?
                      WHERE user_id=?""",('42.117.29.*','Thành phố Hồ Chí Minh',uid))
     own=owner.get('/api/me/sessions')
@@ -147,6 +148,7 @@ def test_admin_session_metadata_is_private_and_audited():
         assert own.json()[kind]
         for item in own.json()[kind]:
             assert 'network_hint' not in item
+            assert 'ip_address' not in item
             assert 'location_hint' not in item
             assert 'token_hash' not in item
     endpoint=f'/api/admin/users/{uid}/session-security'
@@ -157,6 +159,8 @@ def test_admin_session_metadata_is_private_and_audited():
     assert response.status_code==200,response.text
     detail=response.json()
     assert detail['sessions'][0]['network_hint']=='42.117.29.*'
+    assert detail['sessions'][0]['ip_address']=='42.117.29.104'
+    assert detail['remembered_devices'][0]['ip_address'] is None
     assert detail['sessions'][0]['location_hint']=='Thành phố Hồ Chí Minh'
     assert detail['remembered_devices'][0]['network_hint']=='42.117.29.*'
     assert 'token_hash' not in response.text

@@ -64,7 +64,9 @@ def install(core):
             # Avoid failing startup; ambiguous phone login will be rejected.
             if not one(c,"SELECT phone FROM users WHERE phone IS NOT NULL AND phone<>'' GROUP BY phone HAVING COUNT(*)>1 LIMIT 1"):
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users(phone) WHERE phone IS NOT NULL AND phone<>''")
-            for col, typ in [('phone','TEXT'),('email','TEXT')]:
+            for col, typ in [('phone','TEXT'),('email','TEXT'),('email_code_hash','TEXT'),
+                             ('email_code_sent','INTEGER NOT NULL DEFAULT 0'),
+                             ('email_code_attempts','INTEGER NOT NULL DEFAULT 0'),('email_verified_at','INTEGER')]:
                 column('registrations',col,typ)
             for col, typ in [('attachment_id','INTEGER'),('reply_to','INTEGER'),('edited_at','INTEGER'),('deleted_at','INTEGER')]:
                 column('messages', col, typ)
@@ -84,7 +86,7 @@ def install(core):
                     ('last_seen', 'INTEGER'), ('device_label', 'TEXT'),
                     ('device_name', 'TEXT'), ('device_type', 'TEXT'),
                     ('browser', 'TEXT'), ('os_name', 'TEXT'),
-                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT')):
+                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT'), ('ip_address', 'TEXT')):
                     column(table, name, typ)
             c.executescript('''
               CREATE TABLE IF NOT EXISTS attachments (

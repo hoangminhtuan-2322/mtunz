@@ -38,7 +38,7 @@ const brandGlyph=()=>`<img class="brand-glyph" src="/static/favicon.svg?v=8.0" a
 const avatar=(name,online=false,size='',photo=null)=>`<div class="avatar ${size} ${online?'online':''}">${photo?`<img class="avatar-photo" src="${esc(photo)}" alt="" loading="lazy" decoding="async">`:esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
- regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
+ regName:'',regStatus:'',regPhone:'',regEmail:'',regEmailVerification:false,supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false,adminApprovalToken:null,adminApprovalData:null};
 let toastTimer=0,typingTimer=0,socketRetry=null,typingLastSent=0,typingContext='';
@@ -331,6 +331,7 @@ async function setup(){
     state.mode='register';
     state.regName=active.username;state.regStatus=active.status;
     state.regPhone=active.phone||'';state.regEmail=active.email||'';
+    state.regEmailVerification=!!r.email_verification_enabled&&!!active.email;
    }
   }
   renderAuth();
@@ -392,7 +393,7 @@ function connectSocket(){
      return;
    }
    if(t==='registration-updated'){
-     if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
+     if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;state.regEmailVerification=!!data.email_verification_required;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin)loadAdmin();
    }
    if(t==='friends-updated'){if(state.user&&!state.user.is_admin)scheduleFriendsRefresh(60);}
@@ -755,6 +756,11 @@ function authRegister(){
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
      ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
+   ${state.regEmailVerification?`<section class="registration-section">
+     <h2>Xác nhận địa chỉ email</h2><p class="hint">Mã được gửi tới ${esc(state.regEmail)} sau khi admin duyệt. Mã có hiệu lực 10 phút.</p>
+     ${inputField('Mã xác nhận email','email_code','text','','inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"')}
+     <button class="btn ghost" type="button" data-act="resend-registration-code">Gửi lại mã</button>
+   </section>`:''}
    <div class="registration-consent"><input id="accepted-terms" type="checkbox" name="accepted_terms" required><label for="accepted-terms">Tôi đã đọc và đồng ý với <a href="/terms" target="_blank" rel="noopener noreferrer">Điều khoản sử dụng</a> và <a href="/privacy" target="_blank" rel="noopener noreferrer">Chính sách quyền riêng tư</a> của mtunz.</label></div>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
@@ -845,7 +851,7 @@ async function loadTicketMessages(){if(!state.supportTicket)return;const r=await
  else if(state.tab==='support')renderApp();
  const box=$('#support-list');if(box)box.scrollTop=box.scrollHeight;
 }
-async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
+async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';state.regEmailVerification=!!r.email_verification_enabled&&!!item.email;renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
 
 // ==== Friends, messages and the member experience ====
 let friendsRefreshTimer=0;
@@ -1915,7 +1921,7 @@ async function userDetails(uid){
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Kiểm tra bảo mật thiết bị</h3>
-     <p class="hint">IP rút gọn và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
+     <p class="hint">Địa chỉ IP và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
      <button type="button" class="btn ghost sm" data-act="admin-device-security" data-id="${u.id}">${icon('lock',15)} Xem thông tin bảo mật phiên</button>
    </div>
    <div class="admin-user-actions">
@@ -1963,7 +1969,7 @@ async function showAdminSessionSecurity(uid){
   return entries.map(s=>`<article class="admin-device-security-entry">
    <strong>${esc(s.device_label||s.device_name||'Thiết bị chưa đặt tên')}</strong>
    <small>${esc(kind)} · ${esc(s.os_name||'Không rõ hệ điều hành')} · ${esc(s.browser||'Không rõ trình duyệt')}</small>
-   ${adminDetailRow('Mạng (IP rút gọn)',esc(s.network_hint||'Không có dữ liệu'))}
+   ${adminDetailRow(s.ip_address?'Địa chỉ IP':'Mạng (dữ liệu phiên cũ)',esc(s.ip_address||s.network_hint||'Không có dữ liệu'))}
    ${adminDetailRow('Vị trí ước tính',esc(s.location_hint||'Không xác định'))}
    ${adminDetailRow('Hoạt động gần nhất',deadlineDate(s.last_seen))}
    ${adminDetailRow('Hết hạn',deadlineDate(s.expires_at))}
@@ -1971,7 +1977,7 @@ async function showAdminSessionSecurity(uid){
  };
  modal({
   title:'Bảo mật phiên · '+data.username,
-  description:'Chỉ Admin có quyền truy cập. Dữ liệu mạng đã rút gọn, vị trí GeoIP có thể không xác định. Lượt xem được ghi nhật ký.',
+  description:'Chỉ Admin có quyền truy cập. Phiên cũ có thể chỉ có IP rút gọn. Vị trí GeoIP là ước tính. Lượt xem được ghi nhật ký.',
   content:`<div class="admin-device-security-view">
    <h3>Phiên đăng nhập (${data.sessions.length})</h3>
    ${summary(data.sessions,'Phiên đăng nhập')}
@@ -2111,7 +2117,13 @@ async function clickAction(button){
    renderAuth();break;
   }
   case 'refresh-registration':await refreshRegistration();break;
-  case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';renderAuth();break;
+  case 'resend-registration-code':{
+   button.disabled=true;
+   try{const r=await post('/api/registration/email-code',{username:state.regName});toast(r.already_verified?'Địa chỉ email đã được xác nhận.':'Đã gửi mã xác nhận. Hãy kiểm tra hộp thư.','ok');}
+   finally{button.disabled=false;}
+   break;
+ }
+  case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';state.regEmailVerification=false;renderAuth();break;
   case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
@@ -2305,7 +2317,7 @@ document.addEventListener('submit',async event=>{
     if(pw!==pw2)throw Error('Hai lần nhập mật khẩu không khớp.');
     if(pin!==pin2)throw Error('Hai lần nhập PIN không khớp.');
     if(pin.length!==pinLen)throw Error(`PIN phải đúng ${pinLen} chữ số.`);
-    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined,accepted_terms:fd.get('accepted_terms')==='on'});
+    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined,accepted_terms:fd.get('accepted_terms')==='on',email_code:val('email_code')});
     state.username=state.regName;state.regStatus='';state.savedDevice=false;state.rememberedDevice=false;
     state.user=(await api('/api/me')).user;
     toast('Tạo tài khoản thành công. Hãy đặt tên hiển thị để bắt đầu.','ok');

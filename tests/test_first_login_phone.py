@@ -138,3 +138,36 @@ def test_public_profile_search_and_friends_do_not_expose_login_username():
     assert shared['phone']==own['phone'] and 'login_username' not in shared and 'email' not in shared
     assert one.patch('/api/me/social',json={'show_phone_in_profile':False}).status_code==200
     assert 'phone' not in two.get(f'/api/profile/{uid}').json()['profile']
+
+
+def test_approved_registration_requires_the_delivered_email_code(monkeypatch):
+    import registration_email
+    monkeypatch.setenv('RESEND_API_KEY','test-only')
+    monkeypatch.setenv('EMAIL_FROM','verify@example.com')
+    sent=[]
+    monkeypatch.setattr(registration_email,'send_code',lambda email,code:sent.append((email,code)))
+    admin=logged_admin()
+    guest=TestClient(app)
+    guest.get('/')
+    payload={'username':'email_member','phone':'0983123456','email':'member@gmail.com'}
+    assert guest.post('/api/registration/request',json=payload).status_code==200
+    assert not sent
+    rid=admin.get('/api/admin/registrations').json()['registrations'][0]['id']
+    assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True}).status_code==200
+    assert len(sent)==1 and sent[0][0]==payload['email']
+    assert guest.get('/api/registration/status').json()['email_verification_enabled']
+    assert guest.post('/api/registration/email-code',json={'username':payload['username']}).status_code==429
+    assert guest.post('/api/registration/request',json={**payload,'email':''}).status_code==409
+    form={'username':payload['username'],'password':'GreatPassword123','pin':'1234','pin_length':4,'accepted_terms':True}
+    assert guest.post('/api/registration/complete',json=form).status_code==422
+    code=sent[0][1]
+    wrong='000000' if code!='000000' else '000001'
+    assert guest.post('/api/registration/complete',json={**form,'email_code':wrong}).status_code==422
+    with db() as c:
+        row=c.execute('SELECT email_code_hash,email_code_attempts FROM registrations WHERE id=?',(rid,)).fetchone()
+        assert row['email_code_hash']!=code and row['email_code_attempts']==1
+    response=guest.post('/api/registration/complete',json={**form,'email_code':code})
+    assert response.status_code==200,response.text
+    with db() as c:
+        row=c.execute('SELECT email_verified_at,email_code_hash FROM registrations WHERE id=?',(rid,)).fetchone()
+        assert row['email_verified_at'] and row['email_code_hash'] is None

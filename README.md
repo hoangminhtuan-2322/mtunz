@@ -214,3 +214,7 @@ bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạ
 Mỗi thay đổi giao diện cần được rà soát trên điện thoại, máy tính bảng và desktop. Kiểm tra các luồng bị ảnh hưởng ở cả phía thành viên và quản trị. Workflow `ui-check.yml` chạy các bài Chromium cho đăng nhập, đăng ký, hộp thư và quản trị. Khi thêm màn hình mới, bổ sung thao tác chính của màn hình đó vào bài kiểm thử phù hợp.
 
 Trên điện thoại, kiểm tra ở 320–390 px và khi xoay ngang: mở và đóng bàn phím, truy cập nút gửi hoặc lưu, giữ bản nháp, cuộn nội dung dài và quay lại điều hướng. Trên máy tính, kiểm tra bàn phím, trạng thái focus và bố cục rộng.
+
+### Mã xác nhận email đăng ký
+
+Đặt `RESEND_API_KEY` và `EMAIL_FROM` (địa chỉ gửi thuộc tên miền đã xác minh trong Resend) trong biến môi trường của Render. Khi có cả hai biến, MTUNZ gửi mã qua HTTPS sau khi admin duyệt yêu cầu có email. Mã hết hạn sau 10 phút. Người dùng gửi lại được sau 60 giây. Đăng ký không khai báo email tiếp tục theo luồng hiện tại.
