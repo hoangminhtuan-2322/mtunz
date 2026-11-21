@@ -43,7 +43,7 @@ const {chromium,webkit}=require('playwright-core');
       const field=page.locator('#world-compose-text');
       await field.fill('Tin nhắn thử');
       await field.press('Enter');
-      assert.equal(await field.inputValue(),'Tin nhắn thử\\n',name+' mobile Enter must remain newline');
+      assert.equal(await field.inputValue(),'Tin nhắn thử\n',name+' mobile Enter must remain newline');
       await field.evaluate(el=>el.blur());
       await page.waitForFunction(()=>!document.body.classList.contains('mt-mobile-editing'));
       await page.locator('.rail-nav>[data-tab="messages"]').click();
