@@ -58,6 +58,9 @@ const {chromium}=require('playwright-core');
     await page.evaluate(()=>{
       window.__worldScrollTrace=[];
       const f=document.querySelector('#world-feed');
+      // Browser reflow may shift scrollTop between Playwright awaits. Explicitly
+      // simulate the user's final bottom-scroll at the moment a message arrives.
+      f.scrollTop=f.scrollHeight;
       window.__worldScrollTrace.push({phase:'before',top:f.scrollTop,height:f.scrollHeight,client:f.clientHeight});
       const previous=worldFollowBottom;
       worldFollowBottom=function(feed){
