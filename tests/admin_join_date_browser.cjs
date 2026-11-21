@@ -33,7 +33,7 @@ const {chromium}=require('playwright-core');
     const time=page.locator('time.admin-member-joined');
     await time.waitFor({state:'visible'});
     assert.equal(await time.locator('.admin-member-joined-date').innerText(),'21/11/2026');
-    assert.match(await time.locator('.admin-member-joined-clock').innerText(),/20:59:07.*UTC\+7/);
+    assert.match(await time.locator('.admin-member-joined-clock').innerText(),/20:59:07\s+UTC\+7/);
     assert.equal(await time.getAttribute('datetime'),expectedISO);
     const cell=time.locator('xpath=..');
     assert.equal(await cell.getAttribute('data-sort-value'),String(Date.parse(expectedISO)/1000));
