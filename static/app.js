@@ -523,9 +523,11 @@ async function enterApp(resume=false){
    await loadTickets();
    if(state.supportTicket)await loadTicketMessages();
   }
-  renderApp();
-  if(state.tab==='messages'&&state.selected)await loadMessages();
-  if(state.tab==='groups'&&state.groupSelected)await loadGroupMessages();
+  if((state.tab==='messages'&&state.selected)||(state.tab==='groups'&&state.groupSelected)){
+   renderChatOpening();
+   if(state.tab==='messages')await loadMessages();
+   else await loadGroupMessages();
+  }else renderApp();
  }
  saveCurrentView();
  connectSocket();
@@ -986,9 +988,14 @@ function conversation(){
 async function openChat(uid){
  const f=state.friends.find(x=>x.other_id===uid&&x.state==='accepted');
  if(!f){toast('Chưa kết bạn hoặc tài khoản đã bị chặn.','error');return;}
+ const thread=$('#chat-messages');
+ if(state.selected===uid&&thread?.dataset.chatKey==='dm-'+uid&&thread.dataset.historyReady==='true'){
+  settleChatEnd(thread);
+  return;
+ }
  state.selected=uid;state.groupSelected=null;state.tab='messages';
  state.messages=queuedDirectMessages(state.user.id,uid);
- state.replyTo=null;state.pendingAttachment=null;renderApp();await loadMessages();
+ state.replyTo=null;state.pendingAttachment=null;renderChatOpening();await loadMessages();
 }
 let dmLoadGeneration=0;
 const directSendQueues=new Map();
@@ -1078,13 +1085,25 @@ function latestChatButton(){
  return '<button type="button" class="chat-latest" data-act="chat-latest" aria-label="Về tin nhắn mới nhất" hidden>'+icon('chevron',15)+' Tin mới nhất</button>';
 }
 
+const chatEndGeometry=new WeakMap();
+function followingChatEnd(box){
+ return box.dataset.followChatEnd==='true'||chatNearEnd(box);
+}
 function followChatEnd(box){
  if(!box)return;
  box.dataset.followChatEnd='true';
- const end=Math.max(0,box.scrollHeight-box.clientHeight);
+ const height=box.scrollHeight,viewport=box.clientHeight;
+ chatEndGeometry.set(box,{height,viewport});
+ const end=Math.max(0,height-viewport);
  if(Math.abs(box.scrollTop-end)>1)box.scrollTo({top:end,behavior:'instant'});
  updateLatestButton(box);
  queueChatRead(box);
+}
+function pauseChatFollow(box){
+ if(!box)return;
+ box.dataset.followChatEnd='false';
+ delete box.dataset.positioningChat;
+ delete box.dataset.openingChat;
 }
 function settleChatEnd(box){
  followChatEnd(box);
@@ -1095,36 +1114,66 @@ function settleChatEnd(box){
   delete box.dataset.positioningChat;
  }));
 }
+function renderChatOpening(){
+ renderApp();
+ const box=$('#chat-messages');
+ if(!box)return;
+ box.dataset.openingChat='true';
+ settleChatEnd(box);
+}
+function applyChatHistoryPosition(){
+ const box=$('#chat-messages');
+ if(!box)return false;
+ const opening=box.dataset.openingChat==='true';
+ delete box.dataset.openingChat;
+ box.dataset.historyReady='true';
+ return opening;
+}
 document.addEventListener('scroll',event=>{
- if(event.target.id==='chat-messages'&&!event.target.dataset.positioningChat){
-  const box=event.target;
-  box.dataset.followChatEnd=String(chatNearEnd(box));
-  updateLatestButton(box);
-  queueChatRead(box);
+ const box=event.target;
+ if(box.id!=='chat-messages'||box.dataset.positioningChat)return;
+ const previous=chatEndGeometry.get(box);
+ // A scroll event queued before a resize or media load must not turn off tail following.
+ if(box.dataset.followChatEnd==='true'&&previous&&
+    (previous.height!==box.scrollHeight||previous.viewport!==box.clientHeight)){
+  followChatEnd(box);
+  return;
  }
+ box.dataset.followChatEnd=String(chatNearEnd(box));
+ updateLatestButton(box);
+ queueChatRead(box);
 },true);
 document.addEventListener('visibilitychange',()=>queueChatRead($('#chat-messages')));
 for(const eventName of ['wheel','touchmove']){
  document.addEventListener(eventName,event=>{
-  const box=event.target.closest?.('#chat-messages');
-  if(box)delete box.dataset.positioningChat;
+  pauseChatFollow(event.target.closest?.('#chat-messages'));
  },{capture:true,passive:true});
 }
+document.addEventListener('pointerdown',event=>{
+ const box=event.target;
+ if(box.id==='chat-messages'&&event.offsetX>=box.clientWidth)pauseChatFollow(box);
+},true);
+document.addEventListener('keydown',event=>{
+ if(['ArrowUp','PageUp','Home'].includes(event.key))pauseChatFollow(event.target.closest?.('#chat-messages'));
+},true);
 document.addEventListener('load',event=>{
  const box=event.target.closest?.('#chat-messages');
  if(box?.dataset.followChatEnd==='true')followChatEnd(box);
 },true);
-function renderMessageThread(scroll=false){
- const box=$('#chat-messages');if(!box)return;
- const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
- const previousPosition=box.scrollTop;
- box.innerHTML=renderBubbles();
+function paintChatThread(box,markup,scroll){
+ const follow=followingChatEnd(box);
+ const top=box.scrollTop;
+ box.innerHTML=markup;
  if(scroll)settleChatEnd(box);
- else if(near)followChatEnd(box);
- else{box.scrollTo({top:previousPosition,behavior:'instant'});updateLatestButton(box);}
+ else if(follow)followChatEnd(box);
+ else{box.scrollTo({top,behavior:'instant'});updateLatestButton(box);}
+}
+function renderMessageThread(scroll=false){
+ const box=$('#chat-messages');
+ if(box)paintChatThread(box,renderBubbles(),scroll);
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
- const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
+ const near=followingChatEnd(box);
  const position=box.scrollTop;
  const template=document.createElement('template');
  template.innerHTML=bubblesFor([message],scope==='group',messages);
@@ -1199,7 +1248,8 @@ async function loadMessages(scroll=true){
   const pending=queuedDirectMessages(userId,friend).filter(m=>!v4FailedSends.has(m.id));
   const local=[...failed,...pending].filter(m=>!confirmed.has(m.client_message_id));
   state.messages=[...known.values(),...local].sort(compareChatMessages).slice(-100);
-  renderMessageThread(scroll);
+  const opening=applyChatHistoryPosition();
+  renderMessageThread(scroll||opening);
   const inbound=[...r.messages].reverse().find(m=>m.sender_id===friend);
   if(inbound&&typeof v4AckIncoming==='function')v4AckIncoming(inbound);
   queueChatRead($('#chat-messages'));
@@ -1357,7 +1407,10 @@ function worldComingSoon(){
 }
 function renderApp(){
  const oldThread=$('#chat-messages');
- const reading=oldThread&&!chatNearEnd(oldThread)?{key:oldThread.dataset.chatKey,top:oldThread.scrollTop}:null;
+ const previousKey=oldThread?.dataset.chatKey;
+ const opening=oldThread?.dataset.openingChat==='true';
+ const ready=oldThread?.dataset.historyReady==='true';
+ const reading=oldThread&&!followingChatEnd(oldThread)?oldThread.scrollTop:null;
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
@@ -1378,8 +1431,12 @@ function renderApp(){
  saveCurrentView();
  const thread=$('#chat-messages');
  if(thread){
-  if(reading&&reading.key===thread.dataset.chatKey){
-   thread.scrollTo({top:reading.top,behavior:'instant'});
+  const same=thread.dataset.chatKey===previousKey;
+  if(same&&opening)thread.dataset.openingChat='true';
+  if(same&&ready)thread.dataset.historyReady='true';
+  if(same&&!opening&&reading!==null){
+   pauseChatFollow(thread);
+   thread.scrollTo({top:reading,behavior:'instant'});
    updateLatestButton(thread);
   }else followChatEnd(thread);
  }

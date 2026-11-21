@@ -122,17 +122,17 @@ function groupConversation(){
  <div class="hint" style="margin-top:7px;font-size:10px">Tối đa 12 MB/tệp · Enter gửi · Shift+Enter xuống dòng</div></div></div>`;
 }
 async function openGroup(gid){
+ const thread=$('#chat-messages');
+ if(state.groupSelected===gid&&thread?.dataset.chatKey==='group-'+gid&&thread.dataset.historyReady==='true'){
+  settleChatEnd(thread);
+  return;
+ }
  state.tab='groups';state.selected=null;state.groupSelected=gid;state.groupMessages=[];state.replyTo=null;state.pendingAttachment=null;
- renderApp();await loadGroupMessages();
+ renderChatOpening();await loadGroupMessages();
 }
 function paintGroupThread(scroll=false){
  const box=$('#chat-messages');
- if(!box)return;
- const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
- box.innerHTML=bubblesFor(state.groupMessages,true);
- if(scroll)settleChatEnd(box);
- else if(near)followChatEnd(box);
- else{box.scrollTo({top:position,behavior:'instant'});updateLatestButton(box);}
+ if(box)paintChatThread(box,bubblesFor(state.groupMessages,true),scroll);
 }
 let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
@@ -148,7 +148,8 @@ async function loadGroupMessages(scroll=true){
    if(existing.get(message.id)!==message)incoming.set(message.id,message);
   }
   state.groupMessages=[...incoming.values()].sort((a,b)=>a.id-b.id).slice(-100);
-  paintGroupThread(scroll);
+  const opening=applyChatHistoryPosition();
+  paintGroupThread(scroll||opening);
   queueChatRead($('#chat-messages'));
  }catch(e){if(current())toast(e.message,'error');}
 }
