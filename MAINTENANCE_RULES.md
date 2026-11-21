@@ -14,3 +14,10 @@
 - Nút Profile trên mobile phải hiển thị trong thanh điều hướng dưới; nút Profile desktop giữ nguyên.
 - Chat thế giới nâng cấp phần trình bày, đồng thời giữ nguyên luồng dữ liệu và xử lý của các module World cũ.
 - Không thêm giả lập người dùng online hoặc số liệu không có trên backend.
+
+## Quy ước Chat thế giới trên desktop (V9.1)
+
+- Khi chọn **Chat thế giới** ở viewport từ **801px** trở lên, bố cục sử dụng toàn bộ vùng sau thanh điều hướng chính. Thanh danh sách hộp thư thường được ẩn **chỉ trong tab Chat thế giới**; khi trở về Tin nhắn/Nhóm, thanh này phải xuất hiện lại.
+- **Enter** gửi tin (không tạo dòng trống), **Shift+Enter** xuống dòng. Trong lúc bộ gõ IME đang ghép chữ, giữ phím lặp, tải tệp hoặc nút Gửi bị vô hiệu hóa, không kích hoạt gửi bất thường.
+- Ở viewport tối đa **800px** và thiết bị cảm ứng không có con trỏ chính xác, **không thay đổi** bố cục hiện hữu hay hành vi Enter trên bàn phím mobile.
+- Kiểm thử hồi quy cả trạng thái mở/đóng phòng, lớp quyền, thao tác gửi bằng chuột, danh sách phòng, bình chọn và báo cáo. Không cần thay đổi backend để sửa hai hành vi giao diện này.
