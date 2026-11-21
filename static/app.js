@@ -2268,6 +2268,15 @@ document.addEventListener('change',event=>{
 });
 document.addEventListener('keydown',e=>{
  if(e.target.id==='chat-text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();e.target.closest('form').requestSubmit();}
+ // Desktop Enter sends, Shift+Enter inserts a line. Mobile Enter keeps
+ // its newline behavior so the on-screen Gửi button remains explicit.
+ if(e.target.matches?.('.support-chat-entry')&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing
+    &&!matchMedia('(max-width:800px)').matches){
+  e.preventDefault();
+  const form=e.target.closest('form');
+  if(form&&!form.querySelector('button[type=submit]')?.disabled&&e.target.value.trim())
+    form.requestSubmit();
+ }
 });
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('form[data-form]');if(!form)return;
@@ -2335,9 +2344,15 @@ document.addEventListener('submit',async event=>{
     toast('Đã mở cuộc trò chuyện với admin.','ok');break;
    }
    case 'support-reply':{
-    if(!state.supportTicket)throw Error('Chưa mở phiếu hỗ trợ.');
-    await post(`/api/support/tickets/${state.supportTicket}/messages`,{body:val('body')});
-    await loadTicketMessages();break;
+    const ticketId=state.supportTicket,text=val('body');
+    if(!ticketId||Number(form.dataset.ticketId)!==ticketId)throw Error('Chưa mở phiếu hỗ trợ.');
+    if(!text){form.querySelector('.support-chat-entry')?.focus();break;}
+    const result=await post(`/api/support/tickets/${ticketId}/messages`,{body:text});
+    if(state.supportTicket===ticketId){
+      appendSupportMessage(false,ticketId,result.message,true);
+      finishSupportReply(form,text);
+    }
+    break;
    }
    case 'support-reset':{
     const pinLength=Number(fd.get('pin_length'));
@@ -2440,7 +2455,15 @@ document.addEventListener('submit',async event=>{
     await loadAdmin();break;
    }
    case 'admin-ticket-reply':{
-    await post(`/api/admin/tickets/${state.adminTicket}/messages`,{body:val('body')});await loadAdmin();break;
+    const ticketId=state.adminTicket,text=val('body');
+    if(!ticketId||Number(form.dataset.ticketId)!==ticketId)throw Error('Hãy chọn phiếu hỗ trợ.');
+    if(!text){form.querySelector('.support-chat-entry')?.focus();break;}
+    const result=await post(`/api/admin/tickets/${ticketId}/messages`,{body:text});
+    if(state.adminTab==='tickets'&&state.adminTicket===ticketId){
+      appendSupportMessage(true,ticketId,result.message,true);
+      finishSupportReply(form,text);
+    }
+    break;
    }
    case 'admin-broadcast':{
     const message=val('body');
@@ -2453,6 +2476,8 @@ document.addEventListener('submit',async event=>{
    }
   }
  }catch(e){
+  if(key==='support-reply'||key==='admin-ticket-reply')
+    form.querySelector('.support-chat-entry')?.focus({preventScroll:true});
   const authField={'login-username':'username','login-password':'password',
     'login-pin':'pin','login-remembered':'pin'}[key];
   if(!authField||!showAuthFieldError(form,authField,authFailureText(key,e)))
