@@ -392,7 +392,7 @@ function connectSocket(){
        if(state.selected && (m.sender_id===state.selected||m.recipient_id===state.selected))appendDirectMessage(m);
        if(m.sender_id!==state.user.id&&typeof v4AckIncoming==='function')v4AckIncoming(m);
        scheduleFriendsRefresh();
-       if(m.sender_id!==state.user.id && state.selected!==m.sender_id)toast('Bạn có tin nhắn mới','info');
+       if(m.sender_id!==state.user.id)alertChatMessage('dm',m.sender_id,m);
      }
    }
    if(t==='read' && state.selected===data.by){
@@ -408,7 +408,6 @@ function connectSocket(){
    if(t==='typing' && state.selected===data.from_id){const el=$('#typing-text');if(el){el.textContent=data.on?'Đang nhập tin nhắn…':'';}}
    if(t==='presence' && state.user && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=data.online;renderSideItems();updateChatHeader();}}
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
-   if(t==='message'&&data.message.sender_id!==state.user?.id)notifyBrowser('Có tin nhắn từ bạn bè');
    if(state.user&&!state.user.is_admin)await extraSocket(data);
    if(t==='support-updated'||t==='support-message'){
      if(state.user?.is_admin){await loadAdmin();}
