@@ -171,8 +171,12 @@ def test_private_data_stays_with_chat_participants():
     recalled=bob.get(f'/api/messages/{aid}').json()['messages'][0]
     assert recalled['body']=='' and recalled['attachment_id'] is None
     assert bob.get(f'/api/attachments/{attachment_id}').status_code==403
+    with db() as c:
+        c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
+                  (bid,f'Tin nhắn từ Thành viên: {body}',now()))
     notices=bob.get('/api/notifications').json()['notifications']
     assert set(notices[0])=={'id','body','created_at','read_at'}
+    assert notices[0]['body']=='Bạn có tin nhắn mới.'
     assert body not in str(notices)
 
 
