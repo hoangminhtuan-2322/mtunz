@@ -16,7 +16,7 @@ async function worldV3RefreshStatus(){
     ||before.next_change_at!==after.next_change_at;
   if(changed){
    if(state.tab==='world')await loadWorld(true);
-   else if(document.querySelector('.shell:not(.admin-shell)'))renderApp();
+   else updateWorldNavigation();
    if(before&&before.open!==after.open){
     toast(after.open?'🌍 Chat thế giới đã mở!':'🔒 Chat thế giới đã đóng theo lịch của Admin. Lịch sử vẫn xem được.','info');
     if(typeof notifyBrowser==='function'&&document.hidden)

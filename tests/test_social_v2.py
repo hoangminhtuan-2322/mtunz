@@ -43,6 +43,10 @@ def test_seven_digit_public_ids_and_nonadmin_direct_messaging():
     assert admin.post('/api/messages',json={'recipient_id':bu['id'],'body':'Admin cannot DM'}).status_code==403
     assert a.post('/api/messages',json={'recipient_id':bu['id'],'body':'No friendship'}).status_code==403
     assert a.post(f"/api/friends/request/{bu['id']}").status_code==200
+    outgoing=a.get('/api/people/search',params={'q':str(bu['public_id'])}).json()['users'][0]
+    incoming=b.get('/api/people/search',params={'q':str(au['public_id'])}).json()['users'][0]
+    assert outgoing['friend_state']==incoming['friend_state']=='pending'
+    assert outgoing['requested_by_me'] and not incoming['requested_by_me']
     assert b.post(f"/api/friends/accept/{au['id']}").status_code==200
     friends=a.get('/api/friends')
     assert friends.status_code==200,friends.text

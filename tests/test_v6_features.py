@@ -158,7 +158,7 @@ def test_ops_restricted_flags_and_factory_reset_scopes():
     assert info.status_code==200,info.text
     data=info.json()
     assert data['active_member_sessions']>=2
-    assert len(data['flags'])==4
+    assert {f['code'] for f in data['flags']}=={'registration_intake','member_uploads','calls','disappearing_dm','community_polls','world_rooms'}
     assert not any(k in info.text for k in ('password_hash','pin_hash','token_hash'))
     assert admin.post('/api/admin/ops/flags',json={
         'code':'calls','enabled':False,'admin_pin':'0000'}).status_code==401
@@ -179,3 +179,41 @@ def test_ops_restricted_flags_and_factory_reset_scopes():
         assert c.execute('SELECT COUNT(*) n FROM world_poll_votes').fetchone()['n']==0
         assert c.execute('SELECT COUNT(*) n FROM message_edit_history').fetchone()['n']==0
         assert c.execute('SELECT enabled FROM feature_flags WHERE code=?',('calls',)).fetchone()['enabled']==1
+
+
+def test_recall_updates_notices_and_unread_without_affecting_other_messages():
+    _,sender,recipient,sender_id,recipient_id=setup()
+    def notices():
+        return [n['body'] for n in recipient.get('/api/notifications').json()['notifications']]
+    original=sender.post('/api/messages',json={'recipient_id':recipient_id,'body':'Bản nháp'})
+    mid=original.json()['message']['id']
+    sender.post('/api/messages',json={'recipient_id':recipient_id,'body':'Giữ lại'})
+    assert any('Bản nháp' in body for body in notices())
+    assert sender.patch(f'/api/messages/{mid}',json={'body':'Đã chỉnh sửa'}).status_code==200
+    assert any('Đã chỉnh sửa' in body for body in notices())
+    assert sender.delete(f'/api/messages/{mid}').status_code==200
+    remaining=notices()
+    assert not any('Bản nháp' in body or 'Đã chỉnh sửa' in body for body in remaining)
+    assert any('Giữ lại' in body for body in remaining)
+    friend=next(f for f in recipient.get('/api/friends').json()['friends'] if f['other_id']==sender_id)
+    assert friend['unread']==1
+
+
+def test_studio_preferences_and_admin_intake_controls():
+    admin,a,b,_,_=setup()
+    set_pin(admin)
+    assert a.patch('/api/me/appearance',json={'wallpaper':'lagoon'}).status_code==200
+    assert a.get('/api/me').json()['user']['chat_wallpaper']=='lagoon'
+    assert b.get('/api/me').json()['user']['chat_wallpaper']=='midnight'
+    assert a.patch('/api/me/appearance',json={'wallpaper':'bogus'}).status_code==422
+    for code in ('member_uploads','registration_intake'):
+        change={'code':code,'enabled':False,'admin_pin':'2345'}
+        assert a.post('/api/admin/ops/flags',json=change).status_code==403
+        assert admin.post('/api/admin/ops/flags',json={**change,'admin_pin':'9999'}).status_code==401
+        assert admin.post('/api/admin/ops/flags',json=change).status_code==200
+    assert a.post('/api/uploads',files={'file':('demo.txt',b'demo','text/plain')}).status_code==423
+    guest=TestClient(app)
+    assert guest.post('/api/registration/request',json={'username':'studio_new','phone':'0977777712'}).status_code==423
+    assert a.get('/api/me').status_code==200
+    assert admin.post('/api/admin/ops/flags',json={'code':'member_uploads','enabled':True,'admin_pin':'2345'}).status_code==200
+    assert a.post('/api/uploads',files={'file':('demo.txt',b'demo','text/plain')}).status_code==200

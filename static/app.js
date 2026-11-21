@@ -38,7 +38,7 @@ const brandGlyph=()=>`<img class="brand-glyph" src="/static/favicon.svg?v=8.0" a
 const avatar=(name,online=false,size='',photo=null)=>`<div class="avatar ${size} ${online?'online':''}">${photo?`<img class="avatar-photo" src="${esc(photo)}" alt="" loading="lazy" decoding="async">`:esc(initials(name))}</div>`;
 const state={user:null,ws:null,mode:'login',step:'username',username:'',challenge:'',pinLength:4,
  savedDevice:false,rememberedDevice:false,loginIsAdmin:false,
- regName:'',regStatus:'',regPhone:'',regEmail:'',supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
+ regName:'',regStatus:'',regPhone:'',regEmail:'',regEmailVerification:false,supportKind:'username',supportTicket:null,tickets:[],ticketMessages:[],
  tab:'messages',friends:[],blocks:[],selected:null,messages:[],adminTab:'overview',adminData:null,
  adminTicket:null,adminTicketMessages:[],adminShowSpam:false,adminQuery:'',adminAuditMeta:null,adminAuditFilter:{q:'',action:'',since:0,until:0},accountDeletion:null,typing:false,adminApprovalToken:null,adminApprovalData:null};
 let toastTimer=0,typingTimer=0,socketRetry=null,typingLastSent=0,typingContext='';
@@ -129,9 +129,11 @@ async function api(url,{method='GET',data}={}){
   }catch(e){throw Error('Không kết nối được máy chủ. Vui lòng thử lại.');}
   if(!response.ok){
     const detail=payload?.detail;
-    if(detail&&typeof detail==='object'&&detail.code==='sanction')showSanction(detail);
-    const error=new Error(typeof detail==='string'?detail:detail?.reason||'Yêu cầu không thành công.');
+    if(detail?.code==='sanction')showSanction(detail);
+    if(detail?.code==='maintenance')showMaintenance(detail.message);
+    const error=new Error(typeof detail==='string'?detail:detail?.message||detail?.reason||'Yêu cầu không thành công.');
     error.status=response.status;
+    error.maintenance=detail?.code==='maintenance';
     throw error;
   }
   return payload;
@@ -139,7 +141,7 @@ async function api(url,{method='GET',data}={}){
 const post=(url,data={})=>api(url,{method:'POST',data});
 const del=url=>api(url,{method:'DELETE'});
 const root=()=>$('#app');
-function toast(message,type='info'){
+function toast(message,type='info',action){
   const host=$('#toast-root');
   if(!host)return;
   const kind=type==='ok'||type==='success'?'ok':type==='error'?'error':type==='warning'?'warning':'info';
@@ -185,6 +187,12 @@ function toast(message,type='info'){
     started=performance.now();
     track.style.animationPlayState='running';
     timer=setTimeout(dismiss,remaining);
+  }
+  if(action){
+    const open=document.createElement('button');
+    open.type='button';open.className='linkbtn notify-action';open.textContent=action.label;
+    open.addEventListener('click',()=>{dismiss();action.run();});
+    content.append(open);
   }
   close.addEventListener('click',dismiss);
   el.addEventListener('mouseenter',pause);
@@ -252,9 +260,23 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
       }
     }
   });
-  requestAnimationFrame(()=>{if(panel.isConnected)panel.focus({preventScroll:true});});
+  panel.focus({preventScroll:true});
 }
 function ask(title,description,handler,confirm='Xác nhận',danger=false){modal({title,description,handler,confirm,danger});}
+function showMaintenance(message='Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'){
+ if(state.user?.is_admin||$('#maintenance-notice'))return;
+ const endingSession=Boolean(state.user||readActiveTab());
+ modal({title:'Hệ thống đang bảo trì',description:message,confirm:'Đã hiểu',closable:false,
+  content:'<span id="maintenance-notice" hidden></span>',
+  handler:async()=>{
+   if(endingSession){
+    await post('/api/auth/logout').catch(()=>{});
+    resetAuthAfterLogout();
+   }else if(state.mode==='login'&&state.step!=='username'){
+    state.step='username';state.challenge='';renderAuth();
+   }
+  }});
+}
 function showSanction(d){
   if($('#modal-root .sanction-only'))return;
   $('#modal-root').innerHTML=`<div class="modal-backdrop sanction-only"><div class="modal" role="alertdialog" aria-modal="true">
@@ -309,11 +331,13 @@ async function setup(){
     state.mode='register';
     state.regName=active.username;state.regStatus=active.status;
     state.regPhone=active.phone||'';state.regEmail=active.email||'';
+    state.regEmailVerification=!!r.email_verification_enabled&&!!active.email;
    }
   }
   renderAuth();
   connectSocket();
  }catch(e){
+  if(e.maintenance){clearActiveTab();state.user=null;renderAuth();return;}
   if(previous&&readActiveTab()){
    // A temporary network failure must never look like a forced logout.
    renderReconnect();
@@ -330,6 +354,7 @@ function connectSocket(){
  socket.onmessage=async ev=>{
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='maintenance-mode'){showMaintenance();return;}
    if(t==='account-sanction'){showSanction(data);return;}
    if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
      await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
@@ -355,13 +380,20 @@ function connectSocket(){
      return;
    }
    if(t==='world-status'&&state.user&&!state.user.is_admin){
-     await loadWorldStatus().catch(()=>{});
-     if(state.tab==='world')await loadWorld(true).catch(()=>{});
-     else renderApp();
+     await refreshWorldNavigation().catch(()=>{});
+     return;
+   }
+   if(t==='registration-requested'&&state.user?.is_admin){
+     toast('Yêu cầu đăng ký mới từ @'+data.username,'info',{
+       label:'Mở hàng chờ duyệt',
+       run:()=>document.querySelector('.admin-nav [data-tab="registrations"]')?.click()
+     });
+     if(document.hidden)void notifyBrowser('Có yêu cầu đăng ký mới.','admin-registrations');
+     if(['overview','registrations'].includes(state.adminTab))await loadAdmin();
      return;
    }
    if(t==='registration-updated'){
-     if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
+     if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;state.regEmailVerification=!!data.email_verification_required;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin)loadAdmin();
    }
    if(t==='friends-updated'){if(state.user&&!state.user.is_admin)scheduleFriendsRefresh(60);}
@@ -392,7 +424,7 @@ function connectSocket(){
        if(state.selected && (m.sender_id===state.selected||m.recipient_id===state.selected))appendDirectMessage(m);
        if(m.sender_id!==state.user.id&&typeof v4AckIncoming==='function')v4AckIncoming(m);
        scheduleFriendsRefresh();
-       if(m.sender_id!==state.user.id && state.selected!==m.sender_id)toast('Bạn có tin nhắn mới','info');
+       if(m.sender_id!==state.user.id)alertChatMessage('dm',m.sender_id,m);
      }
    }
    if(t==='read' && state.selected===data.by){
@@ -408,7 +440,6 @@ function connectSocket(){
    if(t==='typing' && state.selected===data.from_id){const el=$('#typing-text');if(el){el.textContent=data.on?'Đang nhập tin nhắn…':'';}}
    if(t==='presence' && state.user && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=data.online;renderSideItems();updateChatHeader();}}
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
-   if(t==='message'&&data.message.sender_id!==state.user?.id)notifyBrowser('Có tin nhắn từ bạn bè');
    if(state.user&&!state.user.is_admin)await extraSocket(data);
    if(t==='support-updated'||t==='support-message'){
      if(state.user?.is_admin){await loadAdmin();}
@@ -513,7 +544,9 @@ async function enterApp(resume=false){
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
+ state.adminQueueFilters={};state.adminQuery='';state.adminTicket=null;
  v4FailedSends.clear();
+ state.sideFilter='';state.inboxFilter='all';state.onlyUnreadNotices=false;state.notices=[];
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
  clearActiveTab();
@@ -652,6 +685,10 @@ function authTabs(){return `<div class="auth-nav" role="group" aria-label="Đi�
  <button type="button" class="${state.mode==='register'?'active':''}" aria-pressed="${state.mode==='register'}" data-act="mode-register">${icon('users',16)}<span>Đăng ký</span></button>
  <button type="button" class="${state.mode==='support'?'active':''}" aria-pressed="${state.mode==='support'}" data-act="mode-support">${icon('inbox',16)}<span>Hỗ trợ</span></button>
  </div>`;}
+function authProgress(labels,current){
+ return `<ol class="auth-progress" aria-label="Các bước thực hiện">${labels.map((label,index)=>
+   `<li${index===current?' aria-current="step"':''} class="${index<current?'done':''}">${label}</li>`).join('')}</ol>`;
+}
 function authLogin(){
  const step=state.step;
  if(step==='approval')return adminApprovalWaiting();
@@ -666,18 +703,18 @@ function authLogin(){
 
  const forms={
  username:`<span class="eyebrow">CHÀO MỪNG TRỞ LẠI</span><h1>Tiếp tục cuộc trò chuyện.</h1>
- <p class="hint">Dùng tên đăng nhập hoặc số điện thoại đã liên kết với tài khoản.</p><div class="auth-step"><span class="active"></span><span></span><span></span></div>
+ <p class="hint">Dùng tên đăng nhập hoặc số điện thoại đã liên kết với tài khoản.</p>${authProgress(['Tài khoản','Mật khẩu','Xác minh'],0)}
  <form data-form="login-username">${inputField('Tên đăng nhập hoặc số điện thoại','username','text','','autocomplete="username" maxlength="40" value="'+esc(state.username)+'"')}
  <button class="btn primary full" type="submit">Tiếp tục ${icon('chevron',17)}</button></form>`,
  password:`<span class="eyebrow">XÁC MINH MẬT KHẨU</span><h1>Chào ${state.username.startsWith('+')?'bạn':esc(state.username)} 👋</h1>
  <p class="hint">Nhập mật khẩu để tiếp tục. Tài khoản có PIN sẽ cần xác minh thêm một bước.</p>
- <div class="auth-step"><span class="active"></span><span class="active"></span><span></span></div>
+ ${authProgress(['Tài khoản','Mật khẩu','Xác minh'],1)}
  <form data-form="login-password" autocomplete="off">${inputField('Mật khẩu','password','password','','autocomplete="off" readonly data-manual-password="1"')}
  <button type="submit" class="btn primary full">Xác nhận mật khẩu ${icon('chevron',17)}</button></form>
  <button class="linkbtn" data-act="back-login">${icon('back',13)} Đổi cách đăng nhập</button>`,
  pin:`<span class="eyebrow">BƯỚC 3/3 · XÁC MINH</span><h1>Thêm một lớp an toàn.</h1>
  <p class="hint">Nhập mã PIN ${state.pinLength} chữ số đã thiết lập khi tạo tài khoản.</p>
- <div class="auth-step"><span class="active"></span><span class="active"></span><span class="active"></span></div>
+ ${authProgress(['Tài khoản','Mật khẩu','Xác minh'],2)}
  <form data-form="login-pin">${inputField('Mã PIN','pin','password','',`inputmode="numeric" pattern="[0-9]{${state.pinLength}}" minlength="${state.pinLength}" maxlength="${state.pinLength}" autocomplete="one-time-code"`)}
 ${state.loginIsAdmin?'':` <label class="auth-remember-choice"><input type="checkbox" name="remember_device" value="on" ${state.rememberedDevice?'checked':''}><span class="auth-remember-choice-icon">${icon('shield',19)}</span><span><strong>Ghi nhớ thiết bị này trong 30 ngày</strong><small>Sau khi đóng tab, lần mở phiên mới có thể dùng PIN. Tải lại tab đang mở không cần xác thực lại.</small></span></label>`}
  <button type="submit" class="btn primary full">Đăng nhập ${icon('check',17)}</button></form>
@@ -689,6 +726,7 @@ ${state.loginIsAdmin?'':` <label class="auth-remember-choice"><input type="check
 function authRegister(){
  if(state.regStatus==='pending')return `<div class="onboard-center"><div class="wait-orbit"></div><span class="eyebrow">ĐANG CHỜ PHÊ DUYỆT</span>
  <h1>Yêu cầu đã được gửi!</h1><p class="hint" style="margin-top:15px">Tài khoản <b>${esc(state.regName)}</b> đang chờ xét duyệt. Sau khi được chấp thuận, bạn có thể thiết lập mật khẩu và mã PIN.</p>
+ ${authProgress(['Gửi yêu cầu','Xét duyệt','Thiết lập'],1)}
  <p class="hint">Trạng thái yêu cầu sẽ được cập nhật tự động.</p>
  <button class="btn ghost full" data-act="refresh-registration">${icon('refresh')} Kiểm tra trạng thái</button></div>`;
  if(state.regStatus==='denied')return `<span class="eyebrow">YÊU CẦU BỊ TỪ CHỐI</span><h1>Chưa thể đăng ký.</h1><p class="hint">Yêu cầu đăng ký <b>${esc(state.regName)}</b> chưa được chấp thuận. Bạn có thể gửi yêu cầu mới với tên khác.</p><button class="btn primary full" data-act="retry-registration">Gửi yêu cầu khác</button>`;
@@ -696,6 +734,7 @@ function authRegister(){
  <div class="registration-approved">${icon('check',15)} <span>ĐÃ ĐƯỢC PHÊ DUYỆT</span></div>
  <h1>Hoàn tất tài khoản.</h1>
  <p class="hint registration-lead">Tên tài khoản <strong>${esc(state.regName)}</strong> đã được giữ chỗ. Tạo mật khẩu và PIN bảo mật để bắt đầu sử dụng mtunz.</p>
+ ${authProgress(['Gửi yêu cầu','Xét duyệt','Thiết lập'],2)}
  <form data-form="register-complete" class="registration-form">
    <section class="registration-section" aria-labelledby="registration-password-heading">
      <div class="registration-section-heading">
@@ -717,12 +756,17 @@ function authRegister(){
    ${!state.regPhone?`<section class="registration-section"><h2>Bổ sung số điện thoại liên hệ</h2><p class="hint">Yêu cầu đăng ký được tạo trước đợt cập nhật cần số điện thoại để hoàn tất.</p>
      ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
    </section>`:''}
+   ${state.regEmailVerification?`<section class="registration-section">
+     <h2>Xác nhận địa chỉ email</h2><p class="hint">Mã được gửi tới ${esc(state.regEmail)} sau khi admin duyệt. Mã có hiệu lực 10 phút.</p>
+     ${inputField('Mã xác nhận email','email_code','text','','inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"')}
+     <button class="btn ghost" type="button" data-act="resend-registration-code">Gửi lại mã</button>
+   </section>`:''}
    <div class="registration-consent"><input id="accepted-terms" type="checkbox" name="accepted_terms" required><label for="accepted-terms">Tôi đã đọc và đồng ý với <a href="/terms" target="_blank" rel="noopener noreferrer">Điều khoản sử dụng</a> và <a href="/privacy" target="_blank" rel="noopener noreferrer">Chính sách quyền riêng tư</a> của mtunz.</label></div>
    <p class="registration-security-note">${icon('shield',15)} Mật khẩu và PIN chỉ được lưu dưới dạng mã băm.</p>
    <button class="btn primary full" type="submit">Tạo tài khoản ${icon('check',17)}</button>
  </form></div>`;
  return `<span class="eyebrow">THAM GIA MTUNZ</span><h1>Bắt đầu một kết nối mới.</h1>
- <div class="auth-step"><span class="active"></span><span></span><span></span></div>
+ ${authProgress(['Gửi yêu cầu','Xét duyệt','Thiết lập'],0)}
  <form data-form="register-request">${inputField('Tên tài khoản muốn dùng','username','text','','minlength="3" maxlength="24" pattern="[a-zA-Z][a-zA-Z0-9_]{2,23}"')}
  ${inputField('Số điện thoại (bắt buộc)','phone','tel','','autocomplete="tel" inputmode="tel" maxlength="40"')}
  <div class="field auth-input-field"><label for="reg-email">Email / Gmail (không bắt buộc)</label><div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon('inbox',18)}</span><input class="input" id="reg-email" name="email" type="email" autocomplete="email" maxlength="254"></div></div>
@@ -778,6 +822,7 @@ function renderAuth(){
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
    </main></div>`;
+   globalThis.markViewMotion?.(host.querySelector('.auth'),['auth',state.mode,state.step,state.regStatus,state.supportTicket].join(':'));
    // Brand artwork stays static; no pointer tracking or background motion.
    return;
  }
@@ -792,6 +837,7 @@ function renderAuth(){
  const screen=existing.querySelector('.auth-screen');
  if(screen){
    screen.innerHTML=screenMarkup;
+   globalThis.markViewMotion?.(screen.firstElementChild,['auth',state.mode,state.step,state.regStatus,state.supportTicket].join(':'));
    // Never scroll the entire page: only the form's own scroll pane may move.
    const main=existing.querySelector('.auth-main');
    if(main && main.scrollTop>0 && screen.getBoundingClientRect().top<main.getBoundingClientRect().top){
@@ -805,7 +851,7 @@ async function loadTicketMessages(){if(!state.supportTicket)return;const r=await
  else if(state.tab==='support')renderApp();
  const box=$('#support-list');if(box)box.scrollTop=box.scrollHeight;
 }
-async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
+async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';state.regEmailVerification=!!r.email_verification_enabled&&!!item.email;renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
 
 // ==== Friends, messages and the member experience ====
 let friendsRefreshTimer=0;
@@ -822,24 +868,57 @@ async function refreshFriends(redraw=true){
   }
   if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
 }
-function friendItem(f){
+function friendItem(f,draft){
   const active=state.selected===f.other_id&&state.tab==='messages';
-  return `<div class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
+  return `<button type="button" class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
    ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
-   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></div>`;
+   <div class="sub">${draft?`<b class="draft-label">Nháp</b> ${esc(short(draft,38))}`:f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
+}
+const inboxFilters={all:'Tất cả',unread:'Chưa đọc',pinned:'Đã ghim',drafts:'Nháp'};
+function inboxSearchText(value){
+ return String(value||'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().replaceAll('đ','d').trim();
 }
 function sideBody(){
-  const accepted=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived);
-  const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
-  const q=state.sideFilter||'';
-  const filtered=accepted.filter(x=>(x.display_name||x.username).toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi')));
-  return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
-  <div class="side-label">Cuộc trò chuyện · ${filtered.length}</div>
-  ${filtered.length?filtered.map(friendItem).join(''):`<div class="empty" style="padding:35px 12px;font-size:12px">${q?'Không tìm thấy hội thoại.':'Chưa có bạn bè nào. Hãy tìm và kết bạn!'}</div>`}
-  ${state.friends.some(f=>f.archived&&f.state==='accepted')?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${state.friends.filter(f=>f.archived&&f.state==='accepted').length}</button>`:''}
-  ${groupSideItems()}`;
+ const filter=state.inboxFilter||'all';
+ const query=inboxSearchText(state.sideFilter);
+ const drafts=typeof v4ReadAllDrafts==='function'?v4ReadAllDrafts():{};
+ const matches=name=>inboxSearchText(name).includes(query);
+ const people=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived&&
+   (filter!=='unread'||f.unread>0)&&(filter!=='pinned'||f.pinned)&&(filter!=='drafts'||drafts['dm:'+f.other_id])&&matches(f.display_name||f.username));
+ const groups=filter==='pinned'?[]:state.groups.filter(g=>(filter!=='unread'||g.unread>0)&&(filter!=='drafts'||drafts['group:'+g.id])&&matches(g.title));
+ const overview=filter==='all'&&!query;
+ const pending=overview?state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id):[];
+ const archived=overview?state.friends.filter(f=>f.archived&&!f.restricted&&f.state==='accepted').length:0;
+ const empty=filter==='drafts'&&!query?'Bạn chưa có bản nháp trong tab này.':query?'Không tìm thấy cuộc trò chuyện.':filter==='unread'?'Bạn đã đọc hết tin nhắn.':filter==='pinned'?'Chưa có cuộc trò chuyện được ghim.':'Chưa có cuộc trò chuyện.';
+ return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<button type="button" class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<span class="grow"><b>${esc(f.username)}</b><span class="sub">Muốn kết bạn với bạn</span></span></button>`).join('')}`:''}
+ ${people.length?`<div class="side-label">Cá nhân · ${people.length}</div>${people.map(f=>friendItem(f,drafts['dm:'+f.other_id])).join('')}`:''}
+ ${groups.length?groupSideItems(groups,drafts):''}
+ ${!people.length&&!groups.length?`<div class="inbox-empty">${empty}</div>`:''}
+ ${archived?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${archived}</button>`:''}`;
 }
-function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
+function renderSideItems(){
+ const start=$('.member-start');
+ if(start){
+  const html=welcomeEmpty();
+  if(start.renderedHTML!==html){
+   const template=document.createElement('template');template.innerHTML=html;
+   const next=template.content.firstElementChild;
+   next.renderedHTML=html;start.replaceWith(next);
+  }
+ }
+ const box=$('#side-items');
+ if(!box)return;
+ const html=sideBody();
+ if(box.inboxHTML===html)return;
+ const active=document.activeElement;
+ const restore=box.contains(active)&&active.dataset.act;
+ box.innerHTML=html;
+ box.inboxHTML=html;
+ if(restore){
+  const target=Array.from(box.querySelectorAll('[data-act]')).find(b=>b.dataset.act===active.dataset.act&&b.dataset.id===active.dataset.id&&b.dataset.tab===active.dataset.tab);
+  (target||$('#side-filter'))?.focus({preventScroll:true});
+ }
+}
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
   const secondary=[['restricted','shield','Danh sách hạn chế'],
@@ -870,16 +949,66 @@ function appRail(){
     </div>
   </aside>`;
 }
-function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
-  <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" id="side-filter" placeholder="Tìm cuộc trò chuyện..." value="${esc(state.sideFilter||'')}" autocomplete="off"></div></div>
+function updateWorldNavigation(){
+ const badge=$('.world-lobby-entrance .group-lobby-teaser-badge');
+ const open=Boolean(state.worldData?.status?.open);
+ if(badge)badge.textContent=open?'Đang mở':'Xem lịch sử';
+ const rail=$('.shell:not(.admin-shell) > .rail');
+ if(!rail||Boolean(rail.querySelector('.rail-extra [data-tab="world"]'))===open)return;
+ const template=document.createElement('template');
+ template.innerHTML=appRail();
+ const oldMenu=rail.querySelector('.rail-secondary');
+ const focused=oldMenu?.contains(document.activeElement);
+ oldMenu?.replaceWith(template.content.querySelector('.rail-secondary'));
+ if(focused)rail.querySelector('.rail-more')?.focus({preventScroll:true});
+}
+async function refreshWorldNavigation(){
+ const userId=state.user?.id;
+ await loadWorldStatus();
+ if(state.user?.id!==userId)return;
+ if(state.tab==='world')await loadWorld(true);
+ else updateWorldNavigation();
+}
+function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button><button type="button" class="mobile-inbox-profile" aria-label="Mở hồ sơ cá nhân" data-act="app-tab" data-tab="profile">${avatar(state.user.display_name||state.user.username,false,'sm',state.user.avatar_url)}</button></div>
+  <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" type="search" id="side-filter" aria-label="Tìm hội thoại cá nhân hoặc nhóm" placeholder="Tìm người hoặc nhóm…" value="${esc(state.sideFilter||'')}" autocomplete="off"></div>
+  <div class="inbox-filters" role="group" aria-label="Lọc hội thoại" data-filter="${state.inboxFilter||'all'}">${Object.entries(inboxFilters).map(([key,label])=>`<button type="button" data-act="inbox-filter" data-filter="${key}" aria-pressed="${key===(state.inboxFilter||'all')}">${label}</button>`).join('')}</div></div>
   <div class="side-scroll" id="side-items">${sideBody()}</div>
   <div class="side-bottom"><div class="row" style="font-size:11px;color:var(--muted)"><span class="dot"></span> Nhắn tin trực tiếp, không cần tải lại</div></div></aside>`;}
 function memberHeader(title,subtitle,actions=''){
  return `<header class="main-head"><div class="grow"><h3>${title}</h3><div class="small muted">${subtitle}</div></div>${actions}</header>`;
 }
-function welcomeEmpty(){return `<div class="hero-empty"><div><div class="illustration">✦</div><h1>Đã kết nối, sẵn sàng trò chuyện.</h1>
- <p>Chọn một người bạn ở bên trái hoặc gửi lời mời kết bạn để bắt đầu cuộc trò chuyện đầu tiên.</p>
- <button class="btn primary" data-act="app-tab" data-tab="friends">${icon('add')} Tìm bạn bè</button></div></div>`;}
+function welcomeEmpty(){
+ const rows=[
+  ...state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived&&f.last_message)
+    .map(f=>({id:f.other_id,name:f.display_name||f.username,photo:f.avatar_url,online:f.online,
+      action:'open-chat',kind:'Cá nhân',at:f.last_message.created_at,unread:f.unread})),
+  ...state.groups.filter(g=>g.last_message).map(g=>({id:g.id,name:g.title,
+      action:'open-group',kind:'Nhóm',at:g.last_message.created_at,unread:g.unread}))
+ ].sort((a,b)=>b.at-a.at).slice(0,4);
+ return `<section class="member-start"><header><span class="start-mark" aria-hidden="true">${icon('chat',28)}</span>
+ <h1>${rows.length?'Trò chuyện gần đây':'Bắt đầu trò chuyện'}</h1>
+ ${rows.length?'':'<p>Tìm một người bạn để gửi tin nhắn đầu tiên.</p>'}</header>
+ ${rows.length?`<div class="start-threads">${rows.map(row=>`<button type="button" data-act="${row.action}" data-id="${row.id}">
+ ${avatar(row.name,row.online,'sm',row.photo)}<span class="start-name"><strong>${esc(row.name)}</strong><small>${row.kind} · ${date(row.at)}</small></span>
+ ${row.unread?`<span class="badge-count">${Number(row.unread)}</span>`:icon('chevron',16)}</button>`).join('')}</div>`:''}
+ <button class="btn ${rows.length?'ghost':'primary'}" data-act="app-tab" data-tab="friends">${icon('users',16)} Tìm bạn bè</button></section>`;
+}
+function threadJump(){
+ return '<div class="thread-jump"><button hidden type="button" data-act="thread-latest">↓ Tin mới nhất</button></div>';
+}
+function syncThreadJump(box,arrived=false){
+ const button=box?.parentElement?.querySelector('[data-act="thread-latest"]');
+ if(!button)return;
+ const away=box.scrollHeight-box.clientHeight-box.scrollTop>145;
+ const count=away?Number(button.dataset.newCount||0)+(arrived?1:0):0;
+ button.dataset.newCount=String(count);
+ button.hidden=!away;
+ const label=count?'↓ '+count+' tin mới':'↓ Tin mới nhất';
+ if(button.textContent!==label)button.textContent=label;
+}
+document.addEventListener('scroll',event=>{
+ if(event.target.id==='chat-messages')syncThreadJump(event.target);
+},true);
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
  ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
@@ -906,7 +1035,7 @@ function conversation(){
  const f=state.friends.find(x=>x.other_id===state.selected&&x.state==='accepted');
  if(!f)return welcomeEmpty();
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
- <div class="thread" id="chat-messages">${renderBubbles()}</div>
+ <div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
@@ -937,6 +1066,7 @@ function renderMessageThread(scroll=false){
  const previousPosition=box.scrollTop;
  box.innerHTML=renderBubbles();
  box.scrollTo({top:scroll||near?box.scrollHeight:previousPosition,behavior:'instant'});
+ syncThreadJump(box);
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
@@ -977,6 +1107,7 @@ function appendDirectMessage(message){
    if(currentIndex<0&&previous&&previous.id>0&&message.id>0&&message.id<previous.id)renderMessageThread(false);
    else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread,message.pending&&currentIndex<0);
  }
+ syncThreadJump(box,currentIndex<0&&message.sender_id!==state.user?.id);
  if(state.messages.length>110){
    state.messages.splice(0,state.messages.length-100);
    renderMessageThread(false);
@@ -1016,6 +1147,7 @@ async function loadMessages(scroll=true){
  }catch(e){if(current())toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
+ <button type="button" class="btn ghost sm" data-act="profile-view" data-id="${r.id}">Xem hồ sơ</button>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
  r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}
@@ -1028,13 +1160,13 @@ function friendsContent(){
  return `<div class="section-wrap"><span class="eyebrow">CỘNG ĐỒNG CỦA BẠN</span><h1 class="section-title">Bạn bè & kết nối</h1>
  <p class="section-lead">Tìm kiếm tài khoản, quản lý lời mời và bắt đầu nhắn tin.</p>
  ${typeof messageRequestsPanel==='function'?messageRequestsPanel():''}
- <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Tên tài khoản hoặc UID" required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
+ <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Tên hiển thị hoặc ID công khai" required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
  ${(state.peopleResults||[]).map(personResult).join('')||((state.peopleQuery)?'<div class="hint" style="margin-top:16px">Không có kết quả phù hợp.</div>':'')}</div>
  ${pending.length?`<h3 style="margin:28px 0 12px">Lời mời kết bạn (${pending.length})</h3>${pending.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ bạn xác nhận</div></div><button class="btn success sm" data-act="friend-accept" data-id="${f.other_id}">Chấp nhận</button><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Từ chối</button></div>`).join('')}`:''}
  ${sent.length?`<h3 style="margin:28px 0 12px">Lời mời đã gửi (${sent.length})</h3>${sent.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ phản hồi</div></div><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Thu hồi</button></div>`).join('')}`:''}
  <h3 style="margin:28px 0 12px">Bạn bè (${accepted.length})</h3>
  ${accepted.length?accepted.map(f=>`<div class="people-row">${avatar(f.username,f.online)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">${f.restricted?'Đang ở danh sách hạn chế':f.online?'Đang hoạt động':'Ngoại tuyến'}</div></div>
- <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
+ <button type="button" class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}">Xem hồ sơ</button><button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
 }
 function archiveContent(){
  const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived);
@@ -1062,16 +1194,17 @@ function profileContent(){
 }
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
- <p class="section-lead">Chỉ quản lý bảo mật, thiết bị và quyền truy cập. Hồ sơ công khai và liên hệ đã được chuyển sang mục riêng.</p>
+ <p class="section-lead">Tùy chỉnh giao diện trò chuyện, bảo mật và thiết bị đăng nhập.</p>
+ <section class="card studio-appearance"><h3>Hình nền hội thoại</h3><button class="btn ghost sm" type="button" data-studio="wallpaper">Chọn hình nền</button></section>
  <section class="card rail-settings-shortcuts" aria-label="Lối tắt tài khoản">
    <h3>${icon('grid',17)} Tiện ích khác</h3>
-   <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>
+   <p class="hint">Truy cập hồ sơ, hỗ trợ và các mục khác của tài khoản.</p>
    <div class="rail-settings-actions">
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
-     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Lịch sử Chat thế giới</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="archive">${icon('archive',16)} Hội thoại đã lưu trữ</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Chat thế giới</button>
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="profile">${icon('users',16)} Hồ sơ cá nhân</button>
      <button class="btn ghost sm" type="button" data-act="logout">${icon('logout',16)} Đăng xuất</button>
    </div>
  </section>
@@ -1166,6 +1299,9 @@ function worldComingSoon(){
  </div>`;
 }
 function renderApp(){
+ const oldThread=$('#chat-messages');
+ const reading=oldThread&&oldThread.scrollHeight-oldThread.clientHeight-oldThread.scrollTop>145?
+   {key:oldThread.dataset.chatKey,top:oldThread.scrollTop,count:oldThread.parentElement.querySelector('[data-act="thread-latest"]')?.dataset.newCount||'0'}:null;
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
@@ -1180,92 +1316,141 @@ function renderApp(){
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
- $('#chat-messages')?.scrollTo(0,1e7);
+ const inbox=state.tab==='messages'&&!state.selected&&matchMedia('(max-width:800px)').matches;
+ globalThis.markViewMotion?.(root().querySelector(inbox?'.side':'.main'),
+   ['member',state.user.id,state.tab,state.tab==='groups'?state.groupSelected:state.selected].join(':'));
+ window.applyChatPhoto?.();
+ window.applyChatBubble?.();
+ const thread=$('#chat-messages');
+ if(thread){
+  const resume=reading&&thread.dataset.chatKey===reading.key;
+  thread.scrollTop=resume?reading.top:thread.scrollHeight;
+  if(resume)thread.parentElement.querySelector('[data-act="thread-latest"]').dataset.newCount=reading.count;
+  syncThreadJump(thread);
+ }
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
+let memberNavigation=0;
 async function goTab(tab){
- state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
- if(tab==='settings'){
-  state.accountDeletion=await api('/api/me/deletion');
-  try{await loadWorldStatus();}catch{}
+ const request=++memberNavigation,userId=state.user?.id;
+ const sourceTab=state.tab,sourceChat=state.selected,sourceGroup=state.groupSelected;
+ const current=()=>request===memberNavigation&&state.user?.id===userId&&
+   state.tab===sourceTab&&state.selected===sourceChat&&state.groupSelected===sourceGroup;
+ let deletion;
+ try{
+  if(tab==='settings'){
+   deletion=await api('/api/me/deletion');
+   if(current())await loadWorldStatus().catch(()=>{});
+  }
+  if(tab==='world')await loadWorld(false);
+  if(tab==='friends'&&typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
+  if(tab==='groups')await refreshGroups(false);
+  if(tab==='notices')await loadNotices();
+  if(tab==='support')await loadTickets();
+ }catch(e){
+  if(current())toast(e.message,'error');
+  return;
  }
- if(tab==='world'){try{await loadWorld(false);}catch{state.worldData=null;}}
- if(tab==='friends'&&typeof loadMessageRequests==='function')await loadMessageRequests(false).catch(()=>{});
- if(tab==='groups')await refreshGroups(false);
- if(tab==='notices')await loadNotices();
- if(tab==='support'){state.mode='support';await loadTickets();}
+ if(!current())return;
+ state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
+ if(tab==='settings')state.accountDeletion=deletion;
+ if(tab==='support')state.mode='support';
  renderApp();
 }
 
 // ==== Administrator workspace ====
-const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa 30 ngày'],['overview','grid','Tổng quan'],['ops','shield','Điều hành thông minh'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin'],['world','group','Chat thế giới'],['reports','shield','Báo cáo vi phạm']];
+const adminSections=[
+ ['Bảng điều khiển',[['overview','grid','Tổng quan']]],
+ ['Tiếp nhận & xử lý',[['registrations','check','Duyệt đăng ký'],['tickets','inbox','Hỗ trợ / khôi phục'],['reports','shield','Báo cáo vi phạm'],['deletions','clock','Chờ xóa 30 ngày']]],
+ ['Thành viên & cộng đồng',[['users','users','Người dùng'],['groups','group','Nhóm chat'],['world','group','Chat thế giới'],['broadcast','announce','Thông báo']]],
+ ['Vận hành & bảo mật',[['ops','grid','Vận hành hệ thống'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin']]]
+];
+const adminTabs=adminSections.flatMap(([,tabs])=>tabs);
+const adminQueueOptions={
+ registrations:[['all','Tất cả'],['pending','Chờ duyệt'],['approved','Đã duyệt'],['denied','Từ chối']],
+ tickets:[['all','Tất cả'],['open','Đang mở'],['closed','Đã đóng'],['spam','Spam']],
+ reports:[['all','Tất cả'],['pending','Chờ xem xét'],['reviewed','Đã xem xét'],['dismissed','Đã bác bỏ']]
+};
+function adminQueueToolbar(tab){
+ const options=adminQueueOptions[tab];
+ if(!options)return '';
+ const selected=state.adminQueueFilters?.[tab]||'all';
+ return `<div class="admin-queue-toolbar" role="group" aria-label="Lọc hàng chờ theo trạng thái">${options.map(([id,label])=>
+   `<button type="button" data-act="admin-queue-filter" data-status="${id}" aria-pressed="${selected===id}">${label}</button>`).join('')}</div>`;
+}
 function adminNav(){
- return `<aside class="admin-nav"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
- <div class="nav-label">QUẢN LÝ HỆ THỐNG</div>
- ${adminTabs.map(([t,ic,label])=>`<button data-act="admin-tab" data-tab="${t}" title="${label}" class="${state.adminTab===t?'active':''}">${icon(ic,19)} ${label}</button>`).join('')}
+ return `<aside class="admin-nav" role="navigation" aria-label="Điều hướng quản trị"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
+ ${adminSections.map(([section,tabs])=>`<div class="admin-nav-group"><div class="admin-nav-group-label">${section}</div><div class="admin-nav-group-items">${tabs.map(([t,ic,label])=>
+   `<button type="button" data-act="admin-tab" data-tab="${t}" aria-current="${state.adminTab===t?'page':'false'}" class="${state.adminTab===t?'active':''}">${icon(ic,19)} ${label}</button>`).join('')}</div></div>`).join('')}
  <div class="nav-spacer"></div><div class="nav-label">TÀI KHOẢN</div>
  <div class="row" style="padding:11px 12px">${avatar('admin',true,'sm')}<div class="grow"><b>admin</b><div class="hint">Super administrator</div></div></div>
  <button data-act="logout" style="color:#ff93a0">${icon('logout')} Đăng xuất</button></aside>`;
 }
-const adminHeading={ops:['Trung tâm điều hành V6','Giám sát hiệu năng, cảnh báo bảo mật và điều khiển tính năng theo thời gian thực.'],deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
+const adminHeading={ops:['Vận hành hệ thống','Giám sát hiệu năng, cảnh báo bảo mật và điều khiển tính năng theo thời gian thực.'],deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
 world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và quản lý án phạt spam tại một nơi.'],
 reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
+let adminLoadSequence=0;
 async function loadAdmin(){
+ const sequence=++adminLoadSequence,tab=state.adminTab,adminId=state.user?.id;
+ const queue=encodeURIComponent(state.adminQueueFilters?.[tab]||'all');
+ const update={};
  if(state.adminTab==='world'&&typeof communityPlusRefresh==='function')
    communityPlusRefresh(false,true).then(()=>{
      const root=document.getElementById('v7-community-admin');
-     if(root&&state.adminTab==='world')root.innerHTML=communityPlusAdminPanel();
+     if(root&&sequence===adminLoadSequence&&state.adminTab==='world')root.innerHTML=communityPlusAdminPanel();
    }).catch(()=>{});
 
  if(!state.user?.is_admin)return;
  try{
-  switch(state.adminTab){
-   case 'groups':state.adminData=(await api('/api/admin/groups')).groups;break;
+  switch(tab){
+   case 'groups':update.adminData=(await api('/api/admin/groups')).groups;break;
    case 'world':{
     const [config,rooms,polls]=await Promise.all([
       api('/api/admin/world'),api('/api/admin/world/rooms'),api('/api/admin/world/polls')
     ]);
-    state.adminData=config;state.adminV6Rooms=rooms.rooms||[];state.adminV6Polls=polls.polls||[];
+    update.adminData=config;update.adminV6Rooms=rooms.rooms||[];update.adminV6Polls=polls.polls||[];
     break;
    }
-   case 'ops':state.adminData=await api('/api/admin/ops/overview');break;
-   case 'reports':state.adminData=await api('/api/admin/reports?status=all');break;
+   case 'ops':update.adminData=await api('/api/admin/ops/overview');break;
+   case 'reports':update.adminData=await api('/api/admin/reports?status='+queue);break;
    case 'overview':{
-    const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations'),api('/api/admin/audit')]);
-    state.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
+    const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations?status=pending&limit=5'),api('/api/admin/audit?limit=6')]);
+    update.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
    }
-   case 'registrations':state.adminData=(await api('/api/admin/registrations')).registrations;break;
-   case 'deletions':state.adminData=(await api('/api/admin/deletions')).requests;break;
-   case 'users':state.adminData=(await api('/api/admin/users?q='+encodeURIComponent(state.adminQuery))).users;break;
+   case 'registrations':update.adminData=(await api('/api/admin/registrations?status='+queue)).registrations;break;
+   case 'deletions':update.adminData=(await api('/api/admin/deletions')).requests;break;
+   case 'users':update.adminData=(await api('/api/admin/users?q='+encodeURIComponent(state.adminQuery))).users;break;
    case 'tickets':{
-    state.adminData=(await api('/api/admin/tickets')).tickets;
-    if(state.adminTicket&&!state.adminData.some(t=>t.id===state.adminTicket))state.adminTicket=null;
-    if(state.adminTicket){state.adminTicketMessages=(await api(`/api/admin/tickets/${state.adminTicket}/messages`)).messages;}
+    update.adminData=(await api('/api/admin/tickets?status='+queue)).tickets;
+    update.adminTicket=update.adminData.some(t=>t.id===state.adminTicket)?state.adminTicket:null;
+    update.adminTicketMessages=update.adminTicket?(await api(`/api/admin/tickets/${update.adminTicket}/messages`)).messages:[];
     break;
    }
    case 'security':{
-    state.adminApprovalData=await api('/api/admin/login-approvals');
-    state.adminData=null;break;
+    update.adminApprovalData=await api('/api/admin/login-approvals');
+    update.adminData=null;break;
    }
    case 'audit':{
     const f=state.adminAuditFilter;
     const params=new URLSearchParams({limit:'100',q:f.q||'',action:f.action||'',since:String(f.since||0),until:String(f.until||0)});
     const result=await api('/api/admin/audit?'+params.toString());
-    state.adminData=result.logs;
-    state.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
+    update.adminData=result.logs;
+    update.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
     break;
    }
-   default:state.adminData=null;
+   default:update.adminData=null;
   }
+  if(sequence!==adminLoadSequence||state.adminTab!==tab||state.user?.id!==adminId)return;
+  Object.assign(state,update);
   renderAdmin();
- }catch(e){toast(e.message,'error');}
+ }catch(e){if(sequence===adminLoadSequence&&state.user?.id===adminId)toast(e.message,'error');}
 }
 function statCard(label,value,footer){return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-foot">${footer}</div></div>`;}
 function adminOverview(){
  const d=state.adminData||{},s=d.stats||{total_users:0,online:0,pending:0,tickets:0,reserved_slots:0,max_users:100,messages:0};
  const regs=(d.registrations||[]).filter(x=>x.status==='pending').slice(0,5);
  return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}${statCard('Đang online',s.online,'Theo kết nối realtime')}
- ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa 30 ngày',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
+ ${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
  <div class="admin-panels"><section class="card"><div class="row between"><h2>Yêu cầu đăng ký mới</h2><button class="btn ghost sm" data-act="admin-tab" data-tab="registrations">Xem tất cả</button></div>
  <div class="sep"></div>${regs.length?regs.map(r=>`<div class="people-row">${avatar(r.username,false,'sm')}<div class="grow"><b>${esc(r.username)}</b><div class="hint">${date(r.created_at)}</div></div><button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button></div>`).join(''):'<div class="empty">Không có yêu cầu đang chờ.</div>'}</section>
  <section class="card"><h2>Giới hạn người dùng</h2><p class="hint">Kiểm soát số tài khoản tối đa được phép tồn tại. Các chỗ đã duyệt nhưng chưa tạo tài khoản vẫn được tính.</p>
@@ -1288,16 +1473,16 @@ function adminOverview(){
 }
 function statusPill(s){return s==='pending'?'<span class="pill warn">Chờ duyệt</span>':s==='approved'?'<span class="pill good">Đã duyệt</span>':s==='denied'?'<span class="pill bad">Từ chối</span>':'<span class="pill">Hoàn tất</span>';}
 function adminRegistrations(){const rows=state.adminData||[];
- return `<div class="row between" style="margin-bottom:18px"><span class="hint">${rows.filter(r=>r.status==='pending').length} yêu cầu chưa xử lý</span><button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
+ return `<div class="row between" style="margin-bottom:18px"><span class="hint">${rows.length} mục đã tải</span><button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Tên đề xuất</th><th>Số điện thoại</th><th>Email</th><th>Thời gian</th><th>Trạng thái</th><th>Quyết định</th></tr></thead><tbody>
- ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
+ ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td data-sort-value="${Number(r.created_at)}">${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
 function adminUsers(){const data=state.adminData||[];
- return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
+ return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên đăng nhập, tên hiển thị hoặc ID" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
- ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">${u.display_name?esc(u.display_name)+' · ':''}#${u.id}</div></div></div></td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
@@ -1315,17 +1500,15 @@ function adminDeletionQueue(){
   <button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
   <div class="table-scroll" style="margin-top:18px"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Ngày yêu cầu</th><th>Hạn xóa</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
   ${items.map(item=>`<tr><td><b>${esc(item.username)}</b><div class="hint">#${item.user_id}</div></td>
-  <td>${deadlineDate(item.requested_at)}</td><td>${deadlineDate(item.purge_at)}</td>
+  <td data-sort-value="${Number(item.requested_at)}">${deadlineDate(item.requested_at)}</td><td data-sort-value="${Number(item.purge_at)}">${deadlineDate(item.purge_at)}</td>
   <td><span class="pill ${item.purge_at*1000<=Date.now()?'bad':'warn'}">${item.purge_at*1000<=Date.now()?'Đến hạn xử lý':'Trong thời gian cân nhắc'}</span></td>
   <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
   </tbody></table></div></div>`;
 }
 function adminTickets(){const tickets=state.adminData||[];
- const spamCount=tickets.filter(t=>t.status==='spam').length;
- const visible=tickets.filter(t=>state.adminShowSpam||t.status!=='spam');
+ const visible=tickets;
  const chosen=visible.find(t=>t.id===state.adminTicket);
  return `<div class="admin-ticket-layout"><div class="card" style="padding:0;overflow:hidden"><div class="row between" style="padding:17px;border-bottom:1px solid var(--line)"><b>Cuộc trò chuyện (${tickets.length})</b><button class="btn sm ghost" data-act="admin-refresh">${icon('refresh',15)}</button></div>
- <div style="padding:9px 14px;border-bottom:1px solid var(--line)"><button class="btn ghost sm" type="button" data-act="admin-show-spam">${state.adminShowSpam?'Ẩn phiếu spam':'Xem phiếu spam'} (${spamCount})</button></div>
  <div class="ticket-list">${visible.length?visible.map(t=>`<div class="ticket-item ${t.id===state.adminTicket?'selected':''}" data-act="admin-open-ticket" data-id="${t.id}">
  <div class="row between"><b>#${t.id} · ${esc(t.kind)}</b><span class="pill ${t.status==='open'?'good':'bad'}">${t.status==='open'?'Mở':t.status==='spam'?'Spam':'Đóng'}</span></div>
  <div class="hint truncate" style="margin-top:7px">${esc(t.claim)||'Không có mô tả'}</div><div class="hint">${date(t.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có yêu cầu hỗ trợ.</div>'}</div></div>
@@ -1387,6 +1570,7 @@ function adminSecurity(){
  </div>`;
 }
 const auditNames={
+ maintenance_mode:'Thay đổi chế độ bảo trì',
  maintenance_member_reset:'Bảo trì: đặt lại dữ liệu thành viên',
  registration_approved:'Phê duyệt đăng ký',registration_denied:'Từ chối đăng ký',
  permanent_user_delete:'Xóa tài khoản vĩnh viễn',sanction_ban:'Cấm tài khoản',
@@ -1544,6 +1728,9 @@ async function adminAuditDetail(eventId){
    </section>
    <section class="admin-audit-section" aria-label="Nội dung được ghi nhận">
      <h4>Phạm vi và thông tin liên quan</h4>
+     ${e.target_user?adminDetailRow('Tài khoản liên quan',e.target_user.username?
+       `<button type="button" class="btn ghost sm" data-act="admin-user-detail" data-id="${Number(e.target_user.id)}">${esc(e.target_user.username)} · #${Number(e.target_user.id)}</button>`:
+       'Tài khoản #'+Number(e.target_user.id)+' hiện không còn trong danh sách người dùng'):''}
      ${facts||'<p class="admin-audit-note">Nhật ký không cung cấp thêm đối tượng hoặc số lượng cụ thể cho sự kiện này.</p>'}
      <p class="admin-audit-note">${esc(info.note)}</p>
    </section>
@@ -1560,8 +1747,9 @@ async function adminAuditDetail(eventId){
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='ops'&&typeof adminOpsV6==='function'?adminOpsV6():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():state.adminTab==='world'?adminWorldContent():state.adminTab==='reports'?adminReportsContent():adminAudit();
- root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
+ root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${adminQueueToolbar(state.adminTab)}${content}</main></div>`;
  saveCurrentView();
+ globalThis.markViewMotion?.(root().querySelector('.admin-page'),['admin',state.user.id,state.adminTab].join(':'));
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
 function showCancelDeletionDialog(){
@@ -1673,7 +1861,7 @@ function adminDetailRow(label,value){
  return `<div class="admin-detail-row"><span class="muted">${esc(label)}</span><strong>${value}</strong></div>`;
 }
 async function userDetails(uid){
- const summary=(state.adminData||[]).find(x=>x.id===uid);
+ const summary=Array.isArray(state.adminData)?state.adminData.find(x=>x.id===uid):null;
  modal({
   title:`Hồ sơ quản trị: ${summary?.username||'#'+uid}`,
   description:'Thông tin chỉ dành cho quản trị viên. Lượt xem này được ghi vào nhật ký kiểm toán.',
@@ -1699,7 +1887,7 @@ async function userDetails(uid){
      ${adminDetailRow('Số điện thoại',contact(u.phone))}
      ${adminDetailRow('Email / Gmail',contact(u.email))}
      ${adminDetailRow('Giới thiệu',contact(u.bio))}
-     <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email; không hiển thị trong hồ sơ công khai.</p>
+     <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email. Chủ tài khoản có thể chọn hiển thị số điện thoại trên hồ sơ.</p>
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Tài khoản & quyền riêng tư</h3>
@@ -1717,14 +1905,23 @@ async function userDetails(uid){
      <h3>${icon('grid',17)} Hoạt động & tài nguyên</h3>
      ${adminDetailRow('Bạn bè',String(u.friend_count))}
      ${adminDetailRow('Tin nhắn riêng liên quan',String(u.message_count))}
+     ${adminDetailRow('Đã gửi / Đã nhận',Number(u.sent_count)+' / '+Number(u.received_count))}
+     ${adminDetailRow('Tin nhắn riêng gần nhất',u.last_message_at?deadlineDate(u.last_message_at):'Chưa có tin nhắn')}
      ${adminDetailRow('Nhóm đã tham gia',String(u.group_count))}
-     ${adminDetailRow('Tệp tải lên',String(u.file_count))}
+     ${adminDetailRow('Tệp tải lên',String(u.file_count)+' · '+Number(u.file_bytes).toLocaleString('vi-VN')+' byte')}
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
      ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
    </div>
    <div class="admin-detail-section">
+     <h3>${icon('clock',17)} Nhật ký liên quan đến tài khoản</h3>
+     ${(u.recent_events||[]).map(e=>adminDetailRow(esc(auditLabel(e.action)),
+       `<button type="button" class="btn ghost sm" data-act="admin-audit-detail" data-id="${Number(e.id)}">#${Number(e.id)} · ${deadlineDate(e.created_at)}</button><div class="hint">${esc(e.actor||'Chưa rõ người thực hiện')}</div>`)).join('')||
+       '<p class="hint">Chưa có sự kiện quản trị gắn với ID tài khoản này.</p>'}
+     <p class="hint">Hiển thị tối đa 5 sự kiện trước lần mở hồ sơ này.</p>
+   </div>
+   <div class="admin-detail-section">
      <h3>${icon('shield',17)} Kiểm tra bảo mật thiết bị</h3>
-     <p class="hint">IP rút gọn và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
+     <p class="hint">Địa chỉ IP và vị trí ước tính chỉ dành cho Admin khi xử lý bảo mật. Mọi lần mở được ghi nhật ký.</p>
      <button type="button" class="btn ghost sm" data-act="admin-device-security" data-id="${u.id}">${icon('lock',15)} Xem thông tin bảo mật phiên</button>
    </div>
    <div class="admin-user-actions">
@@ -1772,7 +1969,7 @@ async function showAdminSessionSecurity(uid){
   return entries.map(s=>`<article class="admin-device-security-entry">
    <strong>${esc(s.device_label||s.device_name||'Thiết bị chưa đặt tên')}</strong>
    <small>${esc(kind)} · ${esc(s.os_name||'Không rõ hệ điều hành')} · ${esc(s.browser||'Không rõ trình duyệt')}</small>
-   ${adminDetailRow('Mạng (IP rút gọn)',esc(s.network_hint||'Không có dữ liệu'))}
+   ${adminDetailRow(s.ip_address?'Địa chỉ IP':'Mạng (dữ liệu phiên cũ)',esc(s.ip_address||s.network_hint||'Không có dữ liệu'))}
    ${adminDetailRow('Vị trí ước tính',esc(s.location_hint||'Không xác định'))}
    ${adminDetailRow('Hoạt động gần nhất',deadlineDate(s.last_seen))}
    ${adminDetailRow('Hết hạn',deadlineDate(s.expires_at))}
@@ -1780,7 +1977,7 @@ async function showAdminSessionSecurity(uid){
  };
  modal({
   title:'Bảo mật phiên · '+data.username,
-  description:'Chỉ Admin có quyền truy cập. Dữ liệu mạng đã rút gọn, vị trí GeoIP có thể không xác định. Lượt xem được ghi nhật ký.',
+  description:'Chỉ Admin có quyền truy cập. Phiên cũ có thể chỉ có IP rút gọn. Vị trí GeoIP là ước tính. Lượt xem được ghi nhật ký.',
   content:`<div class="admin-device-security-view">
    <h3>Phiên đăng nhập (${data.sessions.length})</h3>
    ${summary(data.sessions,'Phiên đăng nhập')}
@@ -1840,6 +2037,56 @@ function grantDialog(tid){
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
+  case 'reply-origin':{
+   const thread=button.closest('.thread');
+   if(!thread||!Number.isSafeInteger(id)||id<=0)break;
+   const group=thread.dataset.chatKey.startsWith('group-');
+   const scope=group?'group':'dm';
+   const original=document.getElementById(`msg-${scope}-${id}`);
+   if(original&&thread.contains(original)){
+    thread.querySelector('.reply-return')?.remove();
+    thread.querySelector('.reply-target')?.classList.remove('reply-target');
+    const back=document.createElement('button');
+    back.type='button';back.className='reply-return';back.dataset.act='reply-back';
+    back.dataset.source=button.closest('.bubble-wrap').id;back.textContent='↩ Về câu trả lời';
+    original.append(back);original.classList.add('reply-target');
+    original.scrollIntoView({block:'center'});back.focus({preventScroll:true});
+   }else{
+    const url=group?`/api/groups/${state.groupSelected}/messages`:`/api/messages/${state.selected}`;
+    const result=await api(url+'?before='+(id+1)+'&limit=1');
+    if(!button.isConnected)break;
+    const source=result.messages.find(m=>m.id===id&&!m.deleted_at);
+    if(!source){toast('Tin nhắn gốc không còn khả dụng.');break;}
+    modal({title:'Tin nhắn gốc',description:replyAuthor(source,group)+' · '+date(source.created_at),
+      content:'<div class="original-message">'+esc(source.body||source.attachment?.name||'Tệp đính kèm')+'</div>',
+      confirm:'Quay lại hội thoại',cancel:null});
+   }
+   break;
+  }
+  case 'reply-back':{
+   const thread=button.closest('.thread');
+   const source=document.getElementById(button.dataset.source);
+   button.closest('.reply-target')?.classList.remove('reply-target');button.remove();
+   if(source&&thread.contains(source)){
+    source.scrollIntoView({block:'center'});source.querySelector('.reply-link')?.focus({preventScroll:true});
+   }else toast('Câu trả lời không còn trong phần lịch sử đang mở.');
+   break;
+  }
+  case 'thread-latest':{
+   const thread=$('#chat-messages');
+   if(thread){thread.scrollTop=thread.scrollHeight;syncThreadJump(thread);}
+   break;
+  }
+  case 'inbox-filter':{
+    const key=button.dataset.filter;
+    if(!Object.hasOwn(inboxFilters,key))break;
+    state.inboxFilter=key;
+    const bar=button.parentElement;
+    bar.dataset.filter=key;
+    for(const item of bar.querySelectorAll('button'))item.setAttribute('aria-pressed',String(item===button));
+    renderSideItems();
+    break;
+   }
   case 'copy-member-id':{
     if(!state.user || state.user.is_admin)return;
     const accountId=String(state.user.public_id||state.user.id);
@@ -1849,9 +2096,9 @@ async function clickAction(button){
    }
    case 'mode-login':state.mode='login';state.step='username';renderAuth();break;
   case 'mode-register':state.mode='register';renderAuth();break;
-  case 'mode-support':state.mode='support';state.supportTicket=null;await loadTickets();renderAuth();break;
+  case 'mode-support':state.mode='support';state.supportTicket=null;await loadTickets();if(state.mode==='support'&&!state.user)renderAuth();break;
   case 'forgot-username':case 'forgot-password':case 'forgot-pin':
-   state.supportKind=act.slice(7);state.mode='support';state.supportTicket=null;await loadTickets();renderAuth();break;
+   state.supportKind=act.slice(7);state.mode='support';state.supportTicket=null;await loadTickets();if(state.mode==='support'&&!state.user)renderAuth();break;
   case 'back-login':state.step='username';state.challenge='';renderAuth();break;
   case 'forget-remembered':{
    await post('/api/auth/remembered/forget');
@@ -1870,7 +2117,13 @@ async function clickAction(button){
    renderAuth();break;
   }
   case 'refresh-registration':await refreshRegistration();break;
-  case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';renderAuth();break;
+  case 'resend-registration-code':{
+   button.disabled=true;
+   try{const r=await post('/api/registration/email-code',{username:state.regName});toast(r.already_verified?'Địa chỉ email đã được xác nhận.':'Đã gửi mã xác nhận. Hãy kiểm tra hộp thư.','ok');}
+   finally{button.disabled=false;}
+   break;
+ }
+  case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';state.regEmailVerification=false;renderAuth();break;
   case 'support-open':state.supportTicket=id;await loadTicketMessages();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
@@ -1897,6 +2150,12 @@ async function clickAction(button){
   case 'unblock':await del(`/api/blocks/${id}`);await refreshFriends(false);renderApp();toast('Đã bỏ chặn.','ok');break;
   case 'load-notifications':{
    const r=await api('/api/notifications');const el=$('#notifications-list');if(el)el.innerHTML=r.notifications.length?r.notifications.map(n=>`<div class="audit-item" style="padding-left:0"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>`).join(''):'<div class="hint" style="margin-top:12px">Không có thông báo mới.</div>';break;
+  }
+  case 'admin-queue-filter':{
+   const tab=state.adminTab,status=button.dataset.status;
+   if(!adminQueueOptions[tab]?.some(([id])=>id===status))break;
+   (state.adminQueueFilters||={})[tab]=status;
+   await loadAdmin();break;
   }
   case 'admin-tab':state.adminTab=button.dataset.tab;state.adminData=null;await loadAdmin();break;
   case 'admin-audit-detail':await adminAuditDetail(id);break;
@@ -1936,7 +2195,6 @@ async function clickAction(button){
   case 'admin-user-detail':await userDetails(id);break;
   case 'admin-view-messages':await userMessageLog(id);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
-  case 'admin-show-spam':state.adminShowSpam=!state.adminShowSpam;renderAdmin();break;
    case 'admin-open-ticket':state.adminTicket=id;state.adminTicketMessages=(await api(`/api/admin/tickets/${id}/messages`)).messages;renderAdmin();break;
   case 'admin-recovery-grant':grantDialog(id);break;
   case 'admin-close-ticket':{
@@ -2059,7 +2317,7 @@ document.addEventListener('submit',async event=>{
     if(pw!==pw2)throw Error('Hai lần nhập mật khẩu không khớp.');
     if(pin!==pin2)throw Error('Hai lần nhập PIN không khớp.');
     if(pin.length!==pinLen)throw Error(`PIN phải đúng ${pinLen} chữ số.`);
-    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined,accepted_terms:fd.get('accepted_terms')==='on'});
+    await post('/api/registration/complete',{username:state.regName,password:pw,pin,pin_length:pinLen,phone:val('phone')||undefined,accepted_terms:fd.get('accepted_terms')==='on',email_code:val('email_code')});
     state.username=state.regName;state.regStatus='';state.savedDevice=false;state.rememberedDevice=false;
     state.user=(await api('/api/me')).user;
     toast('Tạo tài khoản thành công. Hãy đặt tên hiển thị để bắt đầu.','ok');
@@ -2177,6 +2435,7 @@ document.addEventListener('submit',async event=>{
    }
   }
  }catch(e){
+  if(e.maintenance)return;
   const authField={'login-username':'username','login-password':'password',
     'login-pin':'pin','login-remembered':'pin'}[key];
   if(!authField||!showAuthFieldError(form,authField,authFailureText(key,e)))

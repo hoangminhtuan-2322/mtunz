@@ -23,6 +23,10 @@ function socialSettingsPanel(){
      <option value="friends" ${u.profile_visibility==='friends'?'selected':''}>Chỉ bạn bè</option>
      <option value="only_me" ${u.profile_visibility==='only_me'?'selected':''}>Chỉ mình tôi</option>
     </select></div>
+   <label class="social-toggle"><input type="checkbox" name="show_login_in_profile" ${u.show_login_in_profile?'checked':''}>
+     <span><strong>Hiện tên đăng nhập trong hồ sơ</strong><small>Chỉ hiển thị cho những người được phép xem hồ sơ.</small></span></label>
+   <label class="social-toggle"><input type="checkbox" name="show_phone_in_profile" ${u.show_phone_in_profile?'checked':''}>
+     <span><strong>Hiện số điện thoại trong hồ sơ</strong><small>Người được phép xem hồ sơ sẽ thấy số điện thoại đầy đủ.</small></span></label>
    <label class="social-toggle"><input type="checkbox" name="allow_message_requests" ${u.allow_message_requests?'checked':''}>
      <span><strong>Nhận tin nhắn chờ</strong><small>Người chưa kết bạn có thể gửi một lời nhắn. Chỉ khi bạn chấp nhận mới mở hội thoại.</small></span></label>
    <label class="social-toggle"><input type="checkbox" name="world_anonymous" ${u.world_anonymous?'checked':''}>
@@ -94,6 +98,8 @@ document.addEventListener('submit',async event=>{
   await api('/api/me/social',{method:'PATCH',data:{
    headline:String(fd.get('headline')||'').trim(),website:String(fd.get('website')||'').trim(),
    profile_visibility:String(fd.get('profile_visibility')||'everyone'),
+   show_login_in_profile:fd.has('show_login_in_profile'),
+   show_phone_in_profile:fd.has('show_phone_in_profile'),
    allow_message_requests:fd.has('allow_message_requests'),
    world_anonymous:fd.has('world_anonymous')
   }});

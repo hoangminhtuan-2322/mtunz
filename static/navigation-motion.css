@@ -1,0 +1,32 @@
+/* The opening and navigation share a decelerating curve, with no delay on input. */
+#app > .boot-screen {
+  background:radial-gradient(ellipse at 50% 42%,#3a294c 0%,#201a30 43%,#14121d 76%);
+}
+.boot-emblem {position:relative;display:grid;place-items:center;width:118px;height:118px}
+.boot-emblem::before,.boot-emblem::after {
+  content:"";position:absolute;inset:0;border:1px solid #dbaeff55;border-radius:50%;pointer-events:none;
+}
+.boot-emblem::after {inset:10px;border-color:#edc3dc3b}
+#app .boot-title {font-size:28px;letter-spacing:-1.2px}
+#app .boot-loader::after {background:linear-gradient(90deg,#bda4ef,#fac3ca)}
+/* Render updates may replace these elements even when navigation has not changed. */
+.auth-screen .auth-screen-content,
+.admin-page .admin-header,.admin-page .stats-grid > *,
+.admin-page .admin-panels > .card,.admin-page > .admin-user-detail {animation:none}
+@keyframes arrival-reveal {from{opacity:.55;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes opening-reveal {from{opacity:.22}to{opacity:1}}
+@keyframes opening-ring {from{opacity:0;transform:scale(.77)}to{opacity:1;transform:scale(1)}}
+@media(prefers-reduced-motion:no-preference){
+  html:not(.mtunz-save-data) .entry-arrival {animation:opening-reveal .34s ease-out}
+  html:not(.mtunz-save-data) .view-arrival {animation:arrival-reveal .22s cubic-bezier(.2,.75,.25,1)}
+  html:not(.mtunz-save-data) .boot-emblem::before,
+  html:not(.mtunz-save-data) .boot-emblem::after {animation:opening-ring .62s cubic-bezier(.16,1,.3,1) backwards}
+  html:not(.mtunz-save-data) .boot-emblem::after {animation-delay:60ms}
+  html:not(.mtunz-save-data) .boot-subtitle {animation:opening-reveal .36s ease-out}
+  :is(.auth-nav,.admin-nav,.rail) button:active:not(:disabled) {transform:scale(.975)}
+}
+html.mtunz-save-data .boot-screen .loading-logo,
+html.mtunz-save-data .boot-loader::after {animation:none!important}
+@media(prefers-reduced-motion:reduce){
+  .boot-screen *, .boot-screen ::after,.boot-screen ::before {animation:none!important}
+}

@@ -41,3 +41,21 @@ jobs:
         run: python tests/smoke_legacy_upgrade.py
       - name: Test Python imports and SQL against PostgreSQL
         run: python tests/smoke_postgres.py
+      - name: Verify community IDs, polls and message recall on PostgreSQL
+        env:
+          DATABASE_URL: postgresql://mtunz_ci:ci-only-password@localhost:5432/mtunz_regression
+        run: |
+          psql "$TEST_POSTGRES_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE mtunz_regression'
+          python -m pytest -q \
+            tests/test_v6_features.py::test_room_slow_mode_polls_one_vote_and_admin_permissions \
+            tests/test_v6_features.py::test_recall_updates_notices_and_unread_without_affecting_other_messages \
+            tests/test_community_plus_v7.py::test_event_creation_and_attendance \
+            tests/test_community_plus_v7.py::test_world_appeal_and_pin_review \
+            tests/test_social_v2.py::test_seven_digit_public_ids_and_nonadmin_direct_messaging \
+            tests/test_complete_features.py::test_single_notice_read_is_private_and_unread_filter_runs_before_limit \
+            tests/test_complete_features.py::test_group_membership_edit_reactions_and_moderation \
+            tests/test_v6_features.py::test_studio_preferences_and_admin_intake_controls \
+            tests/test_first_login_phone.py::test_phone_uniqueness_and_existing_login_compatibility \
+            tests/test_first_login_phone.py::test_public_profile_search_and_friends_do_not_expose_login_username \
+            tests/test_first_login_phone.py::test_approved_registration_requires_the_delivered_email_code \
+            tests/test_admin_security_v5.py::test_member_maintenance_revokes_sessions_and_blocks_login_until_reopened

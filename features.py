@@ -54,6 +54,7 @@ def install(core):
                 column('users', col, typ)
             # Legacy accounts remain usable. Only newly completed registrations
             # require the first-login display-name onboarding step.
+            column('users','chat_wallpaper',"TEXT NOT NULL DEFAULT 'midnight'")
             column('users','needs_display_name','INTEGER NOT NULL DEFAULT 0')
             # Only explicit approved-registration consent is recorded. Legacy
             # accounts have NULL; never claim acceptance on their behalf.
@@ -63,18 +64,29 @@ def install(core):
             # Avoid failing startup; ambiguous phone login will be rejected.
             if not one(c,"SELECT phone FROM users WHERE phone IS NOT NULL AND phone<>'' GROUP BY phone HAVING COUNT(*)>1 LIMIT 1"):
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users(phone) WHERE phone IS NOT NULL AND phone<>''")
-            for col, typ in [('phone','TEXT'),('email','TEXT')]:
+            for col, typ in [('phone','TEXT'),('email','TEXT'),('email_code_hash','TEXT'),
+                             ('email_code_sent','INTEGER NOT NULL DEFAULT 0'),
+                             ('email_code_attempts','INTEGER NOT NULL DEFAULT 0'),('email_verified_at','INTEGER')]:
                 column('registrations',col,typ)
             for col, typ in [('attachment_id','INTEGER'),('reply_to','INTEGER'),('edited_at','INTEGER'),('deleted_at','INTEGER')]:
                 column('messages', col, typ)
             column('notifications', 'read_at','INTEGER')
+            column('notifications','message_id','INTEGER REFERENCES messages(id) ON DELETE CASCADE')
+            if 'preview_kind' not in {r['name'] for r in c.execute('PRAGMA table_info(notifications)')}:
+                column('notifications','preview_kind','TEXT')
+                # Old previews have no reliable message ID. Keep the original rows
+                # and show a generic label instead of guessing the conversation.
+                c.execute("""UPDATE notifications SET preview_kind='legacy'
+                             WHERE body LIKE ? OR body LIKE ?""",
+                          ('Tin nhắn từ %: %','Tin nhắn hẹn giờ từ %: %'))
+            c.execute('CREATE INDEX IF NOT EXISTS notifications_message_idx ON notifications(message_id) WHERE message_id IS NOT NULL')
             column('sessions','created_at','INTEGER')
             for table in ('sessions', 'trusted_devices'):
                 for name, typ in (
                     ('last_seen', 'INTEGER'), ('device_label', 'TEXT'),
                     ('device_name', 'TEXT'), ('device_type', 'TEXT'),
                     ('browser', 'TEXT'), ('os_name', 'TEXT'),
-                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT')):
+                    ('location_hint', 'TEXT'), ('network_hint', 'TEXT'), ('ip_address', 'TEXT')):
                     column(table, name, typ)
             c.executescript('''
               CREATE TABLE IF NOT EXISTS attachments (
@@ -95,6 +107,8 @@ def install(core):
                 sender_id INTEGER NOT NULL REFERENCES users(id), body TEXT NOT NULL DEFAULT '',
                 attachment_id INTEGER REFERENCES attachments(id), reply_to INTEGER,
                 edited_at INTEGER, deleted_at INTEGER, created_at INTEGER NOT NULL);
+              CREATE INDEX IF NOT EXISTS group_members_user_idx ON group_members(user_id,group_id);
+              CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id,id);
               CREATE INDEX IF NOT EXISTS group_messages_idx ON group_messages(group_id,id);
               CREATE TABLE IF NOT EXISTS reactions (
                 scope TEXT NOT NULL, message_id INTEGER NOT NULL,
@@ -173,8 +187,9 @@ def install(core):
             result['reactions']=reactions_for(c,scope,row['id'])
         return result
 
-    def notify(c, uid, body):
-        c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',(uid,body[:500],now()))
+    def notify(c, uid, body, message_id=None, preview_kind=None):
+        c.execute('''INSERT INTO notifications(user_id,body,created_at,message_id,preview_kind)
+                     VALUES(?,?,?,?,?)''',(uid,body[:500],now(),message_id,preview_kind))
 
     class Profile(BaseModel):
         display_name:str=Field(default='',max_length=50)
@@ -191,12 +206,13 @@ def install(core):
         email=core.normalize_email(body.email) if body.email is not None else u['email']
         name=core.validate_display_name(body.display_name,u['username'])
         with db() as c:
-            if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
-                raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
+            if body.phone is not None:
+                core.ensure_phone_available(c, phone, u['id'])
             c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
-                          phone=?,email=? WHERE id=?''',
+                          phone=COALESCE(?,phone),email=COALESCE(?,email) WHERE id=?''',
                       (name,body.bio.strip(),int(body.show_online),
-                       int(body.show_receipts),phone,email,u['id']))
+                       int(body.show_receipts),phone if body.phone is not None else None,
+                       email if body.email is not None else None,u['id']))
         return {'ok':True}
 
     @app.get('/api/profile/{uid}')
@@ -204,7 +220,8 @@ def install(core):
         u=current_user(request)
         with db() as c:
             r=one(c,'''SELECT id,public_id,display_name,bio,headline,website,created_at,last_seen,
-                               show_online,profile_visibility,avatar_attachment_id,cover_attachment_id
+                               show_online,profile_visibility,avatar_attachment_id,cover_attachment_id,
+                               username AS login_username,phone,show_phone_in_profile,show_login_in_profile
                         FROM users WHERE id=? AND is_admin=0''',(uid,))
             if not r or (uid!=u['id'] and has_block(c,uid,u['id'])):
                 raise HTTPException(404,'Không tìm thấy người dùng.')
@@ -219,6 +236,12 @@ def install(core):
             p['website']=r['website'] if allowed else ''
             p.pop('avatar_attachment_id',None)
             p.pop('cover_attachment_id',None)
+            show_phone=p.pop('show_phone_in_profile')
+            show_login=p.pop('show_login_in_profile')
+            if not (allowed and show_phone and p['phone']):
+                p.pop('phone')
+            if not (allowed and show_login):
+                p.pop('login_username')
             p['private']=not allowed
         return {'profile':p}
 
@@ -469,10 +492,23 @@ def install(core):
         resp.headers['Content-Disposition']="attachment; filename=mtunz-my-data.json"
         return resp
 
+    class ChatAppearance(BaseModel):
+        wallpaper:Literal['midnight','lagoon','dusk','grove']
+
+    @app.patch('/api/me/appearance')
+    def set_appearance(request:Request,body:ChatAppearance):
+        user=current_user(request)
+        with db() as c:
+            c.execute('UPDATE users SET chat_wallpaper=? WHERE id=?',(body.wallpaper,user['id']))
+        return {'wallpaper':body.wallpaper}
+
     @app.post('/api/uploads')
     async def upload(request:Request, file:UploadFile=File(...), waveform:str=Form(''), duration_ms:int=Form(0)):
         u=current_user(request)
         throttle(request, 'upload', 35, 3600, str(u['id']))
+        with db() as c:
+            if not core.v6_feature_on(c,'member_uploads'):
+                raise HTTPException(423,'Admin đã tạm dừng tải tệp và sticker mới.')
         mime=(file.content_type or '').lower().split(';')[0]
         if mime not in ALLOWED:
             raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
@@ -517,6 +553,8 @@ def install(core):
                 raise HTTPException(415,'Nội dung tệp không đúng định dạng đã khai báo.')
             with db() as c:
                 if hosted:
+                    # Serialize quota checks and inserts for simultaneous uploads by one account.
+                    c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(u['id'],)).fetchone()
                     used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=?',(u['id'],))['total']
                     if used + total > 25*1024*1024:
                         raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')
@@ -609,19 +647,26 @@ def install(core):
         return {'id':gid}
 
     @app.get('/api/groups')
-    async def list_groups(request:Request):
+    def list_groups(request:Request):
         u=current_user(request)
         with db() as c:
             rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,
-                           (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
-                           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.sender_id!=?) AS unread
-                           FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
-                           WHERE gm.user_id=? ORDER BY g.id DESC''',(u['id'],u['id']))
-            for g in rows:
-                last=one(c,'''SELECT m.id,m.body,m.sender_id,m.created_at,m.deleted_at,m.attachment_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username
-                          FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=? ORDER BY m.id DESC LIMIT 1''',(g['id'],))
-                g['last_message']=dict(last) if last else None
-            rows.sort(key=lambda g:g['last_message']['created_at'] if g['last_message'] else g['created_at'],reverse=True)
+                       (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
+                       (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id
+                         AND m.sender_id!=gm.user_id AND m.deleted_at IS NULL) AS unread,
+                       last.id AS last_id,last.body AS last_body,last.sender_id AS last_sender_id,
+                       last.created_at AS last_created_at,last.deleted_at AS last_deleted_at,
+                       last.attachment_id AS last_attachment_id,
+                       COALESCE(NULLIF(sender.display_name,''),'Thành viên') AS last_username
+                       FROM group_members gm JOIN chat_groups g ON g.id=gm.group_id
+                       LEFT JOIN group_messages last ON last.id=(
+                         SELECT m.id FROM group_messages m WHERE m.group_id=g.id ORDER BY m.id DESC LIMIT 1)
+                       LEFT JOIN users sender ON sender.id=last.sender_id
+                       WHERE gm.user_id=? ORDER BY COALESCE(last.created_at,g.created_at) DESC,g.id DESC''',(u['id'],))
+            for group in rows:
+                message={key:group.pop('last_'+key) for key in
+                         ('id','body','sender_id','created_at','deleted_at','attachment_id','username')}
+                group['last_message']=message if message['id'] is not None else None
         return {'groups':rows}
 
     @app.get('/api/groups/{gid}')
@@ -694,14 +739,15 @@ def install(core):
         reply_to:int|None=None
 
     @app.get('/api/groups/{gid}/messages')
-    async def group_history(request:Request,gid:int,before:int=0):
+    async def group_history(request:Request,gid:int,before:int=0,limit:int=70):
         u=current_user(request)
+        if not 1<=limit<=70:raise HTTPException(422,'Giới hạn lịch sử không hợp lệ.')
         with db() as c:
             active_member(c,gid,u['id'])
             sql="SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?"
             args=[gid]
             if before>0:sql+=' AND m.id<?';args.append(before)
-            messages=many(c,sql+' ORDER BY m.id DESC LIMIT 70',args)
+            messages=many(c,sql+' ORDER BY m.id DESC LIMIT ?',(*args,limit))
             result=[message_dict(c,x,'group') for x in messages[::-1]]
         return {'messages':result}
 
@@ -776,6 +822,7 @@ def install(core):
         with db() as c:
             m=dm_message_owner(c,mid,u['id'])
             c.execute("UPDATE messages SET deleted_at=COALESCE(deleted_at,?), body='' WHERE id=?",(now(),mid))
+            c.execute('DELETE FROM notifications WHERE message_id=?',(mid,))
             c.execute("DELETE FROM message_pins WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM message_edit_history WHERE scope='dm' AND message_id=?",(mid,))
@@ -913,7 +960,7 @@ def install(core):
                 pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
                          (body.target_id,u['id']))
                 if not pref or not pref['muted']:
-                    notify(c,body.target_id,f'{u["display_name"] or "Thành viên"} đã chuyển tiếp một tin nhắn.')
+                    notify(c,body.target_id,f'{u["display_name"] or "Thành viên"} đã chuyển tiếp một tin nhắn.',message_id=cur.lastrowid)
             else:
                 active_member(c,body.target_id,u['id'])
                 cur=c.execute('''INSERT INTO group_messages
@@ -987,7 +1034,17 @@ def install(core):
     async def mark_notices(request:Request):
         u=current_user(request)
         with db() as c:
-            c.execute('UPDATE notifications SET read_at=COALESCE(read_at,?) WHERE user_id=?',(now(),u['id']))
+            c.execute('UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL',(now(),u['id']))
+        return {'ok':True}
+
+    @app.post('/api/notifications/{notice_id}/read')
+    def read_notice(request:Request,notice_id:int):
+        u=current_user(request)
+        with db() as c:
+            updated=c.execute('''UPDATE notifications SET read_at=COALESCE(read_at,?)
+                                 WHERE id=? AND user_id=?''',(now(),notice_id,u['id']))
+            if not updated.rowcount:
+                raise HTTPException(404,'Không tìm thấy thông báo.')
         return {'ok':True}
 
     class Prefs(BaseModel):

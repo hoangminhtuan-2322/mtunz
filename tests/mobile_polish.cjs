@@ -19,7 +19,7 @@ for(const marker of [
  '.mt-settings-upgraded .setting-grid'
 ])assert(css.includes(marker),'Missing mobile safeguard: '+marker);
 assert(css.includes('font-size:16px!important'),'Prevent iOS input focus zoom');
-assert(css.includes('body.mt-mobile-editing .shell:not(.admin-shell)>.rail'),'Keyboard must hide bottom navigation');
+assert(css.includes('body.mt-mobile-keyboard .shell:not(.admin-shell)>.rail'),'Keyboard must hide bottom navigation');
 assert(css.includes('.shell:not(.admin-shell)>.rail'),'Member navigation must remain available when keyboard closes');
 assert(css.includes('.bubble-more')&&extras.includes('data-message-tools'),'Mobile message tools have a compact trigger');
 assert(!css.includes('.conversation .main-head [data-act='),'Do not hide chat actions by attribute');
@@ -63,6 +63,8 @@ assert(sim.classes.has('mt-mobile-editing'),'Typing must hide the bottom rail');
 sim.vv.height=435;sim.events.viewport.resize();
 assert(sim.classes.has('mt-mobile-keyboard'),'Shrinking visible viewport marks keyboard open');
 assert.equal(sim.style.data['--mt-mobile-viewport-height'],'435px');
+sim.vv.height=750;sim.events.viewport.resize();
+assert(!sim.classes.has('mt-mobile-keyboard')&&sim.classes.has('mt-mobile-editing'),'Restore navigation when the keyboard closes and focus remains');
 sim.document.activeElement=null;sim.vv.height=750;sim.events.document.focusout();
 assert(!sim.classes.has('mt-mobile-keyboard')&&!sim.classes.has('mt-mobile-editing'));
 assert.equal(sim.style.data['--mt-mobile-viewport-height'],undefined,'Restore full height on blur');

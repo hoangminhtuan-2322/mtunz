@@ -43,3 +43,20 @@ assert(css.includes('@media (min-width:801px) and (max-width:940px)'),
        'Narrow laptops must still have a readable menu');
 assert(html.includes('/static/rail-navigation.css?v=2.0'));
 console.log('Member navigation: 5 primary actions, accessible secondary actions, bottom navigation, fallback shortcuts OK');
+
+const extras=fs.readFileSync('static/extras.js','utf8');
+vm.runInContext(extras.slice(extras.indexOf('function groupSideItems'),extras.indexOf('function groupLobby')),ctx);
+vm.runInContext(js.slice(js.indexOf('function friendItem'),js.indexOf('function renderSideItems')),ctx);
+state.friends=[
+ {other_id:1,username:'Đăng',state:'accepted',pinned:true},
+ {other_id:2,username:'Hải',state:'accepted',unread:2},
+ {other_id:3,username:'Ẩn',state:'accepted',restricted:true,unread:3}
+];
+state.groups=[{id:9,title:'Đồng đội',unread:1,member_count:4}];
+state.inboxFilter='unread';
+assert(ctx.sideBody().includes('Hải')&&ctx.sideBody().includes('Đồng đội'));
+assert(!ctx.sideBody().includes('Đăng')&&!ctx.sideBody().includes('Ẩn'));
+state.inboxFilter='pinned';
+assert(ctx.sideBody().includes('Đăng')&&!ctx.sideBody().includes('Đồng đội'));
+state.inboxFilter='all';state.sideFilter='dong doi';
+assert(ctx.sideBody().includes('Đồng đội')&&!ctx.sideBody().includes('Hải'));

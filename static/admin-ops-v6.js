@@ -79,7 +79,7 @@ document.addEventListener('click',async event=>{
   }
   if(btn.dataset.v6Ops==='feature-toggle'){
    const code=btn.dataset.v6Flag,enabled=btn.dataset.v6Enabled==='1';
-   if(!['calls','disappearing_dm','community_polls','world_rooms'].includes(code))return;
+   if(!['calls','disappearing_dm','community_polls','world_rooms','registration_intake','member_uploads'].includes(code))return;
    modal({title:(enabled?'Bật':'Tắt')+' tính năng',
     description:'Thay đổi có hiệu lực trên máy chủ. Đang dùng tính năng có thể phải làm mới màn hình để nhận cấu hình.',
     confirm:enabled?'Bật tính năng':'Tạm tắt tính năng',

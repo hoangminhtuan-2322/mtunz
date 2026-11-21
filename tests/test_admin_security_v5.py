@@ -1,4 +1,4 @@
-"""Security V5 regressions. Tests run against disposable SQLite only."""
+"""Security V5 regressions. Tests run against disposable databases."""
 import pytest
 from app import app, db, now, RATE_BUCKETS, hash_secret
 from fastapi.testclient import TestClient
@@ -22,7 +22,7 @@ def clean_security_v5():
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
                   (hash_secret('mtunz7'),))
         c.execute("UPDATE settings SET value='100' WHERE key='max_users'")
-        c.execute("UPDATE settings SET value='0' WHERE key='emergency_lockdown'")
+        c.execute("UPDATE settings SET value='0' WHERE key IN ('emergency_lockdown','maintenance_mode')")
         c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0 WHERE id=1')
     yield
     with db() as c:
@@ -31,7 +31,7 @@ def clean_security_v5():
         c.execute('DELETE FROM admin_login_requests')
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
                   (hash_secret('mtunz7'),))
-        c.execute("UPDATE settings SET value='0' WHERE key='emergency_lockdown'")
+        c.execute("UPDATE settings SET value='0' WHERE key IN ('emergency_lockdown','maintenance_mode')")
     RATE_BUCKETS.clear()
 
 
@@ -158,3 +158,41 @@ def test_revoke_others_clears_pending_admin_second_session_without_current_logou
     assert admin.get('/api/me').json()['user']['is_admin'] is True
     assert second.post('/api/auth/admin/approval/status',
                        json={'approval_token':waiting.json()['approval_token']}).status_code==404
+
+def test_member_maintenance_revokes_sessions_and_blocks_login_until_reopened():
+    admin=admin_with_pin()
+    member=register_user(admin,'maintenance_member')
+    endpoint='/api/admin/security/maintenance'
+    proof={'enabled':True,'admin_pin':'2345'}
+    assert member.post(endpoint,json=proof).status_code==403
+    assert admin.post(endpoint,json={**proof,'admin_pin':'0000'}).status_code==401
+
+    with member.websocket_connect('/ws') as socket:
+        enabled=admin.post(endpoint,json=proof)
+        assert enabled.status_code==200,enabled.text
+        assert enabled.json()=={'enabled':True,'revoked_sessions':1}
+        assert socket.receive_json()=={'type':'maintenance-mode'}
+
+    assert admin.get('/api/me').json()['user']['is_admin']
+    assert admin.get('/api/admin/security/overview').json()['maintenance_mode']
+    assert admin.post('/api/auth/start',json={'username':'admin'}).status_code==200
+    blocked=member.get('/api/me')
+    assert blocked.status_code==503
+    assert blocked.json()['detail']['code']=='maintenance'
+
+    for path,payload in (
+        ('start',{'username':'maintenance_member'}),
+        ('password',{'username':'maintenance_member','password':'GreatPassword123'}),
+    ):
+        blocked=member.post('/api/auth/'+path,json=payload)
+        assert blocked.status_code==503,blocked.text
+        assert blocked.json()['detail']['code']=='maintenance'
+
+    assert member.post('/api/auth/logout').status_code==200
+    assert admin.post(endpoint,json={**proof,'enabled':False}).status_code==200
+    assert not admin.get('/api/admin/security/overview').json()['maintenance_mode']
+    assert member.post('/api/auth/start',json={'username':'maintenance_member'}).status_code==200
+    challenge=member.post('/api/auth/password',json={
+        'username':'maintenance_member','password':'GreatPassword123'}).json()['challenge']
+    assert member.post('/api/auth/pin',json={'challenge':challenge,'pin':'1234'}).status_code==200
+    assert member.get('/api/me').json()['user']['username']=='maintenance_member'

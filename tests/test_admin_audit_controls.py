@@ -66,6 +66,13 @@ def test_sensitive_admin_user_edit_and_session_revoke():
     info = admin.get(f'/api/admin/users/{user_id}/details').json()['user']
     assert info['display_name'] == 'Tên được chỉnh'
     assert info['phone'] == '+84912345678'
+    assert info['sent_count'] == info['received_count'] == info['file_bytes'] == 0
+    recent = info['recent_events'][0]
+    assert recent['action'] == 'admin_edit_user' and recent['actor'] == 'admin'
+    event = admin.get(f"/api/admin/audit/{recent['id']}").json()['event']
+    assert event['target_user'] == {'id': user_id, 'username': 'editable_member'}
+    results = admin.get('/api/admin/users', params={'q': 'chỉnh'}).json()['users']
+    assert [r['id'] for r in results] == [user_id]
     assert info['email'] == 'test@example.com'
 
     revoke = f'/api/admin/users/{user_id}/sessions/revoke'
@@ -93,3 +100,22 @@ def test_maintenance_member_reset_is_high_impact():
     enriched = enrich_audit(example)
     assert enriched['severity'] == 'high'
     assert enriched['detail'] == example['detail']
+
+
+def test_admin_queue_filter_precedes_list_limit():
+    admin=logged_admin()
+    with db() as c:
+        c.execute("INSERT INTO registrations(username,guest_id,status,created_at) VALUES('old_pending','guest','pending',1)")
+        for index in range(101):
+            c.execute("INSERT INTO registrations(username,guest_id,status,created_at) VALUES(?,?,'denied',2)",
+                      (f'queue_{index}','guest'))
+        c.execute("INSERT INTO tickets(guest_id,kind,status,created_at) VALUES('guest','username','open',1)")
+        for index in range(120):
+            c.execute("INSERT INTO tickets(guest_id,kind,status,created_at) VALUES('guest','username','closed',2)")
+    rows=admin.get('/api/admin/registrations?status=pending&limit=5').json()['registrations']
+    assert [row['username'] for row in rows]==['old_pending']
+    assert len(admin.get('/api/admin/tickets?status=open').json()['tickets'])==1
+    assert admin.get('/api/admin/tickets?status=invalid').status_code==422
+    assert admin.get('/api/admin/registrations?limit=101').status_code==422
+    stats=admin.get('/api/admin/stats').json()
+    assert stats['pending']==stats['tickets']==1 and stats['reports_pending']>=0

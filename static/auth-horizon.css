@@ -1,0 +1,78 @@
+/* The same dusk palette carries through the entry screen and form controls. */
+.auth {
+  --entry-ink: #fcf5ff;
+  --entry-muted: #c2b6ce;
+  --entry-accent: #e3b6ff;
+}
+.auth .auth-art.art-v5 {
+  background:
+    radial-gradient(ellipse at 98% 65%, #433777 0%, transparent 51%),
+    radial-gradient(ellipse at 0% 0%, #44314f 0%, transparent 53%),
+    linear-gradient(145deg, #21192e, #201b38 62%, #131b31) !important;
+}
+.auth .art-v5 .nova-section-meta,
+.auth .art-v5 .nova-stage-head,
+.auth .art-v5 .nova-stage-base,
+.auth .art-v5 .nova-footer,
+.auth .art-v5 .nova-brand-byline {display:none !important}
+.auth .art-v5 .nova-content {margin-block:auto}
+.auth .art-v5 .nova-headline {color:var(--entry-ink);text-wrap:balance}
+.auth .art-v5 .nova-headline .gradient-text {
+  background-image:linear-gradient(105deg,#ffb8bc,#dfbaff 58%,#b9dcff);
+}
+.auth .art-v5 .signal-stage.nova-stage {
+  margin-inline:0;
+  background:
+    radial-gradient(ellipse 80% 61% at 46% 120%,#211b38 93%,#bca5ea 96%,#f2bed7 97%,transparent 100%),
+    radial-gradient(ellipse at 44% 96%,#b97498 0%,#665188 30%,transparent 64%),
+    linear-gradient(150deg,#28263f,#332b50 56%,#272f49) !important;
+  border-color:#bba1ce61;
+}
+.auth .art-v5 .signal-feature.nova-feature {
+  background:#28223e !important;border-color:#a99bc15e;
+}
+.auth .auth-main {
+  background:radial-gradient(ellipse at 50% 10%,#2c223c 0%,transparent 64%),#14121d;
+}
+.auth .auth-main > .auth-panel {
+  color:var(--entry-ink);border-color:#72607f;
+  background:linear-gradient(150deg,#31293c,#211e2d 65%,#201c29);
+  box-shadow:0 25px 70px #09061155,inset 0 1px #ffdbfa24;
+}
+.auth .auth-panel .auth-nav {background:#1b1724;border-color:#655670}
+.auth .auth-panel .auth-nav button.active {background:#53415f;color:#fff4ff;border-color:#9882a5}
+.auth .auth-panel .eyebrow {color:var(--entry-accent)}
+.auth .auth-panel .hint {color:var(--entry-muted)}
+.auth .auth-panel .auth-input-wrap .input {background:#1d1927;border-color:#766781;color:#fff7ff}
+.auth .auth-panel .auth-input-wrap:focus-within .input {
+  border-color:var(--entry-accent);box-shadow:0 0 0 3px #e3b6ff29;
+}
+.auth .auth-panel .btn.primary.full {
+  color:#2b1831;background:linear-gradient(100deg,#e3c0ff,#ffc3bf);
+  border:1px solid #f3d7ec;box-shadow:0 4px 16px #10091644;
+}
+.auth .auth-panel .registration-section {background:#231e2e;border-color:#685773}
+.auth .auth-panel .registration-section-number {color:#f0d6ff;background:#4b3657}
+.auth .auth-progress {
+  padding:0;margin:18px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;
+  list-style:none;text-align:start;
+}
+.auth-progress li {
+  padding-top:6px;border-top:3px solid #675b70;color:var(--entry-muted);font-size:12px;
+}
+.auth-progress li.done {border-color:#b398c5}
+.auth-progress li[aria-current] {border-color:#efc2f5;color:#fff2ff;font-weight:750}
+@media (prefers-reduced-motion:no-preference) {
+  html:not(.mtunz-save-data) .auth-screen-content > .auth-progress li[aria-current] {
+    animation:entry-step-in .24s ease-out both;
+  }
+  @keyframes entry-step-in {from{opacity:.45;transform:translateY(3px)}to{opacity:1;transform:none}}
+  @media (hover:hover) {
+    .auth .auth-panel .btn.primary.full:hover:not(:disabled) {transform:translateY(-2px);box-shadow:0 6px 18px #c49bd225}
+  }
+}
+@media(max-width:800px){
+  .auth .auth-progress {margin:14px 0}
+  .auth .auth-nav button {min-height:44px}
+  .auth .auth-mobile-logo {color:var(--entry-ink)}
+}

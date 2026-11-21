@@ -62,5 +62,5 @@ assert(!approved.includes('Tôi đồng ý cung cấp số điện thoại và e
 assert(!app.includes('member-privacy-details'), 'Removed settings privacy accordion must not return');
 assert(!app.includes('Quyền riêng tư và xử lý dữ liệu'), 'Removed privacy accordion title must not return');
 assert(!fs.readFileSync('static/social-upgrade.css','utf8').includes('.member-privacy-details'), 'Do not retain orphaned accordion styling');
-assert(extras.includes('Số điện thoại và email không hiển thị trên hồ sơ công khai.'), 'Contact note is concise');
+assert(extras.includes('Số điện thoại mặc định được ẩn'), 'Contact note is concise');
 console.log('Approved registration and member privacy copy checks passed.');

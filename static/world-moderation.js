@@ -161,7 +161,9 @@ async function loadWorld(render=true){
 }
 async function loadWorldStatus(){
  if(!state.user||state.user.is_admin)return;
+ const userId=state.user.id;
  const data=await api('/api/world/status');
+ if(state.user?.id!==userId)return;
  worldClockOffset=(Number(data.server_time)||Math.floor(Date.now()/1000))-Math.floor(Date.now()/1000);
  state.worldData={...state.worldData,status:data};
 }
