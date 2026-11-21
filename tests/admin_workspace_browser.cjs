@@ -12,10 +12,19 @@ const {chromium}=require('playwright-core');
   const {user}=await (await context.request.get('/api/me')).json();
   await context.addInitScript(uid=>sessionStorage.setItem('mtunz.active-tab.v1',JSON.stringify({uid})),user.id);
   const page=await context.newPage();
-  for(const width of [1440,390]){
+  for(const width of [1440,390,320]){
    await page.setViewportSize({width,height:850});
    await page.goto('/');
    const queue=page.locator('[data-admin-ui="queue-reports"]');
+   if(width<=800){
+    const toggle=page.locator('.admin-mobile-toggle');
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-expanded'),'true');
+    assert(await page.locator('.admin-nav').evaluate(nav=>nav.contains(document.activeElement)));
+    await page.keyboard.press('Escape');
+    assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+    assert(await toggle.evaluate(el=>el===document.activeElement));
+   }
    await queue.click();
    await page.locator('.admin-queue-toolbar [data-status="pending"][aria-pressed="true"]').waitFor();
    await page.locator('[data-act="admin-queue-filter"][data-status="reviewed"]').click();

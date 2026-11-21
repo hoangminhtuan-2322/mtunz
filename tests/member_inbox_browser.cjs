@@ -5,8 +5,8 @@ const {chromium}=require('playwright-core');
 (async()=>{
  const browser=await chromium.launch({executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox']});
  try{
-  for(const width of [390,1440]){
-   const page=await browser.newPage({viewport:{width,height:850},reducedMotion:'reduce'});
+  for(const width of [320,390,1440]){
+   const page=await browser.newPage({viewport:{width,height:850},hasTouch:width<=800,reducedMotion:'reduce'});
    await page.goto('http://127.0.0.1:8791/');
    await page.locator('form').first().waitFor();
    const history=Array.from({length:60},(_,i)=>({id:i+1,sender_id:12,recipient_id:9,body:'Tin nhắn '+i,created_at:100+i,read_at:200}));
@@ -42,6 +42,15 @@ const {chromium}=require('playwright-core');
    await jump.click();
    await jump.waitFor({state:'hidden'});
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+   if(width<=800){
+    const toggle=page.getByRole('button',{name:'Công cụ gửi tin'});
+    assert.equal(await page.locator('.chat-compose-toolbar').isVisible(),false);
+    await toggle.tap();
+    assert.equal(await toggle.getAttribute('aria-expanded'),'true');
+    await toggle.tap();
+    assert.equal(await page.locator('.chat-compose-toolbar').isVisible(),false);
+    await toggle.tap();
+   }
    await page.locator('[data-studio="sticker"]').click();
    const photo={name:'photo.png',mimeType:'image/png',buffer:Buffer.from(await page.evaluate(()=>{
     const canvas=document.createElement('canvas');

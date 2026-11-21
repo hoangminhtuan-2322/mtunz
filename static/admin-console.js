@@ -127,7 +127,8 @@
   shell.insertBefore(make('div',{class:'admin-menu-backdrop','data-admin-ui':'close-menu','aria-hidden':'true'}),page);
   const top=make('div',{class:'admin-workspace-top'});
   const left=make('div',{class:'worktop-left'});
-  left.append(button('☰','menu',{class:'admin-mobile-toggle','aria-label':'Mở menu quản trị'}));
+  q('.admin-nav',shell).id='admin-navigation';
+  left.append(button('☰','menu',{class:'admin-mobile-toggle','aria-label':'Mở menu quản trị','aria-controls':'admin-navigation','aria-expanded':'false'}));
   left.append(make('span',{class:'work-label'},'MTUNZ  /  ADMIN CONSOLE'));
   left.append(make('span',{class:'admin-online'},'Phiên quản trị'));
   const right=make('div',{class:'worktop-right'});
@@ -225,6 +226,13 @@
   const a=make('a',{href:url,download:'mtunz-admin-audit-'+new Date().toISOString().slice(0,10)+'.csv'});
   document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
+ function setDrawer(open){
+  const shell=q('.admin-shell'),toggle=q('.admin-mobile-toggle');
+  if(!shell||!toggle||shell.classList.contains('admin-menu-open')===open)return;
+  shell.classList.toggle('admin-menu-open',open);
+  toggle.setAttribute('aria-expanded',String(open));
+  if(open)q('.admin-nav [aria-current="page"]',shell)?.focus();else toggle.focus();
+ }
  function mount(){
   if(!adminReady()){lastKnownShell=null;closeCommands();for(const tab of Object.keys(rememberedFilters))delete rememberedFilters[tab];autoRefresh=false;return;}
   const shell=q('.admin-shell');
@@ -238,8 +246,8 @@
  document.addEventListener('click',e=>{
   const target=e.target.closest('[data-admin-ui]');if(!target)return;
   const action=target.dataset.adminUi;
-  if(action==='menu'){q('.admin-shell')?.classList.toggle('admin-menu-open');return}
-  if(action==='close-menu'){q('.admin-shell')?.classList.remove('admin-menu-open');return}
+  if(action==='menu'){setDrawer(true);return}
+  if(action==='close-menu'){setDrawer(false);return}
   if(action==='commands'){showCommands();return}
   if(action==='refresh'){if(typeof loadAdmin==='function')loadAdmin();return}
   if(action==='security'){navigate('security');return}
@@ -278,7 +286,7 @@
   if(e.target.matches('.admin-shell th[data-sort-index]')&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.target.click();return;}
   const ticket=e.target.closest?.('.ticket-item[data-act="admin-open-ticket"]');
   if(ticket&&(e.key==='Enter'||e.key===' ')){e.preventDefault();ticket.click();return;}
-  if(e.key==='Escape'){closeCommands();q('.admin-shell')?.classList.remove('admin-menu-open');return;}
+  if(e.key==='Escape'){closeCommands();setDrawer(false);return;}
   if(!adminReady()||e.target.closest('input,select,textarea,[contenteditable="true"]'))return;
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showCommands();}
   if(e.key==='/'){e.preventDefault();q('.admin-list-tools input[type="search"]')?.focus();}

@@ -5,8 +5,8 @@ const {chromium}=require('playwright-core');
 (async()=>{
   const browser=await chromium.launch({executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',args:['--no-sandbox']});
   try{
-    for(const width of [360,390,768,1440]){
-      const page=await browser.newPage({viewport:{width,height:780},reducedMotion:width===390?'reduce':'no-preference'});
+    for(const [width,height] of [[320,640],[360,780],[390,780],[740,390],[768,1024],[1440,780]]){
+      const page=await browser.newPage({viewport:{width,height},hasTouch:width<=800,reducedMotion:width===390?'reduce':'no-preference'});
       const errors=[];
       page.on('pageerror',error=>errors.push(error.message));
       await page.route('**/api/auth/start',route=>route.fulfill({json:{username:'demo'}}));
@@ -51,7 +51,7 @@ const {chromium}=require('playwright-core');
       const submit=page.locator('[data-form="register-request"] button[type="submit"]');
       await submit.scrollIntoViewIfNeeded();
       const box=await submit.boundingBox();
-      assert(box.x>=0 && box.x+box.width<=width && box.y>=0 && box.y+box.height<=780);
+      assert(box.x>=0 && box.x+box.width<=width && box.y>=0 && box.y+box.height<=height);
       await submit.click();
       await page.locator('[data-act="refresh-registration"]').waitFor();
       assert.equal(await current.innerText(),'Xét duyệt');

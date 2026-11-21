@@ -208,3 +208,9 @@ bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạ
 6. Chưa bật index tìm kiếm hoặc Chat thế giới rộng rãi cho đến khi chủ dự án phê duyệt. Bảo đảm người dùng biết tin nhắn không phải E2EE và có kênh hỗ trợ xử lý sự cố.
 
 **Quy tắc:** GitHub CI xanh là điều kiện cần, **không đủ** để kết luận website production đã cập nhật hoặc an toàn cho tất cả người dùng. Nếu Render chưa đồng bộ, Neon chưa migrate hoặc chưa thử nghiệm hoạt động thực tế, giữ trạng thái **NO-GO PUBLIC**.
+
+### Kiểm tra giao diện trước khi phát hành
+
+Mỗi thay đổi giao diện cần được rà soát trên điện thoại, máy tính bảng và desktop. Kiểm tra các luồng bị ảnh hưởng ở cả phía thành viên và quản trị. Workflow `ui-check.yml` chạy các bài Chromium cho đăng nhập, đăng ký, hộp thư và quản trị. Khi thêm màn hình mới, bổ sung thao tác chính của màn hình đó vào bài kiểm thử phù hợp.
+
+Trên điện thoại, kiểm tra ở 320–390 px và khi xoay ngang: mở và đóng bàn phím, truy cập nút gửi hoặc lưu, giữ bản nháp, cuộn nội dung dài và quay lại điều hướng. Trên máy tính, kiểm tra bàn phím, trạng thái focus và bố cục rộng.

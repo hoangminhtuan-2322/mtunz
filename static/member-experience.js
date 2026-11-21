@@ -271,7 +271,18 @@ function mountComposer(form){
   btn.classList.add('chat-compose-tool');toolbar.append(btn);
  }
  const main=make('div','chat-compose-main');
- main.append(textarea,submit);form.replaceChildren(toolbar,main);
+ const toggle=make('button','compose-tools-toggle','＋');
+ toggle.type='button';toolbar.id='compose-attachments';
+ toggle.setAttribute('aria-controls',toolbar.id);
+ toggle.setAttribute('aria-label','Công cụ gửi tin');
+ toggle.setAttribute('aria-expanded','false');
+ toggle.onclick=()=>{
+  const expanded=form.classList.toggle('tools-open');
+  toggle.setAttribute('aria-expanded',String(expanded));
+  toggle.textContent=expanded?'−':'＋';
+  if(expanded)toolbar.querySelector('label,button')?.focus();else hidePicker();
+ };
+ main.append(toggle,textarea,submit);form.replaceChildren(toolbar,main);
  form.classList.add('chat-compose-enhanced');
  textarea.placeholder='Viết tin nhắn…';
  textarea.setAttribute('aria-label','Nội dung tin nhắn');

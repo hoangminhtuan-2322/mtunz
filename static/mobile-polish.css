@@ -316,10 +316,10 @@
 }
 /* Keyboard states are set by mobile-polish.js only for an editable focused input. */
 @media(max-width:800px){
- body.mt-mobile-editing .shell:not(.admin-shell){
+ body.mt-mobile-keyboard .shell:not(.admin-shell){
   padding-bottom:0
  }
- body.mt-mobile-editing .shell:not(.admin-shell)>.rail{
+ body.mt-mobile-keyboard .shell:not(.admin-shell)>.rail{
   display:none!important
  }
  body.mt-mobile-editing .shell:not(.admin-shell) .composer{
@@ -340,4 +340,27 @@
  .shell:not(.admin-shell) .rail-btn,
  .shell:not(.admin-shell) .chat-compose-tool,
  #modal-root .premium-dialog{transition:none!important;animation:none!important}
+}
+.compose-tools-toggle{display:none}
+@media(max-width:800px){
+ .shell:not(.admin-shell) .compose-tools-toggle{
+  display:grid;place-items:center;flex:0 0 44px;height:44px;border-radius:12px;
+  border:1px solid #756990;background:#312a43;color:#f6eaff;font-size:23px
+ }
+ .shell:not(.admin-shell) .chat-compose-enhanced:not(.tools-open) .chat-compose-toolbar{display:none}
+ .shell:not(.admin-shell) .chat-compose-enhanced.tools-open .chat-compose-toolbar{
+  display:flex;justify-content:flex-start;gap:5px;flex-wrap:wrap
+ }
+ .shell:not(.admin-shell) .chat-compose-toolbar .chat-compose-tool{min-height:44px;min-width:44px}
+ .auth .auth-screen-content .linkbtn{min-height:44px}
+ .shell:not(.admin-shell) .main-body :is(.btn,.linkbtn){min-height:44px}
+ .shell:not(.admin-shell) .main-body :is(input,textarea,select){scroll-margin-block:16px}
+ .admin-shell .table-actions button,.admin-shell .admin-pager button{min-height:44px}
+ body.mt-mobile-keyboard #modal-root .modal-backdrop{
+  bottom:auto;height:var(--mt-mobile-viewport-height,100dvh)
+ }
+}
+@media(max-width:950px){
+ .admin-shell:not(.admin-menu-open) .admin-nav{visibility:hidden}
+ .admin-shell.admin-menu-open .admin-nav{visibility:visible}
 }
