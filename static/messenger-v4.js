@@ -330,17 +330,17 @@ async function v4AckIncoming(message){
 }
 async function v4RetryFailed(tempId){
  const entry=v4FailedSends.get(tempId);
- if(!entry||entry.inFlight)return;
+ if(!entry||entry.inFlight||entry.owner!==state.user?.id)return;
  entry.inFlight=true;
  const m=state.messages.find(x=>x.id===tempId);
  if(m){m.failed=false;m.pending=true;v4PaintStatuses();}
  try{
   const result=await post('/api/messages',entry.payload);
   v4FailedSends.delete(tempId);
-  if(state.selected===entry.recipient&&state.tab==='messages'){
-   state.messages=state.messages.filter(x=>x.id!==tempId);
-   document.getElementById('msg-dm-'+tempId)?.remove();
-   appendDirectMessage(result.message);
+  if(state.user?.id===entry.owner&&state.selected===entry.recipient&&state.tab==='messages'){
+   const queued=state.messages.find(x=>x.id===tempId);
+   if(queued)queued.client_message_id=entry.payload.client_message_id;
+   appendDirectMessage({...result.message,client_message_id:entry.payload.client_message_id});
   }
   scheduleFriendsRefresh();
   toast(result.replayed?'Tin đã được máy chủ ghi nhận trước đó.':'Đã gửi lại thành công.','ok');

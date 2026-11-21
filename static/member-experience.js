@@ -266,6 +266,7 @@ function mountComposer(form){
   enableFileKeyboard(original);
  }
  const main=make('div','chat-compose-main');
+ submit.addEventListener('mousedown',event=>{if(document.activeElement===textarea)event.preventDefault();});
  main.append(textarea,submit);form.replaceChildren(toolbar,main);
  form.classList.add('chat-compose-enhanced');
  textarea.placeholder='Viết tin nhắn…';
@@ -285,14 +286,19 @@ function mountComposer(form){
 function mountHeader(header){
  if(!header||header.classList.contains('chat-header-refined'))return;
  const group=!!q('button[data-act="group-leave"]',header);
- const actions=group?['search-chat','group-leave']:['search-chat','profile-view','mute-chat','archive-chat','chat-restrict','chat-block'];
+ const actions=group?['search-chat','group-manage','group-leave']:['search-chat','profile-view','call-audio','call-video','pin-chat','mute-chat','archive-chat','chat-restrict','chat-block'];
  const buttons=actions.map(action=>q('button[data-act="'+action+'"]',header)).filter(Boolean);
+ if(!group)buttons.unshift(...all('[data-v6-act="disappear"],[data-v4-act="schedule-list"]',header));
  if(!buttons.length)return;
  const details=make('details','chat-header-more');
  const summary=make('summary','','•••');summary.title='Tùy chọn hội thoại';
  summary.setAttribute('aria-label','Mở thêm tùy chọn hội thoại');
  const list=make('div','chat-header-menu');list.setAttribute('role','group');list.setAttribute('aria-label','Tùy chọn hội thoại');
- for(const button of buttons)list.append(button);
+ for(const button of buttons){
+  button.setAttribute('aria-label',button.title||button.textContent.trim());
+  if(button.title&&!button.textContent.trim())button.append(make('span','',button.title));
+  list.append(button);
+ }
  details.append(summary,list);header.append(details);
  header.classList.add('chat-header-refined');
 }
@@ -342,7 +348,8 @@ function mount(){
  if(form){renderLocations(shell);addImagePreview(shell);}
  if(locationDialog&&!sameContext(locationDialog.context))closeLocation();
 }
-const observer=new MutationObserver(()=>{
+const observer=new MutationObserver(records=>{
+ if(!records.some(({target})=>['app','chat-header','chat-messages','compose-extra'].includes(target.id)))return;
  if(scheduled)return;scheduled=true;
  requestAnimationFrame(()=>{scheduled=false;mount();});
 });
@@ -351,7 +358,30 @@ function boot(){
 }
 document.addEventListener('DOMContentLoaded',boot);
 if(document.readyState!=='loading')boot();
+function openMessageTools(trigger){
+ const source=trigger.closest('.bubble-wrap');
+ const actions=all('.bubble-actions button',source);
+ if(!actions.length)return;
+ modal({title:'Tùy chọn tin nhắn',description:'Chọn thao tác cho tin nhắn này.',confirm:'Đóng',cancel:null,
+  content:'<div class="message-tool-list"></div>'});
+ const list=q('#modal-root .message-tool-list');
+ actions.forEach(action=>{
+  const label=action.dataset.emoji?'Thả '+action.dataset.emoji:
+   action.getAttribute('aria-label')||action.title||action.textContent.trim();
+  const choice=make('button','btn ghost',label);
+  choice.type='button';
+  choice.onclick=()=>{
+   q('#modal-root').replaceChildren();
+   if(!source.isConnected){toast('Tin nhắn đã thay đổi. Vui lòng mở lại tùy chọn.');return;}
+   trigger.focus({preventScroll:true});
+   action.click();
+  };
+  list.append(choice);
+ });
+}
 document.addEventListener('click',event=>{
+ const tools=event.target.closest('[data-message-tools]');
+ if(tools)openMessageTools(tools);
  if(picker&&!event.target.closest('.chat-emoji-picker,.chat-compose-tool[data-chat-ui="emoji"]'))hidePicker();
  const menu=event.target.closest('.chat-header-more');
  if(!menu)all('.chat-header-more[open]').forEach(item=>item.open=false);

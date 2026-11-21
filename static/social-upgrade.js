@@ -100,28 +100,6 @@ function currentMessages(){
  if(state.tab==='groups')return state.groupMessages||[];
  return state.messages||[];
 }
-function addMessageActions(){
- const ctx=chat();if(!ctx)return;
- for(const msg of currentMessages()){
-  if(msg.deleted_at)continue;
-  const scope=ctx.scope,wrap=$('#msg-'+scope+'-'+Number(msg.id));
-  const tools=wrap?.querySelector('.bubble-actions');
-  if(!tools||tools.querySelector('[data-social-action="pin"]'))continue;
-  const pin=el('button','','📌');pin.type='button';
-  pin.dataset.socialAction='pin';pin.dataset.messageId=msg.id;
-  pin.title='Ghim hoặc bỏ ghim tin này';pin.setAttribute('aria-label','Ghim hoặc bỏ ghim tin nhắn');
-  const forward=el('button','','↗');forward.type='button';
-  forward.dataset.socialAction='forward';forward.dataset.messageId=msg.id;
-  forward.title='Chuyển tiếp tin nhắn';forward.setAttribute('aria-label','Chuyển tiếp tin nhắn');
-  tools.prepend(forward);tools.prepend(pin);
-  if(msg.forwarded){
-   const bubble=wrap.querySelector('.bubble');
-   if(bubble&&!bubble.querySelector('.mt-forwarded-label')){
-    bubble.prepend(el('small','mt-forwarded-label','↪ Đã chuyển tiếp'));
-   }
-  }
- }
-}
 function openForward(id){
  const ctx=chat();if(!ctx)return;
  const msg=currentMessages().find(x=>Number(x.id)===id);
@@ -262,7 +240,6 @@ function mount(){
  upgradeSettings();
  const ctx=chat();
  if(!ctx){currentPinKey='';pinList=[];visiblePinKey='';pinRequestVersion++;closeForward();return;}
- addMessageActions();
  const key=chatKey(ctx);
  if(key!==currentPinKey){currentPinKey=key;pinList=[];visiblePinKey='';loadPins(ctx);}
  else renderPins();
@@ -273,7 +250,7 @@ const observer=new MutationObserver(()=>{
 });
 function bootstrap(){
  wrapFriends();
- const root=$('#app');if(root)observer.observe(root,{childList:true,subtree:true});
+ const root=$('#app');if(root)observer.observe(root,{childList:true});
  mount();
 }
 document.addEventListener('DOMContentLoaded',bootstrap);

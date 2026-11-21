@@ -1,8 +1,11 @@
 'use strict';
 const $ = (s,root=document)=>root.querySelector(s);
 const esc = (v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const date = t=>t?new Date(t*1000).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-const clock = t=>t?new Date(t*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'';
+const dateFormatter=new Intl.DateTimeFormat('vi-VN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const clockFormatter=new Intl.DateTimeFormat('vi-VN',{hour:'2-digit',minute:'2-digit'});
+const dayFormatter=new Intl.DateTimeFormat('vi-VN');
+const date=t=>t&&Number.isFinite(Number(t))?dateFormatter.format(t*1000):'—';
+const clock=t=>t&&Number.isFinite(Number(t))?clockFormatter.format(t*1000):'';
 const deadlineDate = t=>t?new Date(t*1000).toLocaleString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
 const daysUntil = t=>Math.max(0,Math.ceil((Number(t)*1000-Date.now())/(86400*1000)));
 const short = (s,n=34)=>String(s??'').length>n?String(s).slice(0,n-1)+'…':String(s??'');
@@ -510,6 +513,7 @@ async function enterApp(resume=false){
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
+ v4FailedSends.clear();
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
  clearActiveTab();
@@ -918,44 +922,60 @@ async function openChat(uid){
 }
 let dmLoadGeneration=0;
 const v4SendingChats=new Set();
+function clearSentComposer(form,key){
+ const field=form.querySelector('#chat-text');
+ field.value='';
+ field.dispatchEvent(new Event('input',{bubbles:true}));
+ state.replyTo=null;state.pendingAttachment=null;
+ v4WriteDraft(key,'');
+ const extra=$('#compose-extra');
+ if(extra)extra.innerHTML=composerExtras();
+}
 function renderMessageThread(scroll=false){
  const box=$('#chat-messages');if(!box)return;
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
  const previousPosition=box.scrollTop;
  box.innerHTML=renderBubbles();
- if(scroll||near)box.scrollTop=box.scrollHeight;else box.scrollTop=previousPosition;
+ box.scrollTo({top:scroll||near?box.scrollHeight:previousPosition,behavior:'instant'});
+}
+function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
+ const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
+ const position=box.scrollTop;
+ const template=document.createElement('template');
+ template.innerHTML=bubblesFor([message],scope==='group',messages);
+ const row=template.content.querySelector('.bubble-wrap');
+ if(!row){redraw();return;}
+ if(replaceId!==null){
+   const existing=document.getElementById('msg-'+scope+'-'+replaceId);
+   if(!existing||!box.contains(existing)){redraw();return;}
+   existing.replaceWith(row);
+ }else{
+   box.querySelector('.empty')?.remove();
+   if(!previous||dayFormatter.format(previous.created_at*1000)!==dayFormatter.format(message.created_at*1000)){
+     box.append(template.content.querySelector('.day-label'));
+   }
+   box.append(row);
+ }
+ box.scrollTo({top:follow||near?box.scrollHeight:position,behavior:'instant'});
 }
 function appendDirectMessage(message){
- if(!message||!state.selected)return;
+ if(!message||!state.selected||state.tab!=='messages')return;
  if(![message.sender_id,message.recipient_id].includes(state.selected))return;
- const currentIndex=state.messages.findIndex(x=>x.id===message.id);
+ const nonce=message.client_message_id;
+ const currentIndex=state.messages.findIndex(x=>x.id===message.id||
+   (nonce&&x.id<0&&x.client_message_id===nonce&&x.sender_id===message.sender_id));
+ const replaced=state.messages[currentIndex];
+ if(replaced?.id===message.id&&message.id>0){
+   message={...message,read_at:message.read_at||replaced.read_at,delivered_at:message.delivered_at||replaced.delivered_at};
+ }
+ if(replaced?.id<0&&message.id>0)v4FailedSends.delete(replaced.id);
  const previous=state.messages[state.messages.length-1];
  if(currentIndex>=0)state.messages[currentIndex]=message;
  else state.messages.push(message);
  const box=$('#chat-messages');
- if(!box||currentIndex<0&&previous&&previous.id>0&&message.id<previous.id){
-   renderMessageThread(false);
- }else{
-   const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
-   const oldPosition=box.scrollTop;
-   const template=document.createElement('template');
-   template.innerHTML=bubblesFor([message],false);
-   const row=template.content.querySelector('.bubble-wrap');
-   if(currentIndex>=0){
-     const existing=box.querySelector('#msg-dm-'+message.id);
-     if(existing&&row)existing.replaceWith(row);
-     else renderMessageThread(false);
-   }else if(row){
-     const previousDay=previous?new Date(previous.created_at*1000).toLocaleDateString('vi-VN'):'';
-     const nextDay=new Date(message.created_at*1000).toLocaleDateString('vi-VN');
-     box.querySelector('.empty')?.remove();
-     if(previousDay!==nextDay){
-       const day=template.content.querySelector('.day-label');
-       if(day)box.appendChild(day);
-     }
-     box.appendChild(row);
-   }
-   if(near)box.scrollTop=box.scrollHeight;else box.scrollTop=oldPosition;
+ if(box){
+   if(currentIndex<0&&previous&&previous.id>0&&message.id>0&&message.id<previous.id)renderMessageThread(false);
+   else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread,message.pending&&currentIndex<0);
  }
  if(state.messages.length>110){
    state.messages.splice(0,state.messages.length-100);
@@ -967,18 +987,24 @@ function appendDirectMessage(message){
 }
 async function loadMessages(scroll=true){
  const friend=state.selected;if(!friend)return;
- const seq=++dmLoadGeneration;
+ const seq=++dmLoadGeneration,userId=state.user?.id;
+ const current=()=>seq===dmLoadGeneration&&state.selected===friend&&state.tab==='messages'&&state.user?.id===userId;
  try{
   const r=await api('/api/messages/'+friend);
-  if(seq!==dmLoadGeneration||state.selected!==friend)return;
+  if(!current())return;
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
   for(const message of r.messages)known.set(message.id,message);
   const failed=(typeof v4FailedSends==='object'?[...v4FailedSends.entries()]
-    .filter(([,entry])=>entry.recipient===friend)
+    .filter(([,entry])=>entry.owner===userId&&entry.recipient===friend)
     .map(([id,entry])=>({id,sender_id:state.user.id,recipient_id:friend,body:entry.payload.body,
           created_at:entry.created_at,failed:true,pending:false,
-          attachment:entry.attachment||null,reactions:[]})):[]);
-  state.messages=[...known.values(),...failed].sort((a,b)=>a.created_at-b.created_at||a.id-b.id).slice(-100);
+          attachment:entry.attachment||null,reactions:[],client_message_id:entry.payload.client_message_id})):[]);
+  const confirmed=new Set([...known.values()].map(message=>message.client_message_id).filter(Boolean));
+  for(const message of failed)if(confirmed.has(message.client_message_id))v4FailedSends.delete(message.id);
+  const pending=state.messages.filter(m=>m.pending&&m.id<0&&!v4FailedSends.has(m.id));
+  const local=[...failed,...pending].filter(m=>!confirmed.has(m.client_message_id));
+  state.messages=[...known.values(),...local].sort((a,b)=>a.created_at-b.created_at||
+   (a.id<0)-(b.id<0)||(a.id<0?b.id-a.id:a.id-b.id)).slice(-100);
   renderMessageThread(scroll);
   const inbound=[...r.messages].reverse().find(m=>m.sender_id===friend);
   if(inbound&&typeof v4AckIncoming==='function')v4AckIncoming(inbound);
@@ -987,7 +1013,7 @@ async function loadMessages(scroll=true){
   }
   const item=state.friends.find(x=>x.other_id===friend);
   if(item&&item.unread){item.unread=0;renderSideItems();}
- }catch(e){toast(e.message,'error');}
+ }catch(e){if(current())toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
@@ -1948,7 +1974,7 @@ document.addEventListener('click',async event=>{
 });
 document.addEventListener('input',event=>{
  if(event.target.id==='side-filter'){state.sideFilter=event.target.value.trim();renderSideItems();}
- if(event.target.id==='chat-text'&&state.ws?.readyState===WebSocket.OPEN){
+ if(event.target.id==='chat-text'&&event.target.value&&state.ws?.readyState===WebSocket.OPEN){
   const group=state.tab==='groups'&&state.groupSelected;
   if(!state.selected&&!group)return;
   const payload=group?{type:'group-typing',group_id:state.groupSelected,on:true}:{type:'typing',to:state.selected,on:true};
@@ -1973,7 +1999,11 @@ document.addEventListener('change',event=>{
  }
 });
 document.addEventListener('keydown',e=>{
- if(e.target.id==='chat-text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();e.target.closest('form').requestSubmit();}
+ if(e.target.id==='chat-text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){
+  e.preventDefault();
+  const form=e.target.closest('form'),send=form?.querySelector('.send');
+  if(form&&send&&!send.disabled)form.requestSubmit(send);
+ }
 });
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('form[data-form]');if(!form)return;
@@ -2059,44 +2089,32 @@ document.addEventListener('submit',async event=>{
     if(state.uploading)throw Error('Tệp vẫn đang tải lên.');
     const content=String(fd.get('body')||'').trim();
     if(!content&&!state.pendingAttachment)return;
-    const recipient=state.selected,pending=state.pendingAttachment;
+    const recipient=state.selected,attachment=state.pendingAttachment,owner=state.user.id;
     if(!recipient)throw Error('Hãy chọn người nhận.');
-    if(v4SendingChats.has(recipient))return;
-    v4SendingChats.add(recipient);
+    const sendingKey=owner+':'+recipient;
+    if(v4SendingChats.has(sendingKey))return;
+    v4SendingChats.add(sendingKey);
     const reply=state.replyTo?.scope==='dm'?state.replyTo.id:null;
     const tmpId=-(Date.now()+Math.floor(Math.random()*1000));
-    const payload={recipient_id:recipient,body:content,attachment_id:pending?.id||null,
+    const payload={recipient_id:recipient,body:content,attachment_id:attachment?.id||null,
       reply_to:reply,client_message_id:v4Nonce()};
-    const optimistic={id:tmpId,sender_id:state.user.id,recipient_id:recipient,
-      body:content,created_at:Math.floor(Date.now()/1000),read_at:null,
-      delivered_at:null,reactions:[],pending:true,attachment:pending};
-    state.messages.push(optimistic);
-    renderMessageThread(true);
+    const optimistic={...payload,id:tmpId,sender_id:owner,created_at:Math.floor(Date.now()/1000),
+      reactions:[],pending:true,attachment};
+    const current=()=>state.user?.id===owner&&state.tab==='messages'&&state.selected===recipient;
+    clearSentComposer(form,'dm:'+recipient);
+    appendDirectMessage(optimistic);
     try{
       const result=await post('/api/messages',payload);
-      if(state.selected===recipient){
-        state.messages=state.messages.filter(x=>x.id!==tmpId);
-        document.getElementById('msg-dm-'+tmpId)?.remove();
-        appendDirectMessage(result.message);
-      }
-      state.replyTo=null;state.pendingAttachment=null;
-      if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'typing',to:recipient,on:false}));
-      const txt=document.getElementById('chat-text');if(txt)txt.value='';
-      v4WriteDraft('dm:'+recipient,'');
-      const extra=document.getElementById('compose-extra');if(extra)extra.innerHTML=composerExtras();
-      scheduleFriendsRefresh();
+      if(current())appendDirectMessage({...result.message,client_message_id:payload.client_message_id});
+      if(state.user?.id===owner)scheduleFriendsRefresh();
     }catch(e){
-      optimistic.pending=false;optimistic.failed=true;
-      v4FailedSends.set(tmpId,{recipient,payload,attachment:pending,
-                              created_at:optimistic.created_at,inFlight:false});
-      const txt=document.getElementById('chat-text');if(txt)txt.value='';
-      v4WriteDraft('dm:'+recipient,'');
-      state.replyTo=null;state.pendingAttachment=null;
-      const extra=document.getElementById('compose-extra');if(extra)extra.innerHTML=composerExtras();
-      renderMessageThread(false);
-      toast('Chưa xác nhận được tin. Dùng nút Gửi lại trong bong bóng; hệ thống sẽ không tạo tin trùng.','warning');
-      return;
-    }finally{v4SendingChats.delete(recipient);}
+      if(state.user?.id!==owner)return;
+      // A realtime confirmation can precede a lost HTTP response.
+      if(current()&&state.messages.some(m=>m.id>0&&m.client_message_id===payload.client_message_id))return;
+      v4FailedSends.set(tmpId,{owner,recipient,payload,attachment,created_at:optimistic.created_at,inFlight:false});
+      if(current())appendDirectMessage({...optimistic,pending:false,failed:true});
+      toast('Chưa xác nhận được tin. Dùng nút Gửi lại trong bong bóng để thử lại.','warning');
+    }finally{v4SendingChats.delete(sendingKey);}
     break;
    }
    case 'settings-pin':{

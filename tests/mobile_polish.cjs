@@ -21,7 +21,7 @@ for(const marker of [
 assert(css.includes('font-size:16px!important'),'Prevent iOS input focus zoom');
 assert(css.includes('body.mt-mobile-editing .shell:not(.admin-shell)>.rail'),'Keyboard must hide bottom navigation');
 assert(css.includes('.shell:not(.admin-shell)>.rail'),'Member navigation must remain available when keyboard closes');
-assert(!css.includes('.bubble-actions{display:none'),'Mobile must not lose reply/edit/delete');
+assert(css.includes('.bubble-more')&&extras.includes('data-message-tools'),'Mobile message tools have a compact trigger');
 assert(!css.includes('.conversation .main-head [data-act='),'Do not hide chat actions by attribute');
 assert(!css.includes('.shell:not(.admin-shell)>.side{display:none'),'Do not hide the chat list unconditionally');
 assert(admin.includes('.admin-mobile-toggle'),'Keep Admin drawer available');

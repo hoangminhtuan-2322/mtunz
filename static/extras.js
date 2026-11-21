@@ -67,17 +67,19 @@ function uploadMarkup(m){
  if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
  return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
 }
-function bubblesFor(messages,isGroup=false){
+function bubblesFor(messages,isGroup=false,context=messages){
  if(!messages.length)return '<div class="spacer"></div><div class="empty">Chưa có tin nhắn. Hãy bắt đầu trò chuyện! ✨</div>';
  let html='<div class="spacer"></div>',prevDay='';
  const scope=isGroup?'group':'dm';
  for(const m of messages){
-  const day=new Date(m.created_at*1000).toLocaleDateString('vi-VN');
+  const day=dayFormatter.format(m.created_at*1000);
   if(prevDay!==day){html+=`<div class="day-label">${esc(day)}</div>`;prevDay=day;}
   const mine=m.sender_id===state.user.id;
-  const reference=messages.find(x=>x.id===m.reply_to);
+  const reference=m.reply_to?context.find(x=>x.id===m.reply_to):null;
   const reacted=[...new Set((m.reactions||[]).map(r=>r.emoji))];
   const actions=(!m.deleted_at&&m.id>0)?`<div class="bubble-actions">
+   <button type="button" data-social-action="pin" data-message-id="${Number(m.id)}" aria-label="Ghim hoặc bỏ ghim tin nhắn">📌</button>
+   <button type="button" data-social-action="forward" data-message-id="${Number(m.id)}" aria-label="Chuyển tiếp tin nhắn">↗</button>
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
@@ -87,14 +89,15 @@ function bubblesFor(messages,isGroup=false){
   html+=`<div class="bubble-wrap ${mine?'mine':''}" id="msg-${scope}-${m.id}">
     ${isGroup&&!mine?`<div class="group-sender">${esc(m.username||'Thành viên')}</div>`:''}
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
+    ${m.forwarded&&!m.deleted_at&&m.id>0?'<small class="mt-forwarded-label">↪ Đã chuyển tiếp</small>':''}
     ${m.reply_to?`<div class="reply-inline">↳ ${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||(reference.attachment?'Tệp đính kèm':'Tin nhắn'),80)):'Đã trả lời tin nhắn'}</div>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
-     ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${new Date(Number(m.expires_at)*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`:''}
+     ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${clock(m.expires_at)}</span>`:''}
      ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
-    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}</div>`;
+    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}${actions?'<button type="button" class="bubble-more" data-message-tools aria-label="Tùy chọn tin nhắn" aria-haspopup="dialog">⋯</button>':''}</div>`;
  }
  return html;
 }
@@ -115,24 +118,40 @@ function groupConversation(){
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
- ${sendLine}
+ <button type="submit" class="btn primary send" aria-label="Gửi tin nhắn">${icon('send',20)}</button>
  <div class="hint" style="margin-top:7px;font-size:10px">Tối đa 12 MB/tệp · Enter gửi · Shift+Enter xuống dòng</div></div></div>`;
 }
 async function openGroup(gid){
  state.tab='groups';state.selected=null;state.groupSelected=gid;state.groupMessages=[];state.replyTo=null;state.pendingAttachment=null;
  renderApp();await loadGroupMessages();
 }
+function paintGroupThread(scroll=false){
+ const box=$('#chat-messages');
+ if(!box)return;
+ const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
+ box.innerHTML=bubblesFor(state.groupMessages,true);
+ box.scrollTo({top:scroll||near?box.scrollHeight:position,behavior:'instant'});
+}
+let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
- const gid=state.groupSelected;if(!gid)return;
+ const gid=state.groupSelected;if(!gid||state.tab!=='groups')return;
+ const request=++groupHistoryRequest,uid=state.user?.id;
+ const existing=new Map(state.groupMessages.map(message=>[message.id,message]));
+ const current=()=>request===groupHistoryRequest&&state.tab==='groups'&&state.groupSelected===gid&&state.user?.id===uid;
  try{
   const result=await api(`/api/groups/${gid}/messages`);
-  if(state.groupSelected!==gid)return;
-  state.groupMessages=result.messages;
-  const box=$('#chat-messages');if(box){const near=box.scrollHeight-box.scrollTop-box.clientHeight<120;box.innerHTML=bubblesFor(state.groupMessages,true);if(scroll||near)box.scrollTop=box.scrollHeight;}
+  if(!current())return;
+  const incoming=new Map(result.messages.map(message=>[message.id,message]));
+  for(const message of state.groupMessages){
+   if(existing.get(message.id)!==message)incoming.set(message.id,message);
+  }
+  state.groupMessages=[...incoming.values()].sort((a,b)=>a.id-b.id).slice(-100);
+  paintGroupThread(scroll);
   await post(`/api/groups/${gid}/read`);
+  if(!current())return;
   const g=state.groups.find(x=>x.id===gid);if(g)g.unread=0;
   renderSideItems();
- }catch(e){toast(e.message,'error');}
+ }catch(e){if(current())toast(e.message,'error');}
 }
 function notificationsContent(){
  const ns=state.notices||[];
@@ -396,21 +415,22 @@ function scheduleGroupsRefresh(delay=450){
  groupRefreshTimer=setTimeout(()=>refreshGroups(false).then(()=>renderSideItems()).catch(()=>{}),delay);
 }
 function appendGroupMessage(groupId,message){
- if(!message||state.groupSelected!==groupId)return;
- const pos=state.groupMessages.findIndex(item=>item.id===message.id);
- if(pos<0)state.groupMessages.push(message);else state.groupMessages[pos]=message;
- state.groupMessages.sort((a,b)=>a.id-b.id);
- if(state.groupMessages.length>100)state.groupMessages.splice(0,state.groupMessages.length-100);
- if(state.tab==='groups'){
-  const box=$('#chat-messages');
-  if(box){
-   const atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<140;
-   const scroll=box.scrollTop;
-   box.innerHTML=bubblesFor(state.groupMessages,true);
-   box.scrollTop=atBottom?box.scrollHeight:scroll;
-  }
-  if(message.sender_id!==state.user?.id)post('/api/groups/'+groupId+'/read').catch(()=>{});
+ if(!message||state.groupSelected!==groupId||state.tab!=='groups')return;
+ const messages=state.groupMessages;
+ const pos=messages.findIndex(item=>item.id===message.id);
+ const previous=messages.at(-1);
+ if(pos<0)messages.push(message);else messages[pos]=message;
+ const outOfOrder=pos<0&&previous&&message.id<previous.id;
+ if(outOfOrder)messages.sort((a,b)=>a.id-b.id);
+ const capped=messages.length>100;
+ if(capped)messages.splice(0,messages.length-100);
+ const box=$('#chat-messages');
+ if(box){
+  if(capped||outOfOrder)paintGroupThread();
+  else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
  }
+ if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')
+  post('/api/groups/'+groupId+'/read').catch(()=>{});
 }
 async function extraSocket(data){
  const t=data.type;
@@ -586,12 +606,24 @@ document.addEventListener('submit',async event=>{
     if(state.uploading)throw Error('Tệp vẫn đang được tải lên.');
     const body=String(fd.get('body')||'').trim();
     if(!body&&!state.pendingAttachment)return;
-    const gid=state.groupSelected;
-    await post(`/api/groups/${gid}/messages`,{body,attachment_id:state.pendingAttachment?.id||null,reply_to:state.replyTo?.scope==='group'?state.replyTo.id:null});
-    state.replyTo=null;state.pendingAttachment=null;
-    if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'group-typing',group_id:gid,on:false}));
-    await loadGroupMessages();await refreshGroups();$('#compose-extra').innerHTML=composerExtras();
-    const input=$('#chat-text');if(input)input.value='';
+    const gid=state.groupSelected,owner=state.user.id;
+    const current=()=>state.user?.id===owner&&state.tab==='groups'&&state.groupSelected===gid;
+    const field=form.querySelector('#chat-text'),submitted=field.value;
+    const attachment=state.pendingAttachment,reply=state.replyTo;
+    clearSentComposer(form,'group:'+gid);
+    try{
+     const {message}=await post('/api/groups/'+gid+'/messages',{body,attachment_id:attachment?.id||null,reply_to:reply?.scope==='group'?reply.id:null});
+     if(current())appendGroupMessage(gid,message);
+     if(state.user?.id===owner)scheduleGroupsRefresh();
+    }catch(error){
+     if(current()&&field.isConnected&&!field.value&&!state.pendingAttachment&&!state.replyTo){
+      field.value=submitted;
+      state.pendingAttachment=attachment;state.replyTo=reply;
+      field.dispatchEvent(new Event('input',{bubbles:true}));
+      const extra=$('#compose-extra');if(extra)extra.innerHTML=composerExtras();
+     }
+     throw error;
+    }
   }
   if(key==='settings-profile'){
    const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),

@@ -185,3 +185,13 @@ jobs:
         run: |
           python -m pip install -r requirements-dev.txt
           python -m pytest -q
+      - name: Exercise chat actions and scroll on desktop and mobile Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/chat-browser" playwright-core@1.56.1
+          export NODE_PATH="$RUNNER_TEMP/chat-browser/node_modules"
+          export DATA_DIR="$(mktemp -d)"
+          python -m uvicorn app:app --host 127.0.0.1 --port 8791 > "$RUNNER_TEMP/chat-browser.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" || true' EXIT
+          curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
+          node tests/mobile_live_chat.cjs
