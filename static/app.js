@@ -510,6 +510,7 @@ async function enterApp(resume=false){
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
+ state.sideFilter='';state.inboxFilter='all';state.onlyUnreadNotices=false;state.notices=[];
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
  clearActiveTab();
@@ -820,22 +821,45 @@ async function refreshFriends(redraw=true){
 }
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
-  return `<div class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
+  return `<button type="button" class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
    ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
-   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></div>`;
+   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
+}
+const inboxFilters={all:'Tất cả',unread:'Chưa đọc',pinned:'Đã ghim'};
+function inboxSearchText(value){
+ return String(value||'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().replaceAll('đ','d').trim();
 }
 function sideBody(){
-  const accepted=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived);
-  const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
-  const q=state.sideFilter||'';
-  const filtered=accepted.filter(x=>(x.display_name||x.username).toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi')));
-  return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
-  <div class="side-label">Cuộc trò chuyện · ${filtered.length}</div>
-  ${filtered.length?filtered.map(friendItem).join(''):`<div class="empty" style="padding:35px 12px;font-size:12px">${q?'Không tìm thấy hội thoại.':'Chưa có bạn bè nào. Hãy tìm và kết bạn!'}</div>`}
-  ${state.friends.some(f=>f.archived&&f.state==='accepted')?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${state.friends.filter(f=>f.archived&&f.state==='accepted').length}</button>`:''}
-  ${groupSideItems()}`;
+ const filter=state.inboxFilter||'all';
+ const query=inboxSearchText(state.sideFilter);
+ const matches=name=>inboxSearchText(name).includes(query);
+ const people=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived&&
+   (filter!=='unread'||f.unread>0)&&(filter!=='pinned'||f.pinned)&&matches(f.display_name||f.username));
+ const groups=filter==='pinned'?[]:state.groups.filter(g=>(filter!=='unread'||g.unread>0)&&matches(g.title));
+ const overview=filter==='all'&&!query;
+ const pending=overview?state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id):[];
+ const archived=overview?state.friends.filter(f=>f.archived&&!f.restricted&&f.state==='accepted').length:0;
+ const empty=query?'Không tìm thấy cuộc trò chuyện.':filter==='unread'?'Bạn đã đọc hết tin nhắn.':filter==='pinned'?'Chưa có cuộc trò chuyện được ghim.':'Chưa có cuộc trò chuyện.';
+ return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<button type="button" class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<span class="grow"><b>${esc(f.username)}</b><span class="sub">Muốn kết bạn với bạn</span></span></button>`).join('')}`:''}
+ ${people.length?`<div class="side-label">Cá nhân · ${people.length}</div>${people.map(friendItem).join('')}`:''}
+ ${groups.length?groupSideItems(groups):''}
+ ${!people.length&&!groups.length?`<div class="inbox-empty">${empty}</div>`:''}
+ ${archived?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${archived}</button>`:''}`;
 }
-function renderSideItems(){const box=$('#side-items');if(box){box.innerHTML=sideBody();}}
+function renderSideItems(){
+ const box=$('#side-items');
+ if(!box)return;
+ const html=sideBody();
+ if(box.inboxHTML===html)return;
+ const active=document.activeElement;
+ const restore=box.contains(active)&&active.dataset.act;
+ box.innerHTML=html;
+ box.inboxHTML=html;
+ if(restore){
+  const target=Array.from(box.querySelectorAll('[data-act]')).find(b=>b.dataset.act===active.dataset.act&&b.dataset.id===active.dataset.id&&b.dataset.tab===active.dataset.tab);
+  (target||$('#side-filter'))?.focus({preventScroll:true});
+ }
+}
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
   const secondary=[['restricted','shield','Danh sách hạn chế'],
@@ -867,7 +891,8 @@ function appRail(){
   </aside>`;
 }
 function sideBar(){return `<aside class="side"><div class="side-top"><div class="row between"><h2>Tin nhắn <span style="color:var(--brand)">.</span></h2><button class="btn circle ghost" title="Tìm bạn bè" data-act="app-tab" data-tab="friends">${icon('add',19)}</button></div>
-  <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" id="side-filter" placeholder="Tìm cuộc trò chuyện..." value="${esc(state.sideFilter||'')}" autocomplete="off"></div></div>
+  <div class="field" style="margin-top:23px;margin-bottom:0"><input class="input" type="search" id="side-filter" aria-label="Tìm hội thoại cá nhân hoặc nhóm" placeholder="Tìm người hoặc nhóm…" value="${esc(state.sideFilter||'')}" autocomplete="off"></div>
+  <div class="inbox-filters" role="group" aria-label="Lọc hội thoại" data-filter="${state.inboxFilter||'all'}">${Object.entries(inboxFilters).map(([key,label])=>`<button type="button" data-act="inbox-filter" data-filter="${key}" aria-pressed="${key===(state.inboxFilter||'all')}">${label}</button>`).join('')}</div></div>
   <div class="side-scroll" id="side-items">${sideBody()}</div>
   <div class="side-bottom"><div class="row" style="font-size:11px;color:var(--muted)"><span class="dot"></span> Nhắn tin trực tiếp, không cần tải lại</div></div></aside>`;}
 function memberHeader(title,subtitle,actions=''){
@@ -1158,6 +1183,7 @@ function renderApp(){
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
 async function goTab(tab){
+ const changed=tab!==state.tab;
  state.tab=tab;state.selected=null;state.replyTo=null;state.pendingAttachment=null;
  if(tab==='settings'){
   state.accountDeletion=await api('/api/me/deletion');
@@ -1169,6 +1195,7 @@ async function goTab(tab){
  if(tab==='notices')await loadNotices();
  if(tab==='support'){state.mode='support';await loadTickets();}
  renderApp();
+ if(changed)document.querySelector('.shell > .main')?.classList.add('view-enter');
 }
 
 // ==== Administrator workspace ====
@@ -1814,6 +1841,16 @@ function grantDialog(tid){
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
+  case 'inbox-filter':{
+    const key=button.dataset.filter;
+    if(!Object.hasOwn(inboxFilters,key))break;
+    state.inboxFilter=key;
+    const bar=button.parentElement;
+    bar.dataset.filter=key;
+    for(const item of bar.querySelectorAll('button'))item.setAttribute('aria-pressed',String(item===button));
+    renderSideItems();
+    break;
+   }
   case 'copy-member-id':{
     if(!state.user || state.user.is_admin)return;
     const accountId=String(state.user.public_id||state.user.id);

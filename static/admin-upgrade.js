@@ -18,7 +18,7 @@ function sidebar(shell){
  const groups=[
  ['BẢNG ĐIỀU KHIỂN',['overview']],
  ['THÀNH VIÊN & CỘNG ĐỒNG',['registrations','users','groups','tickets','deletions','world','reports']],
- ['VẬN HÀNH & BẢO MẬT',['broadcast','audit','security']]
+ ['VẬN HÀNH & BẢO MẬT',['ops','broadcast','audit','security']]
  ];
  for(const [label,tabs]of groups){
   const group=el('div','admin-nav-group');group.append(el('div','admin-nav-group-label',label));

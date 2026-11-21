@@ -340,3 +340,38 @@
  .shell:not(.admin-shell) .chat-header-more summary,
  .shell:not(.admin-shell) .chat-priority-card{transition:none!important}
 }
+
+/* The indicator moves once per filter change, including on touch screens. */
+.inbox-filters{
+ display:grid;grid-template-columns:repeat(3,minmax(0,1fr));position:relative;
+ isolation:isolate;margin-top:12px;padding:3px;border:1px solid #38465e;
+ border-radius:14px;background:#0b1628;
+}
+.inbox-filters::before{
+ content:'';position:absolute;inset:3px auto 3px 3px;width:calc((100% - 6px)/3);
+ z-index:-1;border-radius:10px;background:linear-gradient(120deg,#40456f,#323859);
+}
+.inbox-filters[data-filter="unread"]::before{transform:translateX(100%)}
+.inbox-filters[data-filter="pinned"]::before{transform:translateX(200%)}
+.inbox-filters button{
+ min-width:0;min-height:36px;padding:3px;color:#b4bfd5;border:0;
+ background:transparent;border-radius:10px;line-height:1.2;font-family:inherit;font-size:12px;font-weight:600;
+}
+.inbox-filters button[aria-pressed="true"]{color:#fff}
+.side button.side-item{width:100%;background-color:transparent;text-align:left;color:inherit;font:inherit}
+.shell .side button.side-item .sub{display:block}
+.shell .side button:focus-visible{outline:2px solid #c3b8ff;outline-offset:-2px}
+.inbox-empty{padding:28px 12px;color:#adbad2;text-align:center;font-size:13px}
+@media(pointer:coarse){.inbox-filters button{min-height:44px}}
+@media(prefers-reduced-motion:no-preference){
+ .inbox-filters::before{transition:transform .2s cubic-bezier(.2,.75,.25,1)}
+ .inbox-filters button{transition:color .16s ease}
+}
+
+.notice-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.notice-tools [aria-pressed="true"]{background:#393c65;color:#fff;border-color:#807bbb}
+
+@media(prefers-reduced-motion:no-preference){
+ .main.view-enter{animation:member-view-enter .18s ease-out}
+ @keyframes member-view-enter{from{opacity:.8;transform:translateY(4px)}to{opacity:1;transform:none}}
+}

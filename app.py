@@ -1432,7 +1432,7 @@ async def read_messages(request:Request,other_id:int):
 
 
 @app.get('/api/notifications')
-async def get_notifications(request:Request):
+def get_notifications(request:Request,unread_only:bool=False):
     u=current_user(request)
     with db() as c:
         notices=many(c,'''SELECT n.id,n.user_id,n.created_at,n.read_at,
@@ -1442,9 +1442,9 @@ async def get_notifications(request:Request):
                            CASE WHEN n.preview_kind='scheduled' THEN 'Có tệp đính kèm' ELSE 'Đã gửi một tệp' END)
                        ELSE n.body END AS body
                   FROM notifications n LEFT JOIN messages m ON m.id=n.message_id AND m.recipient_id=n.user_id
-                  WHERE n.user_id=? AND (n.message_id IS NULL OR
+                  WHERE n.user_id=? AND (NOT ? OR n.read_at IS NULL) AND (n.message_id IS NULL OR
                       (m.id IS NOT NULL AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?)))
-                  ORDER BY n.id DESC LIMIT 80''',(u['id'],now()))
+                  ORDER BY n.id DESC LIMIT 80''',(u['id'],unread_only,now()))
     return {'notifications':notices}
 
 

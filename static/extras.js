@@ -29,11 +29,9 @@ async function refreshGroups(redraw=false){
  }
  if(redraw){renderSideItems();if(state.tab==='groups')renderApp();}
 }
-function groupSideItems(){
- const q=(state.sideFilter||'').toLowerCase();
- const list=state.groups.filter(g=>g.title.toLowerCase().includes(q));
- return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<div class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
- <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></div>`).join('')}`;
+function groupSideItems(list){
+ return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<button type="button" class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
+ <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></button>`).join('')}`;
 }
 function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
@@ -136,11 +134,18 @@ async function loadGroupMessages(scroll=true){
 }
 function notificationsContent(){
  const ns=state.notices||[];
- return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">TRUNG TÂM THÔNG BÁO</span><h1 class="section-title">Thông báo của bạn</h1>
- <p class="section-lead">Lời mời, hoạt động mới và thông báo từ quản trị viên.</p><div class="row" style="gap:12px;margin-bottom:20px"><button class="btn primary sm" data-act="notice-read">Đánh dấu tất cả đã đọc</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button></div>
- ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?'<span class="pill good">Mới</span>':''}</div>`).join(''):'<div class="empty">Chưa có thông báo nào.</div>'}</div></div>`;
+ return `<div class="main-body"><div class="section-wrap">
+ <div class="notice-tools"><button type="button" class="btn ghost sm" data-act="notice-filter" aria-pressed="${!!state.onlyUnreadNotices}">Chỉ chưa đọc</button>
+ <button class="btn ghost sm" data-act="notice-read">Đọc tất cả</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button></div>
+ ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?`<button class="btn ghost sm" type="button" data-act="notice-read-one" data-id="${n.id}" aria-label="Đánh dấu thông báo đã đọc">${icon('check',16)}</button>`:''}</div>`).join(''):`<div class="empty">${state.onlyUnreadNotices?'Bạn đã đọc hết thông báo.':'Chưa có thông báo nào.'}</div>`}</div></div>`;
 }
-async function loadNotices(){if(!state.user||state.user.is_admin)return;state.notices=(await api('/api/notifications')).notifications;}
+let noticesRequest=0;
+async function loadNotices(){
+ if(!state.user||state.user.is_admin)return;
+ const request=++noticesRequest,userId=state.user.id;
+ const result=await api('/api/notifications'+(state.onlyUnreadNotices?'?unread_only=true':''));
+ if(request===noticesRequest&&state.user?.id===userId)state.notices=result.notifications;
+}
 function profileSettings(){
  const u=state.user;
  return `<section class="card" style="margin-bottom:18px"><h3>${icon('users',17)} Hồ sơ công khai</h3><form data-form="settings-profile" style="margin-top:14px">
@@ -302,7 +307,15 @@ async function extraAction(btn){
  case 'cancel-reply':state.replyTo=null;$('#compose-extra').innerHTML=composerExtras();break;
  case 'cancel-file':state.pendingAttachment=null;$('#compose-extra').innerHTML=composerExtras();break;
  case 'search-chat':await showSearch();break;
- case 'notice-read':await post('/api/notifications/read');await loadNotices();renderApp();break;
+ case 'notice-filter':
+ case 'notice-read-one':
+ case 'notice-read':{
+   if(act==='notice-filter')state.onlyUnreadNotices=!state.onlyUnreadNotices;
+   else await post(act==='notice-read-one'?`/api/notifications/${id}/read`:'/api/notifications/read');
+   await loadNotices();
+   if(state.tab==='notices')renderApp();
+   break;
+ }
  case 'notice-permission':{
    if(!('Notification' in window))throw Error('Trình duyệt không hỗ trợ thông báo nền.');
    const result=await Notification.requestPermission();toast(result==='granted'?'Đã bật thông báo khi tab còn hoạt động.':'Trình duyệt chưa cấp quyền.',result==='granted'?'ok':'info');break;
@@ -422,7 +435,10 @@ async function extraSocket(data){
     toast('Có tin nhắn mới trong nhóm.');notifyBrowser('Tin nhắn mới trong nhóm');
   }
  }
- if(t==='group-message-updated'&&state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
+ if(t==='group-message-updated'){
+  scheduleGroupsRefresh();
+  if(state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
+ }
  if(t==='message-updated'){
   scheduleFriendsRefresh();
   if(state.selected&&state.tab==='messages')await loadMessages(false);
@@ -566,7 +582,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-permission',
+ 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-read-one','notice-filter','notice-permission',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}

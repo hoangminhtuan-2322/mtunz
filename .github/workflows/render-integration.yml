@@ -51,4 +51,6 @@ jobs:
             tests/test_v6_features.py::test_recall_updates_notices_and_unread_without_affecting_other_messages \
             tests/test_community_plus_v7.py::test_event_creation_and_attendance \
             tests/test_community_plus_v7.py::test_world_appeal_and_pin_review \
-            tests/test_social_v2.py::test_seven_digit_public_ids_and_nonadmin_direct_messaging
+            tests/test_social_v2.py::test_seven_digit_public_ids_and_nonadmin_direct_messaging \
+            tests/test_complete_features.py::test_single_notice_read_is_private_and_unread_filter_runs_before_limit \
+            tests/test_complete_features.py::test_group_membership_edit_reactions_and_moderation

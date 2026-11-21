@@ -104,6 +104,8 @@ def install(core):
                 sender_id INTEGER NOT NULL REFERENCES users(id), body TEXT NOT NULL DEFAULT '',
                 attachment_id INTEGER REFERENCES attachments(id), reply_to INTEGER,
                 edited_at INTEGER, deleted_at INTEGER, created_at INTEGER NOT NULL);
+              CREATE INDEX IF NOT EXISTS group_members_user_idx ON group_members(user_id,group_id);
+              CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id,id);
               CREATE INDEX IF NOT EXISTS group_messages_idx ON group_messages(group_id,id);
               CREATE TABLE IF NOT EXISTS reactions (
                 scope TEXT NOT NULL, message_id INTEGER NOT NULL,
@@ -619,19 +621,26 @@ def install(core):
         return {'id':gid}
 
     @app.get('/api/groups')
-    async def list_groups(request:Request):
+    def list_groups(request:Request):
         u=current_user(request)
         with db() as c:
             rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,
-                           (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
-                           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.sender_id!=?) AS unread
-                           FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
-                           WHERE gm.user_id=? ORDER BY g.id DESC''',(u['id'],u['id']))
-            for g in rows:
-                last=one(c,'''SELECT m.id,m.body,m.sender_id,m.created_at,m.deleted_at,m.attachment_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username
-                          FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=? ORDER BY m.id DESC LIMIT 1''',(g['id'],))
-                g['last_message']=dict(last) if last else None
-            rows.sort(key=lambda g:g['last_message']['created_at'] if g['last_message'] else g['created_at'],reverse=True)
+                       (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
+                       (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id
+                         AND m.sender_id!=gm.user_id AND m.deleted_at IS NULL) AS unread,
+                       last.id AS last_id,last.body AS last_body,last.sender_id AS last_sender_id,
+                       last.created_at AS last_created_at,last.deleted_at AS last_deleted_at,
+                       last.attachment_id AS last_attachment_id,
+                       COALESCE(NULLIF(sender.display_name,''),'Thành viên') AS last_username
+                       FROM group_members gm JOIN chat_groups g ON g.id=gm.group_id
+                       LEFT JOIN group_messages last ON last.id=(
+                         SELECT m.id FROM group_messages m WHERE m.group_id=g.id ORDER BY m.id DESC LIMIT 1)
+                       LEFT JOIN users sender ON sender.id=last.sender_id
+                       WHERE gm.user_id=? ORDER BY COALESCE(last.created_at,g.created_at) DESC,g.id DESC''',(u['id'],))
+            for group in rows:
+                message={key:group.pop('last_'+key) for key in
+                         ('id','body','sender_id','created_at','deleted_at','attachment_id','username')}
+                group['last_message']=message if message['id'] is not None else None
         return {'groups':rows}
 
     @app.get('/api/groups/{gid}')
@@ -998,7 +1007,17 @@ def install(core):
     async def mark_notices(request:Request):
         u=current_user(request)
         with db() as c:
-            c.execute('UPDATE notifications SET read_at=COALESCE(read_at,?) WHERE user_id=?',(now(),u['id']))
+            c.execute('UPDATE notifications SET read_at=? WHERE user_id=? AND read_at IS NULL',(now(),u['id']))
+        return {'ok':True}
+
+    @app.post('/api/notifications/{notice_id}/read')
+    def read_notice(request:Request,notice_id:int):
+        u=current_user(request)
+        with db() as c:
+            updated=c.execute('''UPDATE notifications SET read_at=COALESCE(read_at,?)
+                                 WHERE id=? AND user_id=?''',(now(),notice_id,u['id']))
+            if not updated.rowcount:
+                raise HTTPException(404,'Không tìm thấy thông báo.')
         return {'ok':True}
 
     class Prefs(BaseModel):
