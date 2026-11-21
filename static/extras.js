@@ -192,7 +192,8 @@ function notificationsContent(){
  const ns=state.notices||[];
  return `<div class="main-body"><div class="section-wrap">
  <div class="notice-tools"><button type="button" class="btn ghost sm" data-act="notice-filter" aria-pressed="${!!state.onlyUnreadNotices}">Chỉ chưa đọc</button>
- <button class="btn ghost sm" data-act="notice-read">Đọc tất cả</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button></div>
+ <button class="btn ghost sm" data-act="notice-read">Đọc tất cả</button><button class="btn ghost sm" data-act="notice-permission">Bật thông báo trình duyệt</button>
+ <button class="btn ghost sm" type="button" data-act="notice-sound" aria-pressed="${chatSoundEnabled()}">Âm báo tin nhắn</button></div>
  ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?`<button class="btn ghost sm" type="button" data-act="notice-read-one" data-id="${n.id}" aria-label="Đánh dấu thông báo đã đọc">${icon('check',16)}</button>`:''}</div>`).join(''):`<div class="empty">${state.onlyUnreadNotices?'Bạn đã đọc hết thông báo.':'Chưa có thông báo nào.'}</div>`}</div></div>`;
 }
 let noticesRequest=0;
@@ -374,7 +375,18 @@ async function extraAction(btn){
  }
  case 'notice-permission':{
    if(!('Notification' in window))throw Error('Trình duyệt không hỗ trợ thông báo nền.');
-   const result=await Notification.requestPermission();toast(result==='granted'?'Đã bật thông báo khi tab còn hoạt động.':'Trình duyệt chưa cấp quyền.',result==='granted'?'ok':'info');break;
+   const result=await Notification.requestPermission();
+   if(result==='granted')void chatNotificationRegistration();
+   toast(result==='granted'?'Đã bật thông báo khi tab còn hoạt động.':'Trình duyệt chưa cấp quyền.',result==='granted'?'ok':'info');break;
+ }
+ case 'notice-sound':{
+   const btn=document.querySelector('[data-act="notice-sound"]');
+   const enabled=!chatSoundEnabled();
+   localStorage.setItem(chatSoundKey(),enabled?'on':'off');
+   btn?.setAttribute('aria-pressed',String(enabled));
+   if(enabled){await unlockChatSound();playChatSound();}
+   toast(enabled?'Đã bật âm báo tin nhắn.':'Đã tắt âm báo tin nhắn.','ok');
+   break;
  }
  case 'profile-view':{
   const r=(await api('/api/profile/'+id)).profile;
@@ -457,10 +469,69 @@ async function uploadSelected(file){
   state.pendingAttachment=payload.attachment;
  }finally{state.uploading=false;if($('#compose-extra'))$('#compose-extra').innerHTML=composerExtras();}
 }
-function notifyBrowser(message){
- if(document.hidden&&typeof Notification!=='undefined'&&Notification.permission==='granted'){
-   try{const n=new Notification('mtunz',{body:message,icon:'/static/favicon.svg'});n.onclick=()=>window.focus();}catch{}
- }
+let notificationWorker;
+function chatNotificationRegistration(){
+ if(!('serviceWorker' in navigator))return Promise.resolve(null);
+ if(!notificationWorker)notificationWorker=navigator.serviceWorker.register('/static/chat-alert-worker.js')
+   .catch(()=>{notificationWorker=null;return null;});
+ return notificationWorker;
+}
+async function notifyBrowser(message,tag='mtunz',silent=false){
+ if(!document.hidden||typeof Notification==='undefined'||Notification.permission!=='granted')return;
+ const options={body:message,tag,silent,icon:'/static/favicon.svg'};
+ try{
+  const registration=await chatNotificationRegistration();
+  if(!document.hidden)return;
+  if(registration?.active){await registration.showNotification('mtunz',options);return;}
+  const notice=new Notification('mtunz',options);
+  notice.onclick=()=>window.focus();
+ }catch{}
+}
+let chatSoundContext,lastChatSound=-Infinity;
+const seenChatAlerts=new Set();
+function chatSoundKey(){return 'mtunz.chat-sound.'+state.user?.id;}
+function chatSoundEnabled(){
+ try{return localStorage.getItem(chatSoundKey())!=='off';}catch{return true;}
+}
+async function unlockChatSound(){
+ if(!state.user||state.user.is_admin||!chatSoundEnabled())return;
+ const Audio=window.AudioContext||window.webkitAudioContext;
+ if(!Audio)return;
+ try{
+  chatSoundContext ||= new Audio();
+  if(chatSoundContext.state==='suspended')await chatSoundContext.resume();
+ }catch{}
+}
+document.addEventListener('pointerup',unlockChatSound,{passive:true});
+document.addEventListener('keydown',unlockChatSound);
+function playChatSound(){
+ const ctx=chatSoundContext;
+ if(!ctx||ctx.state!=='running'||performance.now()-lastChatSound<1800)return;
+ lastChatSound=performance.now();
+ const now=ctx.currentTime,oscillator=ctx.createOscillator(),gain=ctx.createGain();
+ oscillator.type='sine';
+ oscillator.frequency.setValueAtTime(640,now);
+ oscillator.frequency.setValueAtTime(840,now+.075);
+ gain.gain.setValueAtTime(.001,now);
+ gain.gain.exponentialRampToValueAtTime(.075,now+.025);
+ gain.gain.exponentialRampToValueAtTime(.001,now+.19);
+ oscillator.connect(gain).connect(ctx.destination);
+ oscillator.start(now);oscillator.stop(now+.2);
+ oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+}
+function alertChatMessage(scope,id,message){
+ const key=state.user.id+':'+scope+':'+id+':'+message.id;
+ if(seenChatAlerts.has(key))return;
+ seenChatAlerts.add(key);
+ if(seenChatAlerts.size>120)seenChatAlerts.delete(seenChatAlerts.keys().next().value);
+ const direct=scope==='dm';
+ if(direct&&state.friends.find(friend=>friend.other_id===id)?.muted)return;
+ const viewing=direct?state.tab==='messages'&&state.selected===id:state.tab==='groups'&&state.groupSelected===id;
+ const text=direct?'Bạn có tin nhắn mới.':'Bạn có tin nhắn mới trong nhóm.';
+ if(document.hidden){void notifyBrowser(text,'chat:'+scope+':'+id,!chatSoundEnabled());return;}
+ if(viewing)return;
+ toast(text,'info');
+ if(chatSoundEnabled())playChatSound();
 }
 let groupRefreshTimer=0;
 function scheduleGroupsRefresh(delay=450){
@@ -480,7 +551,7 @@ function appendGroupMessage(groupId,message){
  const box=$('#chat-messages');
  if(box){
   if(capped||outOfOrder)paintGroupThread();
-  else patchThreadRow(box,message,previous,messages,'group',pos>=0,paintGroupThread);
+  else patchThreadRow(box,message,previous,messages,'group',pos>=0?message.id:null,paintGroupThread,message.sender_id===state.user?.id&&pos<0);
   syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
  }
  if(pos<0&&message.sender_id!==state.user?.id&&document.visibilityState==='visible')
@@ -492,9 +563,7 @@ async function extraSocket(data){
  if(t==='group-message'){
   if(state.groupSelected===data.group_id)appendGroupMessage(data.group_id,data.message);
   scheduleGroupsRefresh();
-  if(data.message.sender_id!==state.user?.id&&!(state.groupSelected===data.group_id&&state.tab==='groups')){
-    toast('Có tin nhắn mới trong nhóm.');notifyBrowser('Tin nhắn mới trong nhóm');
-  }
+  if(data.message.sender_id!==state.user?.id)alertChatMessage('group',data.group_id,data.message);
  }
  if(t==='group-message-updated'){
   scheduleGroupsRefresh();
@@ -643,7 +712,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-read-one','notice-filter','notice-permission',
+ 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-read-one','notice-filter','notice-permission','notice-sound',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}
@@ -671,16 +740,23 @@ document.addEventListener('submit',async event=>{
     const body=String(fd.get('body')||'').trim();
     if(!body&&!state.pendingAttachment)return;
     const gid=state.groupSelected,owner=state.user.id;
+    const current=()=>state.user?.id===owner&&state.tab==='groups'&&state.groupSelected===gid;
     const field=form.querySelector('#chat-text'),submitted=field.value;
-    const {message}=await post(`/api/groups/${gid}/messages`,{body,attachment_id:state.pendingAttachment?.id||null,reply_to:state.replyTo?.scope==='group'?state.replyTo.id:null});
-    if(state.user?.id!==owner)return;
-    if(field.value===submitted){v4WriteDraft('group:'+gid,'');field.value='';}
-    if(state.tab!=='groups'||state.groupSelected!==gid)return;
-    state.replyTo=null;state.pendingAttachment=null;
-    if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'group-typing',group_id:gid,on:false}));
-    appendGroupMessage(gid,message);
-    scheduleGroupsRefresh();
-    const extra=$('#compose-extra');if(state.tab==='groups'&&state.groupSelected===gid&&extra)extra.innerHTML=composerExtras();
+    const attachment=state.pendingAttachment,reply=state.replyTo;
+    clearSentComposer(form,'group:'+gid);
+    try{
+     const {message}=await post('/api/groups/'+gid+'/messages',{body,attachment_id:attachment?.id||null,reply_to:reply?.scope==='group'?reply.id:null});
+     if(current())appendGroupMessage(gid,message);
+     if(state.user?.id===owner)scheduleGroupsRefresh();
+    }catch(error){
+     if(current()&&field.isConnected&&!field.value&&!state.pendingAttachment&&!state.replyTo){
+      field.value=submitted;
+      state.pendingAttachment=attachment;state.replyTo=reply;
+      field.dispatchEvent(new Event('input',{bubbles:true}));
+      const extra=$('#compose-extra');if(extra)extra.innerHTML=composerExtras();
+     }
+     throw error;
+    }
   }
   if(key==='settings-profile'){
    const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),

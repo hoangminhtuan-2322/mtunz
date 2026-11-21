@@ -282,6 +282,9 @@ function mountComposer(form){
   toggle.textContent=expanded?'−':'＋';
   if(expanded)toolbar.querySelector('label,button')?.focus();else hidePicker();
  };
+ submit.addEventListener('mousedown',event=>{
+  if(document.activeElement===textarea)event.preventDefault();
+ });
  main.append(toggle,textarea,submit);form.replaceChildren(toolbar,main);
  form.classList.add('chat-compose-enhanced');
  textarea.placeholder='Viết tin nhắn…';
