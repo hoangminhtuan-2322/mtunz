@@ -218,7 +218,8 @@ def install(core):
         u=current_user(request)
         with db() as c:
             r=one(c,'''SELECT id,public_id,display_name,bio,headline,website,created_at,last_seen,
-                               show_online,profile_visibility,avatar_attachment_id,cover_attachment_id
+                               show_online,profile_visibility,avatar_attachment_id,cover_attachment_id,
+                               username AS login_username,phone,show_phone_in_profile,show_login_in_profile
                         FROM users WHERE id=? AND is_admin=0''',(uid,))
             if not r or (uid!=u['id'] and has_block(c,uid,u['id'])):
                 raise HTTPException(404,'Không tìm thấy người dùng.')
@@ -233,6 +234,12 @@ def install(core):
             p['website']=r['website'] if allowed else ''
             p.pop('avatar_attachment_id',None)
             p.pop('cover_attachment_id',None)
+            show_phone=p.pop('show_phone_in_profile')
+            show_login=p.pop('show_login_in_profile')
+            if not (allowed and show_phone and p['phone']):
+                p.pop('phone')
+            if not (allowed and show_login):
+                p.pop('login_username')
             p['private']=not allowed
         return {'profile':p}
 

@@ -1141,6 +1141,7 @@ async function loadMessages(scroll=true){
  }catch(e){if(current())toast(e.message,'error');}
 }
 function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
+ <button type="button" class="btn ghost sm" data-act="profile-view" data-id="${r.id}">Xem hồ sơ</button>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
  r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}
@@ -1153,13 +1154,13 @@ function friendsContent(){
  return `<div class="section-wrap"><span class="eyebrow">CỘNG ĐỒNG CỦA BẠN</span><h1 class="section-title">Bạn bè & kết nối</h1>
  <p class="section-lead">Tìm kiếm tài khoản, quản lý lời mời và bắt đầu nhắn tin.</p>
  ${typeof messageRequestsPanel==='function'?messageRequestsPanel():''}
- <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Tên tài khoản hoặc UID" required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
+ <div class="card"><h3>${icon('search',17)} Tìm người dùng</h3><form data-form="search-people" class="row" style="margin-top:15px"><input class="input grow" name="q" id="person-search" value="${esc(state.peopleQuery||'')}" placeholder="Tên hiển thị hoặc ID công khai" required minlength="1"><button class="btn primary">Tìm kiếm</button></form>
  ${(state.peopleResults||[]).map(personResult).join('')||((state.peopleQuery)?'<div class="hint" style="margin-top:16px">Không có kết quả phù hợp.</div>':'')}</div>
  ${pending.length?`<h3 style="margin:28px 0 12px">Lời mời kết bạn (${pending.length})</h3>${pending.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ bạn xác nhận</div></div><button class="btn success sm" data-act="friend-accept" data-id="${f.other_id}">Chấp nhận</button><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Từ chối</button></div>`).join('')}`:''}
  ${sent.length?`<h3 style="margin:28px 0 12px">Lời mời đã gửi (${sent.length})</h3>${sent.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Đang chờ phản hồi</div></div><button class="btn ghost sm" data-act="friend-remove" data-id="${f.other_id}">Thu hồi</button></div>`).join('')}`:''}
  <h3 style="margin:28px 0 12px">Bạn bè (${accepted.length})</h3>
  ${accepted.length?accepted.map(f=>`<div class="people-row">${avatar(f.username,f.online)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">${f.restricted?'Đang ở danh sách hạn chế':f.online?'Đang hoạt động':'Ngoại tuyến'}</div></div>
- <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
+ <button type="button" class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}">Xem hồ sơ</button><button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
 }
 function archiveContent(){
  const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived);
@@ -1880,7 +1881,7 @@ async function userDetails(uid){
      ${adminDetailRow('Số điện thoại',contact(u.phone))}
      ${adminDetailRow('Email / Gmail',contact(u.email))}
      ${adminDetailRow('Giới thiệu',contact(u.bio))}
-     <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email; không hiển thị trong hồ sơ công khai.</p>
+     <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email. Chủ tài khoản có thể chọn hiển thị số điện thoại trên hồ sơ.</p>
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Tài khoản & quyền riêng tư</h3>

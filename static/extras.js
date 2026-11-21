@@ -212,7 +212,7 @@ function profileSettings(){
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
  <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
  <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
- <p class="hint" style="margin:10px 0 14px">Số điện thoại và email không hiển thị trên hồ sơ công khai.</p>
+ <p class="hint" style="margin:10px 0 14px">Email là thông tin riêng tư. Số điện thoại mặc định được ẩn, có thể đổi trong Hồ sơ nâng cao.</p>
  <form data-form="settings-contact">
   <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
   <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}"></div>
@@ -401,6 +401,8 @@ async function extraAction(btn){
    ${r.private?'<p class="hint">Hồ sơ được chủ tài khoản giới hạn quyền xem.</p>':
      `<strong>${esc(r.headline||'')}</strong>
       <div class="social-profile-view-bio">${esc(r.bio||'Chưa có lời giới thiệu.')}</div>
+      ${r.login_username?`<div class="hint">Tên đăng nhập: <strong>${esc(r.login_username)}</strong></div>`:''}
+      ${r.phone?`<div class="hint">Số điện thoại: <strong>${esc(r.phone)}</strong></div>`:''}
       ${website?`<a href="${esc(website)}" target="_blank" rel="noopener noreferrer">Trang web của thành viên</a>`:''}`}
    <button class="btn ghost sm" type="button" data-world-report-user="${Number(r.id)}">${icon('shield',15)} Báo cáo người dùng</button>
    </div>`,confirm:'Đóng'});break;

@@ -22,6 +22,8 @@ const {chromium}=require('playwright-core');
    if(width<=800){
     await page.getByRole('button',{name:'Mở hồ sơ cá nhân'}).tap();
     await page.locator('.profile-page').waitFor();
+    assert.equal(await page.locator('[name="show_phone_in_profile"]').isChecked(),false);
+    assert.equal(await page.locator('[name="show_login_in_profile"]').isChecked(),false);
     await page.locator('.rail-nav [data-tab="messages"]').tap();
    }
    if(width>800)assert.match(await page.locator('.start-threads button').first().innerText(),/Nhóm bạn/);

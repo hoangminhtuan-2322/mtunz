@@ -110,7 +110,7 @@ def test_public_profile_search_and_friends_do_not_expose_login_username():
     name=one.get('/api/me').json()['user']['display_name']
     profile=two.get(f'/api/profile/{uid}')
     assert profile.status_code==200
-    assert 'username' not in profile.json()['profile']
+    assert not {'username','login_username','phone','email'} & profile.json()['profile'].keys()
     assert profile.json()['profile']['display_name']==name
     response=two.get(f'/api/people/search?q={uid}')
     assert response.status_code==200,response.text
@@ -122,3 +122,19 @@ def test_public_profile_search_and_friends_do_not_expose_login_username():
     assert two.post(f'/api/friends/request/{uid}').status_code==200
     friends=one.get('/api/friends').json()['friends']
     assert friends[0]['username']=='Thành viên private_login_two'
+    assert 'phone' not in friends[0] and 'login_username' not in friends[0]
+    other_uid=two.get('/api/me').json()['user']['id']
+    assert one.patch('/api/me/social',json={
+        'profile_visibility':'friends','show_login_in_profile':True}).status_code==200
+    restricted=two.get(f'/api/profile/{uid}').json()['profile']
+    assert restricted['private'] is True and 'login_username' not in restricted
+    assert one.post(f'/api/friends/accept/{other_uid}').status_code==200
+    shared=two.get(f'/api/profile/{uid}').json()['profile']
+    assert shared['login_username']=='private_login_one' and 'phone' not in shared
+    assert one.patch('/api/me/social',json={
+        'show_login_in_profile':False,'show_phone_in_profile':True}).status_code==200
+    own=one.get('/api/me').json()['user']
+    shared=two.get(f'/api/profile/{uid}').json()['profile']
+    assert shared['phone']==own['phone'] and 'login_username' not in shared and 'email' not in shared
+    assert one.patch('/api/me/social',json={'show_phone_in_profile':False}).status_code==200
+    assert 'phone' not in two.get(f'/api/profile/{uid}').json()['profile']

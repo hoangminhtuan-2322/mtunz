@@ -28,6 +28,8 @@ def install(core):
             ('website', 'TEXT NOT NULL DEFAULT \'\''), ('avatar_attachment_id', 'INTEGER'),
             ('cover_attachment_id', 'INTEGER'),
             ('profile_visibility', "TEXT NOT NULL DEFAULT 'everyone'"),
+            ('show_phone_in_profile', 'INTEGER NOT NULL DEFAULT 0'),
+            ('show_login_in_profile', 'INTEGER NOT NULL DEFAULT 0'),
             ('allow_message_requests', 'INTEGER NOT NULL DEFAULT 1'),
             ('world_anonymous', 'INTEGER NOT NULL DEFAULT 0'),
         ]:
@@ -85,6 +87,8 @@ def install(core):
         return {
             'public_id': row['public_id'], 'headline':row['headline'] or '',
             'website':row['website'] or '', 'profile_visibility':row['profile_visibility'],
+            'show_phone_in_profile':bool(row['show_phone_in_profile']),
+            'show_login_in_profile':bool(row['show_login_in_profile']),
             'allow_message_requests':bool(row['allow_message_requests']),
             'world_anonymous':bool(row['world_anonymous']),
             'avatar_url':media_url(row['id'],'avatar',row['avatar_attachment_id']),
@@ -104,6 +108,8 @@ def install(core):
         avatar_attachment_id: int|None=None
         cover_attachment_id: int|None=None
         profile_visibility: Literal['everyone','friends','only_me']|None=None
+        show_phone_in_profile: bool|None=None
+        show_login_in_profile: bool|None=None
         allow_message_requests: bool|None=None
         world_anonymous: bool|None=None
 
@@ -123,7 +129,8 @@ def install(core):
                 updates['avatar_attachment_id']=check_image(c,body.avatar_attachment_id,u['id'])
             if body.cover_attachment_id is not None:
                 updates['cover_attachment_id']=check_image(c,body.cover_attachment_id,u['id'])
-            for field in ('profile_visibility','allow_message_requests','world_anonymous'):
+            for field in ('profile_visibility','show_phone_in_profile','show_login_in_profile',
+                          'allow_message_requests','world_anonymous'):
                 value=getattr(body,field)
                 if value is not None:
                     updates[field]=int(value) if isinstance(value,bool) else value

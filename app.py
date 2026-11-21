@@ -640,6 +640,8 @@ def public_user(u):
             'website':u['website'] or '', 'profile_visibility':u['profile_visibility'],
             'avatar_url':f'/api/profile/{u["id"]}/avatar' if u['avatar_attachment_id'] else None,
             'cover_url':f'/api/profile/{u["id"]}/cover' if u['cover_attachment_id'] else None,
+            'show_phone_in_profile':bool(u['show_phone_in_profile']),
+            'show_login_in_profile':bool(u['show_login_in_profile']),
             'allow_message_requests':bool(u['allow_message_requests']),
             'world_anonymous':bool(u['world_anonymous']), 'chat_wallpaper':u['chat_wallpaper'],
             'onboarding_required':bool(u['needs_display_name']),
