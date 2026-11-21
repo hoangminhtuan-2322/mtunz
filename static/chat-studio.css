@@ -19,3 +19,8 @@
 .member-sticker{display:block;width:min(144px,38vw);height:auto;aspect-ratio:1;object-fit:contain}
 .premium-dialog:has(.sticker-editor){max-height:92dvh;overflow:auto;overscroll-behavior:contain}
 @media(max-width:600px){.studio-tools button,.sticker-editor [data-save]{min-height:44px}.shell .chat-compose-toolbar{max-width:100%;flex-wrap:wrap}.studio-appearance{flex-wrap:wrap}}
+
+.paper-sample,.thread[data-paper]{background-size:cover;background-position:center}
+.paper-grid label[hidden]{display:none}
+.studio-file{display:grid;gap:5px;margin-block:8px;color:#c2cfe3;font-size:13px}
+.studio-file input{max-width:100%;font:inherit}

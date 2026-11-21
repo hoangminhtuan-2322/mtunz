@@ -1224,6 +1224,7 @@ function renderApp(){
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
+ window.applyChatPhoto?.();
  const thread=$('#chat-messages');
  if(thread){
   const resume=reading&&thread.dataset.chatKey===reading.key;

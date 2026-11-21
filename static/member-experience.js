@@ -267,6 +267,9 @@ function mountComposer(form){
   original.append(make('span','','Tệp'));toolbar.append(original);
   enableFileKeyboard(original);
  }
+ for(const btn of form.querySelectorAll('button[data-v4-act]')){
+  btn.classList.add('chat-compose-tool');toolbar.append(btn);
+ }
  const main=make('div','chat-compose-main');
  main.append(textarea,submit);form.replaceChildren(toolbar,main);
  form.classList.add('chat-compose-enhanced');

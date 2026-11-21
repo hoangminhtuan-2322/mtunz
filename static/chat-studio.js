@@ -1,21 +1,63 @@
 'use strict';
 (()=>{
  const papers={midnight:'Đêm xanh',lagoon:'Đầm phá',dusk:'Hoàng hôn',grove:'Rừng thông'};
+ const photoCache=new Map();
+ function storedPhoto(uid){
+  if(!photoCache.has(uid)){
+   let data='';
+   try{data=localStorage.getItem('mtunz.paper.'+uid)||'';}catch{}
+   photoCache.set(uid,/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data)?data:'');
+  }
+  return photoCache.get(uid);
+ }
+ window.applyChatPhoto=()=>{
+  const thread=document.querySelector('.thread[data-paper]');
+  if(!thread||!state.user)return;
+  const data=storedPhoto(state.user.id);
+  thread.style.backgroundImage=data?'linear-gradient(#08122599,#08122599),url('+data+')':'';
+ };
+ async function bitmap(file){
+  if(!file||!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>6*1024*1024)
+   throw Error('Chọn ảnh JPG, PNG hoặc WebP dưới 6 MB.');
+  const image=new Image(),url=URL.createObjectURL(file);
+  try{image.src=url;await image.decode();return image;}finally{URL.revokeObjectURL(url);}
+ }
  function wallpaper(){
   const selected=state.user.chat_wallpaper||'midnight';
   const owner=state.user.id;
-  modal({title:'Hình nền hội thoại',description:'Áp dụng cho chat cá nhân và nhóm trên các thiết bị của bạn.',confirm:'Lưu hình nền',
+  let photo=storedPhoto(owner),generation=0,loading=false;
+  modal({title:'Hình nền hội thoại',description:'Mẫu có sẵn đồng bộ theo tài khoản. Ảnh riêng chỉ lưu trong trình duyệt này.',confirm:'Lưu hình nền',
    content:'<fieldset class="paper-grid"><legend>Chọn mẫu</legend>'+Object.entries(papers).map(([id,name])=>
-    `<label><input type="radio" name="chat-paper" value="${id}" ${id===selected?'checked':''}><span class="paper-sample" data-paper="${id}"></span>${name}</label>`).join('')+'</fieldset>',
+    `<label><input type="radio" name="chat-paper" value="${id}" ${!photo&&id===selected?'checked':''}><span class="paper-sample" data-paper="${id}"></span>${name}</label>`).join('')+`<label class="paper-local" ${photo?'':'hidden'}><input type="radio" name="chat-paper" value="photo" ${photo?'checked':''}><span class="paper-sample"></span>Ảnh riêng</label></fieldset><label class="studio-file">Chọn ảnh riêng<input type="file" data-paper-file accept="image/jpeg,image/png,image/webp"></label>`,
    handler:async host=>{
     const value=host.querySelector('[name="chat-paper"]:checked').value;
+    if(loading)throw Error('Ảnh đang được thu nhỏ.');
+    if(value==='photo'){
+     try{localStorage.setItem('mtunz.paper.'+owner,photo);}catch{throw Error('Không đủ bộ nhớ trình duyệt cho ảnh này.');}
+     photoCache.set(owner,photo);window.applyChatPhoto();return;
+    }
     const saved=await api('/api/me/appearance',{method:'PATCH',data:{wallpaper:value}});
     if(state.user?.id===owner){
-     state.user.chat_wallpaper=saved.wallpaper;
+     try{localStorage.removeItem('mtunz.paper.'+owner);}catch{}
+     photoCache.set(owner,'');state.user.chat_wallpaper=saved.wallpaper;window.applyChatPhoto();
      const thread=document.querySelector('.thread[data-paper]');if(thread)thread.dataset.paper=saved.wallpaper;
      toast('Đã lưu hình nền hội thoại.','ok');
     }
    }});
+  const local=document.querySelector('.paper-local'),preview=local.querySelector('.paper-sample');
+  if(photo)preview.style.backgroundImage='url('+photo+')';
+  document.querySelector('[data-paper-file]').onchange=async e=>{
+   const job=++generation;loading=true;
+   try{
+    const img=await bitmap(e.target.files[0]);
+    if(job!==generation||!local.isConnected)return;
+    const ratio=Math.min(1,1200/Math.max(img.width,img.height)),canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(img.width*ratio));canvas.height=Math.max(1,Math.round(img.height*ratio));
+    canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+    photo=canvas.toDataURL('image/jpeg',.76);local.hidden=false;
+    preview.style.backgroundImage='url('+photo+')';local.querySelector('input').checked=true;
+   }catch(err){toast(err.message,'error');}finally{if(job===generation)loading=false;}
+  };
  }
  function sticker(){
   if(v6FeatureFlags.member_uploads===false){toast('Admin đã tạm dừng tải tệp và sticker mới.');return;}
@@ -28,6 +70,7 @@
   modal({title:'Xưởng sticker',description:'Vẽ bằng tay hoặc nhập chữ và emoji. Sticker sẽ được đính kèm để bạn xem lại trước khi gửi.',
    confirm:'Đính kèm sticker',content:`<div class="sticker-editor">
     <canvas width="320" height="320" aria-label="Bảng vẽ sticker"></canvas>
+    <label class="studio-file">Dùng ảnh làm sticker<input type="file" data-sticker-file accept="image/jpeg,image/png,image/webp"></label>
     <label>Nội dung<input class="input" data-caption maxlength="36" placeholder="Nhập chữ hoặc emoji"></label>
     <div class="studio-tools"><label>Màu bút <input type="color" data-color value="#ab83ff"></label>
      <button type="button" class="btn ghost sm" data-clear>Xóa nét vẽ</button></div>
@@ -63,6 +106,15 @@
   };
   canvas.onpointermove=e=>{if(pointer!==e.pointerId)return;pen.lineTo(...point(e));pen.stroke();paint();};
   canvas.onlostpointercapture=()=>{pointer=null;};
+  let importSequence=0;
+  editor.querySelector('[data-sticker-file]').onchange=async e=>{
+   const job=++importSequence;
+   try{
+    const img=await bitmap(e.target.files[0]);if(!editor.isConnected||job!==importSequence)return;
+    const scale=288/Math.max(img.width,img.height),w=img.width*scale,h=img.height*scale;
+    pen.clearRect(0,0,320,320);pen.drawImage(img,(320-w)/2,(320-h)/2,w,h);hasInk=true;paint();
+   }catch(err){toast(err.message,'error');}
+  };
   caption.oninput=color.oninput=paint;
   editor.querySelector('[data-clear]').onclick=()=>{pen.clearRect(0,0,320,320);hasInk=false;paint();};
   function shelf(){
