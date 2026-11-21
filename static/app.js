@@ -407,9 +407,26 @@ function connectSocket(){
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
    if(t==='message'&&data.message.sender_id!==state.user?.id)notifyBrowser('Có tin nhắn từ bạn bè');
    if(state.user&&!state.user.is_admin)await extraSocket(data);
-   if(t==='support-updated'||t==='support-message'){
-     if(state.user?.is_admin){await loadAdmin();}
-     else if(state.supportTicket && (!data.ticket_id||data.ticket_id===state.supportTicket)){await loadTicketMessages();}
+   if(t==='support-message'){
+     const ticketId=Number(data.ticket_id);
+     if(state.user?.is_admin){
+       if(state.adminTab==='tickets'&&state.adminTicket===ticketId){
+         if(data.message)appendSupportMessage(true,ticketId,data.message);
+         else await refreshAdminTicketThread(ticketId);
+       }
+     }else if(state.supportTicket===ticketId){
+       if(data.message)appendSupportMessage(false,ticketId,data.message);
+       else await loadTicketMessages();
+     }
+     return;
+   }
+   if(t==='support-updated'){
+     if(state.user?.is_admin&&state.adminTab==='tickets')await refreshAdminTicketsSidebar();
+     else if(state.supportTicket){
+       await loadTickets();
+       await loadTicketMessages(); // Updates only the thread; keeps composer mounted.
+     }
+     return;
    }
  };
  socket.onclose=()=>{if(state.ws===socket)socketRetry=setTimeout(()=>connectSocket(),2500);};
@@ -746,8 +763,8 @@ function authSupport(){
  ${state.tickets.length?`<div class="sep"></div><span class="eyebrow">CUỘC TRÒ CHUYỆN GẦN ĐÂY</span><div class="stack" style="margin-top:12px">${state.tickets.slice(0,5).map(t=>`<button class="btn ghost full" style="justify-content:space-between" data-act="support-open" data-id="${t.id}">#${t.id} · ${esc(t.kind)} <span class="pill">${esc(t.status)}</span></button>`).join('')}</div>`:''}`;
  return `<div class="row between" style="margin-bottom:17px"><button class="linkbtn" data-act="support-back">${icon('back',15)} Các yêu cầu</button><span class="pill">Phiếu hỗ trợ #${state.supportTicket}</span></div>
  <h1>Trò chuyện với admin</h1><p class="hint">Đối thoại này chỉ hiển thị cho trình duyệt đã mở yêu cầu và quản trị viên. Không chia sẻ mã khôi phục với người khác.</p>
- <div class="support-list" id="support-list" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
- <form data-form="support-reply" style="margin-top:12px"><div class="row"><input name="body" class="input" maxlength="1500" placeholder="Nhắn cho admin..." required><button class="btn primary circle" title="Gửi">${icon('send')}</button></div></form>
+ <div class="support-list" id="support-list" data-ticket-id="${state.supportTicket}" role="log" aria-live="polite" aria-label="Tin nhắn hỗ trợ" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
+ <form data-form="support-reply" class="support-chat-composer" data-ticket-id="${state.supportTicket}" style="margin-top:12px"><div class="row"><textarea name="body" class="input support-chat-entry" rows="1" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" maxlength="1500" placeholder="Nhắn cho admin..." aria-label="Nhắn cho admin" required></textarea><button class="btn primary circle" type="submit" title="Gửi tin nhắn" aria-label="Gửi tin nhắn">${icon('send')}</button></div></form>
  <div class="sep"></div><h3>Đặt lại mật khẩu hoặc PIN</h3><p class="hint">Sau khi xác minh, admin sẽ cấp mã dùng một lần trong cuộc trò chuyện trên.</p>
  <form data-form="support-reset">${inputField('Mã khôi phục từ admin','code','text','','autocomplete="off"')}
  <div class="field"><label>Đặt lại loại thông tin</label><select name="kind" class="select" id="reset-kind"><option value="password">Mật khẩu</option><option value="pin">Mã PIN</option></select></div>
@@ -756,6 +773,50 @@ function authSupport(){
  <button class="btn ghost full">Xác nhận đặt lại</button></form>`;
 }
 function renderTicketBubbles(list){return list.length?list.map(m=>`<div class="support-message ${m.from_admin?'admin':'mine'}"><b>${m.from_admin?'Admin':'Bạn'}</b><div>${esc(m.body)}</div><div class="message-meta">${date(m.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có tin nhắn. Bạn có thể mô tả vấn đề của mình.</div>';}
+
+/* Stable thread updates: do not unmount the reply field on every send/socket. */
+function supportThreadBox(admin,ticketId){
+ const box=$(admin?'#admin-ticket-messages':'#support-list');
+ return box&&Number(box.dataset.ticketId)===Number(ticketId)?box:null;
+}
+function supportThreadAtBottom(box){
+ return box.scrollHeight-box.scrollTop-box.clientHeight<110;
+}
+function paintSupportMessages(admin,ticketId,messages){
+ const box=supportThreadBox(admin,ticketId);
+ if(!box)return false;
+ const follow=supportThreadAtBottom(box),oldTop=box.scrollTop;
+ box.innerHTML=renderTicketBubbles(messages);
+ if(follow)box.scrollTop=box.scrollHeight;else box.scrollTop=oldTop;
+ return true;
+}
+function appendSupportMessage(admin,ticketId,message,own=false){
+ if(!message||!Number.isSafeInteger(Number(message.id)))return false;
+ if(admin){
+  if(!state.user?.is_admin||state.adminTab!=='tickets'||state.adminTicket!==ticketId)return false;
+ }else if(state.supportTicket!==ticketId)return false;
+ const list=admin?state.adminTicketMessages:state.ticketMessages;
+ if(list.some(x=>Number(x.id)===Number(message.id)))return true;
+ const box=supportThreadBox(admin,ticketId);
+ list.push(message);
+ list.sort((a,b)=>Number(a.id)-Number(b.id));
+ if(box){
+  const follow=own||supportThreadAtBottom(box);
+  if(box.querySelector('.empty'))box.replaceChildren();
+  if(list[list.length-1]===message)box.insertAdjacentHTML('beforeend',renderTicketBubbles([message]));
+  else box.innerHTML=renderTicketBubbles(list);
+  if(follow)box.scrollTop=box.scrollHeight;
+ }
+ return true;
+}
+function finishSupportReply(form,sentText){
+ const field=form.querySelector('.support-chat-entry');
+ if(!field?.isConnected)return;
+ // Preserve any new text typed before the server responds.
+ if(field.value.trim()===sentText){field.value='';field.style.height='';}
+ field.focus({preventScroll:true});
+}
+
 function renderAuth(){
  // Keep the left-side hero DOM mounted across login/register/support transitions.
  // Rebuilding #app here restarted every decorative animation in the opposite column.
@@ -806,10 +867,15 @@ function renderAuth(){
  }
 }
 async function loadTickets(){const r=await api('/api/support/tickets');state.tickets=r.tickets;}
-async function loadTicketMessages(){if(!state.supportTicket)return;const r=await api(`/api/support/tickets/${state.supportTicket}/messages`);state.ticketMessages=r.messages;
+async function loadTicketMessages(){
+ const ticketId=state.supportTicket;if(!ticketId)return;
+ const r=await api(`/api/support/tickets/${ticketId}/messages`);
+ if(state.supportTicket!==ticketId)return;
+ state.ticketMessages=r.messages;
+ if(paintSupportMessages(false,ticketId,r.messages))return;
  if(state.mode==='support'&&!state.user)renderAuth();
  else if(state.tab==='support')renderApp();
- const box=$('#support-list');if(box)box.scrollTop=box.scrollHeight;
+ const box=supportThreadBox(false,ticketId);if(box)box.scrollTop=box.scrollHeight;
 }
 async function refreshRegistration(){const r=await api('/api/registration/status');const item=r.requests.find(x=>x.username===state.regName);if(item){state.regStatus=item.status;state.regPhone=item.phone||'';state.regEmail=item.email||'';renderAuth();if(item.status==='approved')toast('Yêu cầu đã được phê duyệt!','ok');}else toast('Chưa tìm thấy yêu cầu.','error');}
 
@@ -1433,6 +1499,28 @@ function adminDeletionQueue(){
   <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
   </tbody></table></div></div>`;
 }
+async function refreshAdminTicketThread(ticketId){
+ if(state.adminTab!=='tickets'||state.adminTicket!==ticketId)return;
+ const r=await api(`/api/admin/tickets/${ticketId}/messages`);
+ if(state.adminTab!=='tickets'||state.adminTicket!==ticketId)return;
+ state.adminTicketMessages=r.messages;
+ paintSupportMessages(true,ticketId,r.messages);
+}
+async function refreshAdminTicketsSidebar(){
+ if(!state.user?.is_admin||state.adminTab!=='tickets')return;
+ const selected=state.adminTicket;
+ const filter=encodeURIComponent(state.adminQueueFilters?.tickets||'all');
+ const result=await api('/api/admin/tickets?status='+filter);
+ if(state.adminTab!=='tickets'||state.adminTicket!==selected)return;
+ state.adminData=result.tickets;
+ const oldList=$('.admin-ticket-layout .ticket-list');
+ if(!oldList)return;
+ const scroll=oldList.scrollTop;
+ const template=document.createElement('template');
+ template.innerHTML=adminTickets();
+ const fresh=template.content.querySelector('.ticket-list');
+ if(fresh){oldList.innerHTML=fresh.innerHTML;oldList.scrollTop=scroll;}
+}
 function adminTickets(){const tickets=state.adminData||[];
  const visible=tickets;
  const chosen=visible.find(t=>t.id===state.adminTicket);
@@ -1446,8 +1534,8 @@ function adminTickets(){const tickets=state.adminData||[];
  <button class="btn ghost sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="${chosen.status==='open'?'closed':'open'}">${chosen.status==='open'?'Đóng':'Mở lại'}</button>
  ${chosen.status==='spam'?'':`<button class="btn danger sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="spam">${icon('ban',14)} Đánh dấu spam</button>`}
  </div></div>
- <div class="support-list grow" id="admin-ticket-messages" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
- <form data-form="admin-ticket-reply"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>
+ <div class="support-list grow" id="admin-ticket-messages" data-ticket-id="${chosen.id}" role="log" aria-live="polite" aria-label="Tin nhắn hỗ trợ của người dùng" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
+ <form data-form="admin-ticket-reply" class="support-chat-composer" data-ticket-id="${chosen.id}"><div class="row"><textarea class="input support-chat-entry" name="body" rows="1" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" placeholder="Trả lời người dùng..." aria-label="Trả lời người dùng" required maxlength="1500"></textarea><button type="submit" class="btn primary circle" title="Gửi tin nhắn" aria-label="Gửi tin nhắn">${icon('send')}</button></div></form>
  ${['password','pin'].includes(chosen.kind)?`<div class="info-strip" style="margin:0">Chỉ cấp mã đặt lại khi đã <b>xác minh danh tính bằng kênh độc lập</b>. Không dựa đơn thuần vào thông tin mà người lạ tự khai trong chat.</div>
  <button class="btn ghost" data-act="admin-recovery-grant" data-id="${chosen.id}">${icon('lock',16)} Cấp mã khôi phục một lần (15 phút)</button>`:
  '<div class="hint">Nếu người dùng quên tên đăng nhập, xác minh danh tính rồi trả lời tên tài khoản trong chat.</div>'}
@@ -2156,6 +2244,10 @@ document.addEventListener('click',async event=>{
  finally{if(busy&&btn.isConnected){btn.disabled=false;btn.classList.remove('is-loading');btn.removeAttribute('aria-busy');}}
 });
 document.addEventListener('input',event=>{
+ if(event.target.matches?.('.support-chat-entry')){
+  const field=event.target;
+  field.style.height='auto';field.style.height=Math.min(field.scrollHeight,144)+'px';
+ }
  if(event.target.id==='side-filter'){state.sideFilter=event.target.value.trim();renderSideItems();}
  if(event.target.id==='chat-text'&&state.ws?.readyState===WebSocket.OPEN){
   const group=state.tab==='groups'&&state.groupSelected;
@@ -2183,6 +2275,15 @@ document.addEventListener('change',event=>{
 });
 document.addEventListener('keydown',e=>{
  if(e.target.id==='chat-text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();e.target.closest('form').requestSubmit();}
+ // Desktop Enter sends, Shift+Enter inserts a line. Mobile Enter keeps
+ // its newline behavior so the on-screen Gửi button remains explicit.
+ if(e.target.matches?.('.support-chat-entry')&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing
+    &&!matchMedia('(max-width:800px)').matches){
+  e.preventDefault();
+  const form=e.target.closest('form');
+  if(form&&!form.querySelector('button[type=submit]')?.disabled&&e.target.value.trim())
+    form.requestSubmit();
+ }
 });
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('form[data-form]');if(!form)return;
@@ -2250,9 +2351,15 @@ document.addEventListener('submit',async event=>{
     toast('Đã mở cuộc trò chuyện với admin.','ok');break;
    }
    case 'support-reply':{
-    if(!state.supportTicket)throw Error('Chưa mở phiếu hỗ trợ.');
-    await post(`/api/support/tickets/${state.supportTicket}/messages`,{body:val('body')});
-    await loadTicketMessages();break;
+    const ticketId=state.supportTicket,text=val('body');
+    if(!ticketId||Number(form.dataset.ticketId)!==ticketId)throw Error('Chưa mở phiếu hỗ trợ.');
+    if(!text){form.querySelector('.support-chat-entry')?.focus();break;}
+    const result=await post(`/api/support/tickets/${ticketId}/messages`,{body:text});
+    if(state.supportTicket===ticketId){
+      appendSupportMessage(false,ticketId,result.message,true);
+      finishSupportReply(form,text);
+    }
+    break;
    }
    case 'support-reset':{
     const pinLength=Number(fd.get('pin_length'));
@@ -2355,7 +2462,15 @@ document.addEventListener('submit',async event=>{
     await loadAdmin();break;
    }
    case 'admin-ticket-reply':{
-    await post(`/api/admin/tickets/${state.adminTicket}/messages`,{body:val('body')});await loadAdmin();break;
+    const ticketId=state.adminTicket,text=val('body');
+    if(!ticketId||Number(form.dataset.ticketId)!==ticketId)throw Error('Hãy chọn phiếu hỗ trợ.');
+    if(!text){form.querySelector('.support-chat-entry')?.focus();break;}
+    const result=await post(`/api/admin/tickets/${ticketId}/messages`,{body:text});
+    if(state.adminTab==='tickets'&&state.adminTicket===ticketId){
+      appendSupportMessage(true,ticketId,result.message,true);
+      finishSupportReply(form,text);
+    }
+    break;
    }
    case 'admin-broadcast':{
     const message=val('body');
@@ -2368,6 +2483,8 @@ document.addEventListener('submit',async event=>{
    }
   }
  }catch(e){
+  if(key==='support-reply'||key==='admin-ticket-reply')
+    form.querySelector('.support-chat-entry')?.focus({preventScroll:true});
   const authField={'login-username':'username','login-password':'password',
     'login-pin':'pin','login-remembered':'pin'}[key];
   if(!authField||!showAuthFieldError(form,authField,authFailureText(key,e)))

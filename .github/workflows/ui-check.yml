@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main, feat/chat-message-delete-menu-v11]
+    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12]
   workflow_dispatch:
 
 permissions:
@@ -106,6 +106,7 @@ jobs:
         run: |
           node tests/world_moderation_ui.cjs
           node tests/world_experience_ui.cjs
+          node tests/support_continuous_ui.cjs
           node tests/chat_message_delete_ui.cjs
           node tests/admin_pin_url_ui.cjs
       - name: Verify private session manager and Admin-only security details
@@ -141,7 +142,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=20.1' in h
+          assert '/static/app.js?v=20.2' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -220,4 +221,5 @@ jobs:
           node tests/world_experience_browser.cjs
           node tests/css_bundle_browser.cjs
           node tests/chat_message_delete_browser.cjs
+          node tests/support_continuous_browser.cjs
           node tests/world_realtime_browser.cjs
