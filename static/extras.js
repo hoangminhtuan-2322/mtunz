@@ -130,7 +130,8 @@ function paintGroupThread(scroll=false){
  if(!box)return;
  const position=box.scrollTop,near=box.scrollHeight-box.clientHeight-position<145;
  box.innerHTML=bubblesFor(state.groupMessages,true);
- if(scroll||near)followChatEnd(box);
+ if(scroll)settleChatEnd(box);
+ else if(near)followChatEnd(box);
  else box.scrollTo({top:position,behavior:'instant'});
 }
 let groupHistoryRequest=0;

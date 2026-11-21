@@ -60,9 +60,9 @@ const {chromium}=require('playwright-core');
     state.friends.push({other_id:14,username:'Bạn thứ hai',state:'accepted'});
     return openChat(14);
    });
-   assert(await page.locator('#chat-messages').evaluate(el=>el.scrollHeight-el.scrollTop-el.clientHeight<=2));
+   await page.waitForFunction(()=>{const el=document.querySelector('#chat-messages');return el.scrollHeight-el.scrollTop-el.clientHeight<=2&&!el.dataset.positioningChat;});
    await page.evaluate(()=>openChat(12));
-   assert(await page.locator('#chat-messages').evaluate(el=>el.scrollHeight-el.scrollTop-el.clientHeight<=2));
+   await page.waitForFunction(()=>{const el=document.querySelector('#chat-messages');return el.scrollHeight-el.scrollTop-el.clientHeight<=2&&!el.dataset.positioningChat;});
    const alerts=await page.evaluate(()=>{
     let tones=0;
     playChatSound=()=>tones++;

@@ -936,9 +936,25 @@ function followChatEnd(box){
  box.dataset.followChatEnd='true';
  box.scrollTo({top:box.scrollHeight,behavior:'instant'});
 }
+function settleChatEnd(box){
+ followChatEnd(box);
+ box.dataset.positioningChat='true';
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{
+  if(!box.isConnected)return;
+  if(box.dataset.positioningChat==='true')followChatEnd(box);
+  delete box.dataset.positioningChat;
+ }));
+}
 document.addEventListener('scroll',event=>{
- if(event.target.id==='chat-messages')event.target.dataset.followChatEnd=String(chatNearEnd(event.target));
+ if(event.target.id==='chat-messages'&&!event.target.dataset.positioningChat)
+  event.target.dataset.followChatEnd=String(chatNearEnd(event.target));
 },true);
+for(const eventName of ['wheel','touchmove']){
+ document.addEventListener(eventName,event=>{
+  const box=event.target.closest?.('#chat-messages');
+  if(box)delete box.dataset.positioningChat;
+ },{capture:true,passive:true});
+}
 document.addEventListener('load',event=>{
  const box=event.target.closest?.('#chat-messages');
  if(box?.dataset.followChatEnd==='true')followChatEnd(box);
@@ -948,7 +964,8 @@ function renderMessageThread(scroll=false){
  const near=box.scrollHeight-box.scrollTop-box.clientHeight<140;
  const previousPosition=box.scrollTop;
  box.innerHTML=renderBubbles();
- if(scroll||near)followChatEnd(box);
+ if(scroll)settleChatEnd(box);
+ else if(near)followChatEnd(box);
  else box.scrollTo({top:previousPosition,behavior:'instant'});
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
