@@ -176,7 +176,7 @@ def test_pin_only_routine_admin_actions_preserve_strong_recovery_stepup():
     assert wrong.status_code==401,wrong.text
     good=admin.post(world_url,json={**config,'admin_pin':'2345'})
     assert good.status_code==200,good.text
-    assert admin.get('/api/world/status').json()['open'] is True
+    assert good.json()['config']['open'] is True
 
     # Global settings and announcements use the same PIN-only step-up.
     assert admin.post('/api/admin/capacity',json={
