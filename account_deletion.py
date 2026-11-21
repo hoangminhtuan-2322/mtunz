@@ -73,6 +73,8 @@ def delete_user_records(c, uid: int) -> dict:
             )
             c.execute("""DELETE FROM message_edit_history WHERE scope='group' AND message_id IN
                          (SELECT id FROM group_messages WHERE group_id=?)""",(gid,))
+            c.execute("""DELETE FROM message_hidden WHERE scope='group' AND message_id IN
+                         (SELECT id FROM group_messages WHERE group_id=?)""",(gid,))
             c.execute('DELETE FROM group_messages WHERE group_id=?', (gid,))
             c.execute('DELETE FROM group_members WHERE group_id=?', (gid,))
             c.execute('DELETE FROM chat_groups WHERE id=?', (gid,))
@@ -85,6 +87,16 @@ def delete_user_records(c, uid: int) -> dict:
     # Cancel pending work before attachments are removed or FK rows cascade.
     c.execute('DELETE FROM scheduled_messages WHERE sender_id=? OR recipient_id=?',(uid,uid))
 
+    # Hidden rows have no polymorphic FK to the DM/group message tables.
+    c.execute('DELETE FROM message_hidden WHERE user_id=?',(uid,))
+    c.execute("""DELETE FROM message_hidden WHERE scope='dm' AND message_id IN
+                 (SELECT id FROM messages WHERE sender_id=? OR recipient_id=?
+                 OR attachment_id IN (SELECT id FROM attachments WHERE owner_id=?))""",
+              (uid,uid,uid))
+    c.execute("""DELETE FROM message_hidden WHERE scope='group' AND message_id IN
+                 (SELECT id FROM group_messages WHERE sender_id=?
+                 OR attachment_id IN (SELECT id FROM attachments WHERE owner_id=?))""",
+              (uid,uid))
     # Remove prior versions before deleting messages. History has no FK to
     # a message id because DMs/groups use separate message tables.
     c.execute("""DELETE FROM message_edit_history WHERE scope='dm' AND message_id IN
