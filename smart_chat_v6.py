@@ -94,8 +94,10 @@ def install(core):
                        WHERE ((m.sender_id=? AND m.recipient_id=?) OR
                               (m.recipient_id=? AND m.sender_id=?))
                          AND m.deleted_at IS NULL
-                         AND (m.expires_at IS NULL OR m.expires_at>?)'''
-                args=[u['id'],chat_id,u['id'],chat_id,core.now()]
+                         AND (m.expires_at IS NULL OR m.expires_at>?)
+                         AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                           AND h.scope='dm' AND h.message_id=m.id)'''
+                args=[u['id'],chat_id,u['id'],chat_id,core.now(),u['id']]
             else:
                 permitted=one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',
                               (chat_id,u['id']))
@@ -103,8 +105,10 @@ def install(core):
                 sql='''SELECT m.id,m.body,m.created_at,m.sender_id,m.attachment_id,
                         a.original_name AS attachment_name
                        FROM group_messages m LEFT JOIN attachments a ON a.id=m.attachment_id
-                       WHERE m.group_id=? AND m.deleted_at IS NULL'''
-                args=[chat_id]
+                       WHERE m.group_id=? AND m.deleted_at IS NULL
+                         AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                           AND h.scope='group' AND h.message_id=m.id)'''
+                args=[chat_id,u['id']]
             if q.strip():
                 sql+=" AND (m.body LIKE ? ESCAPE '\\' OR COALESCE(a.original_name,'') LIKE ? ESCAPE '\\')"
                 args.extend([pattern,pattern])
@@ -135,6 +139,10 @@ def install(core):
                     raise HTTPException(403,'Bạn không thuộc nhóm.')
                 m=one(c,'SELECT * FROM group_messages WHERE group_id=? AND id=?',(chat_id,message_id))
                 if not m or m['deleted_at']:raise HTTPException(404,'Tin nhắn không còn tồn tại.')
+            if one(c,'''SELECT 1 FROM message_hidden
+                       WHERE user_id=? AND scope=? AND message_id=?''',
+                   (u['id'],scope,message_id)):
+                raise HTTPException(404,'Tin nhắn không còn trong cuộc trò chuyện của bạn.')
             if m['sender_id']!=u['id']:
                 raise HTTPException(403,'Chỉ người gửi được xem lịch sử sửa tin của chính mình.')
             rows=many(c,'''SELECT previous_body,changed_at FROM message_edit_history

@@ -132,6 +132,14 @@ def install(core):
                 PRIMARY KEY(user_id,scope,chat_id,message_id));
               CREATE INDEX IF NOT EXISTS message_pins_chat_idx
                 ON message_pins(user_id,scope,chat_id,created_at);
+              CREATE TABLE IF NOT EXISTS message_hidden (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scope TEXT NOT NULL CHECK(scope IN ('dm','group')),
+                message_id INTEGER NOT NULL,
+                hidden_at INTEGER NOT NULL,
+                PRIMARY KEY(user_id,scope,message_id));
+              CREATE INDEX IF NOT EXISTS message_hidden_lookup
+                ON message_hidden(scope,message_id,user_id);
             ''')
             column('messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('group_messages','forwarded','INTEGER NOT NULL DEFAULT 0')
@@ -588,10 +596,15 @@ def install(core):
             if not allowed:
                 direct=many(c,'''SELECT m.sender_id,m.recipient_id FROM messages m
                                  WHERE m.attachment_id=? AND m.deleted_at IS NULL
-                                 AND (m.expires_at IS NULL OR m.expires_at>?)''',(file_id,now()))
+                                 AND (m.expires_at IS NULL OR m.expires_at>?)
+                                 AND NOT EXISTS(SELECT 1 FROM message_hidden h
+                                   WHERE h.user_id=? AND h.scope='dm' AND h.message_id=m.id)''',(file_id,now(),u['id']))
                 allowed=any(u['id'] in (m['sender_id'],m['recipient_id']) and friends(c,m['sender_id'],m['recipient_id']) and not has_block(c,m['sender_id'],m['recipient_id']) for m in direct)
             if not allowed:
-                grp=many(c,'SELECT group_id FROM group_messages WHERE attachment_id=? AND deleted_at IS NULL',(file_id,))
+                grp=many(c,"""SELECT m.group_id FROM group_messages m
+                         WHERE m.attachment_id=? AND m.deleted_at IS NULL
+                         AND NOT EXISTS(SELECT 1 FROM message_hidden h
+                           WHERE h.user_id=? AND h.scope='group' AND h.message_id=m.id)""",(file_id,u['id']))
                 allowed=any(one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',(g['group_id'],u['id'])) for g in grp)
             if not allowed:
                 allowed=bool(one(c,'''SELECT 1 FROM world_messages
@@ -643,14 +656,19 @@ def install(core):
             rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,
                        (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
                        (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id
-                         AND m.sender_id!=gm.user_id AND m.deleted_at IS NULL) AS unread,
+                         AND m.sender_id!=gm.user_id AND m.deleted_at IS NULL
+                          AND NOT EXISTS (SELECT 1 FROM message_hidden h
+                             WHERE h.user_id=gm.user_id AND h.scope='group' AND h.message_id=m.id)) AS unread,
                        last.id AS last_id,last.body AS last_body,last.sender_id AS last_sender_id,
                        last.created_at AS last_created_at,last.deleted_at AS last_deleted_at,
                        last.attachment_id AS last_attachment_id,
                        COALESCE(NULLIF(sender.display_name,''),'Thành viên') AS last_username
                        FROM group_members gm JOIN chat_groups g ON g.id=gm.group_id
                        LEFT JOIN group_messages last ON last.id=(
-                         SELECT m.id FROM group_messages m WHERE m.group_id=g.id ORDER BY m.id DESC LIMIT 1)
+                         SELECT m.id FROM group_messages m WHERE m.group_id=g.id
+                             AND NOT EXISTS (SELECT 1 FROM message_hidden h
+                              WHERE h.user_id=gm.user_id AND h.scope='group' AND h.message_id=m.id)
+                             ORDER BY m.id DESC LIMIT 1)
                        LEFT JOIN users sender ON sender.id=last.sender_id
                        WHERE gm.user_id=? ORDER BY COALESCE(last.created_at,g.created_at) DESC,g.id DESC''',(u['id'],))
             for group in rows:
@@ -734,8 +752,12 @@ def install(core):
         if not 1<=limit<=70:raise HTTPException(422,'Giới hạn lịch sử không hợp lệ.')
         with db() as c:
             active_member(c,gid,u['id'])
-            sql="SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?"
-            args=[gid]
+            sql="""SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username
+                    FROM group_messages m JOIN users u ON u.id=m.sender_id
+                    WHERE m.group_id=? AND NOT EXISTS
+                    (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                       AND h.scope='group' AND h.message_id=m.id)"""
+            args=[gid,u['id']]
             if before>0:sql+=' AND m.id<?';args.append(before)
             messages=many(c,sql+' ORDER BY m.id DESC LIMIT ?',(*args,limit))
             result=[message_dict(c,x,'group') for x in messages[::-1]]
@@ -788,6 +810,38 @@ def install(core):
     async def dm_changed(m):
         for uid in {m['sender_id'],m['recipient_id']}:
             await hub.user(uid,'message-updated',message_id=m['id'])
+
+    @app.post('/api/messages/{mid}/hide')
+    async def hide_dm_for_me(request:Request,mid:int):
+        """Hide a DM only for the sender or recipient making this request."""
+        u=current_user(request)
+        throttle(request,'message-hide',120,60,str(u['id']))
+        with db() as c:
+            message=one(c,'''SELECT id FROM messages
+                            WHERE id=? AND (sender_id=? OR recipient_id=?)''',
+                        (mid,u['id'],u['id']))
+            if not message:raise HTTPException(404,'Không tìm thấy tin nhắn.')
+            c.execute("""INSERT INTO message_hidden(user_id,scope,message_id,hidden_at)
+                         VALUES(?,'dm',?,?) ON CONFLICT DO NOTHING""",(u['id'],mid,now()))
+            c.execute("DELETE FROM message_pins WHERE user_id=? AND scope='dm' AND message_id=?",(u['id'],mid))
+            c.execute('DELETE FROM notifications WHERE user_id=? AND message_id=?',(u['id'],mid))
+        await hub.user(u['id'],'message-hidden',scope='dm',message_id=mid)
+        return {'ok':True}
+
+    @app.post('/api/groups/{gid}/messages/{mid}/hide')
+    async def hide_group_message_for_me(request:Request,gid:int,mid:int):
+        """Hide one group message only from the requesting member's history."""
+        u=current_user(request)
+        throttle(request,'message-hide',120,60,str(u['id']))
+        with db() as c:
+            active_member(c,gid,u['id'])
+            message=one(c,'SELECT id FROM group_messages WHERE id=? AND group_id=?',(mid,gid))
+            if not message:raise HTTPException(404,'Không tìm thấy tin nhắn trong nhóm.')
+            c.execute("""INSERT INTO message_hidden(user_id,scope,message_id,hidden_at)
+                         VALUES(?,'group',?,?) ON CONFLICT DO NOTHING""",(u['id'],mid,now()))
+            c.execute("DELETE FROM message_pins WHERE user_id=? AND scope='group' AND message_id=?",(u['id'],mid))
+        await hub.user(u['id'],'message-hidden',scope='group',group_id=gid,message_id=mid)
+        return {'ok':True}
 
     @app.patch('/api/messages/{mid}')
     async def edit_dm(request:Request,mid:int,body:TextEdit):
@@ -869,7 +923,8 @@ def install(core):
             active_member(c,chat_id,uid)
             row=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',
                     (mid,chat_id))
-        if not row:
+        if not row or one(c,'''SELECT 1 FROM message_hidden WHERE user_id=?
+                AND scope=? AND message_id=?''',(uid,scope,mid)):
             raise HTTPException(404,'Không tìm thấy tin nhắn trong cuộc trò chuyện này.')
         return row
 
@@ -987,7 +1042,9 @@ def install(core):
         with db() as c:
             m=one(c,'''SELECT * FROM messages WHERE id=? AND (sender_id=? OR recipient_id=?)
                       AND (expires_at IS NULL OR expires_at>?)''',(mid,u['id'],u['id'],now()))
-            if not m or m['deleted_at']:raise HTTPException(404,'Tin nhắn không tồn tại.')
+            if not m or m['deleted_at'] or one(c,'''SELECT 1 FROM message_hidden
+                    WHERE user_id=? AND scope='dm' AND message_id=?''',(u['id'],mid)):
+                raise HTTPException(404,'Tin nhắn không tồn tại.')
             require_peer(c,m['sender_id'],m['recipient_id'])
             toggle_reaction(c,'dm',mid,u['id'],body.emoji)
         await dm_changed(m)
@@ -999,7 +1056,9 @@ def install(core):
         with db() as c:
             active_member(c,gid,u['id'])
             m=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',(mid,gid))
-            if not m:raise HTTPException(404,'Tin nhắn không tồn tại.')
+            if not m or one(c,'''SELECT 1 FROM message_hidden
+                    WHERE user_id=? AND scope='group' AND message_id=?''',(u['id'],mid)):
+                raise HTTPException(404,'Tin nhắn không tồn tại.')
             toggle_reaction(c,'group',mid,u['id'],body.emoji)
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
         for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
@@ -1013,11 +1072,11 @@ def install(core):
             pattern='%'+q.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
             if group_id is not None:
                 active_member(c,group_id,u['id'])
-                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,pattern))
+                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=? AND h.scope='group' AND h.message_id=m.id) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,u['id'],pattern))
             else:
                 if other_id is None:raise HTTPException(422,'Cần chọn một cuộc trò chuyện.')
                 require_peer(c,u['id'],other_id)
-                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now()))
+                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages m WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=? AND h.scope='dm' AND h.message_id=m.id) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now(),u['id']))
         return {'results':rows}
 
     @app.post('/api/notifications/read')

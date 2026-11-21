@@ -1199,24 +1199,32 @@ async def get_friends(request: Request):
                  COALESCE(p.pinned,0) AS pinned,COALESCE(p.vanish_seconds,0) AS vanish_seconds,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
-                 (SELECT body FROM messages
+                 (SELECT body FROM messages m
                    WHERE ((sender_id=? AND recipient_id=u.id) OR
                          (sender_id=u.id AND recipient_id=?))
                      AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                       AND h.scope='dm' AND h.message_id=m.id)
                    ORDER BY id DESC LIMIT 1) AS last_body,
-                 (SELECT created_at FROM messages
+                 (SELECT created_at FROM messages m
                    WHERE ((sender_id=? AND recipient_id=u.id) OR
                          (sender_id=u.id AND recipient_id=?))
                      AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                       AND h.scope='dm' AND h.message_id=m.id)
                    ORDER BY id DESC LIMIT 1) AS last_created,
-                 (SELECT sender_id FROM messages
+                 (SELECT sender_id FROM messages m
                    WHERE ((sender_id=? AND recipient_id=u.id) OR
                          (sender_id=u.id AND recipient_id=?))
                      AND (expires_at IS NULL OR expires_at>?) AND deleted_at IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                       AND h.scope='dm' AND h.message_id=m.id)
                    ORDER BY id DESC LIMIT 1) AS last_sender,
-                 (SELECT count(*) FROM messages
+                 (SELECT count(*) FROM messages m
                    WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL AND deleted_at IS NULL
-                   AND (expires_at IS NULL OR expires_at>?)) AS unread
+                   AND (expires_at IS NULL OR expires_at>?)
+                    AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                       AND h.scope='dm' AND h.message_id=m.id)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
@@ -1224,9 +1232,11 @@ async def get_friends(request: Request):
           LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
           WHERE f.u1=? OR f.u2=?
           ORDER BY f.created_at DESC
-        ''',(u['id'],u['id'],now(),u['id'],u['id'],now(),
-             u['id'],u['id'],now(),u['id'],now(),
-             u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
+        ''',(u['id'],u['id'],now(),u['id'],
+              u['id'],u['id'],now(),u['id'],
+              u['id'],u['id'],now(),u['id'],
+              u['id'],now(),u['id'],
+              u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
         for r in allrows:
             r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
             r['muted']=bool(r['muted'])
@@ -1353,8 +1363,10 @@ async def message_history(request:Request,other_id:int,before:int=0,limit:int=70
         sql='''SELECT id,sender_id,recipient_id,body,created_at,read_at FROM messages WHERE
              ((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))'''
         params=[u['id'],other_id,other_id,u['id']]
-        sql+=' AND (expires_at IS NULL OR expires_at>?)'
-        params.append(now())
+        sql+=''' AND (expires_at IS NULL OR expires_at>?)
+                 AND NOT EXISTS (SELECT 1 FROM message_hidden h WHERE h.user_id=?
+                   AND h.scope='dm' AND h.message_id=messages.id)'''
+        params.extend([now(),u['id']])
         if before>0:
             sql+=' AND id<?';params.append(before)
         sql+=' ORDER BY id DESC LIMIT ?';params.append(limit)

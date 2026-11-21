@@ -10,7 +10,7 @@ from app import app
 def clean_extended_db():
     RATE_BUCKETS.clear()
     with db() as c:
-        for table in ('message_pins','group_messages','group_members','chat_groups','reactions','chat_preferences',
+        for table in ('message_hidden','message_pins','group_messages','group_members','chat_groups','reactions','chat_preferences',
                       'attachments','recovery_grants','ticket_messages','tickets','notifications',
                       'messages','friendships','blocks','restrictions','sessions',
                       'login_challenges','registrations','audit'):
@@ -232,3 +232,68 @@ def test_single_notice_read_is_private_and_unread_filter_runs_before_limit():
     assert alice.post(path).status_code==200
     assert alice.post(path).status_code==200
     assert all(n['id']!=target for n in alice.get('/api/notifications?unread_only=true').json()['notifications'])
+
+
+def test_delete_message_for_me_dm_keeps_other_participant_history():
+    admin,alice,bob,alice_id,bob_id=setup_pair()
+    stranger=register_user(admin,'feature_delete_stranger')
+    first=alice.post('/api/messages',json={'recipient_id':bob_id,'body':'Chỉ một người được ẩn'})
+    assert first.status_code==200,first.text
+    mid=first.json()['message']['id']
+    assert stranger.post(f'/api/messages/{mid}/hide').status_code==404
+    guest=TestClient(app)
+    assert guest.post(f'/api/messages/{mid}/hide').status_code==401
+    assert bob.get(f'/api/messages/{alice_id}').json()['messages'][-1]['id']==mid
+    assert bob.post(f'/api/messages/{mid}/hide').status_code==200
+    assert bob.post(f'/api/messages/{mid}/hide').status_code==200  # idempotent
+    assert not any(m['id']==mid for m in bob.get(f'/api/messages/{alice_id}').json()['messages'])
+    assert any(m['id']==mid for m in alice.get(f'/api/messages/{bob_id}').json()['messages'])
+    assert not bob.get('/api/search/messages',params={'other_id':alice_id,'q':'một người'}).json()['results']
+    assert alice.get('/api/search/messages',params={'other_id':bob_id,'q':'một người'}).json()['results']
+    assert not bob.get('/api/chat/search/v6',params={'scope':'dm','chat_id':alice_id,'q':'một người'}).json()['results']
+    assert alice.get('/api/chat/search/v6',params={'scope':'dm','chat_id':bob_id,'q':'một người'}).json()['results']
+    assert bob.get('/api/friends').json()['friends'][0]['last_message'] is None
+    assert alice.get('/api/friends').json()['friends'][0]['last_message']['body']=='Chỉ một người được ẩn'
+    assert alice.delete(f'/api/messages/{mid}').status_code==200
+    assert bob.get(f'/api/messages/{alice_id}').json()['messages']==[]
+
+
+def test_delete_message_for_me_group_only_changes_one_members_view():
+    admin,alice,bob,alice_id,bob_id=setup_pair()
+    stranger=register_user(admin,'feature_group_guest')
+    created=alice.post('/api/groups',json={'title':'Nhóm kiểm tra xóa','member_ids':[bob_id]})
+    assert created.status_code==200,created.text
+    gid=created.json()['id']
+    sent=alice.post(f'/api/groups/{gid}/messages',json={'body':'Cần giữ ở phía bạn'})
+    assert sent.status_code==200,sent.text
+    mid=sent.json()['message']['id']
+    assert stranger.post(f'/api/groups/{gid}/messages/{mid}/hide').status_code==403
+    assert bob.post(f'/api/groups/{gid}/messages/{mid}/hide').status_code==200
+    assert bob.post(f'/api/groups/{gid}/messages/{mid}/hide').status_code==200
+    assert bob.get(f'/api/groups/{gid}/messages').json()['messages']==[]
+    assert alice.get(f'/api/groups/{gid}/messages').json()['messages'][0]['id']==mid
+    assert bob.get('/api/groups').json()['groups'][0]['last_message'] is None
+    assert bob.get('/api/groups').json()['groups'][0]['unread']==0
+    assert alice.get('/api/groups').json()['groups'][0]['last_message']['id']==mid
+    assert not bob.get('/api/search/messages',params={'group_id':gid,'q':'giữ'}).json()['results']
+    assert alice.get('/api/search/messages',params={'group_id':gid,'q':'giữ'}).json()['results']
+    assert not bob.get('/api/chat/search/v6',params={'scope':'group','chat_id':gid,'q':'giữ'}).json()['results']
+    assert alice.get('/api/chat/search/v6',params={'scope':'group','chat_id':gid,'q':'giữ'}).json()['results']
+    assert bob.delete(f'/api/groups/{gid}/messages/{mid}').status_code==403
+    assert alice.delete(f'/api/groups/{gid}/messages/{mid}').status_code==200
+
+
+def test_personal_delete_prevents_other_retrieval_of_attached_file():
+    admin,alice,bob,alice_id,bob_id=setup_pair()
+    image=b'\x89PNG\r\n\x1a\n'+b'0'*128
+    uploaded=alice.post('/api/uploads',files={'file':('test.png',image,'image/png')})
+    assert uploaded.status_code==200,uploaded.text
+    file_id=uploaded.json()['attachment']['id']
+    sent=alice.post('/api/messages',json={'recipient_id':bob_id,
+                                            'body':'Ảnh đã gửi','attachment_id':file_id})
+    assert sent.status_code==200,sent.text
+    mid=sent.json()['message']['id']
+    assert bob.get(f'/api/attachments/{file_id}').status_code==200
+    assert bob.post(f'/api/messages/{mid}/hide').status_code==200
+    assert bob.get(f'/api/attachments/{file_id}').status_code==403
+    assert alice.get(f'/api/attachments/{file_id}').status_code==200
