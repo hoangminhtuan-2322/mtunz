@@ -1,5 +1,11 @@
 /* mtunz World Experience V9: additive theme scoped to the member World screen.
    Existing World endpoints, DOM IDs, moderation and member layouts stay intact. */
+/* The new World header owns the title: hide only the duplicate generic heading.
+   Browsers without :has simply keep the harmless original page heading. */
+@supports selector(.main:has(> .world-live-page)){
+  .shell:not(.admin-shell)>.main:has(> .world-live-page)>.main-head{display:none}
+}
+
 .world-live-page{
   --world-ink:#f2f5ff;--world-muted:#9daccc;--world-stroke:#ffffff17;
   width:100%;max-width:none;height:100%;min-height:0;overflow:hidden;
