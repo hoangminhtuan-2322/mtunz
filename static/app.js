@@ -810,7 +810,7 @@ function finishSupportReply(form,sentText){
  const field=form.querySelector('.support-chat-entry');
  if(!field?.isConnected)return;
  // Preserve any new text typed before the server responds.
- if(field.value.trim()===sentText)field.value='';
+ if(field.value.trim()===sentText){field.value='';field.style.height='';}
  field.focus({preventScroll:true});
 }
 
@@ -2241,6 +2241,10 @@ document.addEventListener('click',async event=>{
  finally{if(busy&&btn.isConnected){btn.disabled=false;btn.classList.remove('is-loading');btn.removeAttribute('aria-busy');}}
 });
 document.addEventListener('input',event=>{
+ if(event.target.matches?.('.support-chat-entry')){
+  const field=event.target;
+  field.style.height='auto';field.style.height=Math.min(field.scrollHeight,144)+'px';
+ }
  if(event.target.id==='side-filter'){state.sideFilter=event.target.value.trim();renderSideItems();}
  if(event.target.id==='chat-text'&&state.ws?.readyState===WebSocket.OPEN){
   const group=state.tab==='groups'&&state.groupSelected;
