@@ -46,6 +46,8 @@ const {chromium}=require('playwright-core');
    const notice=page.locator('.notify-toast').filter({hasText:'Yêu cầu đăng ký mới từ @'+username});
    await notice.getByRole('button',{name:'Mở hàng chờ duyệt'}).click();
    await page.locator('.admin-page .data-table').getByText(username,{exact:true}).waitFor();
+   await page.evaluate(()=>document.querySelector('.admin-nav [data-tab="overview"]').click());
+   await queue.waitFor();
   }
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
