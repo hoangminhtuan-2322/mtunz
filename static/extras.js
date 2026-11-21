@@ -116,7 +116,7 @@ function bubblesFor(messages,isGroup=false,context=messages){
      ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
-    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}</div>`;
+    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}${m.id>0?`<button type="button" class="message-delete-menu-trigger" data-act="message-options" data-id="${Number(m.id)}" data-scope="${scope}" aria-haspopup="dialog" aria-label="Xóa hoặc thu hồi tin nhắn" title="Xóa tin nhắn">${icon('dots',14)} <span>Xóa</span></button>`:''}</div>`;
  }
  return html;
 }
@@ -310,6 +310,34 @@ async function actOnMessage(btn){
    if(group)await loadGroupMessages(false);else await loadMessages(false);
    return;
  }
+ if(action==='message-options'){
+   const mine=m.sender_id===state.user.id;
+   modal({title:'Xóa tin nhắn',description:mine&&!m.deleted_at?
+     'Chọn xóa chỉ ở tài khoản của bạn hoặc thu hồi với mọi người.':
+     'Bạn có thể xóa tin nhắn này khỏi lịch sử của riêng mình.',
+     content:`<div class="message-delete-choices">
+       <button type="button" class="message-delete-choice" data-act="message-hide" data-id="${id}" data-scope="${scope}">
+         ${icon('trash',18)} <span><strong>Xóa ở phía tôi</strong><small>Chỉ ẩn ở tài khoản của bạn; người khác vẫn xem được</small></span>
+       </button>
+       ${mine&&!m.deleted_at?`<button type="button" class="message-delete-choice danger" data-act="message-delete" data-id="${id}" data-scope="${scope}">
+         ${icon('shield',18)} <span><strong>Thu hồi với mọi người</strong><small>Chỉ người gửi được thu hồi</small></span>
+       </button>`:''}
+     </div>`,confirm:'Đóng',cancel:null});
+   return;
+ }
+ if(action==='message-hide'){
+   ask('Xóa ở phía tôi','Tin nhắn này sẽ chỉ biến mất khỏi lịch sử của tài khoản bạn. Người khác vẫn xem được.',async()=>{
+     await post(base+'/hide');
+     const list=group?state.groupMessages:state.messages;
+     if(group)state.groupMessages=list.filter(item=>item.id!==id);
+     else state.messages=list.filter(item=>item.id!==id);
+     if(state.replyTo?.id===id)state.replyTo=null;
+     if(group){await loadGroupMessages(false);scheduleGroupsRefresh();}
+     else{await loadMessages(false);scheduleFriendsRefresh();}
+     toast('Đã xóa tin nhắn ở phía bạn.','ok');
+   },'Xóa ở phía tôi',true);
+   return;
+ }
  if(action==='message-delete'){
    ask('Thu hồi tin nhắn','Tin nhắn sẽ bị thu hồi đối với mọi thành viên trong cuộc trò chuyện.',async()=>{
       await del(base);if(group)await loadGroupMessages(false);else await loadMessages(false);
@@ -324,7 +352,7 @@ async function actOnMessage(btn){
 }
 async function extraAction(btn){
  const act=btn.dataset.act,id=Number(btn.dataset.id);
- if(['message-reply','message-react','message-delete','message-edit'].includes(act)){await actOnMessage(btn);return;}
+ if(['message-reply','message-react','message-delete','message-edit','message-options','message-hide'].includes(act)){await actOnMessage(btn);return;}
  switch(act){
  case 'open-group':await openGroup(id);break;
  case 'group-manage':groupManageDialog();break;
@@ -471,6 +499,24 @@ async function extraSocket(data){
   scheduleGroupsRefresh();
   if(state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
  }
+ if(t==='message-hidden'){
+   const id=Number(data.message_id);
+   if(data.scope==='dm'){
+     state.messages=state.messages.filter(message=>message.id!==id);
+     if(state.replyTo?.id===id)state.replyTo=null;
+     if(state.tab==='messages'&&state.selected)renderMessageThread(false);
+     scheduleFriendsRefresh();
+   }else if(data.scope==='group'){
+     state.groupMessages=state.groupMessages.filter(message=>message.id!==id);
+     if(state.replyTo?.id===id)state.replyTo=null;
+     if(state.tab==='groups'&&state.groupSelected===data.group_id){
+       const feed=$('#chat-messages');
+       if(feed)feed.innerHTML=bubblesFor(state.groupMessages,true);
+     }
+     scheduleGroupsRefresh();
+   }
+   return;
+ }
  if(t==='message-updated'){
   scheduleFriendsRefresh();
   if(state.selected&&state.tab==='messages')await loadMessages(false);
@@ -614,7 +660,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-read-one','notice-filter','notice-permission',
+ 'message-reply','message-react','message-delete','message-edit','message-options','message-hide','search-chat','notice-read','notice-read-one','notice-filter','notice-permission',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}
