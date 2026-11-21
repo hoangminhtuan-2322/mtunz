@@ -59,8 +59,8 @@ def bundle_styles(static_dir: Path, output_dir: Path | None = None) -> tuple[str
     for old in links[1:]:
         # Recompute by exact matching string as indices changed above.
         new_source = new_source.replace(old.group(0), "", 1)
-    if SOURCE_LINK.findall(new_source):
-        raise RuntimeError("Unbundled CSS links remain")
+    if SOURCE_LINK.findall(new_source) != [filename]:
+        raise RuntimeError("Expected exactly one fingerprinted CSS link")
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / filename).write_text(combined, encoding="utf8")
     (output_dir / "index.html").write_text(new_source, encoding="utf8")
