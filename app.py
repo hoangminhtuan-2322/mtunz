@@ -2000,7 +2000,7 @@ class AdminUserEdit(BaseModel):
     phone:str=Field(min_length=0,max_length=40)
     email:str=Field(default='',max_length=254)
     reason:str=Field(min_length=5,max_length=250)
-    admin_password:str=Field(min_length=1,max_length=128)
+    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
@@ -2029,7 +2029,7 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
 
 class AdminSessionRevoke(BaseModel):
     reason:str=Field(min_length=5,max_length=250)
-    admin_password:str=Field(min_length=1,max_length=128)
+    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
