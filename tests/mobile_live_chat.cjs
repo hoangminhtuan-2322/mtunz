@@ -47,13 +47,15 @@ const {chromium}=require('playwright-core');
    assert.equal(await page.locator('#chat-messages').evaluate(el=>el.scrollTop),120);
    assert(await existing.evaluate(el=>el.isConnected));
    assert(await page.locator('.main-head > [data-act="search-chat"]').isVisible());
-   await page.route('**/api/chat/search/v6?*',r=>r.fulfill({json:{results:[
+   await page.route(/\/api\/chat\/search\/v6\?/,r=>r.fulfill({json:{results:[
     {id:3,body:'Tin nhắn cần tìm',sender_id:9,created_at:now-60}
    ]}}));
    await page.locator('.main-head > [data-act="search-chat"]').click();
    await page.locator('#v6-query').fill('cần tìm');
-   await page.locator('#v6-query').press('Enter');
-   await page.locator('[data-found-message="3"]').click();
+   const searched=page.waitForResponse(r=>r.url().includes('/api/chat/search/v6?'));
+   await page.getByRole('button',{name:'Tìm kiếm',exact:true}).click();
+   assert((await searched).ok(),'Search response on '+width+'px');
+   await page.locator('[data-found-message="3"]').click({timeout:8000});
    await page.locator('#msg-dm-3.search-target').waitFor();
    await page.route('**/api/messages/14',r=>r.fulfill({json:{messages:history.map(m=>({...m,recipient_id:14}))}}));
    await page.evaluate(()=>{

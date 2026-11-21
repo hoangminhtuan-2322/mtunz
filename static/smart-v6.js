@@ -66,9 +66,9 @@ async function v6ShowAdvancedSearch(){
    scope:group?'group':'dm',chat_id:String(chat),q,since:String(since),until:String(until),
    from_user:String(fromUser),media,limit:'40'
   });
-  const result=await api('/api/chat/search/v6?'+params.toString());
   const container=host.querySelector('#v6-search-results');
-  if(container&&current()){
+  const result=await api('/api/chat/search/v6?'+params.toString());
+  if(container?.isConnected&&current()){
    container.innerHTML=result.results.length?
     result.results.map(item=>'<button type="button" class="v6-search-result" data-found-message="'+Number(item.id)+'"><span>'+
      v6Stamp(item.created_at)+(item.sender_id===owner?' · Bạn':' · Thành viên')+'</span>'+
