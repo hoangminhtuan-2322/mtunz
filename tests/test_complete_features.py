@@ -260,7 +260,7 @@ def test_delete_message_for_me_dm_keeps_other_participant_history():
 
 def test_delete_message_for_me_group_only_changes_one_members_view():
     admin,alice,bob,alice_id,bob_id=setup_pair()
-    stranger=register_user(admin,'feature_delete_group_stranger')
+    stranger=register_user(admin,'feature_group_guest')
     created=alice.post('/api/groups',json={'title':'Nhóm kiểm tra xóa','member_ids':[bob_id]})
     assert created.status_code==200,created.text
     gid=created.json()['id']
