@@ -421,3 +421,43 @@
 .chat-photo-preview{display:grid;place-items:center;margin:0;background:#0c1321;border-radius:12px;overflow:hidden}
 .chat-photo-preview img{display:block;max-width:100%;max-height:52vh;object-fit:contain}
 .photo-original{display:inline-block;margin-top:10px;color:#d3cbff}
+
+/* mtunz V11 message delete choice — visible without hover in DM/group chat. */
+.shell:not(.admin-shell) .message-delete-menu-trigger{
+ display:inline-flex;align-items:center;justify-content:center;align-self:flex-start;
+ gap:6px;margin:3px 0 5px;padding:5px 10px;min-width:56px;min-height:30px;
+ border:1px solid #61739275;border-radius:999px;
+ color:#bdcce9;background:#1b2b47;font-size:11px;font-weight:650;
+ cursor:pointer;white-space:nowrap;touch-action:manipulation;
+ transition:background .15s,border-color .15s;
+}
+.shell:not(.admin-shell) .bubble-wrap.mine .message-delete-menu-trigger{align-self:flex-end}
+.shell:not(.admin-shell) .message-delete-menu-trigger:hover,
+.shell:not(.admin-shell) .message-delete-menu-trigger:focus-visible{
+ background:#34436d;border-color:#a69bf8;color:#fff;
+}
+.shell:not(.admin-shell) .message-delete-menu-trigger:focus-visible{
+ outline:2px solid #a1dfff;outline-offset:2px;
+}
+#modal-root .message-delete-choices{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+#modal-root .message-delete-choice{
+ display:flex;align-items:center;gap:13px;width:100%;text-align:left;
+ min-height:66px;padding:12px 14px;border:1px solid #566b90;border-radius:14px;
+ color:#edf4ff;background:#17283f;cursor:pointer;touch-action:manipulation;
+}
+#modal-root .message-delete-choice>svg{flex:none}
+#modal-root .message-delete-choice span{display:flex;flex-direction:column;gap:5px;min-width:0}
+#modal-root .message-delete-choice strong{font-size:13px}
+#modal-root .message-delete-choice small{font-size:11px;line-height:1.45;color:#becbe4}
+#modal-root .message-delete-choice:hover,#modal-root .message-delete-choice:focus-visible{
+ background:#263d60;border-color:#9d96f4;
+}
+#modal-root .message-delete-choice.danger{border-color:#b56c7b88}
+#modal-root .message-delete-choice.danger:hover{background:#532c43;border-color:#ef9ab1}
+@media(max-width:800px){
+ .shell:not(.admin-shell) .message-delete-menu-trigger{min-height:39px;padding:7px 12px;font-size:12px}
+ #modal-root .message-delete-choice{min-height:70px;padding:14px 12px}
+}
+@media(prefers-reduced-motion:reduce){
+ .shell:not(.admin-shell) .message-delete-menu-trigger{transition:none}
+}
