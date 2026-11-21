@@ -510,6 +510,7 @@ async function enterApp(resume=false){
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
+ state.adminQueueFilters={};state.adminQuery='';state.adminTicket=null;
  state.sideFilter='';state.inboxFilter='all';state.onlyUnreadNotices=false;state.notices=[];
  state.user=null;state.selected=null;state.savedDevice=false;state.rememberedDevice=false;
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
@@ -1199,74 +1200,98 @@ async function goTab(tab){
 }
 
 // ==== Administrator workspace ====
-const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa 30 ngày'],['overview','grid','Tổng quan'],['ops','shield','Điều hành thông minh'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin'],['world','group','Chat thế giới'],['reports','shield','Báo cáo vi phạm']];
+const adminSections=[
+ ['Bảng điều khiển',[['overview','grid','Tổng quan']]],
+ ['Tiếp nhận & xử lý',[['registrations','check','Duyệt đăng ký'],['tickets','inbox','Hỗ trợ / khôi phục'],['reports','shield','Báo cáo vi phạm'],['deletions','clock','Chờ xóa 30 ngày']]],
+ ['Thành viên & cộng đồng',[['users','users','Người dùng'],['groups','group','Nhóm chat'],['world','group','Chat thế giới'],['broadcast','announce','Thông báo']]],
+ ['Vận hành & bảo mật',[['ops','grid','Vận hành hệ thống'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin']]]
+];
+const adminTabs=adminSections.flatMap(([,tabs])=>tabs);
+const adminQueueOptions={
+ registrations:[['all','Tất cả'],['pending','Chờ duyệt'],['approved','Đã duyệt'],['denied','Từ chối']],
+ tickets:[['all','Tất cả'],['open','Đang mở'],['closed','Đã đóng'],['spam','Spam']],
+ reports:[['all','Tất cả'],['pending','Chờ xem xét'],['reviewed','Đã xem xét'],['dismissed','Đã bác bỏ']]
+};
+function adminQueueToolbar(tab){
+ const options=adminQueueOptions[tab];
+ if(!options)return '';
+ const selected=state.adminQueueFilters?.[tab]||'all';
+ return `<div class="admin-queue-toolbar" role="group" aria-label="Lọc hàng chờ theo trạng thái">${options.map(([id,label])=>
+   `<button type="button" data-act="admin-queue-filter" data-status="${id}" aria-pressed="${selected===id}">${label}</button>`).join('')}</div>`;
+}
 function adminNav(){
- return `<aside class="admin-nav"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
- <div class="nav-label">QUẢN LÝ HỆ THỐNG</div>
- ${adminTabs.map(([t,ic,label])=>`<button data-act="admin-tab" data-tab="${t}" title="${label}" class="${state.adminTab===t?'active':''}">${icon(ic,19)} ${label}</button>`).join('')}
+ return `<aside class="admin-nav" role="navigation" aria-label="Điều hướng quản trị"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
+ ${adminSections.map(([section,tabs])=>`<div class="admin-nav-group"><div class="admin-nav-group-label">${section}</div><div class="admin-nav-group-items">${tabs.map(([t,ic,label])=>
+   `<button type="button" data-act="admin-tab" data-tab="${t}" aria-current="${state.adminTab===t?'page':'false'}" class="${state.adminTab===t?'active':''}">${icon(ic,19)} ${label}</button>`).join('')}</div></div>`).join('')}
  <div class="nav-spacer"></div><div class="nav-label">TÀI KHOẢN</div>
  <div class="row" style="padding:11px 12px">${avatar('admin',true,'sm')}<div class="grow"><b>admin</b><div class="hint">Super administrator</div></div></div>
  <button data-act="logout" style="color:#ff93a0">${icon('logout')} Đăng xuất</button></aside>`;
 }
-const adminHeading={ops:['Trung tâm điều hành V6','Giám sát hiệu năng, cảnh báo bảo mật và điều khiển tính năng theo thời gian thực.'],deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
+const adminHeading={ops:['Vận hành hệ thống','Giám sát hiệu năng, cảnh báo bảo mật và điều khiển tính năng theo thời gian thực.'],deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
 world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và quản lý án phạt spam tại một nơi.'],
 reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
+let adminLoadSequence=0;
 async function loadAdmin(){
+ const sequence=++adminLoadSequence,tab=state.adminTab,adminId=state.user?.id;
+ const queue=encodeURIComponent(state.adminQueueFilters?.[tab]||'all');
+ const update={};
  if(state.adminTab==='world'&&typeof communityPlusRefresh==='function')
    communityPlusRefresh(false,true).then(()=>{
      const root=document.getElementById('v7-community-admin');
-     if(root&&state.adminTab==='world')root.innerHTML=communityPlusAdminPanel();
+     if(root&&sequence===adminLoadSequence&&state.adminTab==='world')root.innerHTML=communityPlusAdminPanel();
    }).catch(()=>{});
 
  if(!state.user?.is_admin)return;
  try{
-  switch(state.adminTab){
-   case 'groups':state.adminData=(await api('/api/admin/groups')).groups;break;
+  switch(tab){
+   case 'groups':update.adminData=(await api('/api/admin/groups')).groups;break;
    case 'world':{
     const [config,rooms,polls]=await Promise.all([
       api('/api/admin/world'),api('/api/admin/world/rooms'),api('/api/admin/world/polls')
     ]);
-    state.adminData=config;state.adminV6Rooms=rooms.rooms||[];state.adminV6Polls=polls.polls||[];
+    update.adminData=config;update.adminV6Rooms=rooms.rooms||[];update.adminV6Polls=polls.polls||[];
     break;
    }
-   case 'ops':state.adminData=await api('/api/admin/ops/overview');break;
-   case 'reports':state.adminData=await api('/api/admin/reports?status=all');break;
+   case 'ops':update.adminData=await api('/api/admin/ops/overview');break;
+   case 'reports':update.adminData=await api('/api/admin/reports?status='+queue);break;
    case 'overview':{
-    const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations'),api('/api/admin/audit')]);
-    state.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
+    const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations?status=pending&limit=5'),api('/api/admin/audit?limit=6')]);
+    update.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
    }
-   case 'registrations':state.adminData=(await api('/api/admin/registrations')).registrations;break;
-   case 'deletions':state.adminData=(await api('/api/admin/deletions')).requests;break;
-   case 'users':state.adminData=(await api('/api/admin/users?q='+encodeURIComponent(state.adminQuery))).users;break;
+   case 'registrations':update.adminData=(await api('/api/admin/registrations?status='+queue)).registrations;break;
+   case 'deletions':update.adminData=(await api('/api/admin/deletions')).requests;break;
+   case 'users':update.adminData=(await api('/api/admin/users?q='+encodeURIComponent(state.adminQuery))).users;break;
    case 'tickets':{
-    state.adminData=(await api('/api/admin/tickets')).tickets;
-    if(state.adminTicket&&!state.adminData.some(t=>t.id===state.adminTicket))state.adminTicket=null;
-    if(state.adminTicket){state.adminTicketMessages=(await api(`/api/admin/tickets/${state.adminTicket}/messages`)).messages;}
+    update.adminData=(await api('/api/admin/tickets?status='+queue)).tickets;
+    update.adminTicket=update.adminData.some(t=>t.id===state.adminTicket)?state.adminTicket:null;
+    update.adminTicketMessages=update.adminTicket?(await api(`/api/admin/tickets/${update.adminTicket}/messages`)).messages:[];
     break;
    }
    case 'security':{
-    state.adminApprovalData=await api('/api/admin/login-approvals');
-    state.adminData=null;break;
+    update.adminApprovalData=await api('/api/admin/login-approvals');
+    update.adminData=null;break;
    }
    case 'audit':{
     const f=state.adminAuditFilter;
     const params=new URLSearchParams({limit:'100',q:f.q||'',action:f.action||'',since:String(f.since||0),until:String(f.until||0)});
     const result=await api('/api/admin/audit?'+params.toString());
-    state.adminData=result.logs;
-    state.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
+    update.adminData=result.logs;
+    update.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
     break;
    }
-   default:state.adminData=null;
+   default:update.adminData=null;
   }
+  if(sequence!==adminLoadSequence||state.adminTab!==tab||state.user?.id!==adminId)return;
+  Object.assign(state,update);
   renderAdmin();
- }catch(e){toast(e.message,'error');}
+ }catch(e){if(sequence===adminLoadSequence&&state.user?.id===adminId)toast(e.message,'error');}
 }
 function statCard(label,value,footer){return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-foot">${footer}</div></div>`;}
 function adminOverview(){
  const d=state.adminData||{},s=d.stats||{total_users:0,online:0,pending:0,tickets:0,reserved_slots:0,max_users:100,messages:0};
  const regs=(d.registrations||[]).filter(x=>x.status==='pending').slice(0,5);
  return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}${statCard('Đang online',s.online,'Theo kết nối realtime')}
- ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa 30 ngày',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
+ ${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
  <div class="admin-panels"><section class="card"><div class="row between"><h2>Yêu cầu đăng ký mới</h2><button class="btn ghost sm" data-act="admin-tab" data-tab="registrations">Xem tất cả</button></div>
  <div class="sep"></div>${regs.length?regs.map(r=>`<div class="people-row">${avatar(r.username,false,'sm')}<div class="grow"><b>${esc(r.username)}</b><div class="hint">${date(r.created_at)}</div></div><button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button></div>`).join(''):'<div class="empty">Không có yêu cầu đang chờ.</div>'}</section>
  <section class="card"><h2>Giới hạn người dùng</h2><p class="hint">Kiểm soát số tài khoản tối đa được phép tồn tại. Các chỗ đã duyệt nhưng chưa tạo tài khoản vẫn được tính.</p>
@@ -1289,16 +1314,16 @@ function adminOverview(){
 }
 function statusPill(s){return s==='pending'?'<span class="pill warn">Chờ duyệt</span>':s==='approved'?'<span class="pill good">Đã duyệt</span>':s==='denied'?'<span class="pill bad">Từ chối</span>':'<span class="pill">Hoàn tất</span>';}
 function adminRegistrations(){const rows=state.adminData||[];
- return `<div class="row between" style="margin-bottom:18px"><span class="hint">${rows.filter(r=>r.status==='pending').length} yêu cầu chưa xử lý</span><button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
+ return `<div class="row between" style="margin-bottom:18px"><span class="hint">${rows.length} mục đã tải</span><button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Tên đề xuất</th><th>Số điện thoại</th><th>Email</th><th>Thời gian</th><th>Trạng thái</th><th>Quyết định</th></tr></thead><tbody>
- ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
+ ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td data-sort-value="${Number(r.created_at)}">${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
 function adminUsers(){const data=state.adminData||[];
  return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
@@ -1316,17 +1341,15 @@ function adminDeletionQueue(){
   <button class="btn ghost sm" data-act="admin-refresh">${icon('refresh',15)} Làm mới</button></div>
   <div class="table-scroll" style="margin-top:18px"><table class="data-table"><thead><tr><th>Tài khoản</th><th>Ngày yêu cầu</th><th>Hạn xóa</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>
   ${items.map(item=>`<tr><td><b>${esc(item.username)}</b><div class="hint">#${item.user_id}</div></td>
-  <td>${deadlineDate(item.requested_at)}</td><td>${deadlineDate(item.purge_at)}</td>
+  <td data-sort-value="${Number(item.requested_at)}">${deadlineDate(item.requested_at)}</td><td data-sort-value="${Number(item.purge_at)}">${deadlineDate(item.purge_at)}</td>
   <td><span class="pill ${item.purge_at*1000<=Date.now()?'bad':'warn'}">${item.purge_at*1000<=Date.now()?'Đến hạn xử lý':'Trong thời gian cân nhắc'}</span></td>
   <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
   </tbody></table></div></div>`;
 }
 function adminTickets(){const tickets=state.adminData||[];
- const spamCount=tickets.filter(t=>t.status==='spam').length;
- const visible=tickets.filter(t=>state.adminShowSpam||t.status!=='spam');
+ const visible=tickets;
  const chosen=visible.find(t=>t.id===state.adminTicket);
  return `<div class="admin-ticket-layout"><div class="card" style="padding:0;overflow:hidden"><div class="row between" style="padding:17px;border-bottom:1px solid var(--line)"><b>Cuộc trò chuyện (${tickets.length})</b><button class="btn sm ghost" data-act="admin-refresh">${icon('refresh',15)}</button></div>
- <div style="padding:9px 14px;border-bottom:1px solid var(--line)"><button class="btn ghost sm" type="button" data-act="admin-show-spam">${state.adminShowSpam?'Ẩn phiếu spam':'Xem phiếu spam'} (${spamCount})</button></div>
  <div class="ticket-list">${visible.length?visible.map(t=>`<div class="ticket-item ${t.id===state.adminTicket?'selected':''}" data-act="admin-open-ticket" data-id="${t.id}">
  <div class="row between"><b>#${t.id} · ${esc(t.kind)}</b><span class="pill ${t.status==='open'?'good':'bad'}">${t.status==='open'?'Mở':t.status==='spam'?'Spam':'Đóng'}</span></div>
  <div class="hint truncate" style="margin-top:7px">${esc(t.claim)||'Không có mô tả'}</div><div class="hint">${date(t.created_at)}</div></div>`).join(''):'<div class="empty">Chưa có yêu cầu hỗ trợ.</div>'}</div></div>
@@ -1561,7 +1584,7 @@ async function adminAuditDetail(eventId){
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='ops'&&typeof adminOpsV6==='function'?adminOpsV6():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():state.adminTab==='world'?adminWorldContent():state.adminTab==='reports'?adminReportsContent():adminAudit();
- root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
+ root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${adminQueueToolbar(state.adminTab)}${content}</main></div>`;
  saveCurrentView();
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
@@ -1909,6 +1932,12 @@ async function clickAction(button){
   case 'load-notifications':{
    const r=await api('/api/notifications');const el=$('#notifications-list');if(el)el.innerHTML=r.notifications.length?r.notifications.map(n=>`<div class="audit-item" style="padding-left:0"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>`).join(''):'<div class="hint" style="margin-top:12px">Không có thông báo mới.</div>';break;
   }
+  case 'admin-queue-filter':{
+   const tab=state.adminTab,status=button.dataset.status;
+   if(!adminQueueOptions[tab]?.some(([id])=>id===status))break;
+   (state.adminQueueFilters||={})[tab]=status;
+   await loadAdmin();break;
+  }
   case 'admin-tab':state.adminTab=button.dataset.tab;state.adminData=null;await loadAdmin();break;
   case 'admin-audit-detail':await adminAuditDetail(id);break;
   case 'admin-audit-clear':
@@ -1947,7 +1976,6 @@ async function clickAction(button){
   case 'admin-user-detail':await userDetails(id);break;
   case 'admin-view-messages':await userMessageLog(id);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
-  case 'admin-show-spam':state.adminShowSpam=!state.adminShowSpam;renderAdmin();break;
    case 'admin-open-ticket':state.adminTicket=id;state.adminTicketMessages=(await api(`/api/admin/tickets/${id}/messages`)).messages;renderAdmin();break;
   case 'admin-recovery-grant':grantDialog(id);break;
   case 'admin-close-ticket':{

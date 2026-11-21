@@ -93,3 +93,22 @@ def test_maintenance_member_reset_is_high_impact():
     enriched = enrich_audit(example)
     assert enriched['severity'] == 'high'
     assert enriched['detail'] == example['detail']
+
+
+def test_admin_queue_filter_precedes_list_limit():
+    admin=logged_admin()
+    with db() as c:
+        c.execute("INSERT INTO registrations(username,guest_id,status,created_at) VALUES('old_pending','guest','pending',1)")
+        for index in range(101):
+            c.execute("INSERT INTO registrations(username,guest_id,status,created_at) VALUES(?,?,'denied',2)",
+                      (f'queue_{index}','guest'))
+        c.execute("INSERT INTO tickets(guest_id,kind,status,created_at) VALUES('guest','username','open',1)")
+        for index in range(120):
+            c.execute("INSERT INTO tickets(guest_id,kind,status,created_at) VALUES('guest','username','closed',2)")
+    rows=admin.get('/api/admin/registrations?status=pending&limit=5').json()['registrations']
+    assert [row['username'] for row in rows]==['old_pending']
+    assert len(admin.get('/api/admin/tickets?status=open').json()['tickets'])==1
+    assert admin.get('/api/admin/tickets?status=invalid').status_code==422
+    assert admin.get('/api/admin/registrations?limit=101').status_code==422
+    stats=admin.get('/api/admin/stats').json()
+    assert stats['pending']==stats['tickets']==1 and stats['reports_pending']>=0

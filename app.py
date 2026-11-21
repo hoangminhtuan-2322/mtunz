@@ -1599,20 +1599,25 @@ async def admin_stats(request:Request):
     require_admin(request)
     with db() as c:
         total,reserved,maximum=registration_capacity(c)
-        deletion_pending = one(c,'SELECT count(*) n FROM account_deletion_requests')['n']
-        return {'total_users':total,'reserved_slots':reserved,'max_users':maximum,
-          'deletion_pending':deletion_pending,
-          'pending':one(c,"SELECT count(*) n FROM registrations WHERE status='pending'")['n'],
-          'tickets':one(c,"SELECT count(*) n FROM tickets WHERE status='open'")['n'],
-          'messages':one(c,'SELECT count(*) n FROM messages')['n']+one(c,'SELECT count(*) n FROM group_messages')['n'],
-          'groups':one(c,'SELECT count(*) n FROM chat_groups')['n'],
-          'online':sum(bool(v) for uid,v in hub.users.items() if uid!=1)}
+        counts=dict(one(c,'''SELECT
+            (SELECT count(*) FROM account_deletion_requests) AS deletion_pending,
+            (SELECT count(*) FROM registrations WHERE status='pending') AS pending,
+            (SELECT count(*) FROM tickets WHERE status='open') AS tickets,
+            (SELECT count(*) FROM user_reports WHERE status='pending') AS reports_pending,
+            (SELECT count(*) FROM messages)+(SELECT count(*) FROM group_messages) AS messages,
+            (SELECT count(*) FROM chat_groups) AS groups'''))
+        return {**counts,'total_users':total,'reserved_slots':reserved,'max_users':maximum,
+                'online':sum(bool(v) for uid,v in hub.users.items() if uid!=1)}
 
 
 @app.get('/api/admin/registrations')
-async def admin_registrations(request:Request):
+async def admin_registrations(request:Request,status:Literal['all','pending','approved','denied']='all',limit:int=100):
     require_admin(request)
-    with db() as c:return {'registrations':many(c,"SELECT id,username,status,created_at,phone,email FROM registrations WHERE status IN ('pending','approved','denied') ORDER BY id DESC LIMIT 100")}
+    if not 1<=limit<=100:raise HTTPException(422,'Giới hạn danh sách không hợp lệ.')
+    with db() as c:
+        return {'registrations':many(c,'''SELECT id,username,status,created_at,phone,email FROM registrations
+            WHERE status IN ('pending','approved','denied') AND (?='all' OR status=?)
+            ORDER BY id DESC LIMIT ?''',(status,status,limit))}
 
 
 class Decision(BaseModel):
@@ -1779,9 +1784,9 @@ async def admin_user_messages(request:Request,uid:int):
 
 
 @app.get('/api/admin/tickets')
-async def admin_tickets(request:Request):
+async def admin_tickets(request:Request,status:Literal['all','open','closed','spam']='all'):
     require_admin(request)
-    with db() as c:return {'tickets':many(c,'SELECT * FROM tickets ORDER BY id DESC LIMIT 120')}
+    with db() as c:return {'tickets':many(c,"SELECT * FROM tickets WHERE (?='all' OR status=?) ORDER BY id DESC LIMIT 120",(status,status))}
 
 
 @app.get('/api/admin/tickets/{tid}/messages')
