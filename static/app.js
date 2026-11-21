@@ -820,34 +820,44 @@ async function refreshFriends(redraw=true){
   }
   if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
 }
-function friendItem(f){
+function friendItem(f,draft){
   const active=state.selected===f.other_id&&state.tab==='messages';
   return `<button type="button" class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
    ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
-   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
+   <div class="sub">${draft?`<b class="draft-label">Nháp</b> ${esc(short(draft,38))}`:f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
 }
-const inboxFilters={all:'Tất cả',unread:'Chưa đọc',pinned:'Đã ghim'};
+const inboxFilters={all:'Tất cả',unread:'Chưa đọc',pinned:'Đã ghim',drafts:'Nháp'};
 function inboxSearchText(value){
  return String(value||'').normalize('NFD').replace(/\p{M}/gu,'').toLowerCase().replaceAll('đ','d').trim();
 }
 function sideBody(){
  const filter=state.inboxFilter||'all';
  const query=inboxSearchText(state.sideFilter);
+ const drafts=typeof v4ReadAllDrafts==='function'?v4ReadAllDrafts():{};
  const matches=name=>inboxSearchText(name).includes(query);
  const people=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived&&
-   (filter!=='unread'||f.unread>0)&&(filter!=='pinned'||f.pinned)&&matches(f.display_name||f.username));
- const groups=filter==='pinned'?[]:state.groups.filter(g=>(filter!=='unread'||g.unread>0)&&matches(g.title));
+   (filter!=='unread'||f.unread>0)&&(filter!=='pinned'||f.pinned)&&(filter!=='drafts'||drafts['dm:'+f.other_id])&&matches(f.display_name||f.username));
+ const groups=filter==='pinned'?[]:state.groups.filter(g=>(filter!=='unread'||g.unread>0)&&(filter!=='drafts'||drafts['group:'+g.id])&&matches(g.title));
  const overview=filter==='all'&&!query;
  const pending=overview?state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id):[];
  const archived=overview?state.friends.filter(f=>f.archived&&!f.restricted&&f.state==='accepted').length:0;
- const empty=query?'Không tìm thấy cuộc trò chuyện.':filter==='unread'?'Bạn đã đọc hết tin nhắn.':filter==='pinned'?'Chưa có cuộc trò chuyện được ghim.':'Chưa có cuộc trò chuyện.';
+ const empty=filter==='drafts'&&!query?'Bạn chưa có bản nháp trong tab này.':query?'Không tìm thấy cuộc trò chuyện.':filter==='unread'?'Bạn đã đọc hết tin nhắn.':filter==='pinned'?'Chưa có cuộc trò chuyện được ghim.':'Chưa có cuộc trò chuyện.';
  return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<button type="button" class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<span class="grow"><b>${esc(f.username)}</b><span class="sub">Muốn kết bạn với bạn</span></span></button>`).join('')}`:''}
- ${people.length?`<div class="side-label">Cá nhân · ${people.length}</div>${people.map(friendItem).join('')}`:''}
- ${groups.length?groupSideItems(groups):''}
+ ${people.length?`<div class="side-label">Cá nhân · ${people.length}</div>${people.map(f=>friendItem(f,drafts['dm:'+f.other_id])).join('')}`:''}
+ ${groups.length?groupSideItems(groups,drafts):''}
  ${!people.length&&!groups.length?`<div class="inbox-empty">${empty}</div>`:''}
  ${archived?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${archived}</button>`:''}`;
 }
 function renderSideItems(){
+ const start=$('.member-start');
+ if(start){
+  const html=welcomeEmpty();
+  if(start.renderedHTML!==html){
+   const template=document.createElement('template');template.innerHTML=html;
+   const next=template.content.firstElementChild;
+   next.renderedHTML=html;start.replaceWith(next);
+  }
+ }
  const box=$('#side-items');
  if(!box)return;
  const html=sideBody();
@@ -899,9 +909,38 @@ function sideBar(){return `<aside class="side"><div class="side-top"><div class=
 function memberHeader(title,subtitle,actions=''){
  return `<header class="main-head"><div class="grow"><h3>${title}</h3><div class="small muted">${subtitle}</div></div>${actions}</header>`;
 }
-function welcomeEmpty(){return `<div class="hero-empty"><div><div class="illustration">✦</div><h1>Đã kết nối, sẵn sàng trò chuyện.</h1>
- <p>Chọn một người bạn ở bên trái hoặc gửi lời mời kết bạn để bắt đầu cuộc trò chuyện đầu tiên.</p>
- <button class="btn primary" data-act="app-tab" data-tab="friends">${icon('add')} Tìm bạn bè</button></div></div>`;}
+function welcomeEmpty(){
+ const rows=[
+  ...state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived&&f.last_message)
+    .map(f=>({id:f.other_id,name:f.display_name||f.username,photo:f.avatar_url,online:f.online,
+      action:'open-chat',kind:'Cá nhân',at:f.last_message.created_at,unread:f.unread})),
+  ...state.groups.filter(g=>g.last_message).map(g=>({id:g.id,name:g.title,
+      action:'open-group',kind:'Nhóm',at:g.last_message.created_at,unread:g.unread}))
+ ].sort((a,b)=>b.at-a.at).slice(0,4);
+ return `<section class="member-start"><header><span class="start-mark" aria-hidden="true">${icon('chat',28)}</span>
+ <h1>${rows.length?'Trò chuyện gần đây':'Bắt đầu trò chuyện'}</h1>
+ ${rows.length?'':'<p>Tìm một người bạn để gửi tin nhắn đầu tiên.</p>'}</header>
+ ${rows.length?`<div class="start-threads">${rows.map(row=>`<button type="button" data-act="${row.action}" data-id="${row.id}">
+ ${avatar(row.name,row.online,'sm',row.photo)}<span class="start-name"><strong>${esc(row.name)}</strong><small>${row.kind} · ${date(row.at)}</small></span>
+ ${row.unread?`<span class="badge-count">${Number(row.unread)}</span>`:icon('chevron',16)}</button>`).join('')}</div>`:''}
+ <button class="btn ${rows.length?'ghost':'primary'}" data-act="app-tab" data-tab="friends">${icon('users',16)} Tìm bạn bè</button></section>`;
+}
+function threadJump(){
+ return '<div class="thread-jump"><button hidden type="button" data-act="thread-latest">↓ Tin mới nhất</button></div>';
+}
+function syncThreadJump(box,arrived=false){
+ const button=box?.parentElement?.querySelector('[data-act="thread-latest"]');
+ if(!button)return;
+ const away=box.scrollHeight-box.clientHeight-box.scrollTop>145;
+ const count=away?Number(button.dataset.newCount||0)+(arrived?1:0):0;
+ button.dataset.newCount=String(count);
+ button.hidden=!away;
+ const label=count?'↓ '+count+' tin mới':'↓ Tin mới nhất';
+ if(button.textContent!==label)button.textContent=label;
+}
+document.addEventListener('scroll',event=>{
+ if(event.target.id==='chat-messages')syncThreadJump(event.target);
+},true);
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
  ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
@@ -928,7 +967,7 @@ function conversation(){
  const f=state.friends.find(x=>x.other_id===state.selected&&x.state==='accepted');
  if(!f)return welcomeEmpty();
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
- <div class="thread" id="chat-messages">${renderBubbles()}</div>
+ <div class="thread" id="chat-messages" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
@@ -983,6 +1022,7 @@ function appendDirectMessage(message){
    }
    if(near)box.scrollTop=box.scrollHeight;else box.scrollTop=oldPosition;
  }
+ syncThreadJump(box,currentIndex<0&&message.sender_id!==state.user?.id);
  if(state.messages.length>110){
    state.messages.splice(0,state.messages.length-100);
    renderMessageThread(false);
@@ -1166,6 +1206,9 @@ function worldComingSoon(){
  </div>`;
 }
 function renderApp(){
+ const oldThread=$('#chat-messages');
+ const reading=oldThread&&oldThread.scrollHeight-oldThread.clientHeight-oldThread.scrollTop>145?
+   {key:oldThread.dataset.chatKey,top:oldThread.scrollTop,count:oldThread.parentElement.querySelector('[data-act="thread-latest"]')?.dataset.newCount||'0'}:null;
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
@@ -1180,7 +1223,13 @@ function renderApp(){
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  saveCurrentView();
- $('#chat-messages')?.scrollTo(0,1e7);
+ const thread=$('#chat-messages');
+ if(thread){
+  const resume=reading&&thread.dataset.chatKey===reading.key;
+  thread.scrollTop=resume?reading.top:thread.scrollHeight;
+  if(resume)thread.parentElement.querySelector('[data-act="thread-latest"]').dataset.newCount=reading.count;
+  syncThreadJump(thread);
+ }
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
 }
 async function goTab(tab){
@@ -1864,6 +1913,11 @@ function grantDialog(tid){
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
+  case 'thread-latest':{
+   const thread=$('#chat-messages');
+   if(thread){thread.scrollTop=thread.scrollHeight;syncThreadJump(thread);}
+   break;
+  }
   case 'inbox-filter':{
     const key=button.dataset.filter;
     if(!Object.hasOwn(inboxFilters,key))break;

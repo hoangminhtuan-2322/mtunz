@@ -32,12 +32,14 @@ function v4ReadDraft(scope,id){
 }
 function v4WriteDraft(chat,value){
  if(!chat||!state.user||state.user.is_admin)return;
+ clearTimeout(v4DraftTimers.get(chat));v4DraftTimers.delete(chat);
  try{
   const data=v4ReadAllDrafts();
   if(value)data[chat]=String(value).slice(0,2000);else delete data[chat];
   const keys=Object.keys(data);
   if(keys.length>25)keys.slice(0,keys.length-25).forEach(k=>delete data[k]);
   sessionStorage.setItem(v4DraftStorageKey(),JSON.stringify(data));
+  if(state.inboxFilter==='drafts')renderSideItems();
  }catch{/* Private browsing or disabled storage must not break sending. */}
 }
 function v4WaveformHtml(waveform){
@@ -354,7 +356,8 @@ document.addEventListener('input',event=>{
  const ctx=v4ChatKey();
  if(!ctx)return;
  clearTimeout(v4DraftTimers.get(ctx));
- v4DraftTimers.set(ctx,setTimeout(()=>v4WriteDraft(ctx,event.target.value),250));
+ const owner=state.user.id,value=event.target.value;
+ v4DraftTimers.set(ctx,setTimeout(()=>{if(state.user?.id===owner)v4WriteDraft(ctx,value);},250));
 });
 document.addEventListener('click',async event=>{
  const button=event.target.closest('[data-v4-act]');

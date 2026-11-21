@@ -343,12 +343,12 @@
 
 /* The indicator moves once per filter change, including on touch screens. */
 .inbox-filters{
- display:grid;grid-template-columns:repeat(3,minmax(0,1fr));position:relative;
+ display:grid;grid-template-columns:repeat(4,minmax(0,1fr));position:relative;
  isolation:isolate;margin-top:12px;padding:3px;border:1px solid #38465e;
  border-radius:14px;background:#0b1628;
 }
 .inbox-filters::before{
- content:'';position:absolute;inset:3px auto 3px 3px;width:calc((100% - 6px)/3);
+ content:'';position:absolute;inset:3px auto 3px 3px;width:calc((100% - 6px)/4);
  z-index:-1;border-radius:10px;background:linear-gradient(120deg,#40456f,#323859);
 }
 .inbox-filters[data-filter="unread"]::before{transform:translateX(100%)}
@@ -375,3 +375,28 @@
  .main.view-enter{animation:member-view-enter .18s ease-out}
  @keyframes member-view-enter{from{opacity:.8;transform:translateY(4px)}to{opacity:1;transform:none}}
 }
+
+.inbox-filters[data-filter="drafts"]::before{transform:translateX(300%)}
+.member-start{margin:auto;width:min(100%,620px);max-height:100%;overflow:auto;padding:clamp(22px,4vw,54px);box-sizing:border-box}
+.member-start header{margin-bottom:24px}
+.start-mark{display:grid;place-items:center;width:54px;height:54px;margin-bottom:18px;border-radius:16px;color:#dedbff;background:linear-gradient(135deg,#494683,#293859);border:1px solid #716ba8}
+.member-start h1{font-size:clamp(24px,3vw,36px);letter-spacing:-.04em;margin:0}
+.member-start p,.start-name small{color:#aec0da}
+.start-threads{margin-bottom:20px;border:1px solid #394963;border-radius:18px;overflow:hidden;background:linear-gradient(135deg,#1b2941,#162135)}
+.start-threads button{display:flex;align-items:center;width:100%;gap:14px;padding:15px 18px;color:inherit;text-align:left;border:0;background:transparent;font:inherit}
+.start-threads button+button{border-top:1px solid #334057}
+.start-threads button:hover,.start-threads button:focus-visible{background:#293855}
+.start-name{flex:1;min-width:0;display:grid;gap:5px}
+.start-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.start-name small{font-size:12px}
+.thread-jump{height:0;position:relative;z-index:2;flex:none;align-self:stretch;text-align:center}
+.thread-jump button{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);padding:8px 15px;border:1px solid #8886d1;border-radius:24px;background:#323558;color:#faf8ff;font:inherit;font-size:13px;box-shadow:0 4px 14px #070b1966}
+.thread-jump button[hidden]{display:none}
+@media(prefers-reduced-motion:no-preference){
+ .thread-jump button:not([hidden]){animation:thread-jump-enter .16s ease-out}
+ .start-threads button{transition:background-color .16s ease}
+ @keyframes thread-jump-enter{from{opacity:0;translate:0 4px}to{opacity:1;translate:0 0}}
+}
+.shell .side-item .draft-label{color:#d2b3ff;font-weight:650;margin-right:3px}
+.shell .side-top .inbox-filters button{white-space:nowrap}
+@media(min-width:801px) and (max-width:940px){.shell .side-top .inbox-filters button{font-size:11px}}

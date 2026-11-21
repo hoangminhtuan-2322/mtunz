@@ -29,9 +29,9 @@ async function refreshGroups(redraw=false){
  }
  if(redraw){renderSideItems();if(state.tab==='groups')renderApp();}
 }
-function groupSideItems(list){
+function groupSideItems(list,drafts={}){
  return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<button type="button" class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
- <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></button>`).join('')}`;
+ <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${drafts['group:'+g.id]?`<b class="draft-label">Nháp</b> ${esc(short(drafts['group:'+g.id],38))}`:g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></button>`).join('')}`;
 }
 function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
@@ -107,7 +107,7 @@ function composerExtras(){
 function groupConversation(){
  const g=state.groups.find(x=>x.id===state.groupSelected);
  if(!g)return groupLobby();
- return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages">${bubblesFor(state.groupMessages,true)}</div>
+ return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${bubblesFor(state.groupMessages,true)}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
@@ -421,6 +421,7 @@ function appendGroupMessage(groupId,message){
    const scroll=box.scrollTop;
    box.innerHTML=bubblesFor(state.groupMessages,true);
    box.scrollTop=atBottom?box.scrollHeight:scroll;
+   syncThreadJump(box,pos<0&&message.sender_id!==state.user?.id);
   }
   if(message.sender_id!==state.user?.id)post('/api/groups/'+groupId+'/read').catch(()=>{});
  }
@@ -609,12 +610,16 @@ document.addEventListener('submit',async event=>{
     if(state.uploading)throw Error('Tệp vẫn đang được tải lên.');
     const body=String(fd.get('body')||'').trim();
     if(!body&&!state.pendingAttachment)return;
-    const gid=state.groupSelected;
+    const gid=state.groupSelected,owner=state.user.id;
+    const field=form.querySelector('#chat-text'),submitted=field.value;
     await post(`/api/groups/${gid}/messages`,{body,attachment_id:state.pendingAttachment?.id||null,reply_to:state.replyTo?.scope==='group'?state.replyTo.id:null});
+    if(state.user?.id!==owner)return;
+    if(field.value===submitted){v4WriteDraft('group:'+gid,'');field.value='';}
+    if(state.tab!=='groups'||state.groupSelected!==gid)return;
     state.replyTo=null;state.pendingAttachment=null;
     if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify({type:'group-typing',group_id:gid,on:false}));
-    await loadGroupMessages();await refreshGroups();$('#compose-extra').innerHTML=composerExtras();
-    const input=$('#chat-text');if(input)input.value='';
+    await loadGroupMessages();await refreshGroups();
+    const extra=$('#compose-extra');if(state.tab==='groups'&&state.groupSelected===gid&&extra)extra.innerHTML=composerExtras();
   }
   if(key==='settings-profile'){
    const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),
