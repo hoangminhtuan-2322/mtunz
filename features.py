@@ -713,14 +713,15 @@ def install(core):
         reply_to:int|None=None
 
     @app.get('/api/groups/{gid}/messages')
-    async def group_history(request:Request,gid:int,before:int=0):
+    async def group_history(request:Request,gid:int,before:int=0,limit:int=70):
         u=current_user(request)
+        if not 1<=limit<=70:raise HTTPException(422,'Giới hạn lịch sử không hợp lệ.')
         with db() as c:
             active_member(c,gid,u['id'])
             sql="SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?"
             args=[gid]
             if before>0:sql+=' AND m.id<?';args.append(before)
-            messages=many(c,sql+' ORDER BY m.id DESC LIMIT 70',args)
+            messages=many(c,sql+' ORDER BY m.id DESC LIMIT ?',(*args,limit))
             result=[message_dict(c,x,'group') for x in messages[::-1]]
         return {'messages':result}
 

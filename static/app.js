@@ -1004,7 +1004,7 @@ function appendDirectMessage(message){
    const near=box.scrollHeight-box.scrollTop-box.clientHeight<145;
    const oldPosition=box.scrollTop;
    const template=document.createElement('template');
-   template.innerHTML=bubblesFor([message],false);
+   template.innerHTML=bubblesFor([message],false,state.messages);
    const row=template.content.querySelector('.bubble-wrap');
    if(currentIndex>=0){
      const existing=box.querySelector('#msg-dm-'+message.id);
@@ -1913,6 +1913,41 @@ function grantDialog(tid){
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
+  case 'reply-origin':{
+   const thread=button.closest('.thread');
+   if(!thread||!Number.isSafeInteger(id)||id<=0)break;
+   const group=thread.dataset.chatKey.startsWith('group-');
+   const scope=group?'group':'dm';
+   const original=document.getElementById(`msg-${scope}-${id}`);
+   if(original&&thread.contains(original)){
+    thread.querySelector('.reply-return')?.remove();
+    thread.querySelector('.reply-target')?.classList.remove('reply-target');
+    const back=document.createElement('button');
+    back.type='button';back.className='reply-return';back.dataset.act='reply-back';
+    back.dataset.source=button.closest('.bubble-wrap').id;back.textContent='↩ Về câu trả lời';
+    original.append(back);original.classList.add('reply-target');
+    original.scrollIntoView({block:'center'});back.focus({preventScroll:true});
+   }else{
+    const url=group?`/api/groups/${state.groupSelected}/messages`:`/api/messages/${state.selected}`;
+    const result=await api(url+'?before='+(id+1)+'&limit=1');
+    if(!button.isConnected)break;
+    const source=result.messages.find(m=>m.id===id&&!m.deleted_at);
+    if(!source){toast('Tin nhắn gốc không còn khả dụng.');break;}
+    modal({title:'Tin nhắn gốc',description:replyAuthor(source,group)+' · '+date(source.created_at),
+      content:'<div class="original-message">'+esc(source.body||source.attachment?.name||'Tệp đính kèm')+'</div>',
+      confirm:'Quay lại hội thoại',cancel:null});
+   }
+   break;
+  }
+  case 'reply-back':{
+   const thread=button.closest('.thread');
+   const source=document.getElementById(button.dataset.source);
+   button.closest('.reply-target')?.classList.remove('reply-target');button.remove();
+   if(source&&thread.contains(source)){
+    source.scrollIntoView({block:'center'});source.querySelector('.reply-link')?.focus({preventScroll:true});
+   }else toast('Câu trả lời không còn trong phần lịch sử đang mở.');
+   break;
+  }
   case 'thread-latest':{
    const thread=$('#chat-messages');
    if(thread){thread.scrollTop=thread.scrollHeight;syncThreadJump(thread);}

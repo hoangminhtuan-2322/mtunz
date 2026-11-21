@@ -10,6 +10,8 @@ const {chromium}=require('playwright-core');
    await page.goto('http://127.0.0.1:8791/');
    await page.locator('form').first().waitFor();
    const history=Array.from({length:60},(_,i)=>({id:i+1,sender_id:12,recipient_id:9,body:'Tin nhắn '+i,created_at:100+i,read_at:200}));
+   history[59].reply_to=2;
+   history[58].attachment={name:'Ảnh mẫu',mime:'image/png',url:'/static/favicon.svg'};
    await page.route('**/api/messages/12',r=>r.fulfill({json:{messages:history}}));
    await page.evaluate(()=>{
     Object.assign(state,{user:{id:9,username:'demo',display_name:'Demo'},tab:'messages',selected:null,
@@ -23,6 +25,15 @@ const {chromium}=require('playwright-core');
    await page.locator('#side-items [data-act="open-chat"]').click();
    assert.equal(await page.locator('#chat-text').inputValue(),'Soạn tiếp');
    await page.locator('#msg-dm-60').waitFor({state:'attached'});
+   await page.locator('#msg-dm-60 .reply-link').click();
+   const back=page.locator('#msg-dm-2 .reply-return');
+   await back.waitFor();await back.click();
+   assert.equal(await page.locator('#msg-dm-60 .reply-link').evaluate(el=>el===document.activeElement),true);
+   await page.locator('#msg-dm-59 [data-image-preview]').click();
+   await page.locator('.chat-photo-preview img').waitFor();
+   assert.equal(await page.locator('.photo-original').getAttribute('target'),'_blank');
+   await page.keyboard.press('Escape');
+   await page.locator('.chat-photo-preview').waitFor({state:'hidden'});
    await page.evaluate(()=>{document.querySelector('#chat-messages').scrollTop=0;});
    const jump=page.locator('[data-act="thread-latest"]');
    await jump.waitFor();

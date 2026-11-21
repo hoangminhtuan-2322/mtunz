@@ -1319,8 +1319,9 @@ class SendMessage(BaseModel):
 
 
 @app.get('/api/messages/{other_id}')
-async def message_history(request:Request,other_id:int,before:int=0):
+async def message_history(request:Request,other_id:int,before:int=0,limit:int=70):
     u=current_user(request)
+    if not 1<=limit<=70:raise HTTPException(422,'Giới hạn lịch sử không hợp lệ.')
     with db() as c:
         require_peer(c,u['id'],other_id)
         sql='''SELECT id,sender_id,recipient_id,body,created_at,read_at FROM messages WHERE
@@ -1330,7 +1331,7 @@ async def message_history(request:Request,other_id:int,before:int=0):
         params.append(now())
         if before>0:
             sql+=' AND id<?';params.append(before)
-        sql+=' ORDER BY id DESC LIMIT 70'
+        sql+=' ORDER BY id DESC LIMIT ?';params.append(limit)
         result=many(c,sql.replace('SELECT id,sender_id,recipient_id,body,created_at,read_at',
                                   'SELECT *'),params)
         result=[message_details(c,r) for r in result[::-1]]

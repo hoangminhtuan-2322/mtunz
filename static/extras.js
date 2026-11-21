@@ -62,18 +62,39 @@ function groupHeader(){
 function uploadMarkup(m){
  const a=m.attachment;if(!a)return '';
  if(String(a.mime||'').startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
- if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
+ if(safeImage(a))return `<a data-image-preview href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh trong hội thoại"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
  return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
 }
-function bubblesFor(messages,isGroup=false){
+document.addEventListener('click',event=>{
+ const link=event.target.closest('a[data-image-preview]');
+ if(!link||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+ event.preventDefault();
+ const photo=link.querySelector('img');
+ modal({title:'Ảnh trong hội thoại',description:photo.alt||'Ảnh đính kèm',
+   content:`<figure class="chat-photo-preview"><img src="${esc(link.href)}" alt="${esc(photo.alt)}"></figure>
+      <a class="photo-original" href="${esc(link.href)}" target="_blank" rel="noopener">Mở ảnh gốc ↗</a>`,
+   confirm:'Đóng',cancel:null});
+});
+function replyAuthor(message,isGroup){
+ if(!message)return 'Tin nhắn gốc';
+ if(message.sender_id===state.user.id)return 'Bạn';
+ if(isGroup)return message.username||'Thành viên';
+ const peer=state.friends.find(f=>f.other_id===message.sender_id);
+ return peer?.display_name||peer?.username||'Thành viên';
+}
+function bubblesFor(messages,isGroup=false,context=messages){
  if(!messages.length)return '<div class="spacer"></div><div class="empty">Chưa có tin nhắn. Hãy bắt đầu trò chuyện! ✨</div>';
  let html='<div class="spacer"></div>',prevDay='';
  const scope=isGroup?'group':'dm';
+ const byId=new Map(context.map(m=>[m.id,m]));
+ const current=new Date(),today=current.toLocaleDateString('vi-VN');
+ current.setDate(current.getDate()-1);
+ const yesterday=current.toLocaleDateString('vi-VN');
  for(const m of messages){
   const day=new Date(m.created_at*1000).toLocaleDateString('vi-VN');
-  if(prevDay!==day){html+=`<div class="day-label">${esc(day)}</div>`;prevDay=day;}
+  if(prevDay!==day){html+=`<div class="day-label" title="${esc(day)}">${day===today?'Hôm nay':day===yesterday?'Hôm qua':esc(day)}</div>`;prevDay=day;}
   const mine=m.sender_id===state.user.id;
-  const reference=messages.find(x=>x.id===m.reply_to);
+  const reference=byId.get(m.reply_to);
   const reacted=[...new Set((m.reactions||[]).map(r=>r.emoji))];
   const actions=(!m.deleted_at&&m.id>0)?`<div class="bubble-actions">
    <button type="button" data-act="message-reply" data-id="${m.id}" data-scope="${scope}" title="Trả lời">${icon('reply',13)}</button>
@@ -85,7 +106,9 @@ function bubblesFor(messages,isGroup=false){
   html+=`<div class="bubble-wrap ${mine?'mine':''}" id="msg-${scope}-${m.id}">
     ${isGroup&&!mine?`<div class="group-sender">${esc(m.username||'Thành viên')}</div>`:''}
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
-    ${m.reply_to?`<div class="reply-inline">↳ ${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||(reference.attachment?'Tệp đính kèm':'Tin nhắn'),80)):'Đã trả lời tin nhắn'}</div>`:''}
+    ${m.reply_to&&!m.deleted_at?`<button type="button" class="reply-inline reply-link" data-act="reply-origin" data-id="${Number(m.reply_to)}" title="Xem tin nhắn gốc">
+      <span class="reply-author">${icon('reply',13)} ${esc(replyAuthor(reference,isGroup))}</span>
+      <span class="reply-excerpt">${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||'Tệp đính kèm',90)):'Mở tin nhắn gốc'} </span></button>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
      ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${new Date(Number(m.expires_at)*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`:''}
@@ -99,7 +122,7 @@ function bubblesFor(messages,isGroup=false){
 function composerExtras(){
  const a=state.pendingAttachment,m=state.replyTo;
  return `<div class="compose-extra" id="compose-extra">
- ${m?`<div class="compose-reply">↳ Đang trả lời: ${esc(short(m.body||'Tệp đính kèm',80))}<button class="icon-only" data-act="cancel-reply">${icon('x',13)}</button></div>`:''}
+ ${m?`<div class="compose-reply">↳ Đang trả lời: ${esc(short(m.body||'Tệp đính kèm',80))}<button class="icon-only" data-act="cancel-reply" aria-label="Hủy trả lời">${icon('x',13)}</button></div>`:''}
  ${a?`<div class="compose-file">${icon('paperclip',15)} ${esc(short(a.name,45))} (${fmtSize(a.size)})<button class="icon-only" data-act="cancel-file">${icon('x',13)}</button></div>`:''}
  ${state.uploading?'<div class="compose-file">Đang tải tệp lên…</div>':''}
  ${typeof v4VoiceComposer==='function'?v4VoiceComposer():''}</div>`;

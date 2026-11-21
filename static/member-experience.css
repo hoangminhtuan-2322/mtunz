@@ -400,3 +400,24 @@
 .shell .side-item .draft-label{color:#d2b3ff;font-weight:650;margin-right:3px}
 .shell .side-top .inbox-filters button{white-space:nowrap}
 @media(min-width:801px) and (max-width:940px){.shell .side-top .inbox-filters button{font-size:11px}}
+
+.shell .bubble .reply-link{
+ display:grid;gap:4px;width:100%;min-width:0;max-width:100%;margin:0 0 8px;
+ padding:8px 11px;border:0;border-inline-start:3px solid #aba1fa;border-radius:4px 11px 11px 4px;
+ background:#101b3099;text-align:start;color:inherit;font:inherit;white-space:normal;
+}
+.reply-author{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#dfd8ff}
+.reply-excerpt{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.shell .bubble-wrap.reply-target>.bubble{outline:2px solid #afa4fb;outline-offset:2px}
+.reply-return{align-self:flex-start;background:#282e4c;color:#efeaff;border:1px solid #726e9f;border-radius:14px;padding:6px 12px;font:inherit;font-size:12px}
+.reply-link:focus-visible,.reply-return:focus-visible{outline:2px solid #cfcbff;outline-offset:2px}
+.original-message{white-space:pre-wrap;overflow-wrap:anywhere;max-height:45vh;overflow:auto;font-size:15px;line-height:1.65}
+@media(pointer:coarse){.reply-link,.reply-return{min-height:44px}}
+@media(prefers-reduced-motion:no-preference){
+ .reply-target>.bubble{animation:reply-arrive .32s ease-out}
+ @keyframes reply-arrive{from{box-shadow:0 0 0 6px #afa4fb55}to{box-shadow:0 0 0 0 transparent}}
+}
+.premium-dialog:has(.chat-photo-preview){width:min(760px,100%)}
+.chat-photo-preview{display:grid;place-items:center;margin:0;background:#0c1321;border-radius:12px;overflow:hidden}
+.chat-photo-preview img{display:block;max-width:100%;max-height:52vh;object-fit:contain}
+.photo-original{display:inline-block;margin-top:10px;color:#d3cbff}
