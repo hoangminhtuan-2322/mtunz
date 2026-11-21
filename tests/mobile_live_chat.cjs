@@ -51,7 +51,10 @@ const {chromium}=require('playwright-core');
    assert.equal(await text.inputValue(),'');
    assert(await text.evaluate(el=>document.activeElement===el));
    await text.fill('Bản nháp mới');
-   await page.locator('#chat-messages').evaluate(el=>el.scrollTo({top:120,behavior:'instant'}));
+   await page.locator('#chat-messages').evaluate(el=>{
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
+    el.scrollTo({top:120,behavior:'instant'});
+   });
    await page.getByRole('button',{name:'Về tin nhắn mới nhất'}).waitFor();
    finish();
    await page.locator('#msg-dm-42').waitFor({state:'attached'});

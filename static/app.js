@@ -1093,8 +1093,8 @@ function followChatEnd(box){
  if(!box)return;
  box.dataset.followChatEnd='true';
  const height=box.scrollHeight,viewport=box.clientHeight;
- chatEndGeometry.set(box,{height,viewport});
  const end=Math.max(0,height-viewport);
+ chatEndGeometry.set(box,{height,viewport,end});
  if(Math.abs(box.scrollTop-end)>1)box.scrollTo({top:end,behavior:'instant'});
  updateLatestButton(box);
  queueChatRead(box);
@@ -1133,9 +1133,12 @@ document.addEventListener('scroll',event=>{
  const box=event.target;
  if(box.id!=='chat-messages'||box.dataset.positioningChat)return;
  const previous=chatEndGeometry.get(box);
- // A scroll event queued before a resize or media load must not turn off tail following.
- if(box.dataset.followChatEnd==='true'&&previous&&
-    (previous.height!==box.scrollHeight||previous.viewport!==box.clientHeight)){
+ // A queued scroll event at the old bottom can arrive after a layout change.
+ // If the position itself moved away from that bottom, leave the reader there.
+ const height=box.scrollHeight,viewport=box.clientHeight;
+ const oldBottom=previous&&Math.min(previous.end,Math.max(0,height-viewport));
+ if(box.dataset.followChatEnd==='true'&&previous&&Math.abs(box.scrollTop-oldBottom)<=2&&
+    (previous.height!==height||previous.viewport!==viewport)){
   followChatEnd(box);
   return;
  }
