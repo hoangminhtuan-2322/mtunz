@@ -356,3 +356,9 @@
  .shell:not(.admin-shell) .bubble-wrap.mine > .bubble-more{left:auto;right:100%}
  .shell:not(.admin-shell) .bubble-more:is(:hover,:focus-visible){background:#243450}
 }
+@media(max-width:800px){
+ .shell:not(.admin-shell) .conversation .main-head .chat-header-menu .btn{
+   width:100%;height:auto;min-height:44px;white-space:normal
+ }
+ .shell:not(.admin-shell) .chat-header-menu .button-word{display:inline}
+}
