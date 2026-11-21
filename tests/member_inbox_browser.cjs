@@ -173,6 +173,19 @@ const {chromium}=require('playwright-core');
    await page.getByText('Thông báo đang tạm gián đoạn',{exact:true}).waitFor();
    assert.equal(await page.evaluate(()=>state.tab),'groups');
    assert.equal(await field.inputValue(),'Bản nháp đang soạn');
+   await page.evaluate(()=>state.ws.onmessage({data:JSON.stringify({type:'maintenance-mode'})}));
+   await page.getByRole('heading',{name:'Hệ thống đang bảo trì'}).waitFor();
+   assert(await page.locator('.conversation').isVisible(),'Member remains on the notice until acknowledgement');
+   await page.getByRole('button',{name:'Đã hiểu'}).click();
+   await page.locator('[data-form="login-username"]').waitFor();
+   assert.equal(await page.locator('.conversation').count(),0);
+   await page.route('**/api/auth/start',r=>r.fulfill({status:503,json:{
+    detail:{code:'maintenance',message:'Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'}
+   }}));
+   await page.locator('#username').fill('demo_member');
+   await page.locator('[data-form="login-username"] button[type="submit"]').click();
+   await page.getByRole('heading',{name:'Hệ thống đang bảo trì'}).waitFor();
+   assert.equal(await page.locator('[data-form="login-password"]').count(),0);
    await page.close();
   }
  }finally{await browser.close();}

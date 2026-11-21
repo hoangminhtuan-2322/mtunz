@@ -55,4 +55,5 @@ jobs:
             tests/test_complete_features.py::test_single_notice_read_is_private_and_unread_filter_runs_before_limit \
             tests/test_complete_features.py::test_group_membership_edit_reactions_and_moderation \
             tests/test_v6_features.py::test_studio_preferences_and_admin_intake_controls \
-            tests/test_first_login_phone.py::test_phone_uniqueness_and_existing_login_compatibility
+            tests/test_first_login_phone.py::test_phone_uniqueness_and_existing_login_compatibility \
+            tests/test_admin_security_v5.py::test_member_maintenance_revokes_sessions_and_blocks_login_until_reopened

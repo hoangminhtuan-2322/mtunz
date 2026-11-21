@@ -129,9 +129,11 @@ async function api(url,{method='GET',data}={}){
   }catch(e){throw Error('Không kết nối được máy chủ. Vui lòng thử lại.');}
   if(!response.ok){
     const detail=payload?.detail;
-    if(detail&&typeof detail==='object'&&detail.code==='sanction')showSanction(detail);
-    const error=new Error(typeof detail==='string'?detail:detail?.reason||'Yêu cầu không thành công.');
+    if(detail?.code==='sanction')showSanction(detail);
+    if(detail?.code==='maintenance')showMaintenance(detail.message);
+    const error=new Error(typeof detail==='string'?detail:detail?.message||detail?.reason||'Yêu cầu không thành công.');
     error.status=response.status;
+    error.maintenance=detail?.code==='maintenance';
     throw error;
   }
   return payload;
@@ -255,6 +257,20 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
   panel.focus({preventScroll:true});
 }
 function ask(title,description,handler,confirm='Xác nhận',danger=false){modal({title,description,handler,confirm,danger});}
+function showMaintenance(message='Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'){
+ if(state.user?.is_admin||$('#maintenance-notice'))return;
+ const endingSession=Boolean(state.user||readActiveTab());
+ modal({title:'Hệ thống đang bảo trì',description:message,confirm:'Đã hiểu',closable:false,
+  content:'<span id="maintenance-notice" hidden></span>',
+  handler:async()=>{
+   if(endingSession){
+    await post('/api/auth/logout').catch(()=>{});
+    resetAuthAfterLogout();
+   }else if(state.mode==='login'&&state.step!=='username'){
+    state.step='username';state.challenge='';renderAuth();
+   }
+  }});
+}
 function showSanction(d){
   if($('#modal-root .sanction-only'))return;
   $('#modal-root').innerHTML=`<div class="modal-backdrop sanction-only"><div class="modal" role="alertdialog" aria-modal="true">
@@ -314,6 +330,7 @@ async function setup(){
   renderAuth();
   connectSocket();
  }catch(e){
+  if(e.maintenance){clearActiveTab();state.user=null;renderAuth();return;}
   if(previous&&readActiveTab()){
    // A temporary network failure must never look like a forced logout.
    renderReconnect();
@@ -330,6 +347,7 @@ function connectSocket(){
  socket.onmessage=async ev=>{
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='maintenance-mode'){showMaintenance();return;}
    if(t==='account-sanction'){showSanction(data);return;}
    if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
      await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
@@ -1530,6 +1548,7 @@ function adminSecurity(){
  </div>`;
 }
 const auditNames={
+ maintenance_mode:'Thay đổi chế độ bảo trì',
  maintenance_member_reset:'Bảo trì: đặt lại dữ liệu thành viên',
  registration_approved:'Phê duyệt đăng ký',registration_denied:'Từ chối đăng ký',
  permanent_user_delete:'Xóa tài khoản vĩnh viễn',sanction_ban:'Cấm tài khoản',
@@ -2388,6 +2407,7 @@ document.addEventListener('submit',async event=>{
    }
   }
  }catch(e){
+  if(e.maintenance)return;
   const authField={'login-username':'username','login-password':'password',
     'login-pin':'pin','login-remembered':'pin'}[key];
   if(!authField||!showAuthFieldError(form,authField,authFailureText(key,e)))

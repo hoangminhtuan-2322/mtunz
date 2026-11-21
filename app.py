@@ -564,12 +564,28 @@ async def public_privacy():
     return FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
 
 
+def maintenance_enabled(c, lock=False):
+    query = "SELECT value FROM settings WHERE key='maintenance_mode'"
+    if lock and POSTGRES_MODE:
+        query += ' FOR UPDATE'
+    row = one(c, query)
+    return bool(row and row['value'] == '1')
+
+
+def require_member_service(c, lock=False):
+    if maintenance_enabled(c, lock):
+        raise HTTPException(503, {'code':'maintenance',
+                                  'message':'Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'})
+
+
 def current_user(request: Request, require=True):
     t = request.cookies.get('s')
     with db() as c:
         row = one(c, '''SELECT u.*,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id
                        WHERE s.token_hash=?''', (digest(t),)) if t else None
         if not row or row['expires_at'] <= now():
+            if t:
+                require_member_service(c)
             if require:
                 raise HTTPException(401, 'Phiên đăng nhập đã hết hạn.')
             return None
@@ -636,6 +652,8 @@ def issue_session(c, uid, request):
     info = device_metadata(request)
     created = now()
     is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(uid,))['is_admin'])
+    if not is_admin and POSTGRES_MODE:
+        require_member_service(c, lock=True)
     expires = created + (2 * 3600 if is_admin else 7 * 86400)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
                  device_name,device_type,browser,os_name,location_hint,network_hint)
@@ -643,6 +661,8 @@ def issue_session(c, uid, request):
               (digest(raw), uid, expires, created, created,
                info['device_name'], info['device_type'], info['browser'], info['os_name'],
                info['location_hint'], info['network_hint']))
+    if not is_admin and not POSTGRES_MODE:
+        require_member_service(c)
     return raw
 
 
@@ -736,6 +756,7 @@ async def registration_request(request: Request, body: RegistrationRequest):
     email = normalize_email(body.email)
     throttle(request, 'signup', 6, 3600)
     with db() as c:
+        require_member_service(c)
         if not v6_feature_on(c,'registration_intake'):
             raise HTTPException(423,'Admin đã tạm dừng tiếp nhận yêu cầu đăng ký.')
         if one(c,'SELECT id FROM users WHERE phone=?',(phone,)):
@@ -781,6 +802,7 @@ async def register_complete(request: Request, body: RegisterComplete):
     ensure_password(body.password)
     ensure_pin(body.pin,body.pin_length)
     with db() as c:
+        require_member_service(c)
         r = one(c, 'SELECT * FROM registrations WHERE username=? AND guest_id=?', (name,request.state.gid))
         if not r or r['status'] != 'approved':
             raise HTTPException(403,'Yêu cầu của bạn chưa được admin chấp thuận.')
@@ -816,6 +838,8 @@ async def auth_start(request: Request, body: UsernameIn):
     throttle(request, 'auth-start', 60, 900)
     with db() as c:
         u = login_user(c, name, 'id,is_admin')
+        if not u or not u['is_admin']:
+            require_member_service(c)
     if not u:
         raise HTTPException(404,'Không tìm thấy tài khoản hoặc số điện thoại chưa liên kết duy nhất.')
     return {'username':name,'is_admin':bool(u['is_admin']),'next':'password'}
@@ -832,6 +856,8 @@ async def auth_password(request: Request, body: PasswordLogin):
     throttle(request, 'password-login', 15, 900, name)
     with db() as c:
         u = login_user(c, name)
+        if not u or not u['is_admin']:
+            require_member_service(c)
         if not u or not verify_secret(u['password_hash'],body.password):
             raise HTTPException(401,'Tên tài khoản hoặc mật khẩu không đúng.')
         if u['sanction_kind'] and (not u['sanction_until'] or u['sanction_until'] > now()):
@@ -868,11 +894,13 @@ class PinLogin(BaseModel):
 async def auth_pin(request: Request, body: PinLogin):
     throttle(request, 'pin-login', 12, 900, request.state.gid)
     with db() as c:
-        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until
+        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until,u.is_admin
                      FROM login_challenges l JOIN users u ON u.id=l.user_id WHERE l.token_hash=?''',
                 (digest(body.challenge),))
         if not r or r['guest_id'] != request.state.gid or r['expires_at'] <= now():
             raise HTTPException(401,'Phiên xác minh PIN hết hạn, vui lòng đăng nhập lại.')
+        if not r['is_admin']:
+            require_member_service(c)
         pin_valid = (len(body.pin) == r['pin_length'] and body.pin.isascii()
                      and body.pin.isdigit() and verify_secret(r['pin_hash'],body.pin))
         if not pin_valid:
@@ -983,6 +1011,7 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
     raw = None
     is_admin = False
     with db() as c:
+        require_member_service(c)
         r = one(c, '''SELECT d.*,u.pin_hash,u.pin_length,u.is_admin,u.sanction_kind,u.sanction_until
                       FROM trusted_devices d JOIN users u ON u.id=d.user_id
                       WHERE d.token_hash=?''',(digest(saved),))
@@ -1915,7 +1944,7 @@ async def admin_broadcast(request:Request,body:Broadcast):
 # Security events are intentionally append-only. A privileged administrator can
 # inspect/export them, but cannot alter or erase evidence through the web API.
 AUDIT_HIGH_RISK = {
-    'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
+    'maintenance_mode', 'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
     'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin',
     'sanction_ban', 'sanction_lock', 'admin_password_change',
 }
@@ -2097,6 +2126,9 @@ async def websocket_events(ws:WebSocket):
                   (digest(sid),now()))
             if r and (not r['sanction_kind'] or (r['sanction_until'] and r['sanction_until']<=now())):
                 uid=r['id']
+            paused=uid is None and maintenance_enabled(c)
+        if paused:
+            await hub.send([ws], {'type':'maintenance-mode'})
     if uid is not None:
         was_online=bool(hub.users.get(uid))
         hub.users[uid].add(ws)
