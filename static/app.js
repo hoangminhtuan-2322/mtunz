@@ -1386,15 +1386,16 @@ function adminRegistrations(){const rows=state.adminData||[];
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
 /* Admin join timestamps must be unambiguous and independent of browser timezone.
    Only this column uses the complete date; compact dates elsewhere stay unchanged. */
+const adminJoinedFormatter=new Intl.DateTimeFormat('en-GB',{
+ timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric',
+ hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+});
 function adminJoinedAt(timestamp){
  const seconds=Number(timestamp);
  if(!Number.isFinite(seconds)||seconds<=0)return '<span class="hint">Chưa có dữ liệu</span>';
  const instant=new Date(seconds*1000);
  if(!Number.isFinite(instant.getTime()))return '<span class="hint">Chưa có dữ liệu</span>';
- const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
-  timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',year:'numeric',
-  hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
- }).formatToParts(instant).map(({type,value})=>[type,value]));
+ const parts=Object.fromEntries(adminJoinedFormatter.formatToParts(instant).map(({type,value})=>[type,value]));
  const fullDate=parts.day+'/'+parts.month+'/'+parts.year;
  const fullTime=parts.hour+':'+parts.minute+':'+parts.second;
  return '<time class="admin-member-joined" datetime="'+instant.toISOString()+
