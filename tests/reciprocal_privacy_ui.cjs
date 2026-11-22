@@ -61,7 +61,7 @@ for(const visible of [false,true]){
  context.v4PaintStatuses();
  assert.equal(badge.textContent,visible?'✓✓ Đã xem':'✓ Đã gửi');
 }
-assert(html.includes('/static/app.js?v=20.4'));
+assert(html.includes('/static/app.js?v=20.5'));
 assert(html.includes('/static/extras.js?v=18.1'));
 assert(html.includes('/static/messenger-v4.js?v=1.1'));
 console.log('Reciprocal presence and receipts UI contract verified');
