@@ -1281,22 +1281,43 @@ document.addEventListener('load',event=>{
  const box=event.target.closest?.('#chat-messages');
  if(box?.dataset.followChatEnd==='true')followChatEnd(box);
 },true);
+function captureThreadPosition(box,follow=followingChatEnd(box)){
+ if(follow)return {follow:true};
+ const top=box.scrollTop,bounds=box.getBoundingClientRect();
+ const rows=box.querySelectorAll('.bubble-wrap');
+ let low=0,high=rows.length;
+ while(low<high){
+  const middle=(low+high)>>1;
+  if(rows[middle].getBoundingClientRect().bottom<=bounds.top)low=middle+1;
+  else high=middle;
+ }
+ const anchor=rows[low];
+ return {top,id:anchor?.id,offset:anchor?.getBoundingClientRect().top-bounds.top};
+}
+function captureMutationPosition(box){
+ return captureThreadPosition(box,box.scrollHeight-box.clientHeight-box.scrollTop<=2);
+}
+function restoreThreadPosition(box,position){
+ if(position.follow){followChatEnd(box);return;}
+ const anchor=position.id&&document.getElementById(position.id);
+ const top=anchor&&box.contains(anchor)?
+  box.scrollTop+anchor.getBoundingClientRect().top-box.getBoundingClientRect().top-position.offset:position.top;
+ box.scrollTo({top,behavior:'instant'});
+ updateLatestButton(box);
+}
 function paintChatThread(box,markup,scroll){
- const follow=followingChatEnd(box);
- const top=box.scrollTop;
+ const position=scroll?null:captureThreadPosition(box);
  box.innerHTML=markup;
  if(box.dataset.historyDone)box.querySelector('.chat-older')?.remove();
  if(scroll)settleChatEnd(box);
- else if(follow)followChatEnd(box);
- else{box.scrollTo({top,behavior:'instant'});updateLatestButton(box);}
+ else restoreThreadPosition(box,position);
 }
 function renderMessageThread(scroll=false){
  const box=$('#chat-messages');
  if(box)paintChatThread(box,renderBubbles(),scroll);
 }
 function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw){
- const near=followingChatEnd(box);
- const position=box.scrollTop;
+ const position=captureThreadPosition(box);
  const template=document.createElement('template');
  template.innerHTML=bubblesFor([message],scope==='group',messages);
  const row=template.content.querySelector('.bubble-wrap');
@@ -1312,8 +1333,7 @@ function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw){
    }
    box.append(row);
  }
- if(near)followChatEnd(box);
- else{box.scrollTo({top:position,behavior:'instant'});updateLatestButton(box);}
+ restoreThreadPosition(box,position);
 }
 function appendDirectMessage(message,reveal=false){
  if(!message||!state.selected||state.tab!=='messages')return;
@@ -1360,7 +1380,8 @@ async function loadMessages(scroll=true){
   for(const message of r.messages){
    const realtime=known.get(message.id);
    const prior=existing.get(message.id);
-   if(realtime&&prior?.message!==realtime)continue;
+   if(realtime&&!prior)continue;
+   if(realtime&&prior)mergeThreadUpdate(message,realtime,prior.message);
    if(realtime&&prior&&(realtime.read_at||0)>(prior.read||0))message.read_at=Math.max(message.read_at||0,realtime.read_at);
    if(realtime&&prior&&(realtime.delivered_at||0)>(prior.delivered||0))
     message.delivered_at=Math.max(message.delivered_at||0,realtime.delivered_at);
@@ -1539,7 +1560,7 @@ function renderApp(){
  const previousKey=oldThread?.dataset.chatKey;
  const opening=oldThread?.dataset.openingChat==='true';
  const ready=oldThread?.dataset.historyReady==='true';
- const reading=oldThread&&!followingChatEnd(oldThread)?oldThread.scrollTop:null;
+ const position=oldThread?captureThreadPosition(oldThread):null;
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
@@ -1568,10 +1589,9 @@ function renderApp(){
    thread.dataset.historyDone='true';
    thread.querySelector('.chat-older')?.remove();
   }
-  if(same&&!opening&&reading!==null){
+  if(same&&!opening&&!position.follow){
    pauseChatFollow(thread);
-   thread.scrollTo({top:reading,behavior:'instant'});
-   updateLatestButton(thread);
+   restoreThreadPosition(thread,position);
   }else followChatEnd(thread);
  }
  if(state.tab==='support'&&state.supportTicket){const el=$('#support-list');if(el)el.scrollTop=el.scrollHeight;}
@@ -1740,7 +1760,7 @@ function adminUsers(){
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.display_name||u.username)}</b><div class="hint">@${esc(u.username)} · ID #${u.id}${u.public_id?' · Công khai #'+u.public_id:''}</div>
  <div class="hint">${esc(u.phone||'')}${u.phone&&u.email?' · ':''}${esc(u.email||'')}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td><button type="button" class="btn ghost sm" data-act="admin-user-friends" data-id="${u.id}" aria-label="Xem bạn bè của ${esc(u.display_name||u.username)}">${u.friend_count} bạn bè</button></td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
@@ -1836,7 +1856,7 @@ const auditNames={
  registration_approved:'Phê duyệt đăng ký',registration_denied:'Từ chối đăng ký',
  permanent_user_delete:'Xóa tài khoản vĩnh viễn',sanction_ban:'Cấm tài khoản',
  sanction_lock:'Khóa tài khoản',sanction_unban:'Gỡ hạn chế',
- moderation_messages:'Kiểm tra tin nhắn',moderation_group:'Kiểm duyệt nhóm',
+ admin_view_user_friends:'Xem danh sách bạn bè',moderation_messages:'Kiểm tra tin nhắn',moderation_group:'Kiểm duyệt nhóm',
  moderation_attachment:'Kiểm duyệt tệp đính kèm',
  enable_admin_pin:'Bật PIN quản trị',capacity:'Thay đổi giới hạn tài khoản',
  ticket_status:'Thay đổi trạng thái hỗ trợ',support_mark_spam:'Đánh dấu yêu cầu spam',
@@ -1855,6 +1875,7 @@ const auditDescriptions={
  sanction_ban:'Quản trị viên đã áp dụng lệnh cấm tài khoản.',
  sanction_lock:'Quản trị viên đã áp dụng lệnh khóa tài khoản.',
  sanction_unban:'Quản trị viên đã gỡ hạn chế tài khoản.',
+ admin_view_user_friends:'Quản trị viên đã truy cập danh sách kết nối của thành viên.',
  moderation_messages:'Quản trị viên đã truy cập lịch sử tin nhắn để kiểm duyệt.',
  moderation_group:'Quản trị viên đã thực hiện thao tác kiểm duyệt nhóm.',
  moderation_attachment:'Đã ghi nhận thao tác kiểm duyệt tệp đính kèm.',
@@ -2258,14 +2279,83 @@ function registrationDetails(rid){
     <p class="hint">Dữ liệu liên hệ do người đăng ký khai báo, chưa được xác minh độc lập.</p>
    </div>`});
 }
-async function userMessageLog(uid){
- const resp=await api(`/api/admin/users/${uid}/messages`);
- const u=(state.adminData||[]).find(x=>x.id===uid);
- modal({title:`Lịch sử chat · ${u?.username||'#'+uid}`,description:'100 tin nhắn gần nhất liên quan đến người dùng. Truy cập này đã được ghi nhật ký quản trị.',confirm:'Đóng',closable:false,
- content:`<div style="max-height:380px;overflow:auto;display:flex;flex-direction:column;gap:10px;margin:18px 0">${resp.messages.length?resp.messages.map(m=>`<div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:#121b2d">
-  <div class="small muted">${esc(m.sender)} → ${esc(m.recipient)} · ${date(m.created_at)}</div>
-  <div style="white-space:pre-wrap;overflow-wrap:anywhere;margin-top:7px;font-size:13px">${esc(m.deleted_at?'[Tin nhắn đã thu hồi]':m.body)}</div>
-  ${m.attachment_id&&!m.deleted_at?`<a href="/api/attachments/${m.attachment_id}" target="_blank" rel="noopener" style="font-size:12px">${icon('file',14)} ${esc(m.attachment_name||'Tệp đính kèm')}</a>`:''}</div>`).join(''):'<p>Chưa có tin nhắn.</p>'}</div>`});
+function adminInspectionDialog({title,description,summary='',data,list,renderNext}){
+ modal({title,description,confirm:'Đóng',cancel:null,content:`${summary}
+ <div id="admin-inspection-items" class="admin-inspection-list" tabindex="0" role="region" aria-label="${esc(title)}">
+  ${data.length?data.map(list).join(''):'<div class="empty">Chưa có dữ liệu.</div>'}
+ </div>
+ ${renderNext?'<button id="admin-inspection-more" type="button" class="btn ghost sm">Xem thêm</button>':''}`});
+ const items=$('#admin-inspection-items'),more=$('#admin-inspection-more');
+ more?.addEventListener('click',async()=>{
+  more.disabled=true;
+  try{
+   const next=await renderNext();
+   if(!items.isConnected)return;
+   const top=items.scrollTop;
+   items.insertAdjacentHTML('beforeend',next.data.map(list).join(''));
+   items.scrollTop=top;
+   if(!next.hasMore){
+    items.focus({preventScroll:true});
+    more.remove();
+   }
+  }catch(error){if(items.isConnected)toast(error.message,'error');}
+  finally{more.disabled=false;}
+ });
+}
+async function adminUserFriends(uid,trigger){
+ const path=`/api/admin/users/${uid}/friends`;
+ const result=await api(path);
+ if(!trigger.isConnected||!state.user?.is_admin)return;
+ const {user,counts}=result;
+ let offset=result.next_offset;
+ adminInspectionDialog({
+  title:`Bạn bè · ${user.display_name||user.username}`,
+  description:'Danh sách kết nối và lời mời kết bạn của tài khoản.',
+  summary:`<p class="muted">${counts.accepted} bạn bè · ${counts.total-counts.accepted} lời mời đang chờ</p>`,
+  data:result.friends,
+  list:friend=>`<article class="admin-inspection-item"><div class="grow">
+   <strong>${esc(friend.display_name||friend.username)}</strong>
+   <div class="hint">@${esc(friend.username)} · ID #${friend.public_id||friend.id}</div>
+   <div class="small">${friend.state==='accepted'?'Đã kết bạn':friend.requested_by===uid?'Lời mời đã gửi':'Lời mời đã nhận'}</div>
+   <div class="hint">Ngày gửi lời mời ${deadlineDate(friend.created_at)}</div>
+   <div class="hint">Hoạt động gần nhất ${friend.last_seen?deadlineDate(friend.last_seen):'Chưa có dữ liệu'}</div></div>
+   <button type="button" class="btn ghost sm" data-act="admin-view-messages" data-id="${uid}" data-peer="${friend.id}">Xem chat</button>
+  </article>`,
+  renderNext:offset!==null?async()=>{
+   const page=await api(path+'?offset='+offset);
+   offset=page.next_offset;
+   return {data:page.friends,hasMore:offset!==null};
+  }:null
+ });
+}
+async function userMessageLog(uid,peer,trigger){
+ const path=`/api/admin/users/${uid}/messages`;
+ const query=new URLSearchParams({limit:50});
+ if(peer)query.set('peer_id',peer);
+ const read=()=>api(path+'?'+query);
+ const result=await read();
+ if(!trigger.isConnected||!state.user?.is_admin)return;
+ const {user}=result;
+ let before=result.next_before;
+ adminInspectionDialog({
+  title:result.peer?`Chat · ${user.display_name||user.username} ↔ ${result.peer.display_name||result.peer.username}`:`Lịch sử chat · ${user.display_name||user.username}`,
+  description:'Chế độ kiểm duyệt chỉ đọc. Lượt truy cập được ghi vào nhật ký quản trị.',
+  summary:`<div class="row"><button type="button" class="btn ghost sm" data-act="admin-user-friends" data-id="${uid}">Xem bạn bè</button>
+  ${peer?`<button type="button" class="btn ghost sm" data-act="admin-view-messages" data-id="${uid}">Tất cả chat riêng</button>`:''}</div>`,
+  data:result.messages,
+  list:m=>`<article class="admin-inspection-item"><div class="grow">
+   <div class="small muted">${esc(m.sender)} → ${esc(m.recipient)} · ${date(m.created_at)}</div>
+   <div class="admin-inspection-message">${esc(m.body)}</div>
+   ${m.attachment_id?`<a href="/api/attachments/${m.attachment_id}" target="_blank" rel="noopener">${icon('file',14)} ${esc(m.attachment_name||'Tệp đính kèm')}</a>`:''}
+   ${peer?'':`<button type="button" class="btn ghost sm" data-act="admin-view-messages" data-id="${uid}" data-peer="${m.sender_id===uid?m.recipient_id:m.sender_id}">Xem cuộc trò chuyện</button>`}
+  </div></article>`,
+  renderNext:before!==null?async()=>{
+   query.set('before',before);
+   const page=await read();
+   before=page.next_before;
+   return {data:page.messages,hasMore:before!==null};
+  }:null
+ });
 }
 function grantDialog(tid){
  modal({title:'Cấp mã khôi phục',description:'Xác minh danh tính người yêu cầu bằng kênh độc lập trước khi cấp quyền đặt lại. Mã chỉ hiệu lực 15 phút và được gửi qua cuộc trò chuyện hỗ trợ.',
@@ -2392,7 +2482,8 @@ async function clickAction(button){
    showPermanentDeleteDialog(candidate);break;
   }
   case 'admin-user-detail':await userDetails(id);break;
-  case 'admin-view-messages':await userMessageLog(id);break;
+  case 'admin-user-friends':await adminUserFriends(id,button);break;
+  case 'admin-view-messages':await userMessageLog(id,Number(button.dataset.peer),button);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
   case 'admin-show-spam':state.adminShowSpam=!state.adminShowSpam;renderAdmin();break;
   case 'admin-open-ticket':{
@@ -2439,7 +2530,7 @@ document.addEventListener('click',async event=>{
  const btn=event.target.closest('[data-act]');if(!btn||btn.disabled)return;
  // Only potentially slow navigation/actions show a spinner. No continuous animations.
  const busy=btn.tagName==='BUTTON'&&['app-tab','admin-tab','admin-refresh',
-   'admin-user-detail','admin-view-messages','refresh-registration','admin-decision'].includes(btn.dataset.act);
+   'admin-user-detail','admin-user-friends','admin-view-messages','refresh-registration','admin-decision'].includes(btn.dataset.act);
  if(busy){btn.disabled=true;btn.classList.add('is-loading');btn.setAttribute('aria-busy','true');}
  try{await clickAction(btn);}catch(e){toast(e.message,'error');}
  finally{if(busy&&btn.isConnected){btn.disabled=false;btn.classList.remove('is-loading');btn.removeAttribute('aria-busy');}}

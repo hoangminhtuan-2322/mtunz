@@ -109,6 +109,49 @@ def test_full_user_friend_chat_admin_and_recovery():
     assert admin.post(f'/api/admin/users/{u["id"]}/sanction',json={'kind':'unban', 'admin_pin':'2345'}).status_code==200
 
 
+def test_admin_can_inspect_friends_and_one_private_thread_without_read_receipts():
+    admin=logged_admin()
+    alice=register_user(admin,'inspect_alice')
+    bob=register_user(admin,'inspect_bob')
+    carol=register_user(admin,'inspect_carol')
+    aid,bid,cid=(c.get('/api/me').json()['user']['id'] for c in (alice,bob,carol))
+    assert alice.post(f'/api/friends/request/{bid}').status_code==200
+    assert bob.post(f'/api/friends/accept/{aid}').status_code==200
+    assert carol.post(f'/api/friends/request/{aid}').status_code==200
+    base=f'/api/admin/users/{aid}'
+    assert bob.get(base+'/friends').status_code==403
+    assert bob.get(base+'/messages',params={'peer_id':bid}).status_code==403
+    friends=admin.get(base+'/friends',params={'limit':1}).json()
+    assert friends['counts']=={'total':2,'accepted':1}
+    assert friends['friends'][0]['id']==bid
+    pending=admin.get(base+'/friends',params={'offset':friends['next_offset']}).json()
+    assert pending['friends'][0]['requested_by']==cid
+    assert pending['friends'][0]['state']=='pending'
+
+    sent=alice.post('/api/messages',json={'recipient_id':bid,'body':'Kiểm tra tin nhắn thứ nhất'}).json()['message']
+    assert bob.post('/api/messages',json={'recipient_id':aid,'body':'Kiểm tra tin nhắn thứ hai'}).status_code==200
+    # A different conversation must stay out of the selected thread.
+    with db() as c:
+        c.execute("INSERT INTO messages(sender_id,recipient_id,body,created_at) VALUES(?,?,?,?)",
+                  (cid,aid,'Cuộc trò chuyện khác',sent['created_at']))
+    sid=sent['id']
+    params={'peer_id':bid,'limit':1}
+    response=admin.get(base+'/messages',params=params)
+    assert response.headers['cache-control']=='no-store'
+    recent=response.json()
+    assert [m['body'] for m in recent['messages']]==['Kiểm tra tin nhắn thứ hai']
+    older=admin.get(base+'/messages',params={**params,'before':recent['next_before']}).json()
+    assert [m['id'] for m in older['messages']]==[sid]
+    assert older['next_before'] is None
+    assert admin.get(base+'/messages',params={'peer_id':aid}).status_code==404
+    with db() as c:
+        rows=c.execute('SELECT read_at,delivered_at FROM messages WHERE id>=?',(sid,)).fetchall()
+        assert all(row['read_at'] is None and row['delivered_at'] is None for row in rows)
+    logs=admin.get('/api/admin/audit').json()['logs']
+    assert any(log['action']=='admin_view_user_friends' for log in logs)
+    assert any(log['action']=='moderation_messages' and f'peer_id={bid}' in log['detail'] for log in logs)
+
+
 def test_permissions_and_capacity():
     admin=logged_admin()
     guest=TestClient(app);guest.get('/')

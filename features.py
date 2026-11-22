@@ -831,15 +831,25 @@ def install(core):
         if m['sender_id']!=uid:raise HTTPException(403,'Chỉ người gửi được sửa tin nhắn.')
         return m
 
-    async def dm_changed(m):
+    def message_change(c, scope, mid):
+        table='messages' if scope=='dm' else 'group_messages'
+        row=one(c,f'SELECT body,edited_at,deleted_at FROM {table} WHERE id=?',(mid,))
+        return {'message_id':mid,**row}
+
+    async def dm_changed(m, change):
         for uid in {m['sender_id'],m['recipient_id']}:
-            await hub.user(uid,'message-updated',message_id=m['id'])
+            await hub.user(uid,'message-updated',peer_id=m['recipient_id'] if uid==m['sender_id'] else m['sender_id'],
+                           **change)
+
+    async def group_changed(gid, targets, change):
+        for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,**change)
 
     @app.patch('/api/messages/{mid}')
     async def edit_dm(request:Request,mid:int,body:TextEdit):
         u=current_user(request)
         with db() as c:
             m=dm_message_owner(c,mid,u['id'])
+            require_peer(c,m['sender_id'],m['recipient_id'])
             if m['deleted_at'] or m['expires_at'] and m['expires_at']<=now():
                 raise HTTPException(409,'Tin nhắn đã thu hồi hoặc hết hạn.')
             if now()-m['created_at']>15*60:raise HTTPException(409,'Chỉ sửa được trong vòng 15 phút.')
@@ -849,8 +859,9 @@ def install(core):
                 c.execute('''INSERT INTO message_edit_history(scope,message_id,editor_id,previous_body,changed_at)
                              VALUES('dm',?,?,?,?)''',(mid,u['id'],m['body'],now()))
                 c.execute('UPDATE messages SET body=?,edited_at=? WHERE id=?',(text,now(),mid))
-        await dm_changed(m)
-        return {'ok':True}
+            change=message_change(c,'dm',mid)
+        await dm_changed(m,change)
+        return {'ok':True,**change}
 
     @app.delete('/api/messages/{mid}')
     async def remove_dm(request:Request,mid:int):
@@ -861,8 +872,9 @@ def install(core):
             c.execute("DELETE FROM message_pins WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM reactions WHERE scope='dm' AND message_id=?",(mid,))
             c.execute("DELETE FROM message_edit_history WHERE scope='dm' AND message_id=?",(mid,))
-        await dm_changed(m)
-        return {'ok':True}
+            change=message_change(c,'dm',mid)
+        await dm_changed(m,change)
+        return {'ok':True,**change}
 
     @app.patch('/api/groups/{gid}/messages/{mid}')
     async def edit_group_message(request:Request,gid:int,mid:int,body:TextEdit):
@@ -879,8 +891,9 @@ def install(core):
                              VALUES('group',?,?,?,?)''',(mid,u['id'],m['body'],now()))
                 c.execute('UPDATE group_messages SET body=?,edited_at=? WHERE id=?',(text,now(),mid))
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
-        for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
-        return {'ok':True}
+            change=message_change(c,'group',mid)
+        await group_changed(gid,targets,change)
+        return {'ok':True,**change}
 
     @app.delete('/api/groups/{gid}/messages/{mid}')
     async def remove_group_message(request:Request,gid:int,mid:int):
@@ -892,8 +905,9 @@ def install(core):
             c.execute("DELETE FROM reactions WHERE scope='group' AND message_id=?",(mid,))
             c.execute("DELETE FROM message_edit_history WHERE scope='group' AND message_id=?",(mid,))
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
-        for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
-        return {'ok':True}
+            change=message_change(c,'group',mid)
+        await group_changed(gid,targets,change)
+        return {'ok':True,**change}
 
 
     # Pinned messages are private bookmarks in each chat, not global moderation.
@@ -1025,6 +1039,7 @@ def install(core):
             c.execute('DELETE FROM reactions WHERE scope=? AND message_id=? AND user_id=? AND emoji=?',(scope,mid,uid,emoji))
         else:
             c.execute('INSERT INTO reactions VALUES(?,?,?,?)',(scope,mid,uid,emoji))
+        return {'message_id':mid,'user_id':uid,'emoji':emoji,'active':not bool(existing)}
 
     @app.post('/api/messages/{mid}/reaction')
     async def react_dm(request:Request,mid:int,body:React):
@@ -1034,9 +1049,10 @@ def install(core):
                       AND (expires_at IS NULL OR expires_at>?)''',(mid,u['id'],u['id'],now()))
             if not m or m['deleted_at']:raise HTTPException(404,'Tin nhắn không tồn tại.')
             require_peer(c,m['sender_id'],m['recipient_id'])
-            toggle_reaction(c,'dm',mid,u['id'],body.emoji)
-        await dm_changed(m)
-        return {'ok':True}
+            reaction=toggle_reaction(c,'dm',mid,u['id'],body.emoji)
+        for uid,peer in ((m['sender_id'],m['recipient_id']),(m['recipient_id'],m['sender_id'])):
+            await hub.user(uid,'message-reaction',peer_id=peer,**reaction)
+        return {'ok':True,**reaction}
 
     @app.post('/api/groups/{gid}/messages/{mid}/reaction')
     async def react_group(request:Request,gid:int,mid:int,body:React):
@@ -1045,10 +1061,10 @@ def install(core):
             active_member(c,gid,u['id'])
             m=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',(mid,gid))
             if not m:raise HTTPException(404,'Tin nhắn không tồn tại.')
-            toggle_reaction(c,'group',mid,u['id'],body.emoji)
+            reaction=toggle_reaction(c,'group',mid,u['id'],body.emoji)
             targets=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
-        for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
-        return {'ok':True}
+        for uid in targets:await hub.user(uid,'group-message-reaction',group_id=gid,**reaction)
+        return {'ok':True,**reaction}
 
     @app.get('/api/search/messages')
     async def find_message(request:Request,q:str='',group_id:int|None=None,other_id:int|None=None):
@@ -1122,10 +1138,13 @@ def install(core):
             if not m:raise HTTPException(404,'Tin nhắn không tồn tại.')
             c.execute("UPDATE group_messages SET body='',deleted_at=COALESCE(deleted_at,?) WHERE id=?",(now(),mid))
             c.execute("DELETE FROM message_pins WHERE scope='group' AND message_id=?",(mid,))
+            c.execute("DELETE FROM reactions WHERE scope='group' AND message_id=?",(mid,))
+            c.execute("DELETE FROM message_edit_history WHERE scope='group' AND message_id=?",(mid,))
             admin_log(c,u['id'],'remove_group_message',f'{gid}/{mid}')
             targets=[x['user_id'] for x in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
-        for uid in targets:await hub.user(uid,'group-message-updated',group_id=gid,message_id=mid)
-        return {'ok':True}
+            change=message_change(c,'group',mid)
+        await group_changed(gid,targets,change)
+        return {'ok':True,**change}
 
     # Upgraded payloads include caption, attachment, reactions and reply references.
     core.message_details = message_dict

@@ -84,6 +84,48 @@ const {chromium}=require('playwright-core');
    assert.equal(await text.inputValue(),'Bản nháp mới');
    assert.equal(await page.locator('#chat-messages').evaluate(el=>el.scrollTop),120);
    assert(await existing.evaluate(el=>el.isConnected));
+   // React while reading history. Keep the viewport, draft, and unrelated rows intact.
+   let reactionRequests=0,unexpectedHistoryFetches=0;
+   await page.route('**/api/messages/12',r=>{
+    unexpectedHistoryFetches++;
+    return r.fulfill({json:{messages:history}});
+   });
+   await page.route('**/api/messages/4/reaction',r=>{
+    reactionRequests++;
+    return r.fulfill({json:{ok:true,message_id:4,user_id:9,emoji:'❤️',active:true}});
+   });
+   const target=page.locator('#msg-dm-4');
+   await thread.evaluate(el=>{
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
+    const row=el.querySelector('#msg-dm-4');
+    el.scrollTop+=row.getBoundingClientRect().top-el.getBoundingClientRect().top-95;
+   });
+   const targetTop=()=>target.evaluate(el=>el.getBoundingClientRect().top);
+   const top=await targetTop();
+   if(width<800){
+    await target.getByRole('button',{name:'Tùy chọn tin nhắn'}).tap();
+    await page.getByRole('button',{name:'Thả ❤️',exact:true}).tap();
+   }else await target.locator('.bubble-actions [data-emoji="❤️"]').click();
+   await target.locator('.reaction-chip').filter({hasText:'❤️ 1'}).waitFor();
+   assert(Math.abs((await targetTop())-top)<=1,'Reacting must preserve the visible row');
+   await page.evaluate(()=>extraSocket({type:'message-reaction',peer_id:12,message_id:1,user_id:12,emoji:'👍',active:true}));
+   await page.locator('#msg-dm-1 .reaction-chip').waitFor({state:'attached'});
+   assert(Math.abs((await targetTop())-top)<=1,'Reaction above the viewport must preserve the visible row');
+   await page.evaluate(({now})=>extraSocket({
+    type:'message-updated',peer_id:12,message_id:1,body:'Tin đã sửa\nNội dung dài hơn',edited_at:now,deleted_at:null
+   }),{now});
+   assert.equal(await page.locator('#msg-dm-1 .bubble > div').first().textContent(),'Tin đã sửa\nNội dung dài hơn');
+   assert(Math.abs((await targetTop())-top)<=1,'Editing above the viewport must preserve the visible row');
+   await page.evaluate(({now})=>extraSocket({
+    type:'message-updated',peer_id:12,message_id:1,body:'',edited_at:now,deleted_at:now
+   }),{now});
+   await page.locator('#msg-dm-1 .deleted').waitFor({state:'attached'});
+   assert(Math.abs((await targetTop())-top)<=1,'Recalling above the viewport must preserve the visible row');
+   assert.equal(reactionRequests,1);
+   assert.equal(unexpectedHistoryFetches,0);
+   assert.equal(await text.inputValue(),'Bản nháp mới');
+   assert(await existing.evaluate(el=>el.isConnected));
+
    assert(await page.locator('.main-head > [data-act="search-chat"]').isVisible());
    await page.route(/\/api\/chat\/search\/v6\?/,r=>r.fulfill({json:{results:[
     {id:3,body:'Tin nhắn cần tìm',sender_id:9,created_at:now-60}
