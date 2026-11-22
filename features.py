@@ -31,6 +31,7 @@ ALLOWED = {
     'application/zip': '.zip',
     'audio/webm': '.webm', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a',
     'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
+    'video/mp4': '.mp4', 'video/webm': '.webm',
 }
 
 
@@ -560,7 +561,7 @@ def install(core):
         throttle(request, 'upload', 35, 3600, str(u['id']))
         mime=(file.content_type or '').lower().split(';')[0]
         if mime not in ALLOWED:
-            raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
+            raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, video MP4/WebM, âm thanh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
         safe_name=re.sub(r'[\x00-\x1f\x7f/\\]+','_', Path(file.filename or 'tep-tin').name).strip('. ')[:120] or 'tep-tin'
         if safe_name.lower().endswith(('.html','.htm','.svg','.js','.exe','.bat','.cmd','.ps1')):
             raise HTTPException(415,'Định dạng có thể thực thi không được cho phép.')
@@ -589,6 +590,8 @@ def install(core):
                 'image/webp':first.startswith(b'RIFF') and first[8:12]==b'WEBP',
                 'application/pdf':first.startswith(b'%PDF-'),
                 'audio/webm':first.startswith(b'\x1a\x45\xdf\xa3'),
+                'video/webm':first.startswith(b'\x1a\x45\xdf\xa3'),
+                'video/mp4':first[4:8]==b'ftyp',
                 'audio/ogg':first.startswith(b'OggS'),
                 'audio/mp4':first[4:8]==b'ftyp',
                 'audio/mpeg':first.startswith(b'ID3') or (len(first)>1 and first[0]==0xff and first[1]&0xe0==0xe0),
@@ -624,7 +627,7 @@ def install(core):
         return {'attachment':{'id':ident,'name':safe_name,'mime':mime,'size':total,'url':f'/api/attachments/{ident}'}}
 
     @app.get('/api/attachments/{file_id}')
-    async def download(request:Request,file_id:int):
+    async def download(request:Request,file_id:int,download:bool=False):
         u=current_user(request)
         with db() as c:
             f=one(c,'SELECT id,owner_id,stored_name,original_name,mime,size FROM attachments WHERE id=?',(file_id,))
@@ -654,7 +657,7 @@ def install(core):
                 allowed=bool(one(c,'''SELECT 1 FROM world_messages
                                    WHERE attachment_id=? AND deleted_at IS NULL''',(file_id,)))
             if not allowed:raise HTTPException(403,'Bạn không có quyền tải tệp này.')
-        inline=f['mime'].startswith(('image/','audio/'))
+        inline=not download and f['mime'].startswith(('image/','audio/','video/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
         if hosted:
             from fastapi.responses import Response
