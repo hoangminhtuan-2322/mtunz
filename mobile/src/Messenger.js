@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
+import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
 import {ActivityIndicator,Alert,AppState,FlatList,Image,KeyboardAvoidingView,
   Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {API_ORIGIN,api,wsUrl} from './client';
@@ -107,6 +108,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
     sendRef=useRef(false);
   roomRef.current=room;
+  // Voice notes use the phone microphone only when explicitly requested.
+  const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recordState=useAudioRecorderState(recorder,400);
+  const [voiceBusy,setVoiceBusy]=useState(false);
+  const voiceDeadlineRef=useRef(null);
 
   const alertError=useCallback(e=>{
     if(e?.status===401){onExpired();return;}
@@ -329,6 +335,39 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       alertError(e);setError((e.message||'Gửi thất bại')+' · Nhấn Gửi để thử lại, hệ thống giữ mã chống trùng.');
     }finally{sendRef.current=false;setSending(false);}
   }
+  async function toggleVoice(){
+    if(voiceBusy||sending)return;
+    setVoiceBusy(true);
+    try{
+      if(recordState.isRecording){
+        await recorder.stop();
+        clearTimeout(voiceDeadlineRef.current);
+        voiceDeadlineRef.current=null;
+        await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
+        if(!recorder.uri)throw Error('Không tìm thấy bản ghi âm.');
+        const name='mtunz-voice-'+Date.now()+'.m4a';
+        setPicked({uri:recorder.uri,name,type:'audio/mp4',size:recordState.fileSize||0});
+        uploadRef.current=null;nonceRef.current=null;
+      }else{
+        const permission=await AudioModule.requestRecordingPermissionsAsync();
+        if(!permission.granted)throw Error('Chưa cấp quyền micro để ghi âm.');
+        await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true});
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+        voiceDeadlineRef.current=setTimeout(async()=>{
+          try{
+            await recorder.stop();
+            await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
+            if(recorder.uri)setPicked({
+              uri:recorder.uri,name:'mtunz-voice-'+Date.now()+'.m4a',
+              type:'audio/mp4',size:0});
+          }catch(e){alertError(e);}
+        },110000);
+      }
+    }catch(e){alertError(e);}
+    finally{setVoiceBusy(false);}
+  }
+  useEffect(()=>()=>clearTimeout(voiceDeadlineRef.current),[]);
   async function pick(kind){
     try{const asset=kind==='media'?await chooseMedia():await chooseFile();
       if(asset){setPicked(asset);nonceRef.current=null;uploadRef.current=null;}}
@@ -454,11 +493,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       {!!reply&&<View style={css.replyBar}>
         <Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời #'+reply.id}</Text>
         <Pressable onPress={()=>{setReply(null);setDraft('');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
+      {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
       {!!picked&&<View style={css.replyBar}><Text style={css.muted} numberOfLines={1}>📎 {picked.name}</Text>
         <Pressable onPress={()=>{setPicked(null);uploadRef.current=null;}}><Text style={css.link}>Bỏ</Text></Pressable></View>}
       <View style={css.compose}>
         <Pressable onPress={()=>pick('media')}><Text style={css.link}>▧</Text></Pressable>
         <Pressable onPress={()=>pick('file')}><Text style={css.link}>＋</Text></Pressable>
+        <Pressable onPress={toggleVoice} disabled={voiceBusy||sending}><Text style={css.link}>{recordState.isRecording?'■':'🎙'}</Text></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
           value={draft} placeholder="Nhập tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
