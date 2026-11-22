@@ -2007,6 +2007,33 @@ async function userDetails(uid){
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực gần nhất',u.last_active_session_at?deadlineDate(u.last_active_session_at):'Không có phiên còn hiệu lực')}
    </div>
    <div class="admin-detail-section">
+     <h3>${icon('shield',17)} Đối soát tài khoản & nguồn đăng ký</h3>
+     ${adminDetailRow('Đăng ký qua phê duyệt',u.registration?('#'+Number(u.registration.id)+' · '+esc(u.registration.status)):'Không có hồ sơ đăng ký lưu trữ')}
+     ${u.registration?.created_at?adminDetailRow('Ngày gửi yêu cầu',deadlineDate(u.registration.created_at)):''}
+     ${u.registration?.decided_at?adminDetailRow('Ngày duyệt/từ chối',deadlineDate(u.registration.decided_at)):''}
+     ${adminDetailRow('Xác minh độc lập thông tin liên hệ',u.contact_verified?'Đã xác minh':'Chưa ghi nhận xác minh độc lập')}
+     ${adminDetailRow('Yêu cầu hỗ trợ đã tạo',String(u.support_count||0))}
+     <p class="hint">Dữ liệu do tài khoản khai báo và dấu vết đăng ký không xác thực danh tính thật. Không đánh giá gian lận chỉ vì thiếu xác minh.</p>
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('shield',17)} Tín hiệu phục vụ kiểm duyệt</h3>
+     ${adminDetailRow('Báo cáo nhắm tới tài khoản',String(u.reports?.total||0))}
+     ${adminDetailRow('Báo cáo đang chờ xử lý',String(u.reports?.pending||0))}
+     ${adminDetailRow('Báo cáo đã được xem xét',String(u.reports?.reviewed||0))}
+     ${u.reports?.latest_at?adminDetailRow('Báo cáo gần nhất',deadlineDate(u.reports.latest_at)):''}
+     ${adminDetailRow('Số người chặn tài khoản',String(u.blocks_received||0))}
+     ${adminDetailRow('Tài khoản này đã chặn',String(u.blocks_created||0))}
+     ${adminDetailRow('Lời mời kết bạn đang gửi/chờ nhận',Number(u.pending_requests_sent||0)+' / '+Number(u.pending_requests_received||0))}
+     ${(u.recent_reports||[]).length?'<div class="hint" style="margin-top:10px">5 báo cáo gần nhất:</div>':''}
+     ${(u.recent_reports||[]).map(r=>`<div class="admin-detail-row"><span class="muted">Báo cáo #${Number(r.id)} · ${deadlineDate(r.created_at)}</span><strong>${esc(r.reason||'Không có lý do')} · ${esc(r.status||'Chưa rõ')}</strong></div>`).join('')}
+     <p class="hint">Báo cáo và lượt chặn chỉ phản ánh phản hồi của người dùng, không phải bằng chứng hoặc kết luận vi phạm. Đối chiếu bằng chứng trước khi xử lý.</p>
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('users',17)} Danh sách bạn bè (chỉ Admin)</h3>
+     <p class="hint">Hiển thị tối đa 50 kết nối gần nhất trong ${Number(u.friend_count||0)} bạn bè. Không công khai lịch sử quan hệ này.</p>
+     ${(u.contacts||[]).map(f=>`<div class="admin-detail-row"><span class="muted">${esc(f.display_name||'Thành viên')} · #${Number(f.public_id||f.id)}</span><strong><button type="button" class="btn ghost sm" data-act="admin-user-detail" data-id="${Number(f.id)}">Xem #${Number(f.id)}</button></strong></div>`).join('')||'<p class="hint">Chưa có bạn bè được chấp nhận.</p>'}
+   </div>
+   <div class="admin-detail-section">
      <h3>${icon('clock',17)} Nhật ký liên quan đến tài khoản</h3>
      ${(u.recent_events||[]).map(e=>adminDetailRow(esc(auditLabel(e.action)),
        `<button type="button" class="btn ghost sm" data-act="admin-audit-detail" data-id="${Number(e.id)}">#${Number(e.id)} · ${deadlineDate(e.created_at)}</button><div class="hint">${esc(e.actor||'Chưa rõ người thực hiện')}</div>`)).join('')||
