@@ -4,6 +4,7 @@ Native clients use Authorization: Bearer <opaque session> from a platform secure
 store. No admin bypass, no JWT, and no independent message/user database.
 """
 from fastapi import HTTPException, Request
+import re
 from pydantic import BaseModel, Field
 
 
@@ -70,3 +71,93 @@ def install(core):
         # Token only over HTTPS in production. Client stores it in OS secure storage.
         return {'ok': True, 'access_token': session, 'token_type': 'Bearer',
                 'expires_in': max(0, expiry - core.now())}
+
+
+    # Registration reuses the existing admin approval table, but binds the
+    # request to an opaque native claim key rather than browser-only guest cookies.
+    class NativeSignupRequest(BaseModel):
+        username: str = Field(min_length=3,max_length=24)
+        phone: str = Field(min_length=8,max_length=40)
+        email: str = Field(default='',max_length=254)
+
+    class NativeSignupClaim(BaseModel):
+        token: str = Field(min_length=30,max_length=128)
+
+    class NativeSignupComplete(NativeSignupClaim):
+        username: str
+        password: str
+        pin: str
+        pin_length: int
+        accepted_terms: bool
+
+    def registration_guest(token):
+        if not re.fullmatch(r'[A-Za-z0-9_-]{30,128}',token):
+            raise HTTPException(401,'Yêu cầu đăng ký không hợp lệ.')
+        return 'native:' + core.digest(token)[:40]
+
+    @app.post('/api/mobile/registration/request')
+    async def request_registration(request: Request, body: NativeSignupRequest):
+        core.throttle(request,'native-signup',6,3600)
+        name=core.norm_username(body.username)
+        phone=core.normalize_phone(body.phone)
+        email=core.normalize_email(body.email)
+        claim=core.token()
+        with core.db() as c:
+            core.require_member_service(c)
+            if name=='admin' or core.one(c,'SELECT 1 FROM users WHERE username=?',(name,)):
+                raise HTTPException(409,'Tên đăng nhập đã được sử dụng.')
+            if core.one(c,'SELECT 1 FROM users WHERE phone=?',(phone,)):
+                raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác.')
+            if core.one(c,"SELECT 1 FROM registrations WHERE username=? AND status IN ('pending','approved','completed')",(name,)):
+                raise HTTPException(409,'Tên đăng nhập đã được sử dụng hoặc đang chờ duyệt.')
+            c.execute('DELETE FROM registrations WHERE username=?',(name,))
+            c.execute('''INSERT INTO registrations(username,guest_id,created_at,phone,email)
+                         VALUES(?,?,?,?,?)''',(name,registration_guest(claim),core.now(),phone,email))
+        await core.hub.admins('registration-updated')
+        return {'status':'pending','username':name,'registration_token':claim}
+
+    @app.post('/api/mobile/registration/status')
+    async def registration_status(request: Request, body: NativeSignupClaim):
+        core.throttle(request,'native-signup-status',80,3600,core.digest(body.token))
+        with core.db() as c:
+            row=core.one(c,'''SELECT username,status,created_at FROM registrations
+                              WHERE guest_id=? ORDER BY id DESC LIMIT 1''',
+                         (registration_guest(body.token),))
+        return {'registration':dict(row) if row else None}
+
+    @app.post('/api/mobile/registration/complete')
+    async def complete_registration(request: Request, body: NativeSignupComplete):
+        core.throttle(request,'native-signup-complete',12,3600,core.digest(body.token))
+        if not body.accepted_terms:
+            raise HTTPException(422,'Bạn cần đồng ý với điều khoản và chính sách quyền riêng tư.')
+        core.ensure_password(body.password)
+        core.ensure_pin(body.pin,body.pin_length)
+        name=core.norm_username(body.username)
+        with core.db() as c:
+            core.require_member_service(c)
+            registration=core.one(c,'''SELECT * FROM registrations
+                  WHERE username=? AND guest_id=? AND status='approved' ''',
+                  (name,registration_guest(body.token)))
+            if not registration:
+                raise HTTPException(403,'Đăng ký chưa được quản trị viên phê duyệt.')
+            phone=core.normalize_phone(registration['phone'])
+            email=core.normalize_email(registration['email'])
+            if core.one(c,'SELECT 1 FROM users WHERE username=? OR phone=?',(name,phone)):
+                raise HTTPException(409,'Tên đăng nhập hoặc số điện thoại đã được sử dụng.')
+            total,reserved,max_users=core.registration_capacity(c)
+            if total >= max_users:
+                raise HTTPException(409,'Hệ thống đã đạt giới hạn tài khoản.')
+            try:
+                uid=core.create_member(c,username=name,password_hash=core.hash_secret(body.password),
+                    pin_hash=core.hash_secret(body.pin),pin_length=body.pin_length,phone=phone,email=email)
+            except Exception as exc:
+                if isinstance(exc,(core.sqlite3.IntegrityError,)):
+                    raise HTTPException(409,'Tên tài khoản đã tồn tại.') from exc
+                raise
+            c.execute('UPDATE users SET terms_accepted_at=?,terms_accepted_version=? WHERE id=?',
+                      (core.now(),core.TERMS_VERSION,uid))
+            c.execute("UPDATE registrations SET status='completed' WHERE username=? AND guest_id=?",
+                      (name,registration_guest(body.token)))
+            session=core.issue_session(c,uid,request)
+        await core.hub.admins('registration-updated')
+        return {'ok':True,'access_token':session,'token_type':'Bearer','onboarding_required':True}
