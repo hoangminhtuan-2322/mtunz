@@ -388,6 +388,14 @@ function connectSocket(retry=false){
    socketRetryDelay=2500;
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='identity-updated'&&state.user&&!state.user.is_admin){
+     const owner=state.user.id;
+     const fresh=(await api('/api/me').catch(()=>null))?.user;
+     if(fresh&&state.user?.id===owner){
+       applyMemberIdentity(owner,fresh);
+     }
+     return;
+   }
    if(t==='maintenance-status'){applyMaintenanceBanner(data.status);return;}
    if(t==='maintenance-mode'){
      showMaintenance(data.reason?'Hệ thống đang bảo trì. '+data.reason:undefined);return;
@@ -1046,7 +1054,7 @@ function conversation(){
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
  <div class="thread" id="chat-messages" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>
  <div class="composer">${latestChatButton()}<div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
- <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
+ <label class="btn ghost attachment-button" title="Đính kèm ảnh, video hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
  <button type="button" class="btn ghost v4-schedule-button" data-v4-act="schedule-new" title="Hẹn giờ gửi tin nhắn" aria-label="Hẹn giờ gửi">⏰</button>
@@ -1409,7 +1417,7 @@ async function loadMessages(scroll=true){
   queueChatRead($('#chat-messages'));
  }catch(e){if(current())toast(e.message,'error');}
 }
-function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
+function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)} ${r.private_profile?'🔒':''}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
  r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}

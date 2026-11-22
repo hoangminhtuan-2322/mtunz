@@ -17,7 +17,7 @@ assert(!app.includes('nova-pointer-x'),'No per-frame pointer-driven CSS changes'
 assert(!app.slice(start,end).includes('initializeHeroMotion'),'Hero must not be re-mounted');
 assert(html.includes('performance.css?v=8.2'),'New CSS must load');
 assert(html.includes('motion-lite.js?v=8.2'),'Visibility controller must load');
-assert(html.includes('app.js?v=20.3'),'Auth JS remains unchanged');
+assert(html.includes('app.js?v=20.7'),'Auth JS remains unchanged');
 
 for(const important of [
  '.auth-art.art-v5 .nova-orbit.nova-orbit-one',

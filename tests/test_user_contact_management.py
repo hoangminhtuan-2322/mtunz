@@ -60,6 +60,9 @@ def test_private_contact_is_not_exposed_to_peers_and_admin_views_are_audited():
     member=register_user(admin,'contact_member')
     other=register_user(admin,'contact_peer')
     uid=member.get('/api/me').json()['user']['id']
+    verified=member.post('/api/me/identity/display_name',json={
+        'new_value':'Riêng tư','password':'GreatPassword123','pin':'1234'})
+    assert verified.status_code==200,verified.text
     assert member.patch('/api/me/profile',json={
         'display_name':'Riêng tư','bio':'Tài khoản cá nhân',
         'show_online':False,'show_receipts':True,
@@ -99,6 +102,9 @@ def test_legacy_user_without_phone_is_not_locked_out():
     detail=admin.get(f'/api/admin/users/{uid}/details')
     assert detail.status_code==200
     assert detail.json()['user']['phone'] is None
+    verified=member.post('/api/me/identity/display_name',json={
+        'new_value':'Legacy','password':'GreatPassword123','pin':'1234'})
+    assert verified.status_code==200,verified.text
     assert member.patch('/api/me/profile',json={
         'display_name':'Legacy','bio':'','show_online':True,'show_receipts':True}).status_code==200
     assert member.patch('/api/me/profile',json={

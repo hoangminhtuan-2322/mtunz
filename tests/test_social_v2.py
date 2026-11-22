@@ -133,9 +133,11 @@ def test_private_nickname_and_shared_library_permissions_and_pagination():
 
     image=alice.post('/api/uploads',files={'file':('photo.png',b'\x89PNG\r\n\x1a\n'+b'0'*32,'image/png')}).json()['attachment']
     document=alice.post('/api/uploads',files={'file':('note.txt',b'note','text/plain')}).json()['attachment']
-    for attachment in (image,document):
+    clip=b'\x00\x00\x00\x18ftypisom'+b'0'*64
+    video=alice.post('/api/uploads',files={'file':('short.mp4',clip,'video/mp4')}).json()['attachment']
+    for attachment in (image,document,video):
         assert alice.post('/api/messages',json={'recipient_id':bid,'attachment_id':attachment['id']}).status_code==200
-    assert [entry['attachment_id'] for entry in alice.get(shared).json()['items']]==[image['id']]
+    assert [entry['attachment_id'] for entry in alice.get(shared).json()['items']]==[video['id'],image['id']]
     assert [entry['attachment_id'] for entry in alice.get(shared,params={'kind':'files'}).json()['items']]==[document['id']]
     inline=bob.get(image['url'])
     saved=bob.get(image['url'],params={'download':'1'})
@@ -176,7 +178,10 @@ def test_private_nickname_and_shared_library_permissions_and_pagination():
 
 def test_profile_save_updates_only_submitted_fields():
     _,alice,bob,a,_=pair()
-    profile=alice.patch('/api/me/profile',json={'display_name':'Tên hiển thị mới','bio':'Giới thiệu','show_online':False})
+    renamed=alice.post('/api/me/identity/display_name',json={
+        'new_value':'Tên hiển thị mới','password':'GreatPassword123','pin':'1234'})
+    assert renamed.status_code==200,renamed.text
+    profile=alice.patch('/api/me/profile',json={'bio':'Giới thiệu','show_online':False})
     assert profile.status_code==200,profile.text
     contact=alice.patch('/api/me/profile',json={'email':'new@example.com'})
     assert contact.status_code==200,contact.text

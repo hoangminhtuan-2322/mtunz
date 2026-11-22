@@ -61,6 +61,7 @@ function v4AudioMarkup(file){
   '<div class="v4-audio-wave-wrap">'+v4WaveformHtml(file.waveform)+
    '<small>🎙️ '+v4DurationText(file.duration_ms||0)+' · Chạm để nghe</small></div>'+
   '<button class="v4-speed" type="button" data-v4-act="audio-speed" title="Đổi tốc độ phát">1×</button>'+
+  '<a class="chat-media-save" href="'+url+'?download=1" download="'+esc(file.name||'Ghi âm')+'" title="Lưu tin nhắn thoại về máy">↓</a>'+
  '</div>';
 }
 function v4VoiceComposer(){

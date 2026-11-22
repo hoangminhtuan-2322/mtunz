@@ -2,7 +2,7 @@
 
 Ipaths.link='<path d="M10 13a4 4 0 0 0 6 0l4-4a4 4 0 1 0-6-6l-2 2M14 11a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l2-2"/>';
 Ipaths.download='<path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/>';
-const chatLibraryKinds={media:'Hình ảnh',files:'Tệp',links:'Liên kết'};
+const chatLibraryKinds={media:'Ảnh & video',files:'Tệp',links:'Liên kết'};
 
 function chatLibraryItem(item,kind){
  const stamp=`${esc(item.display_name||'Thành viên')} · ${date(item.created_at)}`;
@@ -11,13 +11,15 @@ function chatLibraryItem(item,kind){
    <span class="chat-library-icon">${icon('link',19)}</span><span><strong>${esc(link.host)}</strong>
    <span class="chat-library-url">${esc(link.url)}</span><small>${stamp}</small></span></a>`).join('');
  const url='/api/attachments/'+Number(item.attachment_id);
- if(kind==='media')return `
-  <article class="chat-library-media">
-   <a href="${url}" target="_blank" rel="noopener noreferrer">
-    <img src="${url}" alt="${esc(item.name)}" loading="lazy" decoding="async">
-   </a><small>${stamp}</small>
-   <a class="chat-library-save" href="${url}?download=1" download="${esc(item.name)}" aria-label="Tải ảnh ${esc(item.name)}">${icon('download',15)} Tải ảnh</a>
+ if(kind==='media'){
+  const video=item.mime.startsWith('video/'),label=video?'Tải video':'Tải ảnh';
+  return `<article class="chat-library-media">
+   ${video?`<video src="${url}" controls playsinline preload="none" aria-label="${esc(item.name)}"></video>`:
+    `<a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${esc(item.name)}" loading="lazy" decoding="async"></a>`}
+   <small>${stamp}</small>
+   <a class="chat-library-save" href="${url}?download=1" download="${esc(item.name)}" aria-label="${label} ${esc(item.name)}">${icon('download',15)} ${label}</a>
   </article>`;
+ }
  return `<a class="chat-library-row" href="${url}?download=1" download="${esc(item.name)}">
   <span class="chat-library-icon">${icon('file',19)}</span><span><strong>${esc(item.name)}</strong>
   <small>${fmtSize(item.size)} · ${stamp}</small></span></a>`;

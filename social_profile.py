@@ -5,6 +5,7 @@ seven-digit identifiers. Existing foreign-key references are never rewritten.
 """
 import re
 import secrets
+import sqlite3
 from typing import Literal
 
 from fastapi import HTTPException, Request
@@ -44,6 +45,13 @@ def install(core):
             else:
                 raise RuntimeError('Không thể cấp ID công khai duy nhất.')
         c.executescript("""
+            CREATE TABLE IF NOT EXISTS identity_change_events (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                kind TEXT NOT NULL,
+                changed_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS identity_events_window_idx
+                ON identity_change_events(user_id,kind,changed_at);
             CREATE TABLE IF NOT EXISTS message_requests (
                 id INTEGER PRIMARY KEY,
                 sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -132,6 +140,87 @@ def install(core):
                 c.execute(f'UPDATE users SET {expression} WHERE id=?',(*updates.values(),u['id']))
             updated=one(c,'SELECT * FROM users WHERE id=?',(u['id'],))
         return {'ok':True,'profile':social_data(updated)}
+
+    # Distinct from onboarding: changing an established identity needs both
+    # secrets and a durable, database-enforced rolling quota.
+    def identity_quota(c,uid,at):
+        result={}
+        for kind,days,limit in (('username',60,1),('display_name',30,2)):
+            window=days*86400
+            rows=many(c,'''SELECT changed_at FROM identity_change_events
+                            WHERE user_id=? AND kind=? AND changed_at>?
+                            ORDER BY changed_at ASC''',(uid,kind,at-window))
+            used=len(rows)
+            result[kind]={'remaining':max(0,limit-used),
+                          'limit':limit,'window_days':days,
+                          'next_at':int(rows[used-limit]['changed_at'])+window if used>=limit else None}
+        return result
+
+    class IdentityChange(BaseModel):
+        new_value:str=Field(min_length=1,max_length=70)
+        password:str=Field(min_length=1,max_length=128)
+        pin:str=Field(min_length=4,max_length=6)
+
+    @app.get('/api/me/identity/status')
+    async def identity_status(request:Request):
+        u=member(request)
+        with db() as c:
+            status=identity_quota(c,u['id'],now())
+        return {'username':u['username'],'display_name':u['display_name'] or '',
+                'quota':status,'pin_required':True,'pin_configured':bool(u['pin_hash'])}
+
+    @app.post('/api/me/identity/{kind}')
+    async def change_identity(request:Request,kind:Literal['username','display_name'],
+                              body:IdentityChange):
+        u=member(request)
+        core.throttle(request,'member-identity-change',8,3600,str(u['id']))
+        if u['needs_display_name']:
+            raise HTTPException(409,'Hãy hoàn tất tên hiển thị đầu tiên trước khi đổi danh tính.')
+        with db() as c:
+            if not core.POSTGRES_MODE:
+                c.execute('BEGIN IMMEDIATE')
+            suffix=' FOR UPDATE' if core.POSTGRES_MODE else ''
+            current=one(c,'SELECT id,username,display_name,password_hash,pin_hash,pin_length FROM users WHERE id=? AND is_admin=0'+suffix,(u['id'],))
+            if not current:
+                raise HTTPException(401,'Phiên đăng nhập không hợp lệ.')
+            if not current['pin_hash']:
+                raise HTTPException(403,'Bạn cần thiết lập mã PIN trước khi đổi tên.')
+            if (not core.verify_secret(current['password_hash'],body.password) or
+                    not core.verify_secret(current['pin_hash'],body.pin)):
+                raise HTTPException(401,'Mật khẩu hoặc mã PIN không chính xác.')
+            at=now()
+            quota=identity_quota(c,u['id'],at)[kind]
+            if quota['remaining']<=0:
+                raise HTTPException(429,'Đã hết lượt đổi tên trong kỳ này. Hãy xem thời điểm đổi tiếp trong Hồ sơ cá nhân.')
+            if kind=='username':
+                value=core.norm_username(body.new_value)
+                if value==current['username']:
+                    raise HTTPException(422,'Tên đăng nhập mới phải khác tên hiện tại.')
+                if (one(c,'SELECT 1 FROM users WHERE username=? AND id!=?',(value,u['id'])) or
+                    one(c,"SELECT 1 FROM registrations WHERE username=? AND status IN ('pending','approved')",(value,))):
+                    raise HTTPException(409,'Tên đăng nhập đã được sử dụng hoặc đang được giữ chỗ.')
+                if value=='admin':
+                    raise HTTPException(409,'Tên đăng nhập này không thể sử dụng.')
+                try:
+                    c.execute('UPDATE users SET username=? WHERE id=?',(value,u['id']))
+                except sqlite3.IntegrityError as exc:
+                    raise HTTPException(409,'Tên đăng nhập đã được sử dụng.') from exc
+            else:
+                value=core.validate_display_name(body.new_value,current['username'])
+                if value==current['display_name']:
+                    raise HTTPException(422,'Tên hiển thị mới phải khác tên hiện tại.')
+                c.execute('UPDATE users SET display_name=? WHERE id=?',(value,u['id']))
+            c.execute('INSERT INTO identity_change_events(user_id,kind,changed_at) VALUES(?,?,?)',
+                      (u['id'],kind,at))
+            updated=identity_quota(c,u['id'],at)
+            peers=many(c,'''SELECT CASE WHEN u1=? THEN u2 ELSE u1 END AS peer
+                            FROM friendships WHERE (u1=? OR u2=?)
+                            AND state IN ('accepted','pending')''',
+                       (u['id'],u['id'],u['id']))
+        await hub.user(u['id'],'identity-updated',kind=kind)
+        for friend in peers:
+            await hub.user(friend['peer'],'friends-updated')
+        return {'ok':True,'kind':kind,'value':value,'quota':updated}
 
     @app.get('/api/profile/{uid}/{kind}')
     async def profile_image(request:Request,uid:int,kind:Literal['avatar','cover']):

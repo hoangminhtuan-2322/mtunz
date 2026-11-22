@@ -16,7 +16,7 @@ function profileCard(person,{own=false,details=true,preview=false}={}){
    <div class="member-profile-identity">
     ${avatar(name,false,'xl',details?person.avatar_url:null)}
     <div class="member-profile-name"><h2>${esc(name)}</h2>
-    <p class="hint">#${Number(person.public_id||person.id)} · Thành viên từ ${date(person.created_at)}</p></div>
+    <p class="hint">#${Number(person.public_id||person.id)}${details&&person.created_at?' · Thành viên từ '+date(person.created_at):''}</p></div>
     ${own?`<button type="button" class="btn ghost sm" data-act="copy-member-id">${icon('check',15)} Sao chép ID</button>
     <button type="button" class="btn primary sm" data-profile-preview>${icon('eye',15)} Xem như người khác</button>`:''}
    </div>
@@ -40,11 +40,13 @@ function memberProfilePage(){
   <nav class="member-profile-nav" aria-label="Mục hồ sơ">
    <button type="button" data-profile-section="info">Thông tin</button>
    <button type="button" data-profile-section="privacy">Ảnh & quyền riêng tư</button>
+   <button type="button" data-profile-section="identity">Đổi tên</button>
    <button type="button" data-profile-section="contact">Liên hệ</button>
   </nav>
   <div class="member-profile-editor">
    <section id="member-profile-info">${profileSettings()}</section>
    <section id="member-profile-privacy">${socialSettingsPanel()}</section>
+   <section id="member-profile-identity">${identitySettingsPanel()}</section>
    <section id="member-profile-contact">${profileContactSettings()}</section>
   </div>
  </div>`;

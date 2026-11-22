@@ -31,6 +31,7 @@ ALLOWED = {
     'application/zip': '.zip',
     'audio/webm': '.webm', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a',
     'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
+    'video/mp4': '.mp4', 'video/webm': '.webm',
 }
 
 
@@ -228,15 +229,21 @@ def install(core):
     @app.patch('/api/me/profile')
     async def edit_profile(request:Request, body:Profile):
         u=current_user(request)
-        updates=body.model_dump(exclude_none=True)
+        updates=body.model_dump(exclude_none=True,exclude={'display_name'})
         for field, transform in {
-            'display_name':lambda value:core.validate_display_name(value,u['username']),
             'bio':str.strip,'show_online':int,'show_receipts':int,
             'phone':core.normalize_phone,'email':core.normalize_email,
         }.items():
             if field in updates:
                 updates[field]=transform(updates[field])
         with db() as c:
+            # Old clients may send back the current name. Never include it in the update.
+            if body.display_name is not None:
+                current=one(c,'SELECT display_name FROM users WHERE id=?',(u['id'],))
+                if not current:
+                    raise HTTPException(401,'Tài khoản không tồn tại.')
+                if body.display_name!=current['display_name']:
+                    raise HTTPException(403,'Hãy dùng mục Đổi tên trong Hồ sơ và xác nhận mật khẩu + PIN.')
             phone=updates.get('phone')
             if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
                 raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
@@ -256,17 +263,26 @@ def install(core):
                 raise HTTPException(404,'Không tìm thấy người dùng.')
             allowed=(uid==u['id'] or bool(u['is_admin']) or r['profile_visibility']=='everyone' or
                      (r['profile_visibility']=='friends' and friends(c,uid,u['id'])))
-            p=dict(r)
-            if uid!=u['id'] and (not allowed or not r['show_online'] or core.is_restricted(c,uid,u['id'])):
-                p['last_seen']=None
-            p['avatar_url']=f'/api/profile/{uid}/avatar' if allowed and r['avatar_attachment_id'] else None
-            p['cover_url']=f'/api/profile/{uid}/cover' if allowed and r['cover_attachment_id'] else None
-            p['headline']=r['headline'] if allowed else ''
-            p['bio']=r['bio'] if allowed else ''
-            p['website']=r['website'] if allowed else ''
-            p.pop('avatar_attachment_id',None)
-            p.pop('cover_attachment_id',None)
-            p['private']=not allowed
+            if not allowed:
+                # Minimal identity only: a stranger can still send a friend
+                # request, but no profile details, activity or media leaks.
+                p={'id':r['id'],'public_id':r['public_id'],
+                   'display_name':r['display_name'],'created_at':None,
+                   'last_seen':None,'show_online':False,
+                   'profile_visibility':r['profile_visibility'],
+                   'avatar_url':None,'cover_url':None,'headline':'',
+                   'bio':'','website':'','private':True}
+            else:
+                p=dict(r)
+                if uid!=u['id'] and (not r['show_online'] or
+                                   not u['show_online'] or
+                                   core.is_restricted(c,uid,u['id'])):
+                    p['last_seen']=None
+                p['avatar_url']=f'/api/profile/{uid}/avatar' if r['avatar_attachment_id'] else None
+                p['cover_url']=f'/api/profile/{uid}/cover' if r['cover_attachment_id'] else None
+                p.pop('avatar_attachment_id',None)
+                p.pop('cover_attachment_id',None)
+                p['private']=False
         return {'profile':p}
 
     @app.get('/api/me/sessions')
@@ -561,7 +577,7 @@ def install(core):
         throttle(request, 'upload', 35, 3600, str(u['id']))
         mime=(file.content_type or '').lower().split(';')[0]
         if mime not in ALLOWED:
-            raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
+            raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, video MP4/WebM, âm thanh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
         safe_name=re.sub(r'[\x00-\x1f\x7f/\\]+','_', Path(file.filename or 'tep-tin').name).strip('. ')[:120] or 'tep-tin'
         if safe_name.lower().endswith(('.html','.htm','.svg','.js','.exe','.bat','.cmd','.ps1')):
             raise HTTPException(415,'Định dạng có thể thực thi không được cho phép.')
@@ -590,6 +606,8 @@ def install(core):
                 'image/webp':first.startswith(b'RIFF') and first[8:12]==b'WEBP',
                 'application/pdf':first.startswith(b'%PDF-'),
                 'audio/webm':first.startswith(b'\x1a\x45\xdf\xa3'),
+                'video/webm':first.startswith(b'\x1a\x45\xdf\xa3'),
+                'video/mp4':first[4:8]==b'ftyp',
                 'audio/ogg':first.startswith(b'OggS'),
                 'audio/mp4':first[4:8]==b'ftyp',
                 'audio/mpeg':first.startswith(b'ID3') or (len(first)>1 and first[0]==0xff and first[1]&0xe0==0xe0),
@@ -655,7 +673,7 @@ def install(core):
                 allowed=bool(one(c,'''SELECT 1 FROM world_messages
                                    WHERE attachment_id=? AND deleted_at IS NULL''',(file_id,)))
             if not allowed:raise HTTPException(403,'Bạn không có quyền tải tệp này.')
-        inline=not download and f['mime'].startswith(('image/','audio/'))
+        inline=not download and f['mime'].startswith(('image/','audio/','video/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
         if hosted:
             from fastapi.responses import Response

@@ -16,12 +16,14 @@ function socialSettingsPanel(){
     <input class="input" id="social-headline" name="headline" maxlength="90" value="${esc(u.headline||'')}" placeholder="Ví dụ: Thích công nghệ, âm nhạc và những kết nối mới"></div>
    <div class="field"><label for="social-website">Trang web (nếu có)</label>
     <input class="input" id="social-website" name="website" type="url" maxlength="180" value="${esc(u.website||'')}" placeholder="https://..." inputmode="url"></div>
-   <div class="field"><label for="social-visibility">Ai được xem hồ sơ của bạn?</label>
+   <label class="social-toggle social-private-control"><input type="checkbox" id="social-private-switch" ${u.profile_visibility!=='everyone'?'checked':''}>
+     <span><strong>🔒 Tài khoản riêng tư</strong><small>Khi bật, người chưa kết bạn không thể xem ảnh, giới thiệu hoặc liên kết hồ sơ. Họ vẫn có thể tìm bằng tên/ID để gửi lời mời kết bạn.</small></span></label>
+   <div class="field"><label for="social-visibility">Ai được xem nội dung hồ sơ?</label>
     <select class="select" id="social-visibility" name="profile_visibility">
      <option value="everyone" ${u.profile_visibility==='everyone'?'selected':''}>Thành viên mtunz</option>
      <option value="friends" ${u.profile_visibility==='friends'?'selected':''}>Chỉ bạn bè</option>
      <option value="only_me" ${u.profile_visibility==='only_me'?'selected':''}>Chỉ mình tôi</option>
-    </select></div>
+    </select><small class="hint">Đổi quyền xem sẽ lưu ngay. “Riêng tư” = chỉ bạn bè; “Chỉ mình tôi” ẩn cả với bạn bè. Tin trong Chat thế giới vẫn công khai nếu bạn không bật ẩn danh.</small></div>
    <label class="social-toggle"><input type="checkbox" name="allow_message_requests" ${u.allow_message_requests?'checked':''}>
      <span><strong>Nhận tin nhắn chờ</strong><small>Người chưa kết bạn có thể gửi một lời nhắn. Chỉ khi bạn chấp nhận mới mở hội thoại.</small></span></label>
    <label class="social-toggle"><input type="checkbox" name="world_anonymous" ${u.world_anonymous?'checked':''}>
@@ -30,6 +32,120 @@ function socialSettingsPanel(){
   </form>
  </section>`;
 }
+function identitySettingsPanel(){
+ const u=state.user||{};
+ return `<section class="card identity-settings-panel" aria-label="Đổi tên tài khoản">
+  <div class="social-section-heading"><h3>${icon('shield',17)} Danh tính & đổi tên</h3><span class="pill">Mật khẩu + PIN</span></div>
+  <p class="hint">Giới hạn được kiểm tra trên máy chủ. Đổi tên không làm mất bạn bè, tin nhắn hay ID tài khoản.</p>
+  <div class="identity-setting-line"><div><small>Tên đăng nhập</small><strong data-identity-name="username">@${esc(u.username||'')}</strong>
+    <span class="hint">Đổi 1 lần trong mỗi 60 ngày. Khi đăng nhập lại, sử dụng tên mới.</span></div>
+   <button type="button" class="btn ghost sm" data-identity-kind="username">Đổi tên đăng nhập</button></div>
+  <div class="identity-setting-line"><div><small>Tên hiển thị</small><strong data-identity-name="display_name">${esc(u.display_name||'Chưa có tên')}</strong>
+    <span class="hint">Được đổi 2 lần trong 30 ngày gần nhất.</span></div>
+   <button type="button" class="btn ghost sm" data-identity-kind="display_name">Đổi tên hiển thị</button></div>
+  <p class="hint">Mật khẩu và PIN chỉ dùng để xác minh khi lưu; không được ghi vào bộ nhớ trình duyệt.</p>
+ </section>`;
+}
+function applyMemberIdentity(owner,identity){
+ if(state.user?.id!==owner)return false;
+ for(const kind of ['username','display_name']){
+  if(typeof identity[kind]!=='string')continue;
+  state.user[kind]=identity[kind];
+  const field=document.querySelector('[data-identity-name="'+kind+'"]');
+  if(field)field.textContent=(kind==='username'?'@':'')+identity[kind];
+ }
+ updateMemberProfileSummary();
+ return true;
+}
+function identityNextTime(stamp){
+ return stamp?new Date(Number(stamp)*1000).toLocaleString('vi-VN',
+  {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}):'';
+}
+async function openIdentityChange(kind){
+ const who=state.user?.id;
+ if(!who||state.user?.is_admin)return;
+ const status=await api('/api/me/identity/status');
+ if(state.user?.id!==who)return;
+ const quota=status.quota?.[kind];
+ if(!quota)throw Error('Không tải được số lượt đổi tên.');
+ const title=kind==='username'?'Đổi tên đăng nhập':'Đổi tên hiển thị';
+ const hint=kind==='username'?'3–24 ký tự: a–z, 0–9, dấu gạch dưới; bắt đầu bằng chữ.':'2–50 ký tự, phải có ít nhất một chữ cái.';
+ if(!status.pin_configured){
+  modal({title:'Cần mã PIN trước khi đổi tên',description:'Hãy thiết lập mã PIN trong Cài đặt & bảo mật trước khi thay đổi tên tài khoản.',confirm:'Đã hiểu'});
+  return;
+ }
+ if(!quota.remaining){
+  modal({title:'Đã hết lượt đổi tên',description:'Bạn đã dùng hết '+quota.limit+' lượt trong '+quota.window_days+' ngày gần nhất. Có thể đổi lại từ '+identityNextTime(quota.next_at)+'.',confirm:'Đã hiểu'});
+  return;
+ }
+ modal({title,description:'Còn '+quota.remaining+'/'+quota.limit+' lượt trong '+quota.window_days+' ngày gần nhất. '+hint,
+  confirm:'Xác nhận đổi tên',
+  content:`<div class="identity-change-form">
+   <div class="field"><label for="identity-new">Tên mới</label>
+    <input class="input" type="text" id="identity-new" maxlength="${kind==='username'?24:50}"
+     value="${esc(kind==='username'?status.username:status.display_name)}"
+     autocomplete="off" autocapitalize="off" spellcheck="false" required></div>
+   <div class="field"><label for="identity-password">Mật khẩu hiện tại</label>
+    <input class="input" id="identity-password" type="password" autocomplete="current-password" required></div>
+   <div class="field"><label for="identity-pin">Mã PIN hiện tại (${Number(state.user.pin_length||4)} chữ số)</label>
+    <input class="input" id="identity-pin" type="password" inputmode="numeric"
+     minlength="${Number(state.user.pin_length||4)}" maxlength="${Number(state.user.pin_length||4)}"
+     autocomplete="off" required></div>
+   <p class="hint">Tên đăng nhập mới sẽ dùng cho lần đăng nhập tiếp theo; ID, bạn bè và các cuộc trò chuyện được giữ nguyên.</p>
+  </div>`,
+  handler:async host=>{
+   const val=id=>String(host.querySelector(id)?.value||'');
+   const new_value=val('#identity-new').trim(),password=val('#identity-password'),pin=val('#identity-pin');
+   if(!new_value||!password||!pin)throw Error('Nhập đầy đủ tên mới, mật khẩu và PIN.');
+   const result=await post('/api/me/identity/'+kind,{new_value,password,pin});
+   if(applyMemberIdentity(who,{[kind]:result.value}))
+    toast('Đã đổi '+(kind==='username'?'tên đăng nhập':'tên hiển thị')+'.','ok');
+  }});
+}
+document.addEventListener('click',async event=>{
+ const button=event.target.closest('[data-identity-kind]');
+ if(!button||button.disabled)return;
+ button.disabled=true;
+ try{await openIdentityChange(button.dataset.identityKind);}
+ catch(err){toast(err.message||'Không thể mở chức năng đổi tên.','error');}
+ finally{if(button.isConnected)button.disabled=false;}
+});
+document.addEventListener('change',async event=>{
+ const el=event.target;
+ if(el.id!=='social-private-switch'&&el.id!=='social-visibility')return;
+ const viewer=state.user?.id;
+ if(!viewer||state.user.is_admin)return;
+ const form=el.closest('form[data-social-form="profile"]');
+ const visibility=form?.querySelector('#social-visibility');
+ const toggle=form?.querySelector('#social-private-switch');
+ if(!visibility||!toggle)return;
+ const previous=state.user.profile_visibility||'everyone';
+ const desired=el.id==='social-private-switch'?(el.checked?'friends':'everyone'):visibility.value;
+ visibility.value=desired;
+ toggle.checked=desired!=='everyone';
+ if(previous===desired)return;
+ const submit=form.querySelector('button[type="submit"]');
+ visibility.disabled=true;toggle.disabled=true;
+ if(submit)submit.disabled=true;
+ try{
+  await api('/api/me/social',{method:'PATCH',data:{profile_visibility:desired}});
+  if(state.user?.id!==viewer)return;
+  state.user.profile_visibility=desired;
+  updateMemberProfileSummary();
+  toast(desired==='everyone'?'Đã bật hồ sơ công khai.':
+        desired==='only_me'?'Đã bật chế độ chỉ mình tôi.':
+        'Đã bật tài khoản riêng tư: chỉ bạn bè xem được hồ sơ.','ok');
+ }catch(error){
+  if(state.user?.id===viewer){
+   visibility.value=previous;toggle.checked=previous!=='everyone';
+   toast(error.message||'Không lưu được quyền riêng tư.','error');
+  }
+ }finally{
+  if(visibility.isConnected)visibility.disabled=false;
+  if(toggle.isConnected)toggle.disabled=false;
+  if(submit?.isConnected)submit.disabled=false;
+ }
+});
 function messageRequestsPanel(){
  const req=state.messageRequests||[];
  const enabled=!!state.user?.allow_message_requests;
@@ -61,7 +177,7 @@ function applySocialProfile(owner,profile,photo){
   const button=document.querySelector('[data-social-clear="'+photo+'"]');
   if(button)button.hidden=!profile[field];
  }else{
-  for(const field of ['headline','website','profile_visibility','allow_message_requests','world_anonymous']){
+  for(const field of ['headline','website','allow_message_requests','world_anonymous']){
    state.user[field]=profile[field];
   }
  }
@@ -107,7 +223,6 @@ document.addEventListener('submit',async event=>{
   const fd=new FormData(form),owner=state.user.id;
   const {profile}=await api('/api/me/social',{method:'PATCH',data:{
    headline:String(fd.get('headline')||'').trim(),website:String(fd.get('website')||'').trim(),
-   profile_visibility:String(fd.get('profile_visibility')||'everyone'),
    allow_message_requests:fd.has('allow_message_requests'),
    world_anonymous:fd.has('world_anonymous')
   }});

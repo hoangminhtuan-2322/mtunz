@@ -85,8 +85,9 @@ def install(core):
             else:
                 columns += ',a.id AS attachment_id,a.original_name AS name,a.mime,a.size'
                 joins += ' JOIN attachments a ON a.id=m.attachment_id'
-                filters = "a.mime LIKE ?" if kind == 'media' else "a.mime NOT LIKE ?"
-                params += ('image/%',)
+                media = "(a.mime LIKE ? OR a.mime LIKE ?)"
+                filters = media if kind == 'media' else f"NOT {media}"
+                params += ('image/%', 'video/%')
             limit = 12 if kind == 'media' else 24
             rows = many(c, f'''SELECT {columns} FROM {table} m {joins}
                                WHERE {where} AND {filters} AND m.deleted_at IS NULL AND m.id<?

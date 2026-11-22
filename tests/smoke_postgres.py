@@ -77,6 +77,16 @@ with TestClient(app, base_url="https://testserver") as admin:
         first_name = guest.post("/api/me/display-name",json={"display_name":"Minh thử nghiệm"})
         assert first_name.status_code == 200, first_name.text
 
+        rejected=guest.patch("/api/me/profile",json={"display_name":"Chưa xác minh"})
+        assert rejected.status_code==403,rejected.text
+        renamed=guest.post("/api/me/identity/display_name",json={
+            "new_value":"Minh đã xác minh","password":"RenderTestPassword123!","pin":"123456"})
+        assert renamed.status_code==200,renamed.text
+        assert renamed.json()["quota"]["display_name"]["remaining"]==1
+        saved=guest.patch("/api/me/profile",json={"bio":"Kiểm thử hồ sơ PostgreSQL"})
+        assert saved.status_code==200,saved.text
+        assert guest.get("/api/me").json()["user"]["display_name"]=="Minh đã xác minh"
+
         account=guest.get("/api/me").json()["user"]
         matches=admin.get("/api/admin/users",params={"q":"#"+str(account["public_id"])}).json()
         assert matches["total"]==1 and matches["users"][0]["id"]==account["id"]

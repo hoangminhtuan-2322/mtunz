@@ -68,9 +68,16 @@ function groupHeader(){
 }
 function uploadMarkup(m){
  const a=m.attachment;if(!a)return '';
- if(String(a.mime||'').startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
- if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
- return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
+ const mime=String(a.mime||''),url='/api/attachments/'+Number(a.id);
+ const save=url+'?download=1';
+ if(mime.startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
+ if(safeImage(a))return `<div class="chat-media-attachment">
+  <a href="${esc(url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(url)}" alt="${esc(a.name)}" loading="lazy" decoding="async"></a>
+  <a class="chat-media-save" href="${esc(save)}" download="${esc(a.name)}">↓ Lưu ảnh về máy</a></div>`;
+ if(mime.startsWith('video/'))return `<div class="chat-media-attachment">
+  <video class="chat-video" controls preload="none" playsinline src="${esc(url)}" aria-label="${esc(a.name)}"></video>
+  <a class="chat-media-save" href="${esc(save)}" download="${esc(a.name)}">↓ Tải video</a></div>`;
+ return `<a class="attachment-link" href="${esc(save)}" download="${esc(a.name)}">${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Tải về máy</span></span></a>`;
 }
 function reactionMarkup(message,scope){
  const reactions=message.reactions||[];
@@ -203,7 +210,7 @@ function groupConversation(){
  return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${chatHistoryMarkup(state.groupMessages,true)}</div>
  <div class="composer">${latestChatButton()}<div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
- <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
+ <label class="btn ghost attachment-button" title="Đính kèm ảnh, video hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
  <button type="submit" class="btn primary send" aria-label="Gửi tin nhắn">${icon('send',20)}</button>
@@ -254,7 +261,6 @@ async function loadNotices(){if(!state.user||state.user.is_admin)return;state.no
 function profileSettings(){
  const u=state.user;
  return `<section class="card" style="margin-bottom:18px"><h3>${icon('users',17)} Hồ sơ công khai</h3><form data-form="settings-profile" style="margin-top:14px">
- <div class="field"><label for="member-display-name">Tên hiển thị</label><input class="input" id="member-display-name" name="display_name" value="${esc(u.display_name||'')}" maxlength="50"></div>
  <div class="field"><label for="member-bio">Giới thiệu</label><textarea class="input" id="member-bio" name="bio" maxlength="220" rows="2">${esc(u.bio||'')}</textarea></div>
  <label class="profile-check"><input type="checkbox" name="show_online" ${u.show_online?'checked':''}> Hiển thị trạng thái đang hoạt động</label>
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
@@ -832,7 +838,7 @@ document.addEventListener('submit',async event=>{
     }
   }
   if(key==='settings-profile'){
-   const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),
+   const data={bio:String(fd.get('bio')||''),
     show_online:fd.has('show_online'),show_receipts:fd.has('show_receipts')};
    const owner=state.user.id;
    const result=await api('/api/me/profile',{method:'PATCH',data});

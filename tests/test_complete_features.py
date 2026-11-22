@@ -103,6 +103,12 @@ def test_file_permissions_message_actions_and_security():
 
 def test_profile_sessions_notifications_and_exports():
     _,alice,bob,a,b=setup_pair()
+    # Established display names are changed only after password + PIN verification.
+    assert alice.patch('/api/me/profile',json={'display_name':'Alicia','bio':'Mình là Alice',
+             'show_online':False,'show_receipts':False}).status_code==403
+    verified=alice.post('/api/me/identity/display_name',json={
+        'new_value':'Alicia','password':'GreatPassword123','pin':'1234'})
+    assert verified.status_code==200,verified.text
     response=alice.patch('/api/me/profile',json={'display_name':'Alicia','bio':'Mình là Alice','show_online':False,'show_receipts':False})
     assert response.status_code==200,response.text
     assert alice.get('/api/me').json()['user']['display_name']=='Alicia'

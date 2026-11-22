@@ -28,11 +28,14 @@ const {chromium}=require('playwright-core');
       links:[{url:'https://example.org/new',host:'example.org'}]}],next_before:40}});
     }
     return r.fulfill({json:{items:query.get('kind')==='files'?[{id:30,display_name:'Minh',created_at:now,
-     attachment_id:5,name:'Bản tóm tắt.pdf',size:2048,mime:'application/pdf'}]:[],next_before:null}});
+     attachment_id:5,name:'Bản tóm tắt.pdf',size:2048,mime:'application/pdf'}]:
+     [{id:20,display_name:'Minh',created_at:now,attachment_id:6,name:'Đoạn phim.mp4',size:4096,mime:'video/mp4'}],
+     next_before:null}});
    });
    const libraryButton=page.getByRole('button',{name:'Nội dung đã chia sẻ'});
    await libraryButton.click();
-   await page.getByText('Chưa có nội dung thuộc mục này.').waitFor();
+   await page.locator('.chat-library-media video[preload="none"]').waitFor();
+   assert.equal(await page.getByRole('link',{name:'Tải video Đoạn phim.mp4'}).getAttribute('href'),'/api/attachments/6?download=1');
    await page.getByRole('button',{name:'Liên kết',exact:true}).click();
    await page.locator('a[href="https://example.org/new"]').waitFor();
    await page.getByRole('button',{name:'Xem thêm',exact:true}).click();

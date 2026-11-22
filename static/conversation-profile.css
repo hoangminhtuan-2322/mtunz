@@ -9,7 +9,7 @@
 .chat-library-row small,.chat-library-media small,.chat-library-url{color:var(--muted);font-size:11px}
 .chat-library-icon{height:40px;display:grid;place-items:center;border-radius:10px;background:#323759;color:#d0c9fc}
 .chat-library-media{min-width:0;overflow:hidden}
-.chat-library-media img{display:block;width:100%;aspect-ratio:1;object-fit:cover;background:#252c44}
+.chat-library-media img,.chat-library-media video{display:block;width:100%;aspect-ratio:1;object-fit:cover;background:#252c44}
 .chat-library-media small,.chat-library-save{padding:6px 8px}
 .chat-library-save{min-height:32px;display:flex;gap:4px;align-items:center;border-top:1px solid var(--line);color:#cfc6ff;font-size:12px;text-decoration:none}
 .chat-library-save:hover{text-decoration:underline}
@@ -58,3 +58,5 @@
 .chat-library [hidden]{display:none}
 .conversation .main-head .grow{min-width:0}
 .conversation .main-head h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.chat-library-media video{object-fit:contain}
