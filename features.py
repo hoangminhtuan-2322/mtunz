@@ -231,17 +231,21 @@ def install(core):
         u=current_user(request)
         phone=core.normalize_phone(body.phone) if body.phone is not None else u['phone']
         email=core.normalize_email(body.email) if body.email is not None else u['email']
-        name=core.validate_display_name(body.display_name,u['username'])
-        # Existing profile/contact endpoints cannot bypass the protected
-        # two-per-30-day identity change process.
-        if name!=(u['display_name'] or ''):
-            raise HTTPException(403,'Để đổi tên hiển thị, hãy dùng mục Đổi tên trong Hồ sơ và xác nhận mật khẩu + PIN.')
+        # Legacy profile route is intentionally not an identity editor.
+        # Validate against a fresh DB record and never write display_name,
+        # even if another session updates identity concurrently.
         with db() as c:
+            current=one(c,'SELECT username,display_name FROM users WHERE id=?',(u['id'],))
+            if not current:
+                raise HTTPException(401,'Tài khoản không tồn tại.')
+            name=core.validate_display_name(body.display_name,current['username'])
+            if name!=(current['display_name'] or ''):
+                raise HTTPException(403,'Để đổi tên hiển thị, hãy dùng mục Đổi tên trong Hồ sơ và xác nhận mật khẩu + PIN.')
             if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
                 raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
-            c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
+            c.execute('''UPDATE users SET bio=?,show_online=?,show_receipts=?,
                           phone=?,email=? WHERE id=?''',
-                      (name,body.bio.strip(),int(body.show_online),
+                      (body.bio.strip(),int(body.show_online),
                        int(body.show_receipts),phone,email,u['id']))
         return {'ok':True}
 
