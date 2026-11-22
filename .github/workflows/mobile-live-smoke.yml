@@ -1,4 +1,5 @@
 name: Probe live mtunz mobile API
+# Recheck after deploying backend bridge commit 9c549c9d.
 
 on:
   push:
