@@ -67,9 +67,16 @@ function groupHeader(){
 }
 function uploadMarkup(m){
  const a=m.attachment;if(!a)return '';
- if(String(a.mime||'').startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
- if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
- return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
+ const mime=String(a.mime||''),url='/api/attachments/'+Number(a.id);
+ const save=url+'?download=1';
+ if(mime.startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
+ if(safeImage(a))return `<div class="chat-media-attachment">
+  <a href="${esc(url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(url)}" alt="${esc(a.name)}" loading="lazy" decoding="async"></a>
+  <a class="chat-media-save" href="${esc(save)}" download="${esc(a.name)}">↓ Lưu ảnh về máy</a></div>`;
+ if(mime.startsWith('video/'))return `<div class="chat-media-attachment">
+  <video class="chat-video" controls preload="metadata" playsinline src="${esc(url)}" aria-label="${esc(a.name)}"></video>
+  <a class="chat-media-save" href="${esc(save)}" download="${esc(a.name)}">↓ Tải video</a></div>`;
+ return `<a class="attachment-link" href="${esc(save)}" download="${esc(a.name)}">${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Tải về máy</span></span></a>`;
 }
 function reactionMarkup(message,scope){
  const reactions=message.reactions||[];
