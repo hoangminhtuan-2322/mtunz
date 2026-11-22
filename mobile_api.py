@@ -60,8 +60,13 @@ def install(core):
             if challenge['sanction_kind'] and (not challenge['sanction_until']
                 or challenge['sanction_until'] > core.now()):
                 raise HTTPException(403, 'Tài khoản đang bị hạn chế.')
+            if core.one(c, 'SELECT 1 FROM account_deletion_requests WHERE user_id=?',
+                        (challenge['user_id'],)):
+                raise HTTPException(423, 'Tài khoản đang chờ xóa. Hãy đăng nhập website để xử lý.')
             c.execute('DELETE FROM login_challenges WHERE token_hash=?', (core.digest(body.challenge),))
             session = core.issue_session(c, challenge['user_id'], request)
+            expiry = core.one(c, 'SELECT expires_at FROM sessions WHERE token_hash=?',
+                              (core.digest(session),))['expires_at']
         # Token only over HTTPS in production. Client stores it in OS secure storage.
         return {'ok': True, 'access_token': session, 'token_type': 'Bearer',
-                'expires_in': 7 * 86400}
+                'expires_in': max(0, expiry - core.now())}
