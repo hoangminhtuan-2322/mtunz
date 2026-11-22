@@ -1966,18 +1966,28 @@ async function userDetails(uid){
      <h3>${icon('users',17)} Thông tin cá nhân</h3>
      ${adminDetailRow('ID tài khoản','#'+u.id)}
      ${adminDetailRow('Tên đăng nhập',esc(u.username))}
+     ${adminDetailRow('ID công khai',u.public_id?'#'+Number(u.public_id):'Chưa có')}
      ${adminDetailRow('Tên hiển thị',contact(u.display_name))}
      ${adminDetailRow('Số điện thoại',contact(u.phone))}
      ${adminDetailRow('Email / Gmail',contact(u.email))}
      ${adminDetailRow('Giới thiệu',contact(u.bio))}
+     ${adminDetailRow('Tiêu đề hồ sơ',contact(u.headline))}
+     ${adminDetailRow('Liên kết hồ sơ',contact(u.website))}
      <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email; không hiển thị trong hồ sơ công khai.</p>
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Tài khoản & quyền riêng tư</h3>
      ${adminDetailRow('Ngày tạo',deadlineDate(u.created_at))}
-     ${adminDetailRow('Hoạt động gần nhất',deadlineDate(u.last_seen))}
+     ${adminDetailRow('Hoạt động gần nhất',`<time data-admin-last-seen="${Number(u.id)}" data-last-seen-at="${Number(u.last_seen||0)}">${deadlineDate(u.last_seen)}</time>`)}
+     ${adminDetailRow('Kết nối hiện tại',`<span data-admin-presence="${Number(u.id)}">${u.online?'Đang kết nối':'Ngoại tuyến'}</span>`)}
      ${adminDetailRow('Hiển thị trực tuyến',yesno(u.show_online))}
      ${adminDetailRow('Hiển thị đã đọc',yesno(u.show_receipts))}
+     ${adminDetailRow('Chế độ hồ sơ',esc(u.profile_visibility||'Chưa xác định'))}
+     ${adminDetailRow('Cho phép tin nhắn chờ',yesno(u.allow_message_requests))}
+     ${adminDetailRow('Ẩn danh trong Chat thế giới',yesno(u.world_anonymous))}
+     ${adminDetailRow('Cần hoàn tất tên hiển thị',yesno(u.needs_display_name))}
+     ${adminDetailRow('Điều khoản đã chấp thuận',u.terms_accepted_at?deadlineDate(u.terms_accepted_at)+' · '+esc(u.terms_accepted_version||'Chưa rõ phiên bản'):'Chưa ghi nhận')}
+     <p class="hint">Dấu kết nối phản ánh WebSocket của phiên hiện tại. Thời gian gần nhất cập nhật khi có tương tác; không khẳng định người dùng đang nhìn màn hình.</p>
      ${adminDetailRow('Trạng thái',u.deletion_purge_at?'<span class="pill warn">Chờ xóa</span>':u.sanction_kind?'<span class="pill bad">'+esc(u.sanction_kind)+'</span>':'<span class="pill good">Hoạt động</span>')}
      ${u.sanction_reason?adminDetailRow('Lý do hạn chế',esc(u.sanction_reason)):''}
      ${u.sanction_until?adminDetailRow('Hạn hạn chế',deadlineDate(u.sanction_until)):''}
@@ -1994,6 +2004,7 @@ async function userDetails(uid){
      ${adminDetailRow('Tệp tải lên',String(u.file_count)+' · '+Number(u.file_bytes).toLocaleString('vi-VN')+' byte')}
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
      ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
+     ${adminDetailRow('Phiên đăng nhập còn hiệu lực gần nhất',u.last_active_session_at?deadlineDate(u.last_active_session_at):'Không có phiên còn hiệu lực')}
    </div>
    <div class="admin-detail-section">
      <h3>${icon('clock',17)} Nhật ký liên quan đến tài khoản</h3>
