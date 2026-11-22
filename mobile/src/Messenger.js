@@ -160,6 +160,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         return dedupe([...current.filter(x=>Number(x.id)<first),...next]);
       });
       keyRef.current=key;
+      if(next.length&&(!before || liveRef.current[key]===undefined))
+        liveRef.current[key]=Math.max(Number(liveRef.current[key]||0),Number(next[next.length-1].id));
       setMore(next.length>=70);
       if(!before&&activeRef.current&&target.scope!=='world'){
         const newest=next.reduce((max,m)=>m.sender_id!==user.id&&!m.deleted_at?
@@ -173,6 +175,34 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     }catch(e){alertError(e);}
     finally{if(!before&&generation===loadSeq.current)setLoading(false);olderRef.current=false;}
   },[invoke,alertError,user.id]);
+
+  // Reconcile every unseen batch when a socket reconnects after network loss.
+  // A latest-only refresh would silently skip messages during longer outages.
+  const reconcileRoom=useCallback(async(target)=>{
+    if(!target)return;
+    if(target.scope==='world'){await loadWindow(target);return;}
+    const key=target.scope+':'+target.id;
+    let cursor=Number(liveRef.current[key]||0);
+    if(!cursor){await loadWindow(target);return;}
+    let page=0,moreAfter=false;
+    try{
+      do{
+        const result=await invoke(toQuery(route(target),{after:String(cursor)}));
+        if(roomRef.current?.scope!==target.scope||roomRef.current?.id!==target.id)return;
+        const rows=(result.messages||[]).map(sanitize);
+        if(!rows.length)break;
+        setMessages(old=>dedupe([...old,...rows]));
+        cursor=Number(rows[rows.length-1].id);
+        liveRef.current[key]=Math.max(Number(liveRef.current[key]||0),cursor);
+        moreAfter=!!result.more_after;
+      }while(moreAfter&&++page<20);
+      if(moreAfter){
+        setError('Cuộc trò chuyện có nhiều tin mới. Đang giới hạn tải nền để tránh giật lag; hãy mở lại để tải thêm.');
+        return;
+      }
+      await loadWindow(target);
+    }catch(e){alertError(e);await loadWindow(target);}
+  },[invoke,loadWindow,alertError]);
 
   const loadInbox=useCallback(async()=>{
     const results=await Promise.allSettled([invoke('/api/message-requests'),invoke('/api/blocks')]);
@@ -196,7 +226,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         if(!activeRef.current||closed)return;
         if(!kinds||kinds.includes('lists'))refreshLists().catch(alertError);
         const target=roomRef.current;
-        if(target&&(!kinds||kinds.includes('chat')))loadWindow(target);
+        if(target&&kinds?.includes('catchup'))reconcileRoom(target);
+        else if(target&&(!kinds||kinds.includes('chat')))loadWindow(target);
       },300);
     };
     const onEvent=event=>{
@@ -266,7 +297,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       try{socket=new WebSocket(wsUrl(),[],{headers:{Authorization:'Bearer '+token}});}
       catch{retryTimer=setTimeout(connect,retryDelay);return;}
       wsRef.current=socket;setConnection('connecting');
-      socket.onopen=()=>{if(closed)return;retryDelay=1200;setConnection('online');schedule();};
+      socket.onopen=()=>{if(closed)return;retryDelay=1200;setConnection('online');schedule(['lists','catchup']);};
       socket.onmessage=onEvent;
       socket.onerror=()=>setConnection('offline');
       socket.onclose=()=>{if(closed)return;setConnection('offline');
@@ -277,12 +308,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       activeRef.current=state==='active';
       if(!activeRef.current){socket?.close();return;}
       if(socket?.readyState!==WebSocket.OPEN&&socket?.readyState!==WebSocket.CONNECTING)connect();
-      schedule();
+      schedule(['lists','catchup']);
     });
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
     return()=>{closed=true;clearTimeout(refreshTimer);clearTimeout(retryTimer);clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,alertError,onExpired,onProfile]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{
