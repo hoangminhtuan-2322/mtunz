@@ -349,8 +349,24 @@ function mount(){
  if(form){renderLocations(shell);addImagePreview(shell);}
  if(locationDialog&&!sameContext(locationDialog.context))closeLocation();
 }
-const observer=new MutationObserver(()=>{
- if(scheduled)return;scheduled=true;
+function relevantChatMutation(records){
+ // Only mount on view/composer changes or a new shared-location bubble.
+ // Reactions, read ticks, chat history scroll and ordinary bubbles need no
+ // full message scan. This runs for both desktop and low-power mobile.
+ for(const record of records){
+  if(record.type!=='childList')continue;
+  for(const node of record.addedNodes){
+   if(node.nodeType!==1)continue;
+   if(node.matches('.shell:not(.admin-shell),.conversation .compose-row,.conversation .main-head,.conversation .compose-file'))return true;
+   if(node.matches('.bubble-wrap')&&node.textContent?.includes('📍 Vị trí '))return true;
+   if(node.querySelector('.shell:not(.admin-shell),.conversation .compose-row,.conversation .main-head,.conversation .compose-file'))return true;
+  }
+ }
+ return false;
+}
+const observer=new MutationObserver(records=>{
+ if(scheduled||!relevantChatMutation(records))return;
+ scheduled=true;
  requestAnimationFrame(()=>{scheduled=false;mount();});
 });
 function boot(){
