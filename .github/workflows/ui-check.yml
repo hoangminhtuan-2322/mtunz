@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12]
+    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12, feat/reciprocal-presence-read-privacy-v13]
   workflow_dispatch:
 
 permissions:
@@ -107,6 +107,7 @@ jobs:
           node tests/world_moderation_ui.cjs
           node tests/world_experience_ui.cjs
           node tests/support_continuous_ui.cjs
+          node tests/reciprocal_privacy_ui.cjs
           node tests/chat_message_delete_ui.cjs
           node tests/admin_pin_url_ui.cjs
       - name: Verify private session manager and Admin-only security details
@@ -142,7 +143,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=20.2' in h
+          assert '/static/app.js?v=20.3' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -154,7 +155,7 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=18.0' in h
+          assert '/static/extras.js?v=18.1' in h
           assert '/static/group-lobby.css?v=1.0' in h
           assert '/static/device-sessions.css?v=11.0' in h
           assert 'auth-remember-choice' in application
