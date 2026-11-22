@@ -7,7 +7,7 @@ const html=read('static/index.html'),css=read('static/world-moderation.css');
 const server=read('world_chat.py'),pg=read('pg_storage.py');
 new vm.Script(app,{filename:'app.js'});
 new vm.Script(world,{filename:'world-moderation.js'});
-assert(html.includes('/static/world-moderation.js?v=4.2'),'World UI must load');
+assert(html.includes('/static/world-moderation.js?v=4.3'),'World UI must load');
 assert(html.includes('/static/world-moderation.css?v=1.0'),'World layout must load');
 assert(html.indexOf('world-moderation.js')>html.indexOf('app.js'),'World helpers load after core');
 assert(html.includes('profile-separation.css'),'Dedicated profile styles must load');
