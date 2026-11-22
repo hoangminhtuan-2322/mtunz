@@ -6,7 +6,7 @@ Bản này dành riêng cho **Render (Web Service Free)** với cơ sở dữ li
 
 ## Ứng dụng Android / iOS (bản thử nghiệm)
 
-Mã nguồn ứng dụng React Native/Expo nằm ở [`mobile/`](mobile/README.md). App kết nối thẳng vào FastAPI/Neon đang dùng, có đăng nhập mật khẩu + PIN, đồng bộ bạn bè, tin nhắn 1–1, trạng thái đọc và WebSocket. Phần này đang ở giai đoạn thử nghiệm và **chưa có APK/IPA phát hành**; chưa tích hợp push khi đóng ứng dụng, đa phương tiện và chat nhóm. Xem hướng dẫn chạy và giới hạn tại `mobile/README.md`.
+Mã nguồn React Native/Expo nằm ở [`mobile/`](mobile/README.md): dùng chung FastAPI/Neon và API với web, hỗ trợ tài khoản/mật khẩu/PIN, chat 1–1/nhóm, tin nhắn realtime, reaction, sửa/thu hồi, ghi âm, ảnh/video/tệp nhỏ, biệt danh, hồ sơ và quyền riêng tư. Có triển khai nền tảng Expo Push, nhưng phải thiết lập EAS/FCM/APNs và thử trên thiết bị thật mới nhận thông báo khi đóng app. Đây là **bản thử nghiệm**, chưa có APK/IPA ký và chưa có WebRTC native hoàn chỉnh; xem yêu cầu kiểm thử, giới hạn và hướng dẫn build trong `mobile/README.md`.
 
 ## Cấu trúc
 
