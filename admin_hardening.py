@@ -93,6 +93,8 @@ def install(core):
         A correct PIN cannot bypass a still-active lockout. Lock counters are
         checked and committed in a separate transaction before raising errors.
         """
+        if not admin['pin_hash']:
+            raise HTTPException(403,'Hãy thiết lập PIN trong Bảo mật Admin trước khi thực hiện.')
         throttle(request,'admin-pin-verify',25,900,str(admin['id']))
         at=now()
         with db() as c:

@@ -24,7 +24,7 @@ ACCOUNT_LOCK_SECONDS = 15*86400
 def install(core):
     app, db, one, many = core.app, core.db, core.one, core.many
     current_user, require_admin = core.current_user, core.require_admin
-    admin_log, verify_admin_stepup = core.admin_log, core.verify_admin_stepup
+    admin_log = core.admin_log
     hub = core.hub
 
     with db() as c:
@@ -299,7 +299,6 @@ def install(core):
         schedule_enabled:bool=False
         open_minute:int=Field(ge=0,le=1439)
         close_minute:int=Field(ge=0,le=1439)
-        admin_password:str=Field(min_length=1,max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.get('/api/admin/world')
@@ -328,7 +327,7 @@ def install(core):
     @app.post('/api/admin/world/config')
     async def set_world_config(request:Request,body:WorldConfig):
         admin=require_admin(request)
-        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
         if body.schedule_enabled and body.open_minute==body.close_minute:
             raise HTTPException(422,'Giờ mở và đóng phải khác nhau.')
         with db() as c:
@@ -347,14 +346,12 @@ def install(core):
         user_id:int
         minutes:int=Field(ge=0,le=43200)  # 0 = remove manual mute
         reason:str=Field(min_length=5,max_length=250)
-        admin_password:str=Field(default='',max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.post('/api/admin/world/mute')
     async def admin_world_mute(request:Request,body:WorldMute):
         admin=require_admin(request)
-        if admin['pin_hash']:core.verify_admin_pin_stepup(request,admin,body.admin_pin)
-        else:verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
         at=timestamp()
         with db() as c:
             target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(body.user_id,))
@@ -376,14 +373,12 @@ def install(core):
     class WorldReset(BaseModel):
         user_id:int
         reason:str=Field(min_length=5,max_length=250)
-        admin_password:str=Field(default='',max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.post('/api/admin/world/reset')
     async def admin_world_reset(request:Request,body:WorldReset):
         admin=require_admin(request)
-        if admin['pin_hash']:core.verify_admin_pin_stepup(request,admin,body.admin_pin)
-        else:verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
         with db() as c:
             target=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(body.user_id,))
             if not target:raise HTTPException(404,'Không tìm thấy thành viên.')
@@ -492,13 +487,12 @@ def install(core):
     class ReportReview(BaseModel):
         decision:Literal['reviewed','dismissed']
         note:str=Field(min_length=5,max_length=600)
-        admin_password:str=Field(min_length=1,max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.post('/api/admin/reports/{report_id}/review')
     async def review_report(request:Request,report_id:int,body:ReportReview):
         admin=require_admin(request)
-        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
         at=timestamp()
         with db() as c:
             report=one(c,'SELECT * FROM user_reports WHERE id=?',(report_id,))
@@ -516,13 +510,12 @@ def install(core):
 
     class DeleteWorldMessage(BaseModel):
         reason:str=Field(min_length=5,max_length=250)
-        admin_password:str=Field(min_length=1,max_length=128)
         admin_pin:str=Field(default='',max_length=6)
 
     @app.post('/api/admin/world/messages/{message_id}/remove')
     async def remove_world_message(request:Request,message_id:int,body:DeleteWorldMessage):
         admin=require_admin(request)
-        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
         at=timestamp()
         with db() as c:
             msg=one(c,'SELECT sender_id FROM world_messages WHERE id=?',(message_id,))

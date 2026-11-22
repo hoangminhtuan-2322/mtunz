@@ -27,7 +27,7 @@ for(const token of [
 for(const token of [
  "'/api/admin/audit'", "'/api/admin/audit/{event_id}'",
  "'/api/admin/users/{uid}/edit'", "'/api/admin/users/{uid}/sessions/revoke'",
- 'verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)',
+ 'verify_admin_pin_stepup(request,admin,body.admin_pin)',
  'admin_log(c,admin[\'id\'],\'admin_edit_user\'',
  'admin_log(c,admin[\'id\'],\'admin_revoke_user_sessions\''
 ]) assert(server.includes(token),'Server-side security/endpoint missing: '+token);

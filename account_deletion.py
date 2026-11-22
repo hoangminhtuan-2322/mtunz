@@ -191,7 +191,7 @@ def delete_user_records(c, uid: int) -> dict:
 # The queue is persisted in the same database as the account. Each claim and
 # erasure runs in one transaction: a user's cancellation can win before the
 # deadline, but cannot race a successful deletion claim.
-DELETION_GRACE_SECONDS = 30 * 24 * 60 * 60
+DELETION_GRACE_SECONDS = 3 * 24 * 60 * 60
 
 
 def purge_due_deletions(db, timestamp: int, limit: int = 25) -> list[dict]:

@@ -47,7 +47,7 @@ function inspectMarkup(markup, count) {
 for(const length of [null,6]) {
  context.state.user.pin_length=length;
  const markup=context.adminSecurity();
- inspectMarkup(markup,5);
+ inspectMarkup(markup,4);
  assert(markup.includes('data-form="admin-password"'),'Password form preserved');
  assert(markup.includes(length?'data-form="admin-pin-change"':'data-form="admin-pin-setup"'),'PIN form preserved');
 }

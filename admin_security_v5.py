@@ -19,7 +19,7 @@ def install(core):
     app,db,one=core.app,core.db,core.one
     now=core.now
     with db() as c:
-        c.execute("INSERT INTO settings(key,value) VALUES('emergency_lockdown','0') ON CONFLICT(key) DO NOTHING")
+        c.execute("INSERT INTO settings(key,value) VALUES('emergency_lockdown','0'),('maintenance_mode','0') ON CONFLICT(key) DO NOTHING")
 
     @app.get('/api/admin/security/overview')
     async def security_overview(request:Request):
@@ -31,6 +31,7 @@ def install(core):
             pending=one(c,"SELECT COUNT(*) n FROM registrations WHERE status='pending'")['n']
             world=one(c,"SELECT enabled,schedule_enabled FROM world_settings WHERE id=1")
             emergency=one(c,"SELECT value FROM settings WHERE key='emergency_lockdown'")
+            maintenance=core.maintenance_enabled(c)
             failed=one(c,'SELECT failures,locked_until FROM admin_pin_attempts WHERE admin_id=?',(admin['id'],))
         return {'pin_enabled':bool(admin['pin_hash']),'pin_length':admin['pin_length'],
                 'admin_sessions':int(active),'session_limit':2,'pending_approvals':int(approvals),
@@ -38,6 +39,7 @@ def install(core):
                 'world_enabled':bool(world and world['enabled']),
                 'world_scheduled':bool(world and world['schedule_enabled']),
                 'emergency_lockdown':bool(emergency and emergency['value']=='1'),
+                'maintenance_mode':maintenance,
                 'pin_lockout_until':int(failed['locked_until']) if failed else 0,
                 'pin_failures':int(failed['failures']) if failed else 0,
                 'admin_session_ttl_minutes':120,
@@ -82,3 +84,23 @@ def install(core):
         await core.hub.broadcast_members('emergency-mode',enabled=bool(body.enabled))
         return {'ok':True,'enabled':bool(body.enabled),
                 'world_chat_disabled':bool(body.enabled)}
+
+    @app.post('/api/admin/security/maintenance')
+    async def change_maintenance(request:Request,body:Lockdown):
+        admin=core.require_admin(request)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
+        core.throttle(request,'security-maintenance',12,3600,str(admin['id']))
+        with db() as c:
+            c.execute("UPDATE settings SET value=? WHERE key='maintenance_mode'", ('1' if body.enabled else '0',))
+            revoked=set()
+            if body.enabled:
+                revoked={row['token_hash'] for row in c.execute("""DELETE FROM sessions
+                    WHERE user_id IN (SELECT id FROM users WHERE is_admin=0) RETURNING token_hash""")}
+            core.admin_log(c,admin['id'],'maintenance_mode','enabled' if body.enabled else 'disabled')
+        hub=core.hub
+        sockets=[ws for ws, token_hash in hub.session_hashes.items() if token_hash in revoked]
+        for ws in sockets:
+            hub.detach_session(ws)
+        await hub.send(sockets,{'type':'maintenance-mode'})
+        await hub.close_sockets(sockets)
+        return {'ok':True,'enabled':bool(body.enabled),'revoked_sessions':len(revoked)}

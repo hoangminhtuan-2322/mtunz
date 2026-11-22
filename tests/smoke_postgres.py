@@ -34,6 +34,10 @@ with TestClient(app, base_url="https://testserver") as admin:
     assert login.json().get("admin") is True, login.text
     assert admin.get("/api/me").json()["user"]["is_admin"] is True
 
+    enrollment=admin.post("/api/me/pin/setup",json={
+        "current_password":os.environ["ADMIN_PASSWORD"],"pin":"2345","pin_length":4})
+    assert enrollment.status_code==200,enrollment.text
+
     with TestClient(app, base_url="https://testserver") as guest:
         guest.get("/")
         req = guest.post("/api/registration/request", json={"username": "render_ci_user", "phone": "0912345678"})
@@ -42,7 +46,7 @@ with TestClient(app, base_url="https://testserver") as admin:
         registration = next(x for x in pending if x["username"] == "render_ci_user")
         approved = admin.post(
             f"/api/admin/registrations/{registration['id']}/decision",
-            json={"approve": True},
+            json={"approve": True, "admin_pin":"2345"},
         )
         assert approved.status_code == 200, approved.text
         complete = guest.post(
@@ -72,9 +76,19 @@ with TestClient(app, base_url="https://testserver") as admin:
         first_name = guest.post("/api/me/display-name",json={"display_name":"Minh thử nghiệm"})
         assert first_name.status_code == 200, first_name.text
 
+        account=guest.get("/api/me").json()["user"]
+        matches=admin.get("/api/admin/users",params={"q":"#"+str(account["public_id"])}).json()
+        assert matches["total"]==1 and matches["users"][0]["id"]==account["id"]
+        scheduled=guest.post("/api/me/delete",json={
+            "username":"render_ci_user","password":"RenderTestPassword123!",
+            "pin":"123456","confirm":"XOA SAU 3 NGAY"})
+        assert scheduled.status_code==200,scheduled.text
+        cancel=admin.post(f"/api/admin/users/{account['id']}/delete/cancel",json={"admin_pin":"2345"})
+        assert cancel.status_code==200,cancel.text
+
         config=admin.post("/api/admin/world/config",json={
             "enabled":True,"schedule_enabled":False,"open_minute":540,"close_minute":1320,
-            "admin_password":os.environ["ADMIN_PASSWORD"]
+            "admin_pin":"2345"
         })
         assert config.status_code==200,config.text
         sent=guest.post("/api/world/messages",json={"body":"Chào Chat thế giới"})
@@ -109,8 +123,15 @@ with TestClient(app, base_url="https://testserver") as admin:
             assert report_id>0
             review=admin.post(f"/api/admin/reports/{report_id}/review",json={
                 "decision":"reviewed","note":"Đã kiểm tra trên PostgreSQL",
-                "admin_password":os.environ["ADMIN_PASSWORD"]})
+                "admin_pin":"2345"})
             assert review.status_code==200,review.text
+
+        endpoint="/api/admin/security/maintenance"
+        enabled=admin.post(endpoint,json={"enabled":True,"admin_pin":"2345"})
+        assert enabled.status_code==200,enabled.text
+        assert guest.get("/api/me").status_code==503
+        assert admin.get("/api/me").json()["user"]["is_admin"]
+        assert admin.post(endpoint,json={"enabled":False,"admin_pin":"2345"}).status_code==200
 
 with db() as connection:
     assert connection.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"] == 3

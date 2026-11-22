@@ -50,7 +50,7 @@ Trên Render: **tuyệt đối không đưa `.env` hoặc `DATABASE_URL` lên Gi
 python -m pytest -q
 ```
 
-CI chạy kiểm thử Python, cấu hình PostgreSQL và các bài kiểm tra giao diện JavaScript. Các bài kiểm thử xóa tài khoản còn kiểm tra khoảng chờ 30 ngày, hủy yêu cầu, quá hạn, xóa vĩnh viễn bởi admin và bảo vệ tài khoản admin.
+CI chạy kiểm thử Python, cấu hình PostgreSQL và các bài kiểm tra giao diện JavaScript. Các bài kiểm thử xóa tài khoản còn kiểm tra khoảng chờ 3 ngày, hủy yêu cầu, quá hạn, xóa vĩnh viễn bởi admin và bảo vệ tài khoản admin.
 
 ## Quản lý phiên & thiết bị
 
@@ -69,13 +69,14 @@ có thể sai do VPN, mạng di động và proxy. Đối với thiết bị đ�
 cập nhật, các trường nhận diện được hiển thị **Chưa có dữ liệu** thay vì suy đoán.
 
 
-## Tài khoản chờ xóa 30 ngày
+## Tài khoản chờ xóa 3 ngày
 
 Trong **Cài đặt → Xóa tài khoản và dữ liệu**, người dùng nhập lại tên tài khoản,
-mật khẩu, PIN và cụm `XOA SAU 30 NGAY` để tạo yêu cầu xóa. Dữ liệu **không bị xóa
-ngay**: thời điểm `purge_at = requested_at + 30 × 24 giờ` được lưu bền vững
+mật khẩu, PIN và cụm `XOA SAU 3 NGAY` để tạo yêu cầu xóa. Dữ liệu **không bị xóa
+ngay**: thời điểm `purge_at = requested_at + 3 × 24 giờ` được lưu bền vững
 trong bảng `account_deletion_requests` (Neon ở môi trường public). Người dùng
-có thể hủy trước hạn bằng mật khẩu và PIN hiện tại. Yêu cầu trùng không gia hạn
+có thể hủy trước hạn bằng mật khẩu và PIN hiện tại. Lịch đã tạo giữ nguyên hạn xóa.
+Yêu cầu trùng không gia hạn
 ngầm mốc xóa. Sau hạn, hủy không còn hiệu lực.
 
 Hệ thống tự xử lý tài khoản đến hạn khi ứng dụng khởi động và mỗi 60 phút trong
@@ -83,15 +84,14 @@ thời gian chạy. Workflow `.github/workflows/deletion-retention.yml` gọi
 `/health` mỗi 6 giờ để đánh thức ứng dụng Render Free ngay cả khi ngủ.
 Đặt GitHub Actions variable `MTUNZ_HEALTH_URL` nếu địa chỉ triển khai không
 phải `https://mtunz.onrender.com/health`. GitHub Actions hoặc Render bị
-gián đoạn có thể khiến xóa thực tế diễn ra **muộn hơn 30 ngày**, không bao giờ
+gián đoạn có thể khiến xóa thực tế diễn ra **muộn hơn 3 ngày**, không bao giờ
 được xóa trước thời điểm đã đặt. Đây là lịch xử lý best-effort, không phải cam
 kết chạy chính xác đến từng phút. Cần theo dõi các workflow thất bại để đảm
 bảo xóa đúng hạn.
 
-Admin thấy yêu cầu và hạn xử lý tại **Chờ xóa 30 ngày**, và vẫn có thể
-**xóa vĩnh viễn ngay** từ danh sách này hoặc quản lý người dùng. Xóa ngay
-yêu cầu admin đã kích hoạt PIN và xác minh lại bằng mật khẩu, PIN, tên tài khoản
-đích và `XOA VINH VIEN`. Thao tác được ghi nhật ký; không có khôi phục dữ liệu
+Admin có thể hủy yêu cầu trước hạn tại **Chờ xóa** bằng PIN. Xóa vĩnh viễn ngay
+yêu cầu PIN Admin, tên tài khoản đích và `XOA VINH VIEN`. Các thao tác được ghi
+nhật ký. Xóa vĩnh viễn sẽ loại bỏ dữ liệu
 sau khi hệ thống đã xóa tài khoản.
 
 ## Bảo mật phiên quản trị

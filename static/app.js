@@ -129,9 +129,11 @@ async function api(url,{method='GET',data,signal}={}){
   }catch(e){throw Error('Không kết nối được máy chủ. Vui lòng thử lại.');}
   if(!response.ok){
     const detail=payload?.detail;
-    if(detail&&typeof detail==='object'&&detail.code==='sanction')showSanction(detail);
-    const error=new Error(typeof detail==='string'?detail:detail?.reason||'Yêu cầu không thành công.');
+    if(detail?.code==='sanction')showSanction(detail);
+    if(detail?.code==='maintenance')showMaintenance(detail.message);
+    const error=new Error(typeof detail==='string'?detail:detail?.message||detail?.reason||'Yêu cầu không thành công.');
     error.status=response.status;
+    error.maintenance=detail?.code==='maintenance';
     throw error;
   }
   return payload;
@@ -255,6 +257,20 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
   requestAnimationFrame(()=>{if(panel.isConnected)panel.focus({preventScroll:true});});
 }
 function ask(title,description,handler,confirm='Xác nhận',danger=false){modal({title,description,handler,confirm,danger});}
+function showMaintenance(message='Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'){
+ if(state.user?.is_admin||$('#maintenance-notice'))return;
+ const endingSession=Boolean(state.user||readActiveTab());
+ modal({title:'Hệ thống đang bảo trì',description:message,confirm:'Đã hiểu',closable:false,
+  content:'<span id="maintenance-notice" hidden></span>',
+  handler:async()=>{
+   if(endingSession){
+    await post('/api/auth/logout').catch(()=>{});
+    resetAuthAfterLogout();
+   }else if(state.mode==='login'&&state.step!=='username'){
+    state.step='username';state.challenge='';renderAuth();
+   }
+  }});
+}
 function showSanction(d){
   if($('#modal-root .sanction-only'))return;
   $('#modal-root').innerHTML=`<div class="modal-backdrop sanction-only"><div class="modal" role="alertdialog" aria-modal="true">
@@ -314,6 +330,7 @@ async function setup(){
   renderAuth();
   connectSocket();
  }catch(e){
+  if(e.maintenance){clearActiveTab();state.user=null;renderAuth();return;}
   if(previous&&readActiveTab()){
    // A temporary network failure must never look like a forced logout.
    renderReconnect();
@@ -342,6 +359,7 @@ function connectSocket(retry=false){
    socketRetryDelay=2500;
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='maintenance-mode'){showMaintenance();return;}
    if(t==='account-sanction'){showSanction(data);return;}
    if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
      await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
@@ -357,7 +375,18 @@ function connectSocket(retry=false){
      await loadAdmin();return;
    }
    if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');await post('/api/auth/logout').catch(()=>{});resetAuthAfterLogout();return;}
-   if(t==='account-deletion-updated'&&state.user?.is_admin){await loadAdmin();return;}
+   if(t==='account-deletion-updated'&&state.user){
+     if(state.user.is_admin)await loadAdmin();
+     else{
+      const owner=state.user.id;
+      const result=await api('/api/me/deletion').catch(()=>null);
+      if(result&&state.user?.id===owner){
+       state.accountDeletion=result;
+       if(state.tab==='settings')renderApp();
+      }
+     }
+     return;
+   }
    if(t==='admin-approval-request'&&state.user?.is_admin){
      toast('🔐 Có thiết bị đang yêu cầu phê duyệt đăng nhập Admin.','info');
      if(state.adminTab==='security'){
@@ -1347,11 +1376,11 @@ function settingsContent(){
  <section class="card account-delete-zone" aria-label="Lịch xóa tài khoản">
    <div><h3>${icon('ban',18)} Xóa tài khoản và dữ liệu</h3>
    ${state.accountDeletion?.pending?`<p class="hint" style="margin:12px 0">Yêu cầu xóa đã được ghi nhận. Dữ liệu sẽ bị xóa vĩnh viễn sau <b>${deadlineDate(state.accountDeletion.purge_at)}</b> (giờ hiển thị theo máy bạn), còn khoảng <b>${daysUntil(state.accountDeletion.purge_at)} ngày</b>. Bạn có thể hủy trước thời điểm này.</p>
-     <span class="pill warn">Đang trong thời gian 30 ngày cân nhắc</span>`:
-   `<p class="hint" style="margin:12px 0">Bạn có thể yêu cầu xóa tài khoản và hủy yêu cầu trong vòng <b>30 ngày</b>. Sau thời hạn này, tài khoản, tin nhắn và tệp sẽ bị xóa vĩnh viễn. Một số trường hợp có thể được xử lý xóa sớm hơn.</p>`}</div>
+     <span class="pill warn">Đang trong thời gian chờ xóa</span>`:
+   `<p class="hint" style="margin:12px 0">Bạn có thể yêu cầu xóa tài khoản và hủy yêu cầu trong vòng <b>3 ngày</b>. Sau thời hạn này, tài khoản, tin nhắn và tệp sẽ bị xóa vĩnh viễn. Một số trường hợp có thể được xử lý xóa sớm hơn.</p>`}</div>
    ${state.accountDeletion?.pending?
      `<button class="btn success" type="button" data-act="cancel-own-deletion">${icon('check',16)} Hủy yêu cầu xóa tài khoản</button>`:
-     `<button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Yêu cầu xóa sau 30 ngày</button>`}
+     `<button class="btn danger" type="button" data-act="delete-own-account">${icon('ban',16)} Yêu cầu xóa sau 3 ngày</button>`}
  </section>
  </div>`;
 }
@@ -1485,7 +1514,7 @@ async function goTab(tab){
 }
 
 // ==== Administrator workspace ====
-const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa 30 ngày'],['overview','grid','Tổng quan'],['ops','shield','Điều hành thông minh'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin'],['world','group','Chat thế giới'],['reports','shield','Báo cáo vi phạm']];
+const adminTabs=[['groups','group','Nhóm chat'],['deletions','clock','Chờ xóa'],['overview','grid','Tổng quan'],['ops','shield','Điều hành thông minh'],['registrations','check','Duyệt đăng ký'],['users','users','Người dùng'],['tickets','inbox','Hỗ trợ / khôi phục'],['broadcast','announce','Thông báo'],['audit','clock','Nhật ký quản trị'],['security','lock','Bảo mật Admin'],['world','group','Chat thế giới'],['reports','shield','Báo cáo vi phạm']];
 function adminNav(){
  return `<aside class="admin-nav"><div class="logo"><span class="logo-mark" aria-hidden="true">${brandGlyph()}</span><span>mtunz<span style="color:#8984fc">.</span></span></div>
  <div class="nav-label">QUẢN LÝ HỆ THỐNG</div>
@@ -1494,65 +1523,87 @@ function adminNav(){
  <div class="row" style="padding:11px 12px">${avatar('admin',true,'sm')}<div class="grow"><b>admin</b><div class="hint">Super administrator</div></div></div>
  <button data-act="logout" style="color:#ff93a0">${icon('logout')} Đăng xuất</button></aside>`;
 }
-const adminHeading={ops:['Trung tâm điều hành V6','Giám sát hiệu năng, cảnh báo bảo mật và điều khiển tính năng theo thời gian thực.'],deletions:['Yêu cầu xóa tài khoản','Theo dõi thời hạn 30 ngày, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
+const adminHeading={ops:['Trung tâm điều hành V6','Giám sát hiệu năng, cảnh báo bảo mật và điều khiển tính năng theo thời gian thực.'],deletions:['Yêu cầu xóa tài khoản','Theo dõi hạn xóa, kiểm tra yêu cầu và xử lý các trường hợp cần xóa ngay.'],groups:['Kiểm duyệt nhóm chat','Danh sách nhóm và lịch sử hoạt động khi cần xử lý nội dung vi phạm.'],overview:['Tổng quan hệ thống','Một nơi điều hành mọi hoạt động trên mtunz.'],registrations:['Phê duyệt tài khoản','Mọi tài khoản mới đều cần được bạn chấp thuận trước khi thiết lập mật khẩu và PIN.'],users:['Quản lý người dùng','Quản lý dữ liệu, giới hạn quyền truy cập, khóa và cấm tài khoản.'],tickets:['Trung tâm hỗ trợ','Trao đổi và xác minh yêu cầu khôi phục trực tiếp từ người dùng.'],broadcast:['Thông báo toàn hệ thống','Gửi thông báo tức thời tới tất cả người dùng.'],audit:['Nhật ký quản trị','Dấu vết thao tác quản lý giúp truy cứu khi cần.'],security:['Bảo mật quản trị','Đổi mật khẩu quản trị và bảo vệ quyền truy cập tối cao.'],
 world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và quản lý án phạt spam tại một nơi.'],
 reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
+let adminLoadSequence=0;
+let adminTicketSequence=0;
 async function loadAdmin(){
+ if(!state.user?.is_admin)return;
+ const owner=state.user.id,tab=state.adminTab,request=++adminLoadSequence;
+ const current=()=>state.user?.id===owner&&state.adminTab===tab&&request===adminLoadSequence;
+ const update={adminData:null};
  if(state.adminTab==='world'&&typeof communityPlusRefresh==='function')
    communityPlusRefresh(false,true).then(()=>{
      const root=document.getElementById('v7-community-admin');
-     if(root&&state.adminTab==='world')root.innerHTML=communityPlusAdminPanel();
+     if(root&&current())root.innerHTML=communityPlusAdminPanel();
    }).catch(()=>{});
 
- if(!state.user?.is_admin)return;
  try{
-  switch(state.adminTab){
-   case 'groups':state.adminData=(await api('/api/admin/groups')).groups;break;
+  switch(tab){
+   case 'groups':update.adminData=(await api('/api/admin/groups')).groups;break;
    case 'world':{
     const [config,rooms,polls]=await Promise.all([
       api('/api/admin/world'),api('/api/admin/world/rooms'),api('/api/admin/world/polls')
     ]);
-    state.adminData=config;state.adminV6Rooms=rooms.rooms||[];state.adminV6Polls=polls.polls||[];
+    update.adminData=config;update.adminV6Rooms=rooms.rooms||[];update.adminV6Polls=polls.polls||[];
     break;
    }
-   case 'ops':state.adminData=await api('/api/admin/ops/overview');break;
-   case 'reports':state.adminData=await api('/api/admin/reports?status=all');break;
+   case 'ops':update.adminData=await api('/api/admin/ops/overview');break;
+   case 'reports':update.adminData=await api('/api/admin/reports?status=all');break;
    case 'overview':{
     const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations'),api('/api/admin/audit')]);
-    state.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
+    update.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
    }
-   case 'registrations':state.adminData=(await api('/api/admin/registrations')).registrations;break;
-   case 'deletions':state.adminData=(await api('/api/admin/deletions')).requests;break;
-   case 'users':state.adminData=(await api('/api/admin/users?q='+encodeURIComponent(state.adminQuery))).users;break;
+   case 'registrations':update.adminData=(await api('/api/admin/registrations')).registrations;break;
+   case 'deletions':update.adminData=(await api('/api/admin/deletions')).requests;break;
+   case 'users':{
+    const params=new URLSearchParams({q:state.adminQuery,status:state.adminUserStatus||'all',
+      sort:state.adminUserSort||'newest',offset:String(state.adminUserOffset||0)});
+    const result=await api('/api/admin/users?'+params);
+    if(result.offset>0&&result.total<=result.offset&&current()){
+     state.adminUserOffset=Math.max(0,Math.floor((result.total-1)/result.limit)*result.limit);
+     return loadAdmin();
+    }
+    update.adminData=result.users;
+    update.adminUserMeta=result;
+    break;
+   }
    case 'tickets':{
-    state.adminData=(await api('/api/admin/tickets')).tickets;
-    if(state.adminTicket&&!state.adminData.some(t=>t.id===state.adminTicket))state.adminTicket=null;
-    if(state.adminTicket){state.adminTicketMessages=(await api(`/api/admin/tickets/${state.adminTicket}/messages`)).messages;}
+    const ticket=state.adminTicket,sequence=adminTicketSequence;
+    update.adminData=(await api('/api/admin/tickets')).tickets;
+    if(!current())return;
+    if(ticket&&update.adminData.some(t=>t.id===ticket)&&sequence===adminTicketSequence){
+     const result=await api(`/api/admin/tickets/${ticket}/messages`);
+     if(sequence===adminTicketSequence&&state.adminTicket===ticket)update.adminTicketMessages=result.messages;
+    }else if(sequence===adminTicketSequence){
+     update.adminTicket=null;update.adminTicketMessages=[];
+    }
     break;
    }
    case 'security':{
-    state.adminApprovalData=await api('/api/admin/login-approvals');
-    state.adminData=null;break;
+    update.adminApprovalData=await api('/api/admin/login-approvals');
+    update.adminData=null;break;
    }
    case 'audit':{
     const f=state.adminAuditFilter;
     const params=new URLSearchParams({limit:'100',q:f.q||'',action:f.action||'',since:String(f.since||0),until:String(f.until||0)});
     const result=await api('/api/admin/audit?'+params.toString());
-    state.adminData=result.logs;
-    state.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
+    update.adminData=result.logs;
+    update.adminAuditMeta={total:result.total,has_more:result.has_more,offset:result.logs.length};
     break;
    }
-   default:state.adminData=null;
+   default:update.adminData=null;
   }
-  renderAdmin();
- }catch(e){toast(e.message,'error');}
+  if(current()){Object.assign(state,update);renderAdmin();}
+ }catch(e){if(current())toast(e.message,'error');}
 }
 function statCard(label,value,footer){return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-foot">${footer}</div></div>`;}
 function adminOverview(){
  const d=state.adminData||{},s=d.stats||{total_users:0,online:0,pending:0,tickets:0,reserved_slots:0,max_users:100,messages:0};
  const regs=(d.registrations||[]).filter(x=>x.status==='pending').slice(0,5);
  return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}${statCard('Đang online',s.online,'Theo kết nối realtime')}
- ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa 30 ngày',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
+ ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
  <div class="admin-panels"><section class="card"><div class="row between"><h2>Yêu cầu đăng ký mới</h2><button class="btn ghost sm" data-act="admin-tab" data-tab="registrations">Xem tất cả</button></div>
  <div class="sep"></div>${regs.length?regs.map(r=>`<div class="people-row">${avatar(r.username,false,'sm')}<div class="grow"><b>${esc(r.username)}</b><div class="hint">${date(r.created_at)}</div></div><button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button></div>`).join(''):'<div class="empty">Không có yêu cầu đang chờ.</div>'}</section>
  <section class="card"><h2>Giới hạn người dùng</h2><p class="hint">Kiểm soát số tài khoản tối đa được phép tồn tại. Các chỗ đã duyệt nhưng chưa tạo tài khoản vẫn được tính.</p>
@@ -1579,11 +1630,25 @@ function adminRegistrations(){const rows=state.adminData||[];
  <div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Tên đề xuất</th><th>Số điện thoại</th><th>Email</th><th>Thời gian</th><th>Trạng thái</th><th>Quyết định</th></tr></thead><tbody>
  ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
-function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa 30 ngày</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
-function adminUsers(){const data=state.adminData||[];
- return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tìm theo username" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
+function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
+function adminUsers(){
+ const data=state.adminData||[],meta=state.adminUserMeta||{total:0,offset:0,limit:50};
+ const options=(items,selected)=>items.map(([value,label])=>`<option value="${value}" ${value===selected?'selected':''}>${label}</option>`).join('');
+ return `<form data-form="admin-search-users" class="card" style="margin-bottom:16px">
+ <div class="field"><label for="admin-user-query">Tìm tài khoản</label>
+ <input id="admin-user-query" class="input" name="q" placeholder="Tên hiển thị, tên đăng nhập, ID, số điện thoại hoặc email" maxlength="120" value="${esc(state.adminQuery)}"></div>
+ <div class="row" style="flex-wrap:wrap;gap:10px">
+ <label>Trạng thái <select class="input" name="status">${options([['all','Tất cả'],['active','Hoạt động'],['locked','Đang khóa'],['banned','Đã cấm'],['pending_deletion','Chờ xóa']],state.adminUserStatus||'all')}</select></label>
+ <label>Sắp xếp <select class="input" name="sort">${options([['newest','Mới nhất'],['oldest','Cũ nhất'],['name','Theo tên'],['activity','Hoạt động gần đây']],state.adminUserSort||'newest')}</select></label>
+ <button type="submit" class="btn primary">${icon('search',16)} Tìm kiếm</button>
+ <button type="button" class="btn ghost" data-act="admin-search-clear">Xóa bộ lọc</button></div></form>
+ <div class="row between" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+ <span aria-live="polite">${meta.total?`${meta.offset+1}–${Math.min(meta.offset+meta.limit,meta.total)} / ${meta.total} tài khoản`:'0 tài khoản'}</span>
+ <div class="row"><button type="button" class="btn ghost sm" data-act="admin-search-page" data-offset="${Math.max(0,meta.offset-meta.limit)}" ${meta.offset?'':'disabled'}>Trang trước</button>
+ <button type="button" class="btn ghost sm" data-act="admin-search-page" data-offset="${meta.offset+meta.limit}" ${meta.offset+meta.limit<meta.total?'':'disabled'}>Trang sau</button></div></div>
  <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
- ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">#${u.id}</div></div></div></td>
+ ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.display_name||u.username)}</b><div class="hint">@${esc(u.username)} · ID #${u.id}${u.public_id?' · Công khai #'+u.public_id:''}</div>
+ <div class="hint">${esc(u.phone||'')}${u.phone&&u.email?' · ':''}${esc(u.email||'')}</div></div></div></td>
  <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
@@ -1604,7 +1669,7 @@ function adminDeletionQueue(){
   ${items.map(item=>`<tr><td><b>${esc(item.username)}</b><div class="hint">#${item.user_id}</div></td>
   <td>${deadlineDate(item.requested_at)}</td><td>${deadlineDate(item.purge_at)}</td>
   <td><span class="pill ${item.purge_at*1000<=Date.now()?'bad':'warn'}">${item.purge_at*1000<=Date.now()?'Đến hạn xử lý':'Trong thời gian cân nhắc'}</span></td>
-  <td><button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
+  <td><div class="table-actions">${item.purge_at*1000>Date.now()?`<button class="btn success sm" type="button" data-act="admin-cancel-deletion" data-id="${item.user_id}">Hủy yêu cầu xóa</button>`:''}<button class="btn danger sm" type="button" data-act="admin-delete-pending" data-id="${item.user_id}">Xóa ngay (Admin)</button></div></td></tr>`).join('')||'<tr><td colspan="5" class="empty">Không có tài khoản nào đang chờ xóa.</td></tr>'}
   </tbody></table></div></div>`;
 }
 function adminTickets(){const tickets=state.adminData||[];
@@ -1623,7 +1688,7 @@ function adminTickets(){const tickets=state.adminData||[];
  ${chosen.status==='spam'?'':`<button class="btn danger sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="spam">${icon('ban',14)} Đánh dấu spam</button>`}
  </div></div>
  <div class="support-list grow" id="admin-ticket-messages" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
- <form data-form="admin-ticket-reply"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>
+ <form data-form="admin-ticket-reply" data-ticket-id="${chosen.id}"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>
  ${['password','pin'].includes(chosen.kind)?`<div class="info-strip" style="margin:0">Chỉ cấp mã đặt lại khi đã <b>xác minh danh tính bằng kênh độc lập</b>. Không dựa đơn thuần vào thông tin mà người lạ tự khai trong chat.</div>
  <button class="btn ghost" data-act="admin-recovery-grant" data-id="${chosen.id}">${icon('lock',16)} Cấp mã khôi phục một lần (15 phút)</button>`:
  '<div class="hint">Nếu người dùng quên tên đăng nhập, xác minh danh tính rồi trả lời tên tài khoản trong chat.</div>'}
@@ -1655,7 +1720,7 @@ function adminSecurity(){
  return `<div class="admin-security" aria-label="Bảo mật tài khoản quản trị">
    <div class="card" style="max-width:650px"><h2>${icon('lock',20)} Đổi mật khẩu admin</h2>
    <p class="hint" style="margin:15px 0">Dùng mật khẩu riêng mạnh, tối thiểu 12 ký tự. Khi đổi, các phiên khác và thiết bị đã ghi nhớ sẽ bị thu hồi.</p>
-   <form data-form="admin-password">${secureSettingsField('Mật khẩu hiện tại','old_password','password','')}
+   <form data-form="admin-password">
    ${secureSettingsField('Mật khẩu mới','new_password','password','','minlength="12"')}
    ${secureSettingsField('Nhập lại mật khẩu mới','repeat_password','password','','minlength="12"')}
    <button class="btn primary full">${icon('shield',17)} Đổi mật khẩu admin</button></form></div>
@@ -1674,6 +1739,8 @@ function adminSecurity(){
  </div>`;
 }
 const auditNames={
+ admin_cancel_account_deletion:'Hủy yêu cầu xóa tài khoản',
+ maintenance_mode:'Thay đổi chế độ bảo trì',
  maintenance_member_reset:'Bảo trì: đặt lại dữ liệu thành viên',
  registration_approved:'Phê duyệt đăng ký',registration_denied:'Từ chối đăng ký',
  permanent_user_delete:'Xóa tài khoản vĩnh viễn',sanction_ban:'Cấm tài khoản',
@@ -1882,21 +1949,21 @@ function showPermanentDeleteDialog(target=null){
  }
  const username=account.username;
  const requirePin=!!state.user?.pin_length;
- const phrase=selfDelete?'XOA SAU 30 NGAY':'XOA VINH VIEN';
+ const phrase=selfDelete?'XOA SAU 3 NGAY':'XOA VINH VIEN';
  modal({
-  title:selfDelete?'Yêu cầu xóa sau 30 ngày':'Xóa vĩnh viễn ngay (Admin)',
+  title:selfDelete?'Yêu cầu xóa sau 3 ngày':'Xóa vĩnh viễn ngay (Admin)',
   description:selfDelete?
-   `Tài khoản ${username} sẽ được lên lịch xóa sau 30 ngày. Trước hạn, bạn có thể hủy tại Cài đặt. Sau thời hạn, tài khoản, tin nhắn và dữ liệu liên quan bị xóa vĩnh viễn.`:
-   `Hành động này KHÔNG THỂ HOÀN TÁC. Toàn bộ dữ liệu và tài khoản ${username} sẽ bị xóa ngay. Bạn cần xác nhận bằng mật khẩu và PIN quản trị.`,
-  danger:true,confirm:selfDelete?'Lên lịch xóa 30 ngày':'Xóa vĩnh viễn ngay',
+   `Tài khoản ${username} sẽ được lên lịch xóa sau 3 ngày. Trước hạn, bạn có thể hủy tại Cài đặt. Sau thời hạn, tài khoản, tin nhắn và dữ liệu liên quan bị xóa vĩnh viễn.`:
+   `Toàn bộ dữ liệu và tài khoản ${username} sẽ bị xóa vĩnh viễn ngay sau khi bạn xác nhận.`,
+  danger:true,confirm:selfDelete?'Lên lịch xóa 3 ngày':'Xóa vĩnh viễn ngay',
   content:`<div class="delete-confirm-form">
-    <p class="hint" style="margin:0 0 14px">Nhập đúng tên tài khoản, mật khẩu ${selfDelete?'của bạn':'Admin'}${requirePin?', mã PIN':''} và cụm <b>${phrase}</b>.</p>
+    <p class="hint" style="margin:0 0 14px">Nhập đúng tên tài khoản, ${selfDelete?'mật khẩu và PIN hiện tại':'PIN Admin'} và cụm <b>${phrase}</b>.</p>
     <div class="field"><label for="delete-account-name">Tên tài khoản: <b>${esc(username)}</b></label>
       <input id="delete-account-name" class="input" autocomplete="off" spellcheck="false" maxlength="80"></div>
-    <div class="field"><label for="delete-account-password">Mật khẩu ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
+    ${selfDelete?`<div class="field"><label for="delete-account-password">Mật khẩu hiện tại</label>
       <input id="delete-account-password" class="input" type="password" autocomplete="off" maxlength="128"></div>
-    ${requirePin?`<div class="field"><label for="delete-account-pin">PIN ${selfDelete?'hiện tại':'Admin hiện tại'}</label>
-      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></div>`:''}
+    ${requirePin?`<div class="field"><label for="delete-account-pin">PIN hiện tại</label>
+      <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></div>`:''}`:adminProofFields()}
     <div class="field"><label for="delete-account-phrase">Nhập <b>${phrase}</b></label>
       <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" maxlength="24"></div>
     <p class="hint" style="margin-top:12px">${selfDelete?'Bạn có thể tải dữ liệu về trước khi hết hạn xóa.':'Nhóm có thành viên khác sẽ được chuyển quyền chủ nhóm.'}</p>
@@ -1905,15 +1972,13 @@ function showPermanentDeleteDialog(target=null){
    const val=name=>String(host.querySelector('#delete-account-'+name)?.value||'').trim();
    if(val('name')!==username)throw Error('Tên tài khoản xác nhận không khớp.');
    if(val('phrase')!==phrase)throw Error('Hãy nhập chính xác '+phrase+'.');
-   if(!val('password'))throw Error('Bạn cần nhập mật khẩu hiện tại.');
-   if(requirePin&&!val('pin'))throw Error('Bạn cần nhập mã PIN hiện tại.');
-   const payload={username,password:val('password'),pin:requirePin?val('pin'):null,confirm:phrase};
    if(selfDelete){
-    state.accountDeletion=await post('/api/me/delete',payload);
+    if(!val('password')||(requirePin&&!val('pin')))throw Error('Nhập mật khẩu và PIN hiện tại.');
+    state.accountDeletion=await post('/api/me/delete',{username,password:val('password'),pin:val('pin'),confirm:phrase});
     renderApp();
-    toast('Đã lên lịch xóa sau 30 ngày. Bạn có thể hủy trước hạn trong Cài đặt.','ok');
+    toast('Đã lên lịch xóa sau 3 ngày. Bạn có thể hủy trước hạn trong Cài đặt.','ok');
    }else{
-    await post(`/api/admin/users/${account.id}/delete`,payload);
+    await post(`/api/admin/users/${account.id}/delete`,{username,confirm:phrase,...adminProofValue(host)});
     toast(`Đã xóa vĩnh viễn tài khoản ${username}.`,'ok');
     await loadAdmin();
    }
@@ -1921,13 +1986,9 @@ function showPermanentDeleteDialog(target=null){
  });
 }
 function adminProofFields(){
- return `<div class="admin-proof-box">
- <p class="hint">Xác minh lại trước khi thực hiện. Mật khẩu và PIN chỉ gửi tới máy chủ để kiểm tra.</p>
- <div class="field"><label for="admin-confirm-password">Mật khẩu Admin</label>
- <input class="input" id="admin-confirm-password" type="password" autocomplete="off" readonly data-admin-proof="1" maxlength="128" required></div>
- ${state.user?.pin_length?`<div class="field"><label for="admin-confirm-pin">PIN Admin</label>
- <input class="input" id="admin-confirm-pin" type="password" autocomplete="off" readonly data-admin-proof="1" inputmode="numeric" maxlength="6" required></div>`:''}
- </div>`;
+ if(!state.user?.pin_length)return '<p class="hint">Hãy thiết lập PIN trong Bảo mật Admin trước khi thực hiện.</p>';
+ return `<div class="admin-proof-box"><div class="field"><label for="admin-confirm-pin">PIN Admin</label>
+ <input class="input" id="admin-confirm-pin" type="password" autocomplete="off" readonly data-admin-proof="1" inputmode="numeric" maxlength="6" required></div></div>`;
 }
 function unlockAdminProof(input){
  if(!input?.matches?.('input[data-admin-proof]')||!input.readOnly)return;
@@ -1936,11 +1997,12 @@ function unlockAdminProof(input){
 document.addEventListener('pointerdown',event=>unlockAdminProof(event.target),true);
 document.addEventListener('focusin',event=>unlockAdminProof(event.target));
 function adminProofValue(host){
- const password=host.querySelector('#admin-confirm-password')?.value||'';
- const pin=host.querySelector('#admin-confirm-pin')?.value||'';
- if(!password||(state.user?.pin_length&&!pin))throw Error('Cần nhập mật khẩu và PIN Admin để xác nhận.');
- if(!host.querySelector('#admin-confirm-password')?.dataset.manuallyUnlocked||(state.user?.pin_length&&!host.querySelector('#admin-confirm-pin')?.dataset.manuallyUnlocked))throw Error('Vui lòng chọn ô xác minh và nhập lại thông tin bảo mật.');
- return {admin_password:password,admin_pin:pin};
+ if(!state.user?.pin_length)throw Error('Hãy thiết lập PIN trong Bảo mật Admin trước khi thực hiện.');
+ const input=host.querySelector('#admin-confirm-pin');
+ const pin=input?.value||'';
+ if(!input?.dataset.manuallyUnlocked||!/^\d{4,6}$/.test(pin)||pin.length!==state.user.pin_length)
+  throw Error('Hãy chọn ô PIN và nhập đủ mã PIN Admin.');
+ return {admin_pin:pin};
 }
 function sanctionDialog(uid,kind){
  const u=(state.adminData||[]).find(x=>x.id===uid);
@@ -2208,10 +2270,25 @@ async function clickAction(button){
   case 'admin-refresh':await loadAdmin();break;
   case 'admin-decision':{
    const approve=button.dataset.approve==='1';
-   const op=async()=>{await post(`/api/admin/registrations/${id}/decision`,{approve});toast(approve?'Đã duyệt! Người dùng có thể tạo mật khẩu/PIN.':'Đã từ chối yêu cầu.','ok');await loadAdmin();};
-   if(approve)await op();else ask('Từ chối yêu cầu','Người dùng sẽ được thông báo rằng yêu cầu đăng ký chưa được chấp thuận.',op,'Từ chối',true);
+   const op=async host=>{await post(`/api/admin/registrations/${id}/decision`,{approve,...adminProofValue(host)});toast(approve?'Đã duyệt! Người dùng có thể tạo mật khẩu/PIN.':'Đã từ chối yêu cầu.','ok');await loadAdmin();};
+   modal({title:approve?'Duyệt đăng ký':'Từ chối đăng ký',content:adminProofFields(),
+    confirm:approve?'Duyệt':'Từ chối',danger:!approve,handler:op});
    break;
   }
+  case 'admin-cancel-deletion':{
+   const target=(state.adminData||[]).find(item=>item.user_id===id);
+   if(!target)return;
+   modal({title:'Hủy yêu cầu xóa tài khoản',description:`Giữ lại tài khoản ${target.username} và toàn bộ dữ liệu.`,
+    content:adminProofFields(),confirm:'Hủy lịch xóa',handler:async host=>{
+     await post(`/api/admin/users/${id}/delete/cancel`,adminProofValue(host));
+     toast('Đã hủy lịch xóa tài khoản.','ok');await loadAdmin();
+    }});
+   break;
+  }
+  case 'admin-search-clear':
+   state.adminQuery='';state.adminUserStatus='all';state.adminUserSort='newest';state.adminUserOffset=0;await loadAdmin();break;
+  case 'admin-search-page':
+   state.adminUserOffset=Number(button.dataset.offset);await loadAdmin();break;
   case 'admin-delete-pending':{
    const candidate=(state.adminData||[]).find(x=>x.user_id===id);
    if(!candidate)throw Error('Không tìm thấy yêu cầu xóa.');
@@ -2226,15 +2303,29 @@ async function clickAction(button){
   case 'admin-view-messages':await userMessageLog(id);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
   case 'admin-show-spam':state.adminShowSpam=!state.adminShowSpam;renderAdmin();break;
-   case 'admin-open-ticket':state.adminTicket=id;state.adminTicketMessages=(await api(`/api/admin/tickets/${id}/messages`)).messages;renderAdmin();break;
+  case 'admin-open-ticket':{
+   const request=++adminTicketSequence,owner=state.user.id;
+   state.adminTicket=id;state.adminTicketMessages=[];
+   renderAdmin();
+   const result=await api(`/api/admin/tickets/${id}/messages`);
+   if(request===adminTicketSequence&&state.user?.id===owner&&state.adminTab==='tickets'&&state.adminTicket===id){
+    state.adminTicketMessages=result.messages;renderAdmin();
+   }
+   break;
+  }
   case 'admin-recovery-grant':grantDialog(id);break;
   case 'admin-close-ticket':{
     const status=button.dataset.status;
-    await post(`/api/admin/tickets/${id}/status`,{status});
-    if(status==='spam'&&!state.adminShowSpam)state.adminTicket=null;
-    toast(status==='spam'?'Đã chặn tin nhắn của phiếu spam.':'Đã cập nhật phiếu hỗ trợ.','ok');
-    await loadAdmin();break;
+    const labels={closed:'Đóng phiếu',open:'Mở lại phiếu',spam:'Đánh dấu spam'};
+    modal({title:labels[status],content:adminProofFields(),confirm:labels[status],handler:async host=>{
+     await post(`/api/admin/tickets/${id}/status`,{status,...adminProofValue(host)});
+     if(status==='spam'&&!state.adminShowSpam&&state.adminTicket===id)state.adminTicket=null;
+     toast('Đã cập nhật phiếu hỗ trợ.','ok');
+     await loadAdmin();
+    }});
+    break;
    }
+
  }
 }
 // A login password field begins read-only to prevent automatic password restoration.
@@ -2429,9 +2520,12 @@ document.addEventListener('submit',async event=>{
    }
    case 'admin-password':{
     const pw=String(fd.get('new_password')||'');if(pw!==String(fd.get('repeat_password')||''))throw Error('Hai lần nhập mật khẩu mới không khớp.');
-    await post('/api/me/password',{old_password:String(fd.get('old_password')||''),new_password:pw});
-    state.savedDevice=false;state.rememberedDevice=false;
-    toast('Đã đổi mật khẩu quản trị và thu hồi thiết bị ghi nhớ.','ok');await loadAdmin();break;
+    modal({title:'Đổi mật khẩu Admin',content:adminProofFields(),confirm:'Đổi mật khẩu',handler:async host=>{
+     await post('/api/me/password',{new_password:pw,...adminProofValue(host)});
+     state.savedDevice=false;state.rememberedDevice=false;
+     toast('Đã đổi mật khẩu quản trị.','ok');await loadAdmin();
+    }});
+    break;
    }
    case 'admin-capacity':{
     const max_users=Number(fd.get('max_users'));
@@ -2440,7 +2534,9 @@ document.addEventListener('submit',async event=>{
        handler:async host=>{await post('/api/admin/capacity',{max_users,...adminProofValue(host)});toast('Đã cập nhật giới hạn người dùng.','ok');await loadAdmin();}});
      break;
    }
-   case 'admin-search-users':state.adminQuery=val('q');await loadAdmin();break;
+   case 'admin-search-users':
+    state.adminQuery=val('q');state.adminUserStatus=val('status');state.adminUserSort=val('sort');state.adminUserOffset=0;
+    await loadAdmin();break;
    case 'admin-audit-search':{
     const since=val('since'),until=val('until');
     const start=since?Math.floor(new Date(since+'T00:00:00').getTime()/1000):0;
@@ -2450,7 +2546,13 @@ document.addEventListener('submit',async event=>{
     await loadAdmin();break;
    }
    case 'admin-ticket-reply':{
-    await post(`/api/admin/tickets/${state.adminTicket}/messages`,{body:val('body')});await loadAdmin();break;
+    const ticket=Number(form.dataset.ticketId),body=val('body');
+    if(!ticket||!body)return;
+    modal({title:`Gửi phản hồi cho phiếu #${ticket}`,content:adminProofFields(),confirm:'Gửi phản hồi',handler:async host=>{
+     await post(`/api/admin/tickets/${ticket}/messages`,{body,...adminProofValue(host)});
+     if(state.adminTab==='tickets'&&state.adminTicket===ticket)await loadAdmin();
+    }});
+    break;
    }
    case 'admin-broadcast':{
     const message=val('body');
@@ -2463,6 +2565,7 @@ document.addEventListener('submit',async event=>{
    }
   }
  }catch(e){
+  if(e.maintenance)return;
   const authField={'login-username':'username','login-password':'password',
     'login-pin':'pin','login-remembered':'pin'}[key];
   if(!authField||!showAuthFieldError(form,authField,authFailureText(key,e)))

@@ -344,12 +344,12 @@ def install(core):
 
 
     # 30-day self-service deletion grace period. Admin can irreversibly purge
-    # immediately, but only after password+PIN reauthentication.
+    # immediately after Admin PIN verification.
     class PermanentDelete(BaseModel):
         username: str = Field(min_length=1, max_length=80)
         password: str = Field(min_length=1, max_length=128)
         pin: str | None = None
-        confirm: Literal['XOA VINH VIEN', 'XOA SAU 30 NGAY']
+        confirm: Literal['XOA SAU 3 NGAY']
 
     class CancelDelete(BaseModel):
         password: str = Field(min_length=1, max_length=128)
@@ -396,8 +396,6 @@ def install(core):
         actor=current_user(request)
         if actor['is_admin']:
             raise HTTPException(403,'Tài khoản Admin không thể tự xóa tại mục cài đặt.')
-        if body.confirm!='XOA SAU 30 NGAY':
-            raise HTTPException(422,'Hãy xác nhận đúng yêu cầu xóa sau 30 ngày.')
         throttle(request,'delete-own-account',5,3600,str(actor['id']))
         with db() as c:
             current=check_delete_identity(c,actor['id'],body)
@@ -410,7 +408,7 @@ def install(core):
             c.execute('INSERT INTO account_deletion_requests(user_id,requested_at,purge_at) VALUES(?,?,?)',
                       (actor['id'],requested,deadline))
             c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
-                      (actor['id'],'Bạn đã yêu cầu xóa tài khoản sau 30 ngày. Có thể hủy trong Cài đặt trước hạn.',requested))
+                      (actor['id'],'Bạn đã yêu cầu xóa tài khoản sau 3 ngày. Có thể hủy trong Cài đặt trước hạn.',requested))
         await hub.admins('account-deletion-updated')
         return {'ok':True,'pending':True,'requested_at':requested,'purge_at':deadline}
 
@@ -441,16 +439,36 @@ def install(core):
                             ORDER BY d.purge_at ASC LIMIT 500''')
         return {'requests':rows}
 
-    @app.post('/api/admin/users/{uid}/delete')
-    async def delete_member_as_admin(request:Request,uid:int,body:PermanentDelete):
+    class AdminPin(BaseModel):
+        admin_pin: str = Field(default='', max_length=6)
+
+    class AdminDelete(AdminPin):
+        username: str = Field(min_length=1,max_length=80)
+        confirm: Literal['XOA VINH VIEN']
+
+    @app.post('/api/admin/users/{uid}/delete/cancel')
+    async def cancel_member_deletion(request:Request,uid:int,body:AdminPin):
         admin=require_admin(request)
-        if not admin['pin_hash']:
-            raise HTTPException(403,'Hãy bật PIN quản trị trước khi xóa vĩnh viễn tài khoản.')
-        if body.confirm!='XOA VINH VIEN':
-            raise HTTPException(422,'Xác nhận xóa vĩnh viễn không hợp lệ.')
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
+        at=now()
+        with db() as c:
+            changed=c.execute('''DELETE FROM account_deletion_requests
+                                 WHERE user_id=? AND purge_at>?
+                                   AND user_id IN (SELECT id FROM users WHERE is_admin=0)''',(uid,at))
+            if changed.rowcount!=1:
+                raise HTTPException(409,'Không còn yêu cầu xóa trước hạn để hủy.')
+            notify(c,uid,'Quản trị viên đã hủy yêu cầu xóa tài khoản của bạn.')
+            admin_log(c,admin['id'],'admin_cancel_account_deletion',f'user_id={uid}')
+        await hub.user(uid,'account-deletion-updated')
+        await hub.admins('account-deletion-updated')
+        return {'ok':True,'pending':False}
+
+    @app.post('/api/admin/users/{uid}/delete')
+    async def delete_member_as_admin(request:Request,uid:int,body:AdminDelete):
+        admin=require_admin(request)
+        core.verify_admin_pin_stepup(request,admin,body.admin_pin)
         throttle(request,'admin-delete-account',5,3600,str(admin['id']))
         with db() as c:
-            check_delete_identity(c,admin['id'],body)
             target=one(c,'SELECT id,username FROM users WHERE id=? AND is_admin=0',(uid,))
             if not target:
                 raise HTTPException(404,'Không tìm thấy tài khoản người dùng có thể xóa.')
@@ -1069,8 +1087,9 @@ def install(core):
         return {'messages':rows}
 
     @app.delete('/api/admin/groups/{gid}/messages/{mid}')
-    async def admin_remove_group_message(request:Request,gid:int,mid:int):
+    async def admin_remove_group_message(request:Request,gid:int,mid:int,body:AdminPin):
         u=require_admin(request)
+        core.verify_admin_pin_stepup(request,u,body.admin_pin)
         with db() as c:
             m=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=?',(mid,gid))
             if not m:raise HTTPException(404,'Tin nhắn không tồn tại.')
