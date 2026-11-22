@@ -43,6 +43,18 @@ def test_username_one_change_per_60_days_requires_password_and_pin():
     assert bob.post(endpoint,json=payload).status_code==409
     me=alice.get('/api/me').json()['user']
     assert me['id'] and me['username']=='new_identity_alice'
+    # The new username becomes the login immediately, while the old one
+    # cannot authenticate. Existing friend/message IDs remain unchanged.
+    fresh=TestClient(app)
+    assert fresh.get('/').status_code==200
+    assert fresh.post('/api/auth/start',json={'username':'identity_alice'}).status_code==404
+    assert fresh.post('/api/auth/start',json={'username':'new_identity_alice'}).status_code==200
+    login=fresh.post('/api/auth/password',
+                     json={'username':'new_identity_alice','password':'GreatPassword123'})
+    assert login.status_code==200,login.text
+    challenge=login.json()['challenge']
+    assert fresh.post('/api/auth/pin',json={'challenge':challenge,'pin':'1234'}).status_code==200
+    assert fresh.get('/api/me').json()['user']['id']==me['id']
     with db() as c:
         assert c.execute("SELECT COUNT(*) n FROM identity_change_events WHERE kind='username'").fetchone()['n']==1
     assert alice.post(endpoint,json={**payload,'new_value':'after_alice'}).status_code==429
