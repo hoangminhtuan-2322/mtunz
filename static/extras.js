@@ -505,18 +505,17 @@ function scheduleGroupsRefresh(delay=450){
 function appendGroupMessage(groupId,message){
  if(!message||state.groupSelected!==groupId||state.tab!=='groups')return;
  const messages=state.groupMessages;
- const pos=messages.findIndex(item=>item.id===message.id);
- if(pos>=0)return;
+ if(messages.some(item=>item.id===message.id))return;
  const previous=messages.at(-1);
- if(pos<0)messages.push(message);else messages[pos]=message;
+ messages.push(message);
  const outOfOrder=previous&&message.id<previous.id;
  if(outOfOrder)messages.sort((a,b)=>a.id-b.id);
  const capped=messages.length>100;
  if(capped)messages.splice(0,messages.length-100);
  const box=$('#chat-messages');
  if(box){
-  if(capped||outOfOrder)paintGroupThread(message.sender_id===state.user?.id);
-  else patchThreadRow(box,message,previous,messages,'group',null,paintGroupThread,message.sender_id===state.user?.id);
+  if(capped||outOfOrder)paintGroupThread(false);
+  else patchThreadRow(box,message,previous,messages,'group',null,paintGroupThread);
  }
  if(message.sender_id!==state.user?.id)queueChatRead(box);
 }
@@ -697,6 +696,8 @@ document.addEventListener('submit',async event=>{
     const field=form.querySelector('#chat-text'),submitted=field.value;
     const attachment=state.pendingAttachment,reply=state.replyTo;
     clearSentComposer(form,'group:'+gid);
+    const thread=$('#chat-messages');
+    if(thread?.dataset.chatKey==='group-'+gid)settleChatEnd(thread);
     try{
      const {message}=await post('/api/groups/'+gid+'/messages',{body,attachment_id:attachment?.id||null,reply_to:reply?.scope==='group'?reply.id:null});
      if(current())appendGroupMessage(gid,message);
