@@ -26,7 +26,7 @@ assert(app.includes("if(t==='privacy-updated'"), 'UI refreshes after peer toggle
 assert(app.includes("if(t==='privacy-self-updated'"), 'other signed-in devices update immediately');
 assert(app.includes("state.user?.show_online"),'client ignores old presence while hidden');
 assert(app.includes("state.user?.show_receipts"),'client ignores read events while hidden');
-assert(extras.includes("const receiptsVisible=!isGroup&&canViewDmReceipts()"),
+assert(extras.includes("const receiptsVisible=!isGroup&&typeof canViewDmReceipts==='function'&&canViewDmReceipts()"),
        'DM bubble statuses use mutual consent');
 
 const begin=extras.indexOf('function canViewDmReceipts()');
