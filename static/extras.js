@@ -581,7 +581,9 @@ function chatSoundEnabled(){
  try{return localStorage.getItem(chatSoundKey())!=='off';}catch{return true;}
 }
 async function unlockChatSound(){
- if(!state.user||state.user.is_admin||!chatSoundEnabled())return;
+ // Admin support/registration alerts also need an unlocked audio context
+ // after a user gesture; no autoplay attempts on a fresh page.
+ if(!state.user||!chatSoundEnabled())return;
  const Audio=window.AudioContext||window.webkitAudioContext;
  if(!Audio)return;
  try{

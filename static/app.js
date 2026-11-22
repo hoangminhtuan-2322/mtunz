@@ -383,6 +383,7 @@ function connectSocket(retry=false){
   socketRetryDelay=2500;
   v9ConnectionBanner(true);
   if(!retry||state.ws!==socket)return;
+  if(state.user?.is_admin)v9ScheduleAdminRefresh(350);
   if(state.user&&!state.user.is_admin){
    scheduleFriendsRefresh(0);
    scheduleGroupsRefresh(0);
@@ -454,8 +455,10 @@ function connectSocket(retry=false){
    }
    if(t==='registration-updated'){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
-     if(state.user?.is_admin&&['registrations','overview'].includes(state.adminTab))
-       v9ScheduleAdminRefresh();
+     if(state.user?.is_admin){
+       v9AdminNotice('Có cập nhật yêu cầu đăng ký.','registration');
+       if(['registrations','overview'].includes(state.adminTab))v9ScheduleAdminRefresh();
+     }
    }
    if(t==='friends-updated'){if(state.user&&!state.user.is_admin)scheduleFriendsRefresh(60);}
    if(t==='message-requests-updated'&&state.user&&!state.user.is_admin&&typeof loadMessageRequests==='function')loadMessageRequests(state.tab==='friends').catch(()=>{});
@@ -514,6 +517,8 @@ function connectSocket(retry=false){
    }
    if(t==='support-updated'||t==='support-message'){
      if(state.user?.is_admin){
+       if(t==='support-updated')v9AdminNotice('Có thay đổi trong trung tâm hỗ trợ.','support-update');
+       else if(data.message?.from_admin===0)v9AdminNotice('Khách hàng vừa gửi phản hồi hỗ trợ.','support-message');
        if(['tickets','overview'].includes(state.adminTab))v9ScheduleAdminRefresh();
      }
      else if(state.supportTicket&&(!data.ticket_id||data.ticket_id===state.supportTicket)){
@@ -552,6 +557,19 @@ function v9ConnectionBanner(connected){
   'Đang kết nối lại với mtunz…';
 }
 let v9AdminTimer=0,v9AdminPending=false;
+const v9AdminAlertTimes=new Map();
+function v9AdminNotice(message,tag){
+ if(!state.user?.is_admin)return;
+ const now=Date.now(),last=v9AdminAlertTimes.get(tag)||0;
+ if(now-last<3500)return;
+ v9AdminAlertTimes.set(tag,now);
+ if(v9AdminAlertTimes.size>15)v9AdminAlertTimes.delete(v9AdminAlertTimes.keys().next().value);
+ if(document.hidden){
+  if(typeof notifyBrowser==='function')void notifyBrowser(message,'admin:'+tag,false);
+ }else toast(message,'info');
+ if(typeof playChatSound==='function'&&typeof chatSoundEnabled==='function'&&chatSoundEnabled())
+  playChatSound();
+}
 function v9ScheduleAdminRefresh(delay=240){
  if(!state.user?.is_admin)return;
  clearTimeout(v9AdminTimer);
