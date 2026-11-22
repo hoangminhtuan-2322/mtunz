@@ -39,7 +39,7 @@ assert(appServer.includes('def verify_admin_routine('),'Server-side routine guar
 assert(worldServer.includes('verify_admin_routine(request,admin,body.admin_password,body.admin_pin)'),
  'World route validates PIN server side');
 assert(html.includes('src="/static/url-cleanup.js?v=1"'),'Safe URL cleanup is loaded');
-assert(html.indexOf('url-cleanup.js')<html.indexOf('app.js?v=20.3'),
+assert(html.indexOf('url-cleanup.js')<html.indexOf('app.js?v=20.4'),
  'Cleanup runs before app initialization');
 const cases=[
  {uri:'https://mtunz.onrender.com/?utm_source=chatgpt.com',
