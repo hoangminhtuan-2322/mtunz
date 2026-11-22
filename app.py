@@ -623,8 +623,21 @@ def require_member_service(c, lock=False):
         raise HTTPException(503,{'code':'maintenance','message':detail})
 
 
+def request_session_token(request):
+    """Cookie for browsers, Authorization bearer for the native client only."""
+    cookie = request.cookies.get('s')
+    if cookie:
+        return cookie
+    header = request.headers.get('authorization', '')
+    if header.startswith('Bearer '):
+        candidate = header[7:]
+        if re.fullmatch(r'[A-Za-z0-9_-]{30,128}', candidate):
+            return candidate
+    return None
+
+
 def current_user(request: Request, require=True, *, allow_deletion=False):
-    t = request.cookies.get('s')
+    t = request_session_token(request)
     with db() as c:
         row = one(c, '''SELECT u.*,s.expires_at,
                        (SELECT purge_at FROM account_deletion_requests WHERE user_id=u.id) AS deletion_purge_at,
@@ -1180,7 +1193,7 @@ async def complete_display_name(request: Request, body: SetOnboardingName):
 
 @app.post('/api/auth/logout')
 async def logout(request: Request):
-    t = request.cookies.get('s')
+    t = request_session_token(request)
     remembered = request.cookies.get(REMEMBER_COOKIE)
     with db() as c:
         if t:
@@ -2200,7 +2213,12 @@ async def websocket_events(ws:WebSocket):
     origin = ws.headers.get('origin')
     # Browsers send Origin for websocket upgrades. A public deployment refuses
     # cookie-authenticated browser connections without an origin check.
-    if PUBLIC_MODE and not origin:
+    authorization = ws.headers.get('authorization', '')
+    native_token = (authorization[7:] if authorization.startswith('Bearer ')
+                    and re.fullmatch(r'[A-Za-z0-9_-]{30,128}', authorization[7:]) else None)
+    # Browsers cannot set an Authorization header on WebSocket handshakes.
+    # Native bearer connections can safely omit the browser Origin header.
+    if PUBLIC_MODE and not origin and not native_token:
         await ws.close(code=1008)
         return
     if origin:
@@ -2217,7 +2235,7 @@ async def websocket_events(ws:WebSocket):
             await ws.close(code=1008)
             return
     await ws.accept()
-    sid=ws.cookies.get('s')
+    sid=ws.cookies.get('s') or native_token
     gid=ws.cookies.get('g')
     if gid and (len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}',gid)):
         gid = None
@@ -2320,8 +2338,11 @@ async def websocket_events(ws:WebSocket):
         elif gid:
             hub.guests[gid].discard(ws)
 
-# Persistent upgrades and additional routed features.
+# Native application authentication uses the same sessions and permissions.
+from mobile_api import install as _install_mobile_api
 import sys as _sys
+_install_mobile_api(_sys.modules[__name__])
+# Persistent upgrades and additional routed features.
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
 from chat_library import alert_allowed, history_window, install as _install_chat_library
