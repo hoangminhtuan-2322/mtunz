@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12, feat/reciprocal-presence-read-privacy-v13, feat/admin-realtime-member-review-v14]
+    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12, feat/reciprocal-presence-read-privacy-v13, feat/admin-realtime-member-review-v14, perf/mobile-smooth-chat-v15]
   workflow_dispatch:
 
 permissions:
@@ -92,6 +92,7 @@ jobs:
         run: node tests/member_experience.cjs
       - name: Verify optimized mobile keyboard, touch and responsive layouts
         run: node tests/mobile_polish.cjs
+          node tests/mobile_performance_ui.cjs
       - name: Verify friendship, pin, forwarding and settings UI
         run: node tests/social_upgrade.cjs
       - name: Verify World Chat concept page (no live public messaging)
@@ -144,7 +145,8 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=20.4' in h
+          assert '/static/app.js?v=20.5' in h
+          assert '/static/mobile-performance.css?v=1.0' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -224,4 +226,5 @@ jobs:
           node tests/css_bundle_browser.cjs
           node tests/chat_message_delete_browser.cjs
           node tests/support_continuous_browser.cjs
+          node tests/mobile_performance_browser.cjs
           node tests/world_realtime_browser.cjs
