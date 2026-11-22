@@ -145,6 +145,26 @@ with TestClient(app, base_url="https://testserver") as admin:
             links=peer.get(shared,params={"kind":"links"})
             assert links.status_code==200,links.text
             assert links.json()["items"][0]["links"][0]["host"]=="example.org"
+
+            video=b"\x00\x00\x00\x18ftypisom"+bytes(range(64))
+            uploaded=guest.post("/api/uploads",files={"file":("clip.mp4",video,"video/mp4")})
+            assert uploaded.status_code==200,uploaded.text
+            media=uploaded.json()["attachment"]["url"]
+            assert peer.get(media,headers={"Range":"bytes=0-1"}).status_code==403
+            attached=guest.post("/api/messages",json={"recipient_id":victim["id"],
+                "attachment_id":uploaded.json()["attachment"]["id"]})
+            assert attached.status_code==200,attached.text
+            piece=peer.get(media,headers={"Range":"bytes=0-1"})
+            assert piece.status_code==206 and piece.content==video[:2]
+            assert piece.headers["content-range"]==f"bytes 0-1/{len(video)}"
+            assert piece.headers["accept-ranges"]=="bytes"
+            tail=peer.get(media,headers={"Range":"bytes=-4"})
+            assert tail.status_code==206 and tail.content==video[-4:]
+            outside=peer.get(media,headers={"Range":f"bytes={len(video)}-"})
+            assert outside.status_code==416 and outside.headers["content-range"]==f"bytes */{len(video)}"
+            full=peer.get(media,params={"download":"1"},headers={"Range":"bytes=0-1"})
+            assert full.status_code==200 and full.content==video
+            assert full.headers["content-disposition"].startswith("attachment;")
             complaint=peer.post("/api/reports",json={
                 "target_id":original["id"],"scope":"world","message_id":message_id,
                 "reason":"spam","description":"Tin nhắn công cộng cần kiểm tra"})
