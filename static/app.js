@@ -388,6 +388,15 @@ function connectSocket(retry=false){
    socketRetryDelay=2500;
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='identity-updated'&&state.user&&!state.user.is_admin){
+     const owner=state.user.id;
+     const fresh=(await api('/api/me').catch(()=>null))?.user;
+     if(fresh&&state.user?.id===owner){
+       state.user=fresh;
+       if(state.tab==='profile')renderApp();
+     }
+     return;
+   }
    if(t==='maintenance-status'){applyMaintenanceBanner(data.status);return;}
    if(t==='maintenance-mode'){
      showMaintenance(data.reason?'Hệ thống đang bảo trì. '+data.reason:undefined);return;
