@@ -1,0 +1,40 @@
+name: Materialize official web logo for Android and iOS
+
+on:
+  push:
+    branches:
+      - feature/official-web-icon-mobile
+    paths:
+      - 'mobile/tools/build_brand_assets.py'
+      - '.github/workflows/materialize-mobile-icons.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  make-icons:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Convert the exact website favicon into Android/iOS assets
+        run: |
+          python -m pip install --disable-pip-version-check pillow cairosvg
+          python mobile/tools/build_brand_assets.py
+      - name: Commit PNG assets onto this feature branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile/assets/icon.png mobile/assets/adaptive-icon.png mobile/assets/brand-logo.png
+          if git diff --cached --quiet; then
+            echo 'Brand assets already match website SVG.'
+            exit 0
+          fi
+          git commit -m 'assets(mobile): use exact mtunz website favicon in Android and iOS'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
