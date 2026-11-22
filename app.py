@@ -1722,7 +1722,7 @@ async def set_capacity(request:Request,body:Capacity):
 async def admin_users(request:Request,q:str=''):
     require_admin(request)
     with db() as c:
-        query=q.strip()[:24]
+        query=q.strip()[:60]
         numeric_id=int(query) if query.isascii() and query.isdigit() and len(query)<=9 else -1
         rows=many(c,'''SELECT u.id,u.username,u.display_name,u.created_at,u.last_seen,u.pin_length,
                               u.sanction_kind,u.sanction_until,u.sanction_reason,
@@ -1730,8 +1730,11 @@ async def admin_users(request:Request,q:str=''):
                               (SELECT count(*) FROM friendships f WHERE f.state='accepted' AND (f.u1=u.id OR f.u2=u.id)) AS friend_count,
                               d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                        FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
-                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ? OR u.id=?)
-                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%','%'+query+'%',numeric_id))
+                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ?
+                            OR u.id=? OR u.public_id=? OR u.phone LIKE ? OR u.email LIKE ?)
+                       ORDER BY u.id DESC LIMIT 200''',
+                       ('%'+query+'%','%'+query+'%',numeric_id,numeric_id,
+                        '%'+query+'%','%'+query+'%'))
         for item in rows:
             item['online']=bool(hub.users.get(item['id']))
     return {'users':rows}
