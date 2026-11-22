@@ -202,7 +202,7 @@ function groupConversation(){
  return `<div class="conversation">${groupHeader()}<div class="thread" id="chat-messages" data-chat-key="group-${g.id}">${chatHistoryMarkup(state.groupMessages,true)}</div>
  <div class="composer">${latestChatButton()}<div class="typing" id="typing-text"></div>${composerExtras()}
  <form class="compose-row" data-form="send-group-message">
- <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
+ <label class="btn ghost attachment-button" title="Đính kèm ảnh/tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
  <button type="submit" class="btn primary send" aria-label="Gửi tin nhắn">${icon('send',20)}</button>
@@ -253,7 +253,7 @@ async function loadNotices(){if(!state.user||state.user.is_admin)return;state.no
 function profileSettings(){
  const u=state.user;
  return `<section class="card" style="margin-bottom:18px"><h3>${icon('users',17)} Hồ sơ công khai</h3><form data-form="settings-profile" style="margin-top:14px">
- <div class="field"><label>Tên hiển thị</label><input class="input" name="display_name" value="${esc(u.display_name||'')}" maxlength="50"></div>
+ <div class="field"><label>Tên hiển thị</label><div class="identity-readonly-name">${esc(u.display_name||'Chưa có tên')} <small>Đổi trong mục Danh tính & đổi tên bằng mật khẩu + PIN.</small></div></div>
  <div class="field"><label>Giới thiệu</label><textarea class="input" name="bio" maxlength="220" rows="2">${esc(u.bio||'')}</textarea></div>
  <label class="profile-check"><input type="checkbox" name="show_online" ${u.show_online?'checked':''}> Hiển thị trạng thái đang hoạt động</label>
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
@@ -839,7 +839,7 @@ document.addEventListener('submit',async event=>{
     }
   }
   if(key==='settings-profile'){
-   const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),
+   const data={display_name:state.user.display_name||'',bio:String(fd.get('bio')||''),
     show_online:fd.has('show_online'),show_receipts:fd.has('show_receipts')};
    await api('/api/me/profile',{method:'PATCH',data});
    Object.assign(state.user,data);renderApp();toast('Đã lưu hồ sơ.','ok');
