@@ -40,9 +40,30 @@ const {chromium}=require('playwright-core');
     await r.fulfill({json:{message:{id,sender_id:9,recipient_id:12,body,client_message_id,created_at:now}}});
    });
    const text=page.locator('#chat-text');
+   const thread=page.locator('#chat-messages');
+   await page.waitForFunction(()=>!document.querySelector('#chat-messages').dataset.positioningChat);
+   await thread.evaluate(el=>{
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-700}));
+    el.scrollTo({top:120,behavior:'instant'});
+   });
+   await page.getByRole('button',{name:'Về tin nhắn mới nhất'}).waitFor();
    await text.fill('Gửi ngay');
-   await text.press('Enter');
-   await page.locator('#chat-messages .bubble').filter({hasText:'Gửi ngay'}).waitFor();
+   await text.evaluate(el=>{
+    el.form.requestSubmit();
+    // Simulate a delayed viewport change restoring the previous scroll offset.
+    const thread=document.querySelector('#chat-messages');
+    thread.style.paddingBottom='180px';
+    thread.scrollTo({top:120,behavior:'instant'});
+    thread.dispatchEvent(new Event('scroll'));
+   });
+   const sent=page.locator('#chat-messages .bubble-wrap').filter({hasText:'Gửi ngay'});
+   await sent.waitFor();
+   assert(await sent.evaluate(row=>{
+    const thread=row.closest('#chat-messages');
+    const bounds=thread.getBoundingClientRect(),message=row.getBoundingClientRect();
+    return message.top>=bounds.top&&message.bottom<=bounds.bottom;
+   }),'New pending message is visible on '+width+'px');
+   await thread.evaluate(el=>{el.style.removeProperty('padding-bottom');el.dispatchEvent(new Event('scroll'));});
    assert.equal(await text.inputValue(),'');
    assert(await existing.evaluate(el=>el.isConnected));
    await text.fill('Gửi tiếp');
@@ -108,7 +129,6 @@ const {chromium}=require('playwright-core');
    assert.equal(await text.inputValue(),'Bản nháp mới');
 
    // A layout shift can happen after the initial frames, with a scroll event already queued.
-   const thread=page.locator('#chat-messages');
    await thread.evaluate(el=>{
     el.style.paddingBottom='300px';
     el.dispatchEvent(new Event('scroll'));
@@ -137,6 +157,27 @@ const {chromium}=require('playwright-core');
    });
    assert.equal(alerts,1);
    if(width===390){
+    const members=[{id:7,title:'Nhóm thử',member_count:2}];
+    await page.route('**/api/groups',r=>r.fulfill({json:{groups:members}}));
+    await page.route('**/api/groups/7/messages',r=>{
+     if(r.request().method()==='GET'){
+      return r.fulfill({json:{messages:history.map(m=>({...m,group_id:7}))}});
+     }
+     const {body}=r.request().postDataJSON();
+     return r.fulfill({json:{message:{id:41,group_id:7,sender_id:9,body,created_at:now}}});
+    });
+    await page.evaluate(async groups=>{state.groups=groups;await openGroup(7);},members);
+    await latest();
+    await thread.evaluate(el=>{
+     el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
+     el.scrollTo({top:120,behavior:'instant'});
+    });
+    await page.getByRole('button',{name:'Về tin nhắn mới nhất'}).waitFor();
+    await text.fill('Gửi vào nhóm');
+    await text.press('Enter');
+    await page.locator('#msg-group-41').waitFor();
+    await latest();
+
     await page.context().grantPermissions(['notifications']);
     const background=await page.evaluate(async ()=>{
      Object.defineProperty(document,'hidden',{value:true,configurable:true});

@@ -1184,7 +1184,7 @@ function renderMessageThread(scroll=false){
  const box=$('#chat-messages');
  if(box)paintChatThread(box,renderBubbles(),scroll);
 }
-function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,follow=false){
+function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw){
  const near=followingChatEnd(box);
  const position=box.scrollTop;
  const template=document.createElement('template');
@@ -1202,10 +1202,10 @@ function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw,fol
    }
    box.append(row);
  }
- if(follow||near)followChatEnd(box);
+ if(near)followChatEnd(box);
  else{box.scrollTo({top:position,behavior:'instant'});updateLatestButton(box);}
 }
-function appendDirectMessage(message){
+function appendDirectMessage(message,reveal=false){
  if(!message||!state.selected||state.tab!=='messages')return;
  if(![message.sender_id,message.recipient_id].includes(state.selected))return;
  const nonce=message.client_message_id;
@@ -1224,12 +1224,14 @@ function appendDirectMessage(message){
    if((before&&compareChatMessages(before,message)>0)||(after&&compareChatMessages(message,after)>0)){
     state.messages.sort(compareChatMessages);
     renderMessageThread(false);
-   }else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread,message.pending&&currentIndex<0);
+   }else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread);
  }
  if(state.messages.length>110){
    state.messages.splice(0,state.messages.length-100);
    renderMessageThread(false);
  }
+ // Composer and attachment layout can finish after the new row has been added.
+ if(reveal&&box)settleChatEnd(box);
  if(message.sender_id!==state.user?.id)queueChatRead(box);
 }
 function compareChatMessages(a,b){
@@ -2393,7 +2395,7 @@ document.addEventListener('submit',async event=>{
     const message={...payload,id:--nextPendingMessageId,sender_id:owner,
       created_at:Math.floor(Date.now()/1000),reactions:[],pending:true,attachment};
     clearSentComposer(form,'dm:'+recipient);
-    appendDirectMessage(message);
+    appendDirectMessage(message,true);
     queue.push({payload,message,attachment});
     if(queue.length===1){
       directSendQueues.set(key,queue);
