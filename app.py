@@ -1732,6 +1732,8 @@ async def admin_users(request:Request,q:str=''):
                        FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
                        WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ? OR u.id=?)
                        ORDER BY u.id DESC LIMIT 200''',('%'+query+'%','%'+query+'%',numeric_id))
+        for item in rows:
+            item['online']=bool(hub.users.get(item['id']))
     return {'users':rows}
 
 
@@ -1749,8 +1751,10 @@ async def admin_user_details(request:Request,uid:int):
     admin=require_admin(request)
     throttle(request,'admin-user-details',90,3600,str(admin['id']))
     with db() as c:
-        user=one(c,'''SELECT u.id,u.username,u.display_name,u.bio,u.phone,u.email,
-                     u.created_at,u.last_seen,u.show_online,u.show_receipts,
+        user=one(c,'''SELECT u.id,u.username,u.public_id,u.display_name,u.bio,u.phone,u.email,
+                     u.headline,u.website,u.profile_visibility,u.allow_message_requests,
+                     u.world_anonymous,u.needs_display_name,u.terms_accepted_at,
+                     u.terms_accepted_version,u.created_at,u.last_seen,u.show_online,u.show_receipts,
                      u.sanction_kind,u.sanction_until,u.sanction_reason,
                      d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                      FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
@@ -1758,6 +1762,37 @@ async def admin_user_details(request:Request,uid:int):
         if not user:
             raise HTTPException(404,'Không tìm thấy tài khoản người dùng.')
         detail=dict(user)
+        detail['online']=bool(hub.users.get(uid))
+        # Security review comprises stored facts and allegations, never a fraud verdict.
+        registration=one(c,'''SELECT id,status,created_at,decided_at,decided_by
+                              FROM registrations WHERE username=?
+                              ORDER BY id DESC LIMIT 1''',(user['username'],))
+        detail['registration']=dict(registration) if registration else None
+        detail['contact_verified']=False  # No independent phone/email verification stored.
+        detail['reports']=dict(one(c,'''SELECT COUNT(*) AS total,
+                             COUNT(CASE WHEN status='pending' THEN 1 END) AS pending,
+                             COUNT(CASE WHEN status!='pending' THEN 1 END) AS reviewed,
+                             MAX(created_at) AS latest_at
+                             FROM user_reports WHERE target_id=?''',(uid,)))
+        detail['recent_reports']=many(c,'''SELECT id,reason,status,created_at
+                           FROM user_reports WHERE target_id=?
+                           ORDER BY id DESC LIMIT 5''',(uid,))
+        detail['blocks_received']=one(c,'SELECT COUNT(*) AS n FROM blocks WHERE blocked_id=?',(uid,))['n']
+        detail['blocks_created']=one(c,'SELECT COUNT(*) AS n FROM blocks WHERE blocker_id=?',(uid,))['n']
+        detail['pending_requests_sent']=one(c,'''SELECT COUNT(*) AS n FROM friendships
+                           WHERE state='pending' AND requested_by=?''',(uid,))['n']
+        detail['pending_requests_received']=one(c,'''SELECT COUNT(*) AS n FROM friendships
+                           WHERE state='pending' AND requested_by!=? AND (u1=? OR u2=?)''',
+                             (uid,uid,uid))['n']
+        detail['contacts']=many(c,'''SELECT p.id,p.public_id,p.display_name,
+                           f.created_at FROM friendships f
+                           JOIN users p ON p.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
+                           WHERE f.state='accepted' AND (f.u1=? OR f.u2=?)
+                           ORDER BY f.created_at DESC LIMIT 50''',(uid,uid,uid))
+        detail['support_count']=one(c,'''SELECT COUNT(*) AS n FROM tickets
+                                       WHERE owner_id=?''',(uid,))['n']
+        detail['last_active_session_at']=one(c,'''SELECT MAX(created_at) AS stamp FROM sessions
+                                         WHERE user_id=? AND expires_at>?''',(uid,now()))['stamp']
         detail['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid))['n']
         activity=one(c,'''SELECT count(*) AS message_count,
                      count(CASE WHEN sender_id=? THEN 1 END) AS sent_count,
