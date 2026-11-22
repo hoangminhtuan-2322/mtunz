@@ -91,7 +91,7 @@ function bubblesFor(messages,isGroup=false,context=messages){
  if(!messages.length)return '<div class="spacer"></div><div class="empty">Chưa có tin nhắn. Hãy bắt đầu trò chuyện! ✨</div>';
  let html='<div class="spacer"></div>',prevDay='';
  const scope=isGroup?'group':'dm';
- const receiptsVisible=!isGroup&&canViewDmReceipts();
+ const receiptsVisible=!isGroup&&typeof canViewDmReceipts==='function'&&canViewDmReceipts();
  const byId=new Map(context.map(m=>[m.id,m]));
  const current=new Date(),today=current.toLocaleDateString('vi-VN');
  current.setDate(current.getDate()-1);
