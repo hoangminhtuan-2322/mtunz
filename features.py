@@ -277,6 +277,9 @@ def install(core):
             if updates:
                 columns=','.join(field+'=?' for field in updates)
                 c.execute(f'UPDATE users SET {columns} WHERE id=?',(*updates.values(),u['id']))
+        if updates:
+            await hub.user(u['id'],'identity-updated')
+            await hub.user(u['id'],'friends-updated')
         return {'ok':True,'profile':updates}
 
     @app.get('/api/profile/{uid}')
@@ -317,7 +320,7 @@ def install(core):
         u=current_user(request)
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
-        active_hash=core.digest(request.cookies.get('s',''))
+        active_hash=core.digest(core.request_session_token(request) or '')
         # Member API never returns security-only IP or GeoIP hints.
         columns='token_hash,expires_at,created_at,last_seen,device_label,device_name,device_type,browser,os_name'
         with db() as c:
@@ -362,7 +365,7 @@ def install(core):
     @app.delete('/api/me/sessions/{kind}/{device_id}')
     async def revoke_own_device(request:Request,kind:str,device_id:str):
         u=current_user(request)
-        active_hash=core.digest(request.cookies.get('s',''))
+        active_hash=core.digest(core.request_session_token(request) or '')
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
         with db() as c:
@@ -380,7 +383,7 @@ def install(core):
     @app.post('/api/me/sessions/revoke-others')
     async def revoke_others(request:Request):
         u=current_user(request)
-        current=core.digest(request.cookies.get('s',''))
+        current=core.digest(core.request_session_token(request) or '')
         remembered=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(remembered) if core.valid_remember_token(remembered) else ''
         with db() as c:
@@ -902,6 +905,7 @@ def install(core):
             active_member(c,gid,u['id'])
             latest=one(c,'SELECT MAX(id) AS n FROM group_messages WHERE group_id=? AND id<=?',(gid,up_to))['n'] or 0
             c.execute('UPDATE group_members SET last_read_id=MAX(last_read_id,?) WHERE group_id=? AND user_id=?',(latest,gid,u['id']))
+        await hub.user(u['id'],'groups-updated')
         return {'ok':True}
 
     class TextEdit(BaseModel):
@@ -1193,6 +1197,7 @@ def install(core):
                          ON CONFLICT(user_id,other_id)
                          DO UPDATE SET muted=excluded.muted,archived=excluded.archived,pinned=excluded.pinned,mute_until=CASE WHEN chat_preferences.muted<>excluded.muted THEN 0 ELSE chat_preferences.mute_until END''',
                       (u['id'],other_id,int(body.muted),int(body.archived),pinned))
+        await hub.user(u['id'],'friends-updated')
         return {'ok':True}
 
     @app.get('/api/admin/groups')

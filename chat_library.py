@@ -108,6 +108,7 @@ def install(core):
             c.execute('''INSERT INTO chat_preferences(user_id,other_id,nickname) VALUES(?,?,?)
                          ON CONFLICT(user_id,other_id) DO UPDATE SET nickname=excluded.nickname''',
                       (uid, peer_id, nickname))
+        await core.hub.user(uid,'friends-updated')
         return {'nickname': nickname}
 
     @app.get('/api/chats/{scope}/{chat_id}/shared')
