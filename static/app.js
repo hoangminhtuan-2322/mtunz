@@ -369,13 +369,74 @@ async function setup(){
   }
  }
 }
+// Web V9: resilient realtime status and coalesced Admin refresh without
+// replacing an active chat or an administrative form on every socket event.
+function v9ConnectionBanner(connected){
+ const old=document.getElementById('mt-realtime-status');
+ if(connected||!state.user){old?.remove();return;}
+ const banner=old||document.createElement('aside');
+ if(!old){
+  banner.id='mt-realtime-status';
+  banner.className='mt-realtime-status';
+  banner.setAttribute('role','status');
+  banner.setAttribute('aria-live','polite');
+  banner.innerHTML='<span class="mt-realtime-indicator" aria-hidden="true"></span>'+
+    '<span class="mt-realtime-copy"></span>'+
+    '<button type="button" class="mt-realtime-retry" data-act="retry-socket">Thử lại</button>';
+  document.body.append(banner);
+ }
+ banner.querySelector('.mt-realtime-copy').textContent=
+  navigator.onLine===false?'Thiết bị đang ngoại tuyến. Tin nhắn sẽ đồng bộ khi có mạng.':
+  'Đang kết nối lại với mtunz…';
+}
+let v9AdminTimer=0,v9AdminPending=false;
+function v9ScheduleAdminRefresh(delay=240){
+ if(!state.user?.is_admin)return;
+ clearTimeout(v9AdminTimer);
+ v9AdminTimer=setTimeout(()=>{
+  v9AdminTimer=0;
+  if(!state.user?.is_admin)return;
+  if(document.visibilityState==='hidden'||
+     document.activeElement?.matches?.('.admin-page input,.admin-page textarea,.admin-page select')){
+    v9AdminPending=true;return;
+  }
+  v9AdminPending=false;
+  void loadAdmin().catch(()=>{});
+ },delay);
+}
+document.addEventListener('focusout',event=>{
+ if(!v9AdminPending||!event.target?.closest?.('.admin-page'))return;
+ setTimeout(()=>{
+  if(v9AdminPending&&document.visibilityState==='visible')v9ScheduleAdminRefresh(160);
+ },220);
+},true);
+window.addEventListener('online',()=>{
+ v9ConnectionBanner(state.ws?.readyState===WebSocket.OPEN);
+ if(state.user&&(!state.ws||state.ws.readyState===WebSocket.CLOSED))connectSocket(true);
+});
+window.addEventListener('offline',()=>v9ConnectionBanner(false));
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState!=='visible'||!state.user)return;
+ if(!state.ws||state.ws.readyState===WebSocket.CLOSED){connectSocket(true);return;}
+ if(state.user.is_admin){v9ScheduleAdminRefresh(350);return;}
+ scheduleFriendsRefresh(350);
+ if(state.tab==='messages'&&state.selected)void loadMessages(false);
+ if(state.tab==='groups'&&state.groupSelected)void loadGroupMessages(false);
+});
+
 function connectSocket(retry=false){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
  const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
  state.ws=socket;
  if(!retry)socketRetryDelay=2500;
+ const handshakeTimeout=setTimeout(()=>{
+  if(state.ws===socket&&socket.readyState===WebSocket.CONNECTING)socket.close();
+ },15000);
  socket.onopen=()=>{
+  clearTimeout(handshakeTimeout);
+  socketRetryDelay=2500;
+  v9ConnectionBanner(true);
   if(!retry||state.ws!==socket)return;
   if(state.user&&!state.user.is_admin){
    scheduleFriendsRefresh(0);
@@ -417,7 +478,7 @@ function connectSocket(retry=false){
      await loadWorld(true).catch(()=>{});return;
    }
    if(t==='world-report-new'&&state.user?.is_admin&&state.adminTab==='reports'){
-     await loadAdmin();return;
+     v9ScheduleAdminRefresh();return;
    }
    if(t==='session-ended'){toast(data.reason||'Phiên đã kết thúc','error');await post('/api/auth/logout').catch(()=>{});resetAuthAfterLogout();return;}
    if(t==='account-deletion-updated'&&state.user){
@@ -448,7 +509,8 @@ function connectSocket(retry=false){
    }
    if(t==='registration-updated'){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
-     if(state.user?.is_admin)loadAdmin();
+     if(state.user?.is_admin&&['registrations','overview'].includes(state.adminTab))
+       v9ScheduleAdminRefresh();
    }
    if(t==='friends-updated'){if(state.user&&!state.user.is_admin)scheduleFriendsRefresh(60);}
    if(t==='message-requests-updated'&&state.user&&!state.user.is_admin&&typeof loadMessageRequests==='function')loadMessageRequests(state.tab==='friends').catch(()=>{});
@@ -506,7 +568,9 @@ function connectSocket(retry=false){
      return;
    }
    if(t==='support-updated'||t==='support-message'){
-     if(state.user?.is_admin){await loadAdmin();}
+     if(state.user?.is_admin){
+       if(['tickets','overview'].includes(state.adminTab))v9ScheduleAdminRefresh();
+     }
      else if(state.supportTicket&&(!data.ticket_id||data.ticket_id===state.supportTicket)){
        if(data.message&&data.ticket_id===state.supportTicket)appendSupportMessage(data.ticket_id,data.message);
        else await loadTicketMessages().catch(error=>toast(error.message,'error'));
@@ -514,8 +578,11 @@ function connectSocket(retry=false){
    }
  };
  socket.onclose=()=>{
+  clearTimeout(handshakeTimeout);
   if(state.ws!==socket)return;
-  socketRetry=setTimeout(()=>connectSocket(true),socketRetryDelay);
+  v9ConnectionBanner(false);
+  const delay=navigator.onLine===false?Math.max(10000,socketRetryDelay):socketRetryDelay;
+  socketRetry=setTimeout(()=>connectSocket(true),delay);
   socketRetryDelay=Math.min(30000,socketRetryDelay*2);
  };
 }
@@ -626,7 +693,9 @@ function resetAuthAfterLogout(){
  state.supportTicket=null;state.tickets=[];state.ticketMessages=[];state.adminTicket=null;state.adminTicketMessages=[];
  state.username='';state.challenge='';state.pinLength=4;state.accountDeletion=null;state.loginIsAdmin=false;
  clearActiveTab();
- state.ws?.close();state.mode='login';state.step='username';renderAuth();connectSocket();
+ state.ws?.close();v9ConnectionBanner(true);
+ v9AdminPending=false;clearTimeout(v9AdminTimer);
+ state.mode='login';state.step='username';renderAuth();connectSocket();
 }
 async function logout(){
  // Never claim that the user is logged out before server-side revocation succeeds.
@@ -993,18 +1062,24 @@ async function refreshFriends(redraw=true){
 function chatContactName(f){return f.nickname||f.display_name||f.username;}
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
-  return `<div class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
+  return `<button type="button" class="side-item ${active?'active':''}" data-act="open-chat"
+    data-id="${f.other_id}" aria-current="${active?'true':'false'}"
+    aria-label="Mở trò chuyện với ${esc(chatContactName(f))}">
    ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(chatContactName(f))}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
-   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></div>`;
+   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
 }
 function sideBody(){
   const accepted=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived);
   const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
   const q=state.sideFilter||'';
-  const filtered=accepted.filter(x=>[chatContactName(x),x.display_name||x.username].some(name=>name.toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi'))));
+  const normalized=q.toLocaleLowerCase('vi');
+  const filtered=accepted.filter(x=>[chatContactName(x),x.display_name||x.username].some(name=>String(name||'').toLocaleLowerCase('vi').includes(normalized)));
+  const visibleLimit=Math.max(60,Number(state.sidebarVisibleCount)||60);
+  const visible=filtered.slice(0,visibleLimit);
   return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
   <div class="side-label">Cuộc trò chuyện · ${filtered.length}</div>
-  ${filtered.length?filtered.map(friendItem).join(''):`<div class="empty" style="padding:35px 12px;font-size:12px">${q?'Không tìm thấy hội thoại.':'Chưa có bạn bè nào. Hãy tìm và kết bạn!'}</div>`}
+  ${filtered.length?visible.map(friendItem).join(''):`<div class="empty" style="padding:35px 12px;font-size:12px">${q?'Không tìm thấy hội thoại.':'Chưa có bạn bè nào. Hãy tìm và kết bạn!'}</div>`}
+  ${visible.length<filtered.length?`<button class="side-more" type="button" data-act="sidebar-more">Xem thêm hội thoại · ${filtered.length-visible.length} còn lại</button>`:''}
   ${state.friends.some(f=>f.archived&&f.state==='accepted')?`<button class="side-archive-link" type="button" data-act="app-tab" data-tab="archive">${icon('archive',14)} Đã lưu trữ · ${state.friends.filter(f=>f.archived&&f.state==='accepted').length}</button>`:''}
   ${groupSideItems()}`;
 }
@@ -2486,6 +2561,18 @@ async function clickAction(button){
   }
   case 'chat-older':await loadOlderChat();break;
   case 'chat-latest':await bringChatLatest();break;
+  case 'sidebar-more':{
+   const current=$('#side-items'),offset=current?.scrollTop||0;
+   state.sidebarVisibleCount=Math.max(60,Number(state.sidebarVisibleCount)||60)+60;
+   renderSideItems();
+   if(current)current.scrollTop=offset;
+   current?.querySelector('.side-more')?.focus({preventScroll:true});
+   break;
+  }
+  case 'retry-socket':{
+   if(state.ws?.readyState===WebSocket.OPEN){v9ConnectionBanner(true);break;}
+   connectSocket(true);break;
+  }
   case 'app-tab':await goTab(button.dataset.tab);break;
   case 'rail-more':state.railMoreOpen=!state.railMoreOpen;renderApp();break;
   case 'back-to-list':state.selected=null;state.groupSelected=null;state.tab=state.tab==='groups'?'groups':'messages';renderApp();break;
@@ -2628,7 +2715,11 @@ document.addEventListener('click',async event=>{
  finally{if(busy&&btn.isConnected){btn.disabled=false;btn.classList.remove('is-loading');btn.removeAttribute('aria-busy');}}
 });
 document.addEventListener('input',event=>{
- if(event.target.id==='side-filter'){state.sideFilter=event.target.value.trim();renderSideItems();}
+ if(event.target.id==='side-filter'){
+  state.sideFilter=event.target.value.trim();
+  state.sidebarVisibleCount=60;
+  renderSideItems();
+}
  if(event.target.id==='chat-text'&&event.target.value&&state.ws?.readyState===WebSocket.OPEN){
   const group=state.tab==='groups'&&state.groupSelected;
   if(!state.selected&&!group)return;
