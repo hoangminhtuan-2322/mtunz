@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "mtunz",
+    "slug": "mtunz-mobile",
+    "scheme": "mtunz",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.mtunz.mobile",
+      "edgeToEdgeEnabled": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.mtunz.mobile",
+      "supportsTablet": true
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
