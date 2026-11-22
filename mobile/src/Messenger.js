@@ -721,7 +721,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
             {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
         </Section>
-      </ScrollView>
+      </ScrollView>}
       <View style={css.tabs}>{tabs.map(([id,title,glyph])=><Pressable key={id}
         accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:tab===id}}
         onPress={()=>{setTab(id);setError('');if(id==='settings')loadSettings();}}
