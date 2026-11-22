@@ -64,13 +64,13 @@ function insertEmoji(text,form){
 }
 function chatContext(){
  if(!state.user||state.user.is_admin)return null;
- if(state.tab==='groups'&&state.groupSelected)return {type:'group',id:state.groupSelected};
- if(state.tab==='messages'&&state.selected)return {type:'dm',id:state.selected};
+ if(state.tab==='groups'&&state.groupSelected)return {type:'group',id:state.groupSelected,owner:state.user.id};
+ if(state.tab==='messages'&&state.selected)return {type:'dm',id:state.selected,owner:state.user.id};
  return null;
 }
 function sameContext(ctx){
  const active=chatContext();
- return !!ctx&&!!active&&ctx.type===active.type&&Number(ctx.id)===Number(active.id);
+ return !!ctx&&!!active&&ctx.owner===active.owner&&ctx.type===active.type&&Number(ctx.id)===Number(active.id);
 }
 function closeLocation(){
  if(!locationDialog)return;
@@ -217,15 +217,8 @@ async function uploadPhoto(file){
   const result=await optimizePhoto(file);
   if(!sameContext(context)){toast('Bạn đã chuyển cuộc trò chuyện, ảnh chưa được gửi.','warning');return;}
   progress.textContent='Đang tải ảnh lên…';
+  progress.remove();
   await uploadSelected(result);
-  if(!sameContext(context)){
-   state.pendingAttachment=null;
-   const box=q('.conversation #compose-extra');
-   if(box)box.innerHTML=composerExtras();
-   toast('Đã đổi cuộc trò chuyện. Ảnh vừa tải không được đính kèm.','warning');
-   return;
-  }
-  toast('Ảnh đã sẵn sàng. Nhấn gửi để chia sẻ.','ok');
  }catch(error){toast(error.message||'Không thể đính kèm ảnh.','error');}
  finally{photoPreparing=false;progress.remove();}
 }
@@ -317,6 +310,7 @@ function mountHeader(header){
  const group=!!q('button[data-act="group-leave"]',header);
  const actions=group?['group-manage','group-leave']:['profile-view','call-audio','call-video','pin-chat','mute-chat','archive-chat','chat-restrict','chat-block'];
  const buttons=actions.map(action=>q('button[data-act="'+action+'"]',header)).filter(Boolean);
+ if(group)buttons.unshift(...all('[data-workflow-alert],[data-workflow-mention]',header));
  const nickname=q('[data-chat-nickname]',header);
  if(nickname)buttons.unshift(nickname);
  if(!group)buttons.unshift(...all('[data-v6-act="disappear"],[data-v4-act="schedule-list"]',header));

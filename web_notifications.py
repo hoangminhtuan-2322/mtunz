@@ -130,7 +130,7 @@ def install(core):
 
     core.forget_push_on_logout=forget_on_logout
 
-    def deliver(uid, kind, chat_id=0, online=frozenset()):
+    def deliver(uid, kind, chat_id=0, online=frozenset(), message_body=''):
         with db() as c:
             rows=core.many(c,'SELECT * FROM web_push_subscriptions WHERE user_id=? ORDER BY updated_at DESC LIMIT 12',(uid,))
             if kind in ('dm','group') and rows:
@@ -139,10 +139,9 @@ def install(core):
                           OR EXISTS (SELECT 1 FROM account_deletion_requests WHERE user_id=u.id))''',(uid,core.now())):
                     return True
                 if kind=='dm':
-                    muted=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',(uid,chat_id))
-                    if (muted and muted['muted']) or core.has_block(c,uid,chat_id) or not core.friends(c,uid,chat_id):
+                    if core.has_block(c,uid,chat_id) or not core.friends(c,uid,chat_id):
                         return True
-                elif not one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',(chat_id,uid)):
+                if not core.alert_allowed(c,kind,uid,chat_id,message_body,core.now()):
                     return True
         payload=json.dumps({'type':kind,'chat_id':chat_id})
         complete=True
@@ -174,9 +173,9 @@ def install(core):
     async def push_worker(queue):
         while True:
             try:
-                uid,kind,chat_id,online=await queue.get()
+                uid,kind,chat_id,online,message_body=await queue.get()
                 try:
-                    await asyncio.to_thread(deliver,uid,kind,chat_id,online)
+                    await asyncio.to_thread(deliver,uid,kind,chat_id,online,message_body)
                 finally:
                     queue.task_done()
             except asyncio.CancelledError:
@@ -193,9 +192,9 @@ def install(core):
         if not queue or queue.full():
             return
         if event=='message':
-            item=(uid,'dm',message['sender_id'],online)
+            item=(uid,'dm',message['sender_id'],online,message.get('body',''))
         else:
-            item=(uid,'group',data['group_id'],online)
+            item=(uid,'group',data['group_id'],online,message.get('body',''))
         queue.put_nowait(item)
 
     core.enqueue_web_push=enqueue

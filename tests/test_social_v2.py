@@ -190,3 +190,84 @@ def test_profile_save_updates_only_submitted_fields():
     assert not own['show_online']
     other=bob.get(f"/api/profile/{a['id']}").json()['profile']
     assert {'email','phone','username'}.isdisjoint(other)
+
+
+def test_workflow_unread_window_context_and_library_filters():
+    _,alice,bob,a,b=pair()
+    aid,bid=a['id'],b['id']
+    assert alice.post(f'/api/friends/request/{bid}').status_code==200
+    assert bob.post(f'/api/friends/accept/{aid}').status_code==200
+    with db() as c:
+        c.executemany('INSERT INTO messages(sender_id,recipient_id,body,created_at) VALUES(?,?,?,?)',
+                      [(aid,bid,f'https://example.org/n/{i}',1000+i) for i in range(85)])
+        c.execute("INSERT INTO messages(sender_id,recipient_id,body,created_at) VALUES(?,?,?,?)",
+                  (bid,aid,'https://example.org/reply',1090))
+    path=f'/api/messages/{aid}'
+    latest=bob.get(path).json()
+    assert latest['first_unread_id']<latest['messages'][0]['id']
+    first=bob.get(path,params={'unread_window':1}).json()
+    assert first['more_after'] and first['messages'][0]['id']==first['first_unread_id']
+    second=bob.get(path,params={'after':first['messages'][-1]['id']}).json()
+    assert not second['more_after'] and len(first['messages'])+len(second['messages'])==86
+    target=first['messages'][14]['id']
+    context=f'/api/chats/dm/{aid}/context/{target}'
+    excerpt=bob.get(context).json()
+    assert excerpt['target_id']==target and len(excerpt['messages'])==16
+    assert excerpt['messages'][7]['id']==target and 'read_at' not in excerpt['messages'][7]
+    with db() as c:
+        assert c.execute('SELECT read_at FROM messages WHERE id=?',(target,)).fetchone()['read_at'] is None
+    library=bob.get(f'/api/chats/dm/{aid}/shared',
+        params={'kind':'links','since':1080,'until':1100,'sender_id':aid}).json()['items']
+    assert len(library)==5 and all(item['sender_id']==aid for item in library)
+    assert alice.get(f'/api/chats/dm/{bid}/context/{target+10000}').status_code==404
+    assert bob.post(f'/api/blocks/{aid}').status_code==200
+    assert bob.get(context).status_code==403
+
+
+def test_workflow_idempotency_alerts_and_report_history():
+    from app import alert_allowed, now
+
+    admin,alice,bob,a,b=pair()
+    aid,bid=a['id'],b['id']
+    assert alice.post(f'/api/friends/request/{bid}').status_code==200
+    assert bob.post(f'/api/friends/accept/{aid}').status_code==200
+    upload={'file':('test.txt',b'attachment','text/plain')}
+    key={'upload_key':'c_upload_key_1234567890'}
+    first=alice.post('/api/uploads',files=upload,data=key)
+    repeat=alice.post('/api/uploads',files=upload,data=key)
+    assert first.status_code==repeat.status_code==200
+    assert first.json()['attachment']==repeat.json()['attachment']
+    assert alice.post('/api/uploads',files={'file':('test.txt',b'another','text/plain')},data=key).status_code==409
+    gid=alice.post('/api/groups',json={'title':'Nhóm thử','member_ids':[bid]}).json()['id']
+    group=f'/api/groups/{gid}/messages'
+    member=bob.put(f'/api/chats/group/{gid}/alerts',json={'mode':'mentions'})
+    assert member.status_code==200,member.text
+    assert bob.get('/api/groups').json()['groups'][0]['alert_mode']=='mentions'
+    assert alice.get(f'/api/groups/{gid}').json()['members'][0]['public_id']
+    assert bob.put(f'/api/chats/dm/{aid}/alerts',json={'mode':'mentions'}).status_code==422
+    until=now()+3600
+    assert bob.put(f'/api/chats/dm/{aid}/alerts',json={'mode':'muted','until':until}).status_code==200
+    assert bob.get('/api/friends').json()['friends'][0]['mute_until']==until
+    with db() as c:
+        assert not alert_allowed(c,'group',bid,gid,'Không nhắc',now())
+        assert alert_allowed(c,'group',bid,gid,f'Nhờ @{b["public_id"]}.',now())
+        assert not alert_allowed(c,'group',bid,gid,f'abc@{b["public_id"]}.',now())
+        assert not alert_allowed(c,'dm',bid,aid,'Tin',until-1)
+        assert alert_allowed(c,'dm',bid,aid,'Tin',until)
+    send={'body':'Tin đính kèm','attachment_id':first.json()['attachment']['id'],
+          'client_message_id':'c_group_send_123456789'}
+    published=alice.post(group,json=send).json()['message']
+    assert alice.post(group,json=send).json()['message']['id']==published['id']
+    assert alice.post(group,json={**send,'body':'Nội dung khác'}).status_code==409
+    assert len(bob.get(group).json()['messages'])==1
+    report=bob.post('/api/reports',json={'scope':'profile','target_id':aid,'reason':'spam',
+                    'description':'Báo cáo dùng để kiểm tra quy trình.'}).json()['report_id']
+    path=f'/api/admin/reports/{report}'
+    assert bob.get(path+'/history').status_code==403
+    for status in ['in_review','reviewed']:
+        result=admin.post(path+'/review',json={'decision':status,'note':f'Ghi chú {status}','admin_pin':'2345'})
+        assert result.status_code==200,result.text
+    events=admin.get(path+'/history').json()['events']
+    assert [event['status'] for event in events]==['in_review','reviewed']
+    assert events[0]['note']=='Ghi chú in_review'
+    assert admin.post(path+'/review',json={'decision':'dismissed','note':'Đổi quyết định','admin_pin':'2345'}).status_code==409

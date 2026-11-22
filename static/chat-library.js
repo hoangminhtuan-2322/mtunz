@@ -6,10 +6,13 @@ const chatLibraryKinds={media:'Ảnh & video',files:'Tệp',links:'Liên kết'}
 
 function chatLibraryItem(item,kind){
  const stamp=`${esc(item.display_name||'Thành viên')} · ${date(item.created_at)}`;
+ const origin=`<button type="button" class="btn ghost sm" data-library-origin="${Number(item.id)}">Xem tin gốc</button>`;
  if(kind==='links')return item.links.map(link=>`
-  <a class="chat-library-row" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">
+  <article class="chat-library-result"><a class="chat-library-row" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer">
    <span class="chat-library-icon">${icon('link',19)}</span><span><strong>${esc(link.host)}</strong>
-   <span class="chat-library-url">${esc(link.url)}</span><small>${stamp}</small></span></a>`).join('');
+   <span class="chat-library-url">${esc(link.url)}</span><small>${stamp}</small></span></a>
+   <div class="chat-library-actions"><button type="button" class="btn ghost sm" data-library-copy="${esc(link.url)}">Sao chép liên kết</button>
+   ${origin}</div></article>`).join('');
  const url='/api/attachments/'+Number(item.attachment_id);
  if(kind==='media'){
   const video=item.mime.startsWith('video/'),label=video?'Tải video':'Tải ảnh';
@@ -17,30 +20,41 @@ function chatLibraryItem(item,kind){
    ${video?`<video src="${url}" controls playsinline preload="none" aria-label="${esc(item.name)}"></video>`:
     `<a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${esc(item.name)}" loading="lazy" decoding="async"></a>`}
    <small>${stamp}</small>
+   ${origin}
    <a class="chat-library-save" href="${url}?download=1" download="${esc(item.name)}" aria-label="${label} ${esc(item.name)}">${icon('download',15)} ${label}</a>
   </article>`;
  }
- return `<a class="chat-library-row" href="${url}?download=1" download="${esc(item.name)}">
+ return `<article class="chat-library-result"><a class="chat-library-row" href="${url}?download=1" download="${esc(item.name)}">
   <span class="chat-library-icon">${icon('file',19)}</span><span><strong>${esc(item.name)}</strong>
-  <small>${fmtSize(item.size)} · ${stamp}</small></span></a>`;
+  <small>${fmtSize(item.size)} · ${stamp}</small></span></a>${origin}</article>`;
 }
 
 function openChatLibrary(){
  const group=state.tab==='groups',id=group?state.groupSelected:state.selected;
  if(!id||!state.user)return;
- const owner=state.user.id,scope=group?'group':'dm';
+ const owner=state.user.id,scope=group?'group':'dm',ctx={owner,scope,id,key:scope+'-'+id};
  const friend=group?null:state.friends.find(f=>f.other_id===id&&f.state==='accepted');
  const title=friend?chatContactName(friend):state.groups.find(g=>g.id===id)?.title;
  modal({title:'Nội dung đã chia sẻ',description:title||'Cuộc trò chuyện',confirm:'Đóng',cancel:null,
   content:`<div class="chat-library">
   <div class="chat-library-picker" role="group" aria-label="Loại nội dung">${Object.entries(chatLibraryKinds)
     .map(([kind,label])=>`<button type="button" class="btn ghost sm" data-library-kind="${kind}" aria-pressed="false">${label}</button>`).join('')}</div>
+  <details class="chat-library-filters"><summary>Bộ lọc theo người gửi và ngày</summary>
+   <form class="chat-library-filter-form"><label>Người gửi<select class="select" name="sender">
+    <option value="0">Tất cả</option><option value="${owner}">Chỉ tôi</option>
+    ${friend?`<option value="${id}">${esc(chatContactName(friend))}</option>`:''}</select></label>
+    <label>Từ ngày<input class="input" type="date" name="start"></label>
+    <label>Đến ngày<input class="input" type="date" name="end"></label>
+    <button type="submit" class="btn ghost sm">Áp dụng lọc</button>
+   </form></details>
   <div class="chat-library-list" tabindex="0" role="region" aria-label="Nội dung đã chia sẻ"></div>
   <p class="hint chat-library-status" role="status"></p>
   <button class="btn ghost sm" type="button" data-library-more hidden>Xem thêm</button></div>`});
  const panel=$('.chat-library'),items=panel.querySelector('.chat-library-list');
  const status=panel.querySelector('.chat-library-status'),more=panel.querySelector('[data-library-more]');
- let kind='media',before=null,controller;
+ const filters=panel.querySelector('.chat-library-filter-form');
+ let kind='media',before=null,controller,criteria={};
+ if(group)void populateWorkflowSenders(ctx,filters.elements.sender).catch(()=>{});
  const current=()=>panel.isConnected&&state.user?.id===owner&&state.tab===(group?'groups':'messages')&&
   (group?state.groupSelected:state.selected)===id;
  async function load(nextKind,append=false){
@@ -60,7 +74,7 @@ function openChatLibrary(){
   status.textContent='Đang tải…';
   items.setAttribute('aria-busy','true');
   try{
-   const params=new URLSearchParams({kind});
+   const params=new URLSearchParams({kind,...criteria});
    if(before!==null)params.set('before',before);
    const data=await api(`/api/chats/${scope}/${id}/shared?${params}`,{signal:pending.signal});
    if(!current()||pending.signal.aborted)return;
@@ -81,10 +95,31 @@ function openChatLibrary(){
    if(current()&&!pending.signal.aborted)items.removeAttribute('aria-busy');
   }
  }
- panel.addEventListener('click',event=>{
-  const button=event.target.closest('[data-library-kind],[data-library-more]');
-  if(button?.dataset.libraryKind)void load(button.dataset.libraryKind);
-  else if(button)void load(kind,before!==null);
+ filters.addEventListener('submit',event=>{
+  event.preventDefault();
+  const start=filters.elements.start.value,end=filters.elements.end.value;
+  const since=start?Math.floor(new Date(start+'T00:00:00').getTime()/1000):0;
+  const until=end?Math.floor(new Date(end+'T23:59:59').getTime()/1000):0;
+  if(since&&until&&since>until){status.textContent='Ngày bắt đầu lớn hơn ngày kết thúc.';return;}
+  criteria={sender_id:filters.elements.sender.value,since,until};
+  void load(kind);
+ });
+ panel.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-library-kind],[data-library-more],[data-library-copy],[data-library-origin]');
+  if(!button)return;
+  try{
+   if(button.dataset.libraryKind)await load(button.dataset.libraryKind);
+   else if(button.hasAttribute('data-library-more'))await load(kind,before!==null);
+   else if(button.dataset.libraryCopy){
+    await navigator.clipboard.writeText(button.dataset.libraryCopy);
+    toast('Đã sao chép liên kết.','ok');
+   }else{
+    if(button.disabled)return;
+    button.disabled=true;
+    try{await revealConversationMessage(ctx,Number(button.dataset.libraryOrigin),button);}
+    finally{button.disabled=false;}
+   }
+  }catch(error){toast(error.message||'Không thực hiện được thao tác.','error');}
  });
  void load(kind);
 }

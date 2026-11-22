@@ -7,10 +7,12 @@ StaticFiles; a URL without the proper session and relationship cannot fetch them
 import os
 import re
 import json
+import hashlib
 import secrets
 import sqlite3
 from pathlib import Path
 from typing import Literal
+from chat_library import alert_allowed, history_window
 from account_deletion import delete_user_records, purge_due_deletions, DELETION_GRACE_SECONDS
 import asyncio
 import logging
@@ -152,6 +154,12 @@ def install(core):
             column('attachments','waveform',"TEXT NOT NULL DEFAULT ''")
             column('attachments','duration_ms','INTEGER NOT NULL DEFAULT 0')
             column('chat_preferences','pinned','INTEGER NOT NULL DEFAULT 0')
+            column('attachments','upload_key','TEXT')
+            column('attachments','upload_digest','TEXT')
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS attachment_upload_key ON attachments(owner_id,upload_key)')
+            column('group_messages','client_message_id','TEXT')
+            c.execute('CREATE UNIQUE INDEX IF NOT EXISTS group_send_nonce ON group_messages(group_id,sender_id,client_message_id)')
+
     migrate()
 
     def active_member(c, gid, uid):
@@ -591,7 +599,7 @@ def install(core):
         return resp
 
     @app.post('/api/uploads')
-    async def upload(request:Request, file:UploadFile=File(...), waveform:str=Form(''), duration_ms:int=Form(0)):
+    async def upload(request:Request, file:UploadFile=File(...), waveform:str=Form(''), duration_ms:int=Form(0),upload_key:str|None=Form(None,max_length=64)):
         u=current_user(request)
         throttle(request, 'upload', 35, 3600, str(u['id']))
         mime=(file.content_type or '').lower().split(';')[0]
@@ -607,6 +615,9 @@ def install(core):
         if not mime.startswith('audio/'):
             waveform=''
             duration_ms=0
+        if upload_key and not re.fullmatch(r'[A-Za-z0-9_-]{16,64}',upload_key):
+            raise HTTPException(422,'Mã tải tệp không hợp lệ.')
+        digest=hashlib.sha256() if upload_key else None
         stored=secrets.token_hex(20)+ALLOWED[mime]
         path=upload_dir/stored
         total=0
@@ -618,6 +629,7 @@ def install(core):
                     if total>upload_limit:raise HTTPException(413,'Tệp vượt quá hạn mức cho phép (2 MB trên Render Free).')
                     if len(first)<20:first+=(chunk[:20-len(first)])
                     out.write(chunk)
+                    if digest:digest.update(chunk)
             signatures={
                 'image/png':first.startswith(b'\x89PNG\r\n\x1a\n'),
                 'image/jpeg':first.startswith(b'\xff\xd8\xff'),
@@ -640,18 +652,29 @@ def install(core):
                 raise HTTPException(415,'Nội dung tệp không đúng định dạng đã khai báo.')
             with db() as c:
                 if hosted:
-                    used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=?',(u['id'],))['total']
-                    if used + total > 25*1024*1024:
-                        raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')
-                    # Render Free storage disappears after sleeping/redeploying.
-                    # Keep small attachments in PostgreSQL instead (Neon quota applies).
-                    content=path.read_bytes()
-                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,file_content,waveform,duration_ms)
-                                     VALUES(?,?,?,?,?,?,?,?,?)''',(u['id'],stored,safe_name,mime,total,now(),content,waveform,duration_ms))
+                    # Serialize quota checks and keyed retries for this uploader.
+                    one(c,'SELECT id FROM users WHERE id=? FOR UPDATE',(u['id'],))
+                elif upload_key:
+                    c.execute('BEGIN IMMEDIATE')
+                upload_digest=digest.hexdigest() if digest else None
+                old=one(c,'''SELECT id,original_name,mime,upload_digest FROM attachments
+                             WHERE owner_id=? AND upload_key=?''',(u['id'],upload_key)) if upload_key else None
+                if old:
+                    if (old['original_name'],old['mime'],old['upload_digest'])!=(safe_name,mime,upload_digest):
+                        raise HTTPException(409,'Mã tải tệp đã dùng cho một tệp khác.')
+                    path.unlink(missing_ok=True)
+                    ident=old['id']
                 else:
-                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,waveform,duration_ms)
-                                     VALUES(?,?,?,?,?,?,?,?)''',(u['id'],stored,safe_name,mime,total,now(),waveform,duration_ms))
-                ident=cur.lastrowid
+                    if hosted:
+                        used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=?',(u['id'],))['total']
+                        if used + total > 25*1024*1024:
+                            raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')
+                    content=path.read_bytes() if hosted else None
+                    cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,
+                                     file_content,waveform,duration_ms,upload_key,upload_digest)
+                                     VALUES(?,?,?,?,?,?,?,?,?,?,?)''',
+                                  (u['id'],stored,safe_name,mime,total,now(),content,waveform,duration_ms,upload_key,upload_digest))
+                    ident=cur.lastrowid
         except BaseException:
             path.unlink(missing_ok=True)
             raise
@@ -739,7 +762,7 @@ def install(core):
     async def list_groups(request:Request):
         u=current_user(request)
         with db() as c:
-            rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,
+            rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,gm.alert_mode,gm.mute_until,
                            (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
                            (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.deleted_at IS NULL AND m.sender_id!=?) AS unread
                            FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
@@ -756,7 +779,7 @@ def install(core):
         u=current_user(request)
         with db() as c:
             group=active_member(c,gid,u['id'])
-            members=many(c,'''SELECT gm.user_id,gm.role,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,u.display_name FROM group_members gm JOIN users u
+            members=many(c,'''SELECT gm.user_id,gm.role,u.public_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,u.display_name FROM group_members gm JOIN users u
                               ON u.id=gm.user_id WHERE gm.group_id=? ORDER BY CASE gm.role WHEN 'owner' THEN 0 ELSE 1 END,u.username''',(gid,))
         return {'group':dict(group),'members':members}
 
@@ -819,18 +842,23 @@ def install(core):
         body:str=Field(default='',max_length=2000)
         attachment_id:int|None=None
         reply_to:int|None=None
+        client_message_id:str|None=Field(default=None,pattern=r'^[A-Za-z0-9_-]{16,64}$')
 
     @app.get('/api/groups/{gid}/messages')
-    async def group_history(request:Request,gid:int,before:int=0):
+    async def group_history(request:Request,gid:int,before:int=Query(0,ge=0,le=2**63-1),
+                              after:int=Query(0,ge=0,le=2**63-1),latest:bool=False,unread_window:bool=False):
         u=current_user(request)
         with db() as c:
-            active_member(c,gid,u['id'])
+            member=active_member(c,gid,u['id'])
             sql="SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=?"
-            args=[gid]
-            if before>0:sql+=' AND m.id<?';args.append(before)
-            messages=many(c,sql+' ORDER BY m.id DESC LIMIT 70',args)
-            result=message_page(c,messages[::-1],'group')
-        return {'messages':result}
+            unread=None
+            if not before and not after and not latest:
+                unread=one(c,'''SELECT MIN(id) AS id FROM group_messages WHERE group_id=?
+                                AND id>? AND sender_id!=? AND deleted_at IS NULL''',
+                           (gid,member['last_read_id'],u['id']))['id']
+            rows,more_after=history_window(c,many,sql,(gid,),before,after,latest or not unread_window,unread,'m.id')
+            result=message_page(c,rows,'group')
+        return {'messages':result,'first_unread_id':unread,'more_after':more_after}
 
     @app.post('/api/groups/{gid}/messages')
     async def send_group(request:Request,gid:int,body:GroupMessage):
@@ -840,14 +868,29 @@ def install(core):
         if not text and not body.attachment_id:raise HTTPException(422,'Hãy nhập tin nhắn hoặc đính kèm tệp.')
         with db() as c:
             active_member(c,gid,u['id'])
-            safe_attachment(c,body.attachment_id,u['id'])
-            if body.reply_to and not one(c,'SELECT 1 FROM group_messages WHERE id=? AND group_id=?',(body.reply_to,gid)):
-                raise HTTPException(404,'Tin nhắn trả lời không tồn tại.')
-            cur=c.execute('''INSERT INTO group_messages(group_id,sender_id,body,attachment_id,reply_to,created_at)
-                             VALUES(?,?,?,?,?,?)''',(gid,u['id'],text,body.attachment_id,body.reply_to,now()))
-            msg=dict(one(c,"SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?",(cur.lastrowid,)))
+            nonce=body.client_message_id
+            if core.POSTGRES_MODE:
+                one(c,'SELECT user_id FROM group_members WHERE group_id=? AND user_id=? FOR UPDATE',(gid,u['id']))
+            original=one(c,'SELECT * FROM group_messages WHERE group_id=? AND sender_id=? AND client_message_id=?',
+                         (gid,u['id'],nonce)) if nonce else None
+            inserted=False
+            if not original:
+                safe_attachment(c,body.attachment_id,u['id'])
+                if body.reply_to and not one(c,'SELECT 1 FROM group_messages WHERE id=? AND group_id=?',(body.reply_to,gid)):
+                    raise HTTPException(404,'Tin nhắn trả lời không tồn tại.')
+                cur=c.execute('''INSERT INTO group_messages(group_id,sender_id,body,attachment_id,reply_to,created_at,client_message_id)
+                                 VALUES(?,?,?,?,?,?,?) ON CONFLICT(group_id,sender_id,client_message_id) DO NOTHING''',
+                              (gid,u['id'],text,body.attachment_id,body.reply_to,now(),nonce))
+                inserted=bool(cur.rowcount)
+                if not inserted:
+                    original=one(c,'SELECT * FROM group_messages WHERE group_id=? AND sender_id=? AND client_message_id=?',
+                                 (gid,u['id'],nonce))
+            if original and (original['deleted_at'] or (original['body'],original['attachment_id'],original['reply_to'])!=(text,body.attachment_id,body.reply_to)):
+                raise HTTPException(409,'Mã gửi đã được sử dụng cho tin nhắn khác.')
+            mid=cur.lastrowid if inserted else original['id']
+            msg=dict(one(c,"SELECT m.*,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.id=?",(mid,)))
             msg=message_dict(c,msg,'group')
-            members=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))]
+            members=[r['user_id'] for r in many(c,'SELECT user_id FROM group_members WHERE group_id=?',(gid,))] if inserted else []
         await asyncio.gather(*(hub.user(uid,'group-message',group_id=gid,message=msg) for uid in members))
         return {'message':msg}
 
@@ -1052,9 +1095,7 @@ def install(core):
                   (u['id'],body.target_id,content,attachment_id,now()))
                 message=message_dict(c,one(c,'SELECT * FROM messages WHERE id=?',(cur.lastrowid,)),'dm')
                 targets=[u['id'],body.target_id]
-                pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
-                         (body.target_id,u['id']))
-                if not pref or not pref['muted']:
+                if alert_allowed(c,'dm',body.target_id,u['id'],content,now()):
                     notify(c,body.target_id,f'{u["display_name"] or "Thành viên"} đã chuyển tiếp một tin nhắn.')
             else:
                 active_member(c,body.target_id,u['id'])
@@ -1150,7 +1191,7 @@ def install(core):
             c.execute('''INSERT INTO chat_preferences(user_id,other_id,muted,archived,pinned)
                          VALUES(?,?,?,?,?)
                          ON CONFLICT(user_id,other_id)
-                         DO UPDATE SET muted=excluded.muted,archived=excluded.archived,pinned=excluded.pinned''',
+                         DO UPDATE SET muted=excluded.muted,archived=excluded.archived,pinned=excluded.pinned,mute_until=CASE WHEN chat_preferences.muted<>excluded.muted THEN 0 ELSE chat_preferences.mute_until END''',
                       (u['id'],other_id,int(body.muted),int(body.archived),pinned))
         return {'ok':True}
 
