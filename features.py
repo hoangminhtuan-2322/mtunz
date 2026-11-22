@@ -277,6 +277,9 @@ def install(core):
             if updates:
                 columns=','.join(field+'=?' for field in updates)
                 c.execute(f'UPDATE users SET {columns} WHERE id=?',(*updates.values(),u['id']))
+        if updates:
+            await hub.user(u['id'],'identity-updated')
+            await hub.user(u['id'],'friends-updated')
         return {'ok':True,'profile':updates}
 
     @app.get('/api/profile/{uid}')
@@ -902,6 +905,7 @@ def install(core):
             active_member(c,gid,u['id'])
             latest=one(c,'SELECT MAX(id) AS n FROM group_messages WHERE group_id=? AND id<=?',(gid,up_to))['n'] or 0
             c.execute('UPDATE group_members SET last_read_id=MAX(last_read_id,?) WHERE group_id=? AND user_id=?',(latest,gid,u['id']))
+        await hub.user(u['id'],'groups-updated')
         return {'ok':True}
 
     class TextEdit(BaseModel):
