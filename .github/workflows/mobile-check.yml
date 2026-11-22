@@ -1,10 +1,21 @@
 name: Verify native mtunz mobile
 
 on:
+  push:
+    branches:
+      - 'feature/native-mobile-chat-v1'
+    paths:
+      - 'mobile/**'
+      - 'mobile_api.py'
+      - 'mobile_push.py'
+      - 'app.py'
+      - '.github/workflows/mobile-check.yml'
   pull_request:
     paths:
       - 'mobile/**'
       - 'mobile_api.py'
+      - 'mobile_push.py'
+      - 'app.py'
       - '.github/workflows/mobile-check.yml'
   workflow_dispatch:
 
