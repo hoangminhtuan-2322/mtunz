@@ -29,7 +29,7 @@ assert(backend.includes("row['needs_display_name']"));
 assert(backend.includes("request.url.path not in ('/api/me', '/api/me/display-name')"));
 assert(features.includes("column('users','needs_display_name'"));
 assert(backend.includes('needs_display_name,public_id)')&&backend.includes('?,?,?,?,?,?,?,?,1,?'));
-assert(html.includes('app.js?v=20.9'));
+assert(html.includes('app.js?v=21.0'));
 assert(html.includes('extras.js?v=18.5'));
 assert(html.includes('onboarding.css?v=1.0'));
 assert(css.includes('.onboarding-name-box')&&css.includes('max-width:600px'));

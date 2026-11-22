@@ -44,5 +44,5 @@ assert(consoleJS.includes("if(tab!=='audit')controls.append(search)"),'Use serve
 assert(consoleJS.includes("'Tên quản trị'"),'CSV includes actor');
 assert(html.includes('admin-console.css?v=12.3'));
 assert(html.includes('admin-console.js?v=12.1'));
-assert(html.includes('app.js?v=20.9'));
+assert(html.includes('app.js?v=21.0'));
 console.log('Admin detailed audit and account controls: wiring, security, semantics and responsive layout verified.');
