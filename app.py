@@ -22,7 +22,8 @@ from typing import Literal
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
 from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -59,6 +60,14 @@ if PUBLIC_MODE and PUBLIC_ORIGIN and not PUBLIC_ORIGIN.startswith('https://'):
 USERNAME_RE = re.compile(r'^[a-z][a-z0-9_]{2,23}$')
 PH = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 app = FastAPI(title='mtunz', docs_url=None, redoc_url=None)
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, error: RequestValidationError):
+    # Validation errors can contain the entire submitted value, including credentials.
+    details=[{key:issue[key] for key in ('loc','msg','type')} for issue in error.errors()]
+    return JSONResponse({'detail':details},status_code=422,headers={'Cache-Control':'no-store'})
+
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 
@@ -1281,7 +1290,7 @@ async def get_friends(request: Request):
                  last.body AS last_body, last.created_at AS last_created,
                  last.sender_id AS last_sender,
                  (SELECT count(*) FROM messages
-                   WHERE recipient_id=? AND sender_id=u.id AND read_at IS NULL
+                   WHERE f.state='accepted' AND recipient_id=? AND sender_id=u.id AND read_at IS NULL
                    AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
@@ -1290,7 +1299,7 @@ async def get_friends(request: Request):
           LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
           LEFT JOIN messages last ON last.id=(
               SELECT m.id FROM messages m
-              WHERE ((m.sender_id=? AND m.recipient_id=u.id)
+              WHERE f.state='accepted' AND ((m.sender_id=? AND m.recipient_id=u.id)
                   OR (m.sender_id=u.id AND m.recipient_id=?))
                 AND (m.expires_at IS NULL OR m.expires_at>?) AND m.deleted_at IS NULL
               ORDER BY m.id DESC LIMIT 1)
@@ -1299,7 +1308,11 @@ async def get_friends(request: Request):
         ''',(u['id'],now(),u['id'],u['id'],u['id'],u['id'],
              u['id'],u['id'],now(),u['id'],u['id']))
         for r in allrows:
-            show_activity=bool(r['show_online']) and not bool(r.pop('peer_restricted'))
+            accepted=r['state']=='accepted'
+            visibility=r.pop('profile_visibility')
+            can_view_avatar=visibility=='everyone' or (visibility=='friends' and accepted)
+            peer_restricted=r.pop('peer_restricted')
+            show_activity=bool(r['show_online']) and not peer_restricted and (accepted or visibility=='everyone')
             r['online']=show_activity and bool(hub.users.get(r['other_id']))
             if not show_activity:
                 r['last_seen']=None
@@ -1308,14 +1321,14 @@ async def get_friends(request: Request):
             r['pinned']=bool(r['pinned'])
             r['restricted']=bool(r['restricted'])
             r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
-                             if r['avatar_attachment_id'] and r['profile_visibility']!='only_me' else None)
-            r.pop('avatar_attachment_id',None)
-            r.pop('profile_visibility',None)
+                             if r.pop('avatar_attachment_id') and can_view_avatar else None)
             r.pop('show_online',None)
             last_created=r.pop('last_created')
             last_body=r.pop('last_body')
             last_sender=r.pop('last_sender')
-            r['last_message']={'body':last_body,'created_at':last_created,'sender_id':last_sender} if last_created else None
+            r['last_message']={'body':last_body,'created_at':last_created,'sender_id':last_sender} if accepted and last_created else None
+            if not accepted:
+                r['unread']=0
         allrows.sort(key=lambda row:(int(row['pinned']),
              row['last_message']['created_at'] if row['last_message'] else row['created_at']),reverse=True)
     return {'friends':allrows}

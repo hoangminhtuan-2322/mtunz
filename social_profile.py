@@ -258,12 +258,21 @@ def install(core):
             if not u['allow_message_requests']:
                 return {'enabled':False,'requests':[]}
             rows=many(c,'''SELECT mr.id,mr.sender_id,mr.intro,mr.created_at,
-                    us.display_name,us.public_id,us.avatar_attachment_id
+                    us.display_name,us.public_id,
+                    CASE WHEN us.profile_visibility='everyone' OR
+                        (us.profile_visibility='friends' AND fr.state='accepted')
+                    THEN us.avatar_attachment_id END AS visible_avatar_id
                     FROM message_requests mr JOIN users us ON us.id=mr.sender_id
+                    LEFT JOIN friendships fr
+                      ON (fr.u1=mr.sender_id AND fr.u2=mr.recipient_id)
+                      OR (fr.u2=mr.sender_id AND fr.u1=mr.recipient_id)
                     WHERE mr.recipient_id=? AND mr.state='pending' AND us.is_admin=0
+                    AND NOT EXISTS(SELECT 1 FROM blocks b
+                      WHERE (b.blocker_id=mr.sender_id AND b.blocked_id=mr.recipient_id)
+                      OR (b.blocked_id=mr.sender_id AND b.blocker_id=mr.recipient_id))
                     ORDER BY mr.created_at DESC LIMIT 40''',(u['id'],))
-            rows=[dict(row,avatar_url=media_url(row['sender_id'],'avatar',row['avatar_attachment_id']))
-                  for row in rows if not has_block(c,u['id'],row['sender_id'])]
+            for row in rows:
+                row['avatar_url']=media_url(row['sender_id'],'avatar',row.pop('visible_avatar_id'))
         return {'enabled':True,'requests':rows}
 
     @app.post('/api/message-requests')

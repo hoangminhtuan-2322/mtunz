@@ -34,6 +34,12 @@ def test_username_one_change_per_60_days_requires_password_and_pin():
     assert status.json()['quota']['username']['remaining']==1
     endpoint='/api/me/identity/username'
     payload={'new_value':'new_identity_alice','password':'GreatPassword123','pin':'1234'}
+    invalid_password='test-password-'*12
+    invalid_pin='1234567'
+    rejected=alice.post(endpoint,json={**payload,'password':invalid_password,'pin':invalid_pin})
+    assert rejected.status_code==422,rejected.text
+    assert invalid_password not in rejected.text and invalid_pin not in rejected.text
+    assert {tuple(error['loc']) for error in rejected.json()['detail']}=={('body','password'),('body','pin')}
     assert alice.post(endpoint,json={**payload,'pin':'0000'}).status_code==401
     assert alice.post(endpoint,json={**payload,'password':'wrong'}).status_code==401
     assert alice.post(endpoint,json={**payload,'new_value':'identity_bob'}).status_code==409
@@ -127,11 +133,23 @@ def test_private_account_hides_profile_media_from_strangers_but_friends_can_view
     search=bob.get('/api/people/search',params={'q':public_id}).json()['users']
     assert len(search)==1 and search[0]['private_profile'] is True
     assert search[0]['avatar_url'] is None
+    intro=alice.post('/api/message-requests',json={'recipient_id':bid,'intro':'Chào bạn'})
+    assert intro.status_code==200,intro.text
+    pending=bob.get('/api/message-requests').json()['requests'][0]
+    assert pending['avatar_url'] is None and 'avatar_attachment_id' not in pending
+
     assert bob.post('/api/friends/request/'+str(aid)).status_code==200
+    with db() as c:
+        c.execute('UPDATE users SET last_seen=? WHERE id=?',(now(),aid))
+    pending_friend=bob.get('/api/friends').json()['friends'][0]
+    assert pending_friend['avatar_url'] is None and pending_friend['last_seen'] is None
+    assert pending_friend['online'] is False
     assert alice.post('/api/friends/accept/'+str(bid)).status_code==200
     friend=bob.get(f'/api/profile/{aid}').json()['profile']
     assert friend['private'] is False and friend['headline']=='Riêng tư'
     assert bob.get(f'/api/profile/{aid}/avatar').status_code==200
+    assert bob.get('/api/friends').json()['friends'][0]['avatar_url']
+    assert bob.get('/api/message-requests').json()['requests'][0]['avatar_url']
     assert alice.patch('/api/me/social',json={'profile_visibility':'only_me'}).status_code==200
     assert bob.get(f'/api/profile/{aid}').json()['profile']['private'] is True
 

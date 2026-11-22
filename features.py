@@ -17,7 +17,7 @@ import logging
 from urllib.parse import quote
 
 from fastapi import HTTPException, Query, Request, UploadFile, File, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 EMOJIS = {'❤️', '😂', '👍', '😮', '😢', '🔥', '👏', '🎉'}
@@ -33,6 +33,25 @@ ALLOWED = {
     'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/x-wav': '.wav',
     'video/mp4': '.mp4', 'video/webm': '.webm',
 }
+
+
+def hosted_attachment_response(content, mime, headers, range_header=''):
+    if range_header:
+        match=re.fullmatch(r'bytes=([0-9]{0,19})-([0-9]{0,19})',range_header.strip(),re.I)
+        if match and any(match.groups()):
+            first,last=match.groups()
+            total=len(content)
+            if first:
+                start=int(first)
+                end=min(int(last)+1,total) if last else total
+            else:
+                start=max(0,total-int(last))
+                end=total
+            if start>=end:
+                return Response(status_code=416,headers={**headers,'Content-Range':f'bytes */{total}'})
+            return Response(content[start:end],status_code=206,media_type=mime,
+                            headers={**headers,'Content-Range':f'bytes {start}-{end-1}/{total}'})
+    return Response(content,media_type=mime,headers=headers)
 
 
 def install(core):
@@ -676,7 +695,6 @@ def install(core):
         inline=not download and f['mime'].startswith(('image/','audio/','video/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
         if hosted:
-            from fastapi.responses import Response
             # Read the blob only AFTER permission checks, never via a public static URL.
             with db() as c:
                 payload=one(c,'SELECT file_content FROM attachments WHERE id=?',(file_id,))
@@ -684,7 +702,12 @@ def install(core):
                 raise HTTPException(404,'Nội dung tệp chưa được lưu trong PostgreSQL.')
             disposition='inline' if inline else 'attachment'
             headers['Content-Disposition']=f"{disposition}; filename*=UTF-8''{quote(f['original_name'])}"
-            return Response(content=bytes(payload['file_content']), media_type=f['mime'], headers=headers)
+            range_header=''
+            if inline and f['mime'].startswith(('audio/','video/')):
+                headers['Accept-Ranges']='bytes'
+                if not request.headers.get('If-Range'):
+                    range_header=request.headers.get('Range','')
+            return hosted_attachment_response(bytes(payload['file_content']),f['mime'],headers,range_header)
         path=upload_dir/f['stored_name']
         if not path.is_file():raise HTTPException(404,'Dữ liệu tệp không còn trên máy chủ.')
         return FileResponse(path, media_type=f['mime'],
