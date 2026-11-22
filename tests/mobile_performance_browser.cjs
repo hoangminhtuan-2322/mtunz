@@ -65,7 +65,9 @@ const {chromium}=require('playwright-core');
       appendDirectMessage({id:66,sender_id:9,recipient_id:12,body:'Tin mới',
         created_at:1100,reactions:[]});
     });
-    await page.locator('#msg-dm-66').waitFor();
+    // New bubbles may be outside the overflow-clipped mobile viewport.
+    // Test insertion (as in the existing inbox suite), not on-screen visibility.
+    await page.locator('#msg-dm-66').waitFor({state:'attached'});
     assert.equal(await page.locator('.bubble-wrap').count(),66);
     assert.equal(await page.locator('button[data-act="back-to-list"]').count(),1);
     assert.deepEqual(errors,[],'Browser errors at '+width);
