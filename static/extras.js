@@ -136,7 +136,9 @@ function applyMessageChange(scope,chat,change){
  if(box.contains(row)){
   const template=document.createElement('template');
   template.innerHTML=bubblesFor([updated],group,messages);
-  row.replaceWith(template.content.querySelector('.bubble-wrap'));
+  const replacement=template.content.querySelector('.bubble-wrap');
+  // Keep the height remembered by content-visibility when this row is offscreen.
+  row.replaceChildren(...replacement.childNodes);
  }
  for(const reply of box.querySelectorAll(`[data-reply-to="${message.id}"]`)){
   reply.textContent='↳ '+messageReplyLabel(updated);
