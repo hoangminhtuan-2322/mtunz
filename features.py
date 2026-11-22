@@ -1197,6 +1197,7 @@ def install(core):
                          ON CONFLICT(user_id,other_id)
                          DO UPDATE SET muted=excluded.muted,archived=excluded.archived,pinned=excluded.pinned,mute_until=CASE WHEN chat_preferences.muted<>excluded.muted THEN 0 ELSE chat_preferences.mute_until END''',
                       (u['id'],other_id,int(body.muted),int(body.archived),pinned))
+        await hub.user(u['id'],'friends-updated')
         return {'ok':True}
 
     @app.get('/api/admin/groups')
