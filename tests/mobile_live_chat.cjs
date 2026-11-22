@@ -95,10 +95,11 @@ const {chromium}=require('playwright-core');
     return r.fulfill({json:{ok:true,message_id:14,user_id:9,emoji:'❤️',active:true}});
    });
    const target=page.locator('#msg-dm-14');
-   await thread.evaluate(el=>{
+   await thread.evaluate(async el=>{
     el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
     const row=el.querySelector('#msg-dm-14');
     el.scrollTop+=row.getBoundingClientRect().top-el.getBoundingClientRect().top-95;
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
    });
    const targetTop=()=>target.evaluate(el=>el.getBoundingClientRect().top);
    const top=await targetTop();

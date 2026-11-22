@@ -137,7 +137,7 @@ function applyMessageChange(scope,chat,change){
   const template=document.createElement('template');
   template.innerHTML=bubblesFor([updated],group,messages);
   const replacement=template.content.querySelector('.bubble-wrap');
-  // Keep the height remembered by content-visibility when this row is offscreen.
+  // Keep the existing wrapper and avoid replaying its entry animation.
   row.replaceChildren(...replacement.childNodes);
  }
  for(const reply of box.querySelectorAll(`[data-reply-to="${message.id}"]`)){

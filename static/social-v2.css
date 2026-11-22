@@ -35,7 +35,8 @@
 .social-profile-view-bio{white-space:pre-wrap;overflow-wrap:anywhere}
 .social-profile-view a{color:var(--brand);overflow-wrap:anywhere}
 .thread{scroll-behavior:auto;overflow-anchor:auto}
-.bubble-wrap{content-visibility:auto;contain-intrinsic-size:auto 75px}
+/* Keep measured chat heights stable when a reaction or recall changes a row above the reader. */
+#chat-messages .bubble-wrap{flex:none}
 .world-message{content-visibility:auto;contain-intrinsic-size:auto 82px}
 @media(max-width:760px){
  .social-cover{min-height:128px;max-height:165px;border-radius:16px 16px 8px 8px;padding:15px;aspect-ratio:2.4/1}
