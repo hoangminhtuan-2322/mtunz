@@ -1,39 +1,51 @@
-# mtunz Mobile — ứng dụng nhắn tin native (bản thử nghiệm)
+# mtunz Mobile — Android/iOS native, đồng bộ với web
 
-Dự án Expo / React Native dùng **chính FastAPI + PostgreSQL hiện tại**. Không nhân bản dữ liệu, không dùng WebView. Đây là bản đầu cho Android và iOS.
+Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Thay đổi trên PR thử nghiệm, chưa tự triển khai production.
 
-## Chạy
+## Đã tích hợp trong mã nguồn
 
-Máy phát triển cần Node.js >= 22.13. Từ thư mục gốc của repo:
+- Đăng ký tài khoản trên app, có số điện thoại, email tùy chọn, bước duyệt Admin trên web, tạo mật khẩu/PIN và chấp nhận Điều khoản/Quyền riêng tư; đăng nhập tên/số điện thoại + mật khẩu + PIN.
+- Session native có thể thu hồi (Expo SecureStore, opaque bearer token), quản lý phiên và đăng xuất các thiết bị khác, không bỏ qua bảo vệ Admin.
+- Danh sách hội thoại, bạn bè, kết bạn, lời mời, tin nhắn chờ, tìm người dùng, chat riêng và nhóm; tạo và quản lý nhóm.
+- REST + WebSocket cho tin nhắn, reaction, sửa/thu hồi, đã nhận/đã xem, tin nhắn đang gõ, biệt danh, trạng thái, cập nhật hồ sơ. Làm mới dữ liệu khi vào foreground hoặc kết nối lại.
+- Gửi ảnh, video, file nhỏ, ghi âm thoại M4A bằng micro, xem ảnh trong app, lưu/chia sẻ file; trả lời, ghim, chuyển tiếp và tìm kiếm; thư viện nội dung đã gửi.
+- Đổi tên có mật khẩu và PIN, tùy chọn hồ sơ riêng tư, quản lý thông báo/hội thoại, chặn và báo cáo vi phạm.
+- Chat thế giới theo chính sách của backend hiện tại.
+- Có API đăng ký Expo Push Token gắn với session; thông báo mặc định không chứa nội dung nhạy cảm và tôn trọng cài đặt mute/quyền riêng tư.
+
+## Cách chạy thử
+
+Cài Node.js >=22.13, clone repo, vào thư mục mobile. Sao chép .env.example thành .env (Windows dùng lệnh copy), rồi điền EXPO_PUBLIC_API_URL bằng URL **HTTPS** của backend mtunz đã triển khai nhánh này; tuyệt đối không điền DATABASE_URL hoặc secret.
 
     cd mobile
-    cp .env.example .env
     npm install
-    npx expo install --fix
+    npx expo-doctor
     npx expo start
 
-Trên Windows, sao chép .env.example thành .env thủ công. Đặt EXPO_PUBLIC_API_URL thành URL HTTPS thật của backend mtunz mà bạn đang dùng, **không kèm dấu /**. Expo Go có thể dùng cho thử nghiệm; cần kiểm tra WebSocket header Authorization trên thiết bị thật. Trước khi build APK/AAB hay iOS, chạy:
+Chạy kiểm thử trên DB local/thử nghiệm, không dùng production:
 
-    npx expo-doctor
+    python -m pytest -q tests/test_native_mobile.py
+    python -m pytest -q
+
+CI hiện kiểm tra tương thích Expo, export bundle Android/iOS, kiểm thử Python và PostgreSQL thử nghiệm. Export JavaScript bundle **không tạo APK hoặc IPA**.
+
+## Chuẩn bị cài APK/iOS
+
+Cần tài khoản Expo EAS, cấu hình projectId và khóa ký, tài khoản phân phối (nếu phát hành App Store/Play Store). Bật FCM cho Android và APNs cho iOS nếu muốn nhận push khi app đã đóng.
+
+    cd mobile
+    npx eas-cli login
+    npx eas-cli init
     npx eas-cli build --platform android --profile preview
+    npx eas-cli build --platform ios --profile preview
 
-Thiết lập hồ sơ EAS phù hợp, bundle ID/package name và signing credentials trước khi phát hành. APK/IPA chưa được build trong PR này.
+Profile preview xuất Android APK để thử nội bộ sau khi có signing; production dùng gói phù hợp nhà phát hành. Thư mục hiện **chưa chứa APK/IPA đã ký**. Trên Android SDK53+, Expo Go không hỗ trợ remote push; hãy dùng development build hoặc app đã ký để test.
 
-## Đã tích hợp ở bản đầu
+## Giới hạn và an toàn trước khi phát hành
 
-- Đăng nhập thành viên: tên tài khoản/số điện thoại + mật khẩu + PIN, không hỗ trợ Admin trên mobile ở giai đoạn này.
-- Server cấp phiên thu hồi được (bảng sessions đang có). Token opaque lưu trong OS SecureStore, không dùng AsyncStorage hoặc localStorage.
-- Cùng API cho danh sách bạn bè, biệt danh, số chưa đọc, lịch sử tin nhắn, nhắn tin và đánh dấu đã xem.
-- WebSocket sử dụng Authorization header, tự kết nối lại; làm mới dữ liệu khi app vào foreground.
-- Hiển thị tin nhắn qua FlatList inverted để giảm giật lag, tải lịch sử phân trang, nonce cho thao tác gửi lại để tránh lặp tin.
-- Thoát tài khoản thu hồi token trên server; phiên bị thu hồi ngoài app sẽ kết thúc khi nhận sự kiện hoặc gọi API tiếp theo.
-
-## Giới hạn cần hoàn thiện trước khi phát hành
-
-Chưa tích hợp đăng ký mới, chat nhóm, ảnh/video/tệp/ghi âm, thông báo đẩy khi app đóng, gọi thoại/video, biểu cảm và phần Admin. Những tính năng này vẫn hoạt động trên website. **WebSocket chỉ hoạt động khi app còn được hệ điều hành cho phép chạy; không thay thế push notifications.**
-
-Môi trường production yêu cầu HTTPS; ứng dụng không chủ động bỏ qua xác minh chứng chỉ. Tài khoản Admin vẫn dùng website, nơi có kiểm soát PIN/phê duyệt riêng. Khuyến nghị kiểm thử thực tế Android/iOS, chế độ offline, thu hồi phiên và quy trình ký ứng dụng trước khi phân phối. API mobile mới chỉ bổ sung đăng nhập; toàn bộ thao tác chat vẫn do các API hiện có kiểm soát phân quyền.
-
-## Bảo mật
-
-Không in token, mật khẩu hay PIN ra log. Không nhúng DATABASE_URL hay khóa bí mật vào mã mobile. Chỉ cấu hình URL backend trong biến EXPO_PUBLIC_API_URL. Nếu Android/iOS đang sử dụng phiên không hợp lệ, xóa phiên cục bộ và đăng nhập lại.
+- WebSocket chỉ hoạt động khi OS cho phép chạy; khi đóng app cần push. Thông báo đẩy không đảm bảo giao đúng tuyệt đối mọi lúc.
+- Render Free có thể tự ngủ, gây mất realtime hoặc chậm tin. Với mục tiêu đồng bộ liên tục, cần backend always-on và giám sát hạ tầng, xử lý reconnect, delivery/retry, kiến trúc pub/sub khi chạy nhiều worker.
+- Backend hiện có giới hạn tệp 2 MB trên Render Free và khoảng 25 MB mỗi người dùng; app tuân theo. Chưa hỗ trợ mã hóa đầu cuối E2EE.
+- Chưa thể khẳng định ngang bằng 100% với web: gọi thoại/video WebRTC native, toàn bộ Admin, một số nâng cấp cộng đồng/thế giới, test tự động E2E trên máy thật, build và ký ứng dụng chưa hoàn tất.
+- **Bắt buộc kiểm thử Android/iOS thật**: HTTPS, native WebSocket bearer, PIN, bật/tắt push, chế độ nền, quyền micro, upload/preview/download, phân trang, cuộn tin và session revoke. Không coi CI bundle xanh là xác nhận mọi tính năng đã chạy tốt trên điện thoại.
+- Không lưu mật khẩu/PIN/token ở log, không bỏ qua TLS hoặc để lộ khóa DB trong mã app.
