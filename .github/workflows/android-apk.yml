@@ -39,18 +39,26 @@ jobs:
           EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
           CI: '1'
         run: npx expo prebuild --platform android --non-interactive
-      - name: Build unsigned-release-independent Android debug APK
+      - name: Build standalone release-mode APK with Android debug signing
         env:
           EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
           CI: '1'
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace --max-workers=2
-      - name: Upload installable test APK
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
+      - name: Verify standalone JS bundle and APK signature
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fx 'assets/index.android.bundle'
+          SIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
+          test -x "$SIGNER"
+          "$SIGNER" verify --verbose "$APK"
+      - name: Upload standalone Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: mtunz-android-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: mtunz-android-standalone-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
