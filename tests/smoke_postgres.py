@@ -4,6 +4,7 @@ Run only with a disposable database and TEST_POSTGRES_URL set.
 Never run this against a database with real user data.
 """
 import os
+from contextlib import closing
 from pathlib import Path
 import sys
 
@@ -38,7 +39,7 @@ with TestClient(app, base_url="https://testserver") as admin:
         "current_password":os.environ["ADMIN_PASSWORD"],"pin":"2345","pin_length":4})
     assert enrollment.status_code==200,enrollment.text
 
-    with TestClient(app, base_url="https://testserver") as guest:
+    with closing(TestClient(app, base_url="https://testserver")) as guest:
         guest.get("/")
         req = guest.post("/api/registration/request", json={"username": "render_ci_user", "phone": "0912345678"})
         assert req.status_code == 200, req.text
@@ -98,15 +99,16 @@ with TestClient(app, base_url="https://testserver") as admin:
         assert guest.get("/api/world/messages").json()["messages"][0]["id"]==message_id
         assert admin.get("/api/admin/world").json()["total_messages"]==1
 
-        with TestClient(app,base_url="https://testserver") as peer:
+        with closing(TestClient(app,base_url="https://testserver")) as peer:
             peer.get("/")
             req2=peer.post("/api/registration/request",json={
                 "username":"render_ci_peer","phone":"0901234567"})
             assert req2.status_code==200,req2.text
             pending2=admin.get("/api/admin/registrations").json()["registrations"]
             rid2=next(r["id"] for r in pending2 if r["username"]=="render_ci_peer")
-            assert admin.post(f"/api/admin/registrations/{rid2}/decision",
-                              json={"approve":True}).status_code==200
+            approved2=admin.post(f"/api/admin/registrations/{rid2}/decision",
+                                 json={"approve":True,"admin_pin":"2345"})
+            assert approved2.status_code==200,approved2.text
             complete2=peer.post("/api/registration/complete",json={
                 "username":"render_ci_peer","password":"RenderPeerPassword123!",
                 "pin":"123456","pin_length":6,"accepted_terms":True})
