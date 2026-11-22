@@ -11,8 +11,13 @@ const {chromium}=require('playwright-core');
    page.on('pageerror',e=>errors.push(e.message));
    try{
     const privacyWrites=[];
+    let rejectNextPrivacy=false;
     await page.route('**/api/me/social',route=>{
      privacyWrites.push(route.request().postDataJSON());
+     if(rejectNextPrivacy){
+      rejectNextPrivacy=false;
+      return route.fulfill({status:503,json:{detail:'Lỗi máy chủ tạm thời'}});
+     }
      return route.fulfill({json:{ok:true}});
     });
     await page.route('**/api/me/identity/status',route=>route.fulfill({json:{
@@ -44,6 +49,13 @@ const {chromium}=require('playwright-core');
     await page.waitForFunction(()=>state.user.profile_visibility==='everyone');
     assert.equal(await preview.locator('#social-visibility').inputValue(),'everyone');
     assert.deepEqual(privacyWrites.map(x=>x.profile_visibility),['friends','only_me','everyone']);
+    // A failed privacy update must not leave the switch falsely enabled.
+    rejectNextPrivacy=true;
+    await preview.locator('#social-visibility').selectOption('friends');
+    await page.waitForFunction(()=>document.querySelector('#v17-preview #social-visibility')?.value==='everyone');
+    assert.equal(await preview.locator('#social-private-switch').isChecked(),false);
+    assert.equal(await page.evaluate(()=>state.user.profile_visibility),'everyone');
+    assert.equal(privacyWrites.at(-1).profile_visibility,'friends');
     await preview.locator('[data-identity-kind="username"]').click();
     await page.waitForFunction(()=>document.querySelector('#identity-new')||
       document.querySelector('#modal-root .premium-dialog'),null,{timeout:10000});
