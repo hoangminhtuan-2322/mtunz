@@ -3,7 +3,7 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 from test_flows import logged_admin, register_user, db, RATE_BUCKETS
-from app import app
+from app import app, hub
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def setup_pair():
     return admin,alice,bob,a,b
 
 
-def test_group_membership_edit_reactions_and_moderation():
+def test_group_membership_edit_reactions_and_moderation(monkeypatch):
     admin,alice,bob,a,b=setup_pair()
     guest=TestClient(app);guest.get('/')
     assert guest.get('/api/groups').status_code==401
@@ -41,12 +41,23 @@ def test_group_membership_edit_reactions_and_moderation():
     msg=alice.post(f'/api/groups/{gid}/messages',json={'body':'Chào nhóm'}).json()['message']
     assert msg['body']=='Chào nhóm'
     mid=msg['id']
-    assert bob.post(f'/api/groups/{gid}/messages/{mid}/reaction',json={'emoji':'❤️'}).json()['ok']
+    events=[]
+    async def record_event(uid, kind, **data):
+        events.append((uid,kind,data))
+    monkeypatch.setattr(hub,'user',record_event)
+    reaction=bob.post(f'/api/groups/{gid}/messages/{mid}/reaction',json={'emoji':'❤️'}).json()
+    assert reaction=={'ok':True,'message_id':mid,'user_id':b,'emoji':'❤️','active':True}
+    assert {uid for uid,kind,_ in events if kind=='group-message-reaction'}=={a,b}
+    assert all(data['group_id']==gid and data['active'] is True for _,_,data in events)
     history=alice.get(f'/api/groups/{gid}/messages').json()['messages']
     assert history[0]['reactions'][0]['emoji']=='❤️'
+    assert bob.post(f'/api/groups/{gid}/messages/{mid}/reaction',json={'emoji':'❤️'}).json()['active'] is False
+    assert alice.get(f'/api/groups/{gid}/messages').json()['messages'][0]['reactions']==[]
     assert bob.patch(f'/api/groups/{gid}',json={'title':'Người lạ'}).status_code==403
     assert alice.patch(f'/api/groups/{gid}',json={'title':'Nhóm đã đổi tên','description':'Trò chuyện'}).status_code==200
-    assert alice.patch(f'/api/groups/{gid}/messages/{mid}',json={'body':'Chào đã sửa'}).status_code==200
+    edit=alice.patch(f'/api/groups/{gid}/messages/{mid}',json={'body':'Chào đã sửa'}).json()
+    assert edit['ok'] and edit['message_id']==mid and edit['body']=='Chào đã sửa'
+    assert (b,'group-message-updated',{'group_id':gid,**{k:v for k,v in edit.items() if k!='ok'}}) in events
     assert bob.delete(f'/api/groups/{gid}/messages/{mid}').status_code==403
     assert alice.delete(f'/api/groups/{gid}/messages/{mid}').status_code==200
     assert bob.get(f'/api/groups/{gid}/messages').json()['messages'][0]['body']==''

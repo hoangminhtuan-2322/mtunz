@@ -71,6 +71,90 @@ function uploadMarkup(m){
  if(safeImage(a))return `<a href="${esc(a.url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`;
  return `<a class="attachment-link" href="${esc(a.url)}" download>${icon('file',20)} <span><b>${esc(short(a.name,35))}</b><span class="hint">${fmtSize(a.size)} · Nhấn để tải</span></span></a>`;
 }
+function reactionMarkup(message,scope){
+ const reactions=message.reactions||[];
+ if(!reactions.length||message.deleted_at)return '';
+ const counts=new Map();
+ for(const {emoji,user_id} of reactions){
+  const count=counts.get(emoji)||{total:0,mine:false};
+  count.total++;
+  count.mine ||= user_id===state.user.id;
+  counts.set(emoji,count);
+ }
+ return `<div class="reaction-row">${[...counts].map(([emoji,{total,mine}])=>
+  `<button type="button" class="reaction-chip ${mine?'mine':''}" aria-pressed="${mine}" data-act="message-react" data-id="${message.id}" data-scope="${scope}" data-emoji="${esc(emoji)}">${esc(emoji)} ${total}</button>`).join('')}</div>`;
+}
+function applyMessageReaction(scope,chat,change){
+ const group=scope==='group';
+ if(group?(state.tab!=='groups'||state.groupSelected!==chat):(state.tab!=='messages'||state.selected!==chat))return;
+ const messages=group?state.groupMessages:state.messages;
+ const index=messages.findIndex(message=>message.id===change.message_id);
+ const message=messages[index];
+ if(!message||message.deleted_at||(message.expires_at&&message.expires_at<=Date.now()/1000))return;
+ const reactions=message.reactions||[];
+ const match=reaction=>reaction.user_id===change.user_id&&reaction.emoji===change.emoji;
+ if(reactions.some(match)===change.active)return;
+ const updated={...message,reactions:change.active?[...reactions,{user_id:change.user_id,emoji:change.emoji}]:reactions.filter(reaction=>!match(reaction))};
+ messages[index]=updated;
+ const box=$('#chat-messages');
+ const row=document.getElementById('msg-'+scope+'-'+message.id);
+ if(!box||!box.contains(row))return;
+ const position=captureMutationPosition(box,row);
+ const old=row.querySelector('.reaction-row');
+ const focused=old?.contains(document.activeElement)?document.activeElement.dataset.emoji:null;
+ old?.remove();
+ row.querySelector('.bubble').insertAdjacentHTML('afterend',reactionMarkup(updated,scope));
+ if(focused){
+  const chip=[...row.querySelectorAll('.reaction-chip')].find(button=>button.dataset.emoji===focused);
+  (chip||[...row.querySelectorAll('.bubble-more,.bubble-actions button[data-emoji]')]
+   .find(button=>button.getClientRects().length))?.focus({preventScroll:true});
+ }
+ restoreThreadPosition(box,position);
+}
+function messageReplyLabel(message){
+ return message?short(message.deleted_at?'Tin nhắn đã thu hồi':message.body||(message.attachment?'Tệp đính kèm':'Tin nhắn'),80):'Đã trả lời tin nhắn';
+}
+function applyMessageChange(scope,chat,change){
+ const group=scope==='group';
+ if(group?(state.tab!=='groups'||state.groupSelected!==chat):(state.tab!=='messages'||state.selected!==chat))return;
+ const messages=group?state.groupMessages:state.messages;
+ const index=messages.findIndex(message=>message.id===change.message_id);
+ const message=messages[index];
+ if(!message||message.edited_at!==change.edited_at||message.body!==change.body||message.deleted_at!==change.deleted_at){
+  document.dispatchEvent(new CustomEvent('mt-chat-message-changed',{detail:{scope,chat,id:change.message_id}}));
+ }
+ if(!message||message.deleted_at||(message.expires_at&&message.expires_at<=Date.now()/1000))return;
+ if(!change.deleted_at&&((message.edited_at||0)>(change.edited_at||0)||
+   (message.edited_at===change.edited_at&&message.body===change.body)))return;
+ const updated={...message,body:change.deleted_at?'':change.body,edited_at:change.edited_at,deleted_at:change.deleted_at};
+ if(updated.deleted_at)Object.assign(updated,{attachment:null,attachment_id:null,reactions:[]});
+ messages[index]=updated;
+ const box=$('#chat-messages');
+ if(!box)return;
+ const row=document.getElementById('msg-'+scope+'-'+message.id);
+ const position=captureMutationPosition(box,row);
+ if(box.contains(row)){
+  const template=document.createElement('template');
+  template.innerHTML=bubblesFor([updated],group,messages);
+  const replacement=template.content.querySelector('.bubble-wrap');
+  // Keep the existing wrapper and avoid replaying its entry animation.
+  row.replaceChildren(...replacement.childNodes);
+ }
+ for(const reply of box.querySelectorAll(`[data-reply-to="${message.id}"]`)){
+  reply.textContent='↳ '+messageReplyLabel(updated);
+ }
+ restoreThreadPosition(box,position);
+}
+function mergeThreadUpdate(fetched,current,initial){
+ if(fetched.deleted_at||fetched.expires_at&&fetched.expires_at<=Date.now()/1000||current===initial)return;
+ if(current.reactions!==initial.reactions)fetched.reactions=current.reactions;
+ if(current.deleted_at){
+  Object.assign(fetched,{body:'',deleted_at:current.deleted_at,attachment:null,attachment_id:null,reactions:[]});
+ }else if((current.edited_at!==initial.edited_at||current.body!==initial.body)&&
+          (current.edited_at||0)>=(fetched.edited_at||0)){
+  Object.assign(fetched,{body:current.body,edited_at:current.edited_at});
+ }
+}
 function bubblesFor(messages,isGroup=false,context=messages){
  if(!messages.length)return '<div class="spacer"></div><div class="empty">Chưa có tin nhắn. Hãy bắt đầu trò chuyện! ✨</div>';
  let html='<div class="spacer"></div>',prevDay='';
@@ -80,7 +164,6 @@ function bubblesFor(messages,isGroup=false,context=messages){
   if(prevDay!==day){html+=`<div class="day-label">${esc(day)}</div>`;prevDay=day;}
   const mine=m.sender_id===state.user.id;
   const reference=m.reply_to?context.find(x=>x.id===m.reply_to):null;
-  const reacted=[...new Set((m.reactions||[]).map(r=>r.emoji))];
   const actions=(!m.deleted_at&&m.id>0)?`<div class="bubble-actions">
    <button type="button" data-social-action="pin" data-message-id="${Number(m.id)}" aria-label="Ghim hoặc bỏ ghim tin nhắn">📌</button>
    <button type="button" data-social-action="forward" data-message-id="${Number(m.id)}" aria-label="Chuyển tiếp tin nhắn">↗</button>
@@ -94,14 +177,14 @@ function bubblesFor(messages,isGroup=false,context=messages){
     ${isGroup&&!mine?`<div class="group-sender">${esc(m.username||'Thành viên')}</div>`:''}
     <div class="bubble ${mine?'mine':''} ${m.deleted_at?'deleted':''}">
     ${m.forwarded&&!m.deleted_at&&m.id>0?'<small class="mt-forwarded-label">↪ Đã chuyển tiếp</small>':''}
-    ${m.reply_to?`<div class="reply-inline">↳ ${reference?esc(short(reference.deleted_at?'Tin nhắn đã thu hồi':reference.body||(reference.attachment?'Tệp đính kèm':'Tin nhắn'),80)):'Đã trả lời tin nhắn'}</div>`:''}
+    ${m.reply_to?`<div class="reply-inline" data-reply-to="${Number(m.reply_to)}">↳ ${esc(messageReplyLabel(reference))}</div>`:''}
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
      ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${clock(m.expires_at)}</span>`:''}
      ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
-    ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}${actions?'<button type="button" class="bubble-more" data-message-tools aria-label="Tùy chọn tin nhắn" aria-haspopup="dialog">⋯</button>':''}</div>`;
+    ${reactionMarkup(m,scope)}${actions}${actions?'<button type="button" class="bubble-more" data-message-tools aria-label="Tùy chọn tin nhắn" aria-haspopup="dialog">⋯</button>':''}</div>`;
  }
  return html;
 }
@@ -149,8 +232,9 @@ async function loadGroupMessages(scroll=true){
   if(!current())return;
   const incoming=new Map(result.messages.map(message=>[message.id,message]));
   for(const message of state.groupMessages){
-   if(existing.get(message.id)!==message||($('#chat-messages')?.dataset.expandedHistory&&!incoming.has(message.id)))
-    incoming.set(message.id,message);
+   const fetched=incoming.get(message.id),prior=existing.get(message.id);
+   if(!fetched&&(prior!==message||$('#chat-messages')?.dataset.expandedHistory))incoming.set(message.id,message);
+   else if(fetched&&prior)mergeThreadUpdate(fetched,message,prior);
   }
   const merged=[...incoming.values()].sort((a,b)=>a.id-b.id);
   state.groupMessages=$('#chat-messages')?.dataset.expandedHistory?merged:merged.slice(-100);
@@ -288,30 +372,39 @@ async function showSearch(){
     return false;
  }});
 }
+const reactionsInFlight=new Set();
 async function actOnMessage(btn){
  const id=Number(btn.dataset.id),scope=btn.dataset.scope,group=scope==='group',m=(group?state.groupMessages:state.messages).find(m=>m.id===id);
  if(!m)return;
  const base=group?`/api/groups/${state.groupSelected}/messages/${id}`:`/api/messages/${id}`;
- const action=btn.dataset.act;
+ const action=btn.dataset.act,chat=group?state.groupSelected:state.selected;
+ const owner=state.user?.id;
+ const sameChat=()=>state.user?.id===owner&&(group?state.tab==='groups'&&state.groupSelected===chat:state.tab==='messages'&&state.selected===chat);
+ const update=change=>{if(sameChat())applyMessageChange(scope,chat,change);};
  if(action==='message-reply'){
    state.replyTo={id,scope,body:m.body};
    $('#compose-extra').innerHTML=composerExtras();$('#chat-text')?.focus();return;
  }
  if(action==='message-react'){
-   await post(`${base}/reaction`,{emoji:btn.dataset.emoji});
-   if(group)await loadGroupMessages(false);else await loadMessages(false);
+   const key=owner+':'+base+':'+btn.dataset.emoji;
+   if(reactionsInFlight.has(key))return;
+   reactionsInFlight.add(key);
+   try{
+    const change=await post(`${base}/reaction`,{emoji:btn.dataset.emoji});
+    if(sameChat())applyMessageReaction(scope,chat,change);
+   }finally{reactionsInFlight.delete(key);}
    return;
  }
  if(action==='message-delete'){
    ask('Thu hồi tin nhắn','Tin nhắn sẽ bị thu hồi đối với mọi thành viên trong cuộc trò chuyện.',async()=>{
-      await del(base);if(group)await loadGroupMessages(false);else await loadMessages(false);
+      update(await del(base));
       toast('Đã thu hồi tin nhắn.','ok');},'Thu hồi',true);
    return;
  }
  if(action==='message-edit'){
    modal({title:'Sửa tin nhắn',description:'Có thể chỉnh sửa trong 15 phút sau khi gửi.',
       content:`<div class="field"><textarea class="input" id="edit-message-body" rows="4" maxlength="2000">${esc(m.body||'')}</textarea></div>`,confirm:'Lưu sửa đổi',
-      handler:async()=>{await api(base,{method:'PATCH',data:{body:$('#edit-message-body').value}});if(group)await loadGroupMessages(false);else await loadMessages(false);}});
+      handler:async()=>{update(await api(base,{method:'PATCH',data:{body:$('#edit-message-body').value}}));}});
  }
 }
 async function extraAction(btn){
@@ -558,8 +651,10 @@ async function extraSocket(data){
   scheduleGroupsRefresh();
   if(data.message.sender_id!==state.user?.id)alertChatMessage('group',data.group_id,data.message);
  }
- if(t==='group-message-updated'&&state.groupSelected===data.group_id&&state.tab==='groups')await loadGroupMessages(false);
- if(t==='message-updated'&&state.selected&&state.tab==='messages')await loadMessages(false);
+ if(t==='group-message-updated')applyMessageChange('group',data.group_id,data);
+ if(t==='message-reaction')applyMessageReaction('dm',data.peer_id,data);
+ if(t==='group-message-reaction')applyMessageReaction('group',data.group_id,data);
+ if(t==='message-updated')applyMessageChange('dm',data.peer_id,data);
  if(t==='group-typing'&&state.tab==='groups'&&state.groupSelected===data.group_id){
   const el=$('#typing-text');if(el)el.textContent=data.on?'Một thành viên đang nhập tin nhắn…':'';
  }

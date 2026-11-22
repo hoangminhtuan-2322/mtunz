@@ -156,7 +156,14 @@ async function loadPins(ctx){
  try{
   const params=new URLSearchParams({scope:ctx.scope,chat_id:String(ctx.chat_id)});
   const result=await api('/api/chat/pins?'+params);
-  if(requestId===pinRequestVersion&&sameChat(ctx)){pinList=result.pins||[];visiblePinKey='';renderPins();}
+  if(requestId===pinRequestVersion&&sameChat(ctx)){
+   const thread=$('#chat-messages');
+   const position=thread?captureMutationPosition(thread):null;
+   pinList=result.pins||[];
+   visiblePinKey='';
+   renderPins();
+   if(thread)restoreThreadPosition(thread,position);
+  }
  }catch(err){if(sameChat(ctx))console.warn('Không thể tải tin đã ghim:',err.message);}
  finally{}
 }
@@ -264,6 +271,10 @@ document.addEventListener('click',event=>{
  if(btn.dataset.socialAction==='pin')togglePin(id,ctx);
  if(btn.dataset.socialAction==='forward')openForward(id);
 },true);
+document.addEventListener('mt-chat-message-changed',event=>{
+ const ctx=chat(),{scope,chat:chatId,id}=event.detail;
+ if(ctx?.scope===scope&&ctx.chat_id===chatId&&pinList.some(pin=>pin.message_id===id))void loadPins(ctx);
+});
 document.addEventListener('keydown',event=>{
  if(event.key==='Escape'){closeForward();closeFriendPopup();}
 });

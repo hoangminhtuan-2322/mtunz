@@ -9,7 +9,7 @@ const html=read('static/index.html');
 const app=read('static/app.js');
 new vm.Script(js,{filename:'extras.js'});
 assert(html.includes('group-lobby.css?v=1.0'),'Group lobby CSS must be loaded');
-assert(html.includes('extras.js?v=18.0'),'Group lobby markup must bypass stale browser cache');
+assert(html.includes('extras.js?v=18.1'),'Group lobby markup must bypass stale browser cache');
 assert(html.indexOf('group-lobby.css')>html.indexOf('social-upgrade.css'),'Dedicated group styles override general styles');
 const start=js.indexOf('function groupLobby(){');
 const end=js.indexOf('\nfunction groupHeader(){',start);

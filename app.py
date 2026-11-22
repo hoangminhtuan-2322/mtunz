@@ -21,7 +21,7 @@ from typing import Literal
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, RedirectResponse
 from urllib.parse import unquote_plus
 from fastapi.staticfiles import StaticFiles
@@ -1872,22 +1872,60 @@ async def admin_sanction(request:Request,uid:int,body:Sanction):
     return {'ok':True}
 
 
-@app.get('/api/admin/users/{uid}/messages')
-async def admin_user_messages(request:Request,uid:int):
+@app.get('/api/admin/users/{uid}/friends')
+async def admin_user_friends(request:Request,response:Response,uid:int,
+                             offset:int=Query(0,ge=0,le=1000000),limit:int=Query(40,ge=1,le=100)):
     admin=require_admin(request)
     with db() as c:
-        u=one(c,'SELECT username FROM users WHERE id=? AND is_admin=0',(uid,))
-        if not u:raise HTTPException(404,'Không tìm thấy tài khoản.')
-        rows=many(c,'''SELECT m.id,s.username sender,r.username recipient,m.body,m.created_at,m.read_at,
-                              m.attachment_id,a.original_name attachment_name,m.deleted_at
+        member=one(c,'SELECT username,display_name FROM users WHERE id=? AND is_admin=0',(uid,))
+        if not member:raise HTTPException(404,'Không tìm thấy tài khoản.')
+        counts=one(c,'''SELECT COUNT(*) AS total,
+                         COUNT(CASE WHEN state='accepted' THEN 1 END) AS accepted
+                         FROM friendships WHERE u1=? OR u2=?''',(uid,uid))
+        rows=many(c,'''SELECT u.id,u.public_id,u.username,u.display_name,u.last_seen,
+                             f.state,f.requested_by,f.created_at
+                      FROM friendships f JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
+                      WHERE f.u1=? OR f.u2=?
+                      ORDER BY CASE WHEN f.state='accepted' THEN 0 ELSE 1 END,
+                               f.created_at DESC,u.id
+                      LIMIT ? OFFSET ?''',(uid,uid,uid,limit,offset))
+        admin_log(c,admin['id'],'admin_view_user_friends',f"user_id={uid}; username={member['username']}; offset={offset}")
+    response.headers['Cache-Control']='no-store'
+    return {'user':dict(member),'friends':rows,'counts':dict(counts),
+            'next_offset':offset+limit if offset+limit<counts['total'] else None}
+
+
+@app.get('/api/admin/users/{uid}/messages')
+async def admin_user_messages(request:Request,response:Response,uid:int,peer_id:int|None=Query(None,ge=1),
+                              before:int=Query(9223372036854775807,ge=1,le=9223372036854775807),
+                              limit:int=Query(100,ge=1,le=100)):
+    admin=require_admin(request)
+    with db() as c:
+        member=one(c,'SELECT username,display_name FROM users WHERE id=? AND is_admin=0',(uid,))
+        if not member:raise HTTPException(404,'Không tìm thấy tài khoản.')
+        peer=None
+        if peer_id is not None:
+            peer=one(c,'SELECT username,display_name FROM users WHERE id=? AND id<>? AND is_admin=0',(peer_id,uid))
+            if not peer:raise HTTPException(404,'Không tìm thấy người trò chuyện.')
+            pair_filter='((m.sender_id=? AND m.recipient_id=?) OR (m.recipient_id=? AND m.sender_id=?))'
+            pair_params=(uid,peer_id,uid,peer_id)
+        else:
+            pair_filter='(m.sender_id=? OR m.recipient_id=?)'
+            pair_params=(uid,uid)
+        rows=many(c,f'''SELECT m.id,m.sender_id,m.recipient_id,s.username sender,r.username recipient,
+                              m.body,m.created_at,m.read_at,m.attachment_id,a.original_name attachment_name,
+                              m.deleted_at
                        FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id
                        LEFT JOIN attachments a ON a.id=m.attachment_id
-                       WHERE (m.sender_id=? OR m.recipient_id=?)
+                       WHERE {pair_filter} AND m.id<?
                          AND (m.expires_at IS NULL OR m.expires_at>?)
                          AND m.deleted_at IS NULL
-                       ORDER BY m.id DESC LIMIT 100''',(uid,uid,now()))
-        admin_log(c,admin['id'],'moderation_messages',u['username'])
-    return {'messages':rows}
+                       ORDER BY m.id DESC LIMIT ?''',(*pair_params,before,now(),limit+1))
+        admin_log(c,admin['id'],'moderation_messages',
+                  f"user_id={uid}; username={member['username']}; peer_id={peer_id or 'all'}; before={before}")
+    response.headers['Cache-Control']='no-store'
+    return {'user':dict(member),'peer':dict(peer) if peer else None,'messages':rows[:limit],
+            'next_before':rows[limit-1]['id'] if len(rows)>limit else None}
 
 
 @app.get('/api/admin/tickets')
@@ -1998,7 +2036,7 @@ AUDIT_HIGH_RISK = {
 }
 AUDIT_MEDIUM_RISK = {
     'sanction_unban', 'broadcast', 'capacity', 'registration_denied',
-    'admin_view_user_details', 'moderation_messages', 'moderation_group',
+    'admin_view_user_details', 'admin_view_user_friends', 'moderation_messages', 'moderation_group',
 }
 
 def enrich_audit(row):
