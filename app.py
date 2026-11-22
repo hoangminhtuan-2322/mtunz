@@ -1156,6 +1156,8 @@ async def complete_display_name(request: Request, body: SetOnboardingName):
     u = current_user(request)
     if u['is_admin']:
         raise HTTPException(403,'Bước này chỉ áp dụng cho tài khoản người dùng.')
+    if not u['needs_display_name']:
+        raise HTTPException(403,'Bạn đã hoàn tất tên ban đầu. Hãy dùng mục Đổi tên và xác minh mật khẩu + PIN.')
     throttle(request,'complete-display-name',12,900,str(u['id']))
     name = validate_display_name(body.display_name,u['username'])
     with db() as c:
@@ -1246,7 +1248,10 @@ async def people_search(request: Request,q: str=''):
                           LIMIT 20''', (u['id'], '%'+search+'%',numeric_id,u['id'],u['id']))
         for r in rows:
             fr = one(c,'SELECT state,requested_by FROM friendships WHERE u1=? AND u2=?',tuple(sorted((u['id'],r['id']))))
-            r['avatar_url'] = f'/api/profile/{r["id"]}/avatar' if r['avatar_attachment_id'] and r['profile_visibility']=='everyone' else None
+            allowed_avatar=(r['profile_visibility']=='everyone' or
+                            (r['profile_visibility']=='friends' and bool(fr and fr['state']=='accepted')))
+            r['avatar_url'] = f'/api/profile/{r["id"]}/avatar' if r['avatar_attachment_id'] and allowed_avatar else None
+            r['private_profile']=r['profile_visibility']!='everyone'
             r.pop('avatar_attachment_id',None)
             r.pop('profile_visibility',None)
             r['friend_state'] = fr['state'] if fr else 'none'
