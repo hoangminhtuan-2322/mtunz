@@ -8,7 +8,7 @@ import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   registerMobileNotifications,saveSharedFile,unregisterMobileNotifications,uploadAttachment} from './media';
 
-const P={bg:'#071222',card:'#15253b',border:'#293c58',text:'#f5f7ff',soft:'#a1b2cd',accent:'#69b4ff',mine:'#24539b',bad:'#f39393'};
+const P={bg:'#08111f',card:'#14243a',border:'#2c4160',text:'#f4f8ff',soft:'#a5b6cf',accent:'#67bcff',mine:'#245395',bad:'#ff9eac',green:'#79dfbe'};
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
 const dedupe=rows=>order([...new Map(rows.map(m=>[m.id,m])).values()]);
 const label=f=>f?.nickname||f?.display_name||f?.username||f?.title||'Thành viên';
@@ -21,7 +21,8 @@ const toQuery=(path,params)=>path+(path.includes('?')?'&':'?')+new URLSearchPara
 
 function Btn({children,onPress,quiet=false,disabled=false,danger=false,small=false}){
   return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
-    style={[css.btn,quiet&&css.ghost,danger&&css.danger,small&&css.smallBtn,disabled&&css.disabled]}>
+    style={({pressed})=>[css.btn,quiet&&css.ghost,danger&&css.danger,small&&css.smallBtn,
+      pressed&&!disabled&&{opacity:.8},disabled&&css.disabled]}>
     <Text style={[css.btnTxt,(quiet||danger)&&{color:P.text}]}>{children}</Text>
   </Pressable>;
 }
@@ -31,6 +32,13 @@ function Field({value,onChangeText,placeholder,secureTextEntry=false,multiline=f
     keyboardType={keyboardType} style={[css.input,multiline&&{minHeight:72,textAlignVertical:'top'}]}/>;
 }
 function Section({title,children}){return <View style={css.section}><Text style={css.h2}>{title}</Text>{children}</View>;}
+function EmptyState({symbol,title,subtitle}) {
+  return <View style={css.emptyPanel}>
+    <View style={css.emptySymbol}><Text style={css.emptySymbolText}>{symbol}</Text></View>
+    <Text style={css.emptyTitle}>{title}</Text>
+    <Text style={css.emptySubtitle}>{subtitle}</Text>
+  </View>;
+}
 function ModalSheet({visible,onClose,title,children}){
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={css.overlay}><View style={css.sheet}>
@@ -79,6 +87,7 @@ function Message({item,own,token,onSelect,onOpen}){
 }
 
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
+  const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
     [groups,setGroups]=useState([]),[notices,setNotices]=useState([]),[requests,setRequests]=useState([]),
     [worldStatus,setWorldStatus]=useState({open:false}),[worldRooms,setWorldRooms]=useState([]),
@@ -494,18 +503,32 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{setIdentityQuota((await invoke('/api/me/identity/status')).quota);}
     catch(e){alertError(e);}
   }
-  const tabs=[['dm','Tin nhắn'],['groups','Nhóm'],['people','Bạn bè'],['world','Thế giới'],['settings','Cá nhân']];
+  const tabs=[['dm','Tin nhắn','▣'],['groups','Nhóm','▦'],['people','Bạn bè','♧'],['world','Thế giới','◎'],['settings','Cá nhân','⚙']];
+  const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
+  const matchingFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&
+    label(f).toLocaleLowerCase('vi-VN').includes(inboxQuery.trim().toLocaleLowerCase('vi-VN')));
+  const matchingGroups=groups.filter(g=>(g.title||'').toLocaleLowerCase('vi-VN')
+    .includes(groupQuery.trim().toLocaleLowerCase('vi-VN')));
 
   return <View style={{flex:1,backgroundColor:P.bg}}>
     <View style={css.top}>
-      <Pressable onPress={room?jumpBack:()=>{setTab('dm');refreshLists().catch(()=>{});}}>
-        <Text style={css.logo}>{room?'‹  ':'mtunz.'}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={room?'Trở lại danh sách':'Về tin nhắn'}
+        style={css.headerMark}
+        onPress={room?jumpBack:()=>{setTab('dm');refreshLists().catch(()=>{});}}>
+        <Text style={room?css.backGlyph:css.logo}>{room?'‹':'✦'}</Text>
       </Pressable>
-      <View style={{flex:1}}><Text style={css.title} numberOfLines={1}>{room?roomTitle:'mtunz Mobile'}</Text>
-        <Text style={css.muted}>{typing?'Đang nhập tin nhắn…':connection==='online'?'● Đồng bộ thời gian thực':'○ Đang kết nối lại…'}</Text>
+      <View style={{flex:1,gap:3}}>
+        {!room&&<Text style={css.eyebrow}>MTUNZ MESSENGER</Text>}
+        <Text style={css.title} numberOfLines={1}>{room?roomTitle:currentTab}</Text>
+        <View style={css.statusRow}><View style={[css.statusDot,connection!=='online'&&css.statusOffline]}/>
+          <Text style={css.statusText}>{typing?'Đang nhập tin nhắn…':
+             connection==='online'?'Đã kết nối · Đồng bộ trực tiếp':'Đang kết nối lại…'}</Text></View>
       </View>
-      {!!room&&room.scope!=='world'&&<Pressable onPress={openInfo}><Text style={css.link}>Chi tiết</Text></Pressable>}
-      {!room&&<Pressable onPress={()=>{refreshLists().catch(alertError);}}><Text style={css.link}>↻</Text></Pressable>}
+      {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
+        <Text style={css.headerActionText}>Chi tiết</Text></Pressable>}
+      {!room&&<Pressable accessibilityRole="button" accessibilityLabel="Làm mới"
+        style={css.headerAction} onPress={()=>refreshLists().catch(alertError)}>
+        <Text style={css.refreshGlyph}>↻</Text></Pressable>}
     </View>
     {!!error&&<Pressable onPress={()=>setError('')} style={css.errorBar}>
       <Text style={{color:P.bad}}>{error}  ×</Text>
@@ -518,7 +541,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onOpen={openAttachment}/>}
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
         removeClippedSubviews={Platform.OS==='android'}
-        contentContainerStyle={{padding:12}}
+        contentContainerStyle={css.messageList}
+        ListEmptyComponent={!loading?<EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/>:null}
         onEndReached={loadOlder} onEndReachedThreshold={0.25}
         maintainVisibleContentPosition={{minIndexForVisible:0}}/>
       {!!reply&&<View style={css.replyBar}>
@@ -528,11 +552,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       {!!picked&&<View style={css.replyBar}><Text style={css.muted} numberOfLines={1}>📎 {picked.name}</Text>
         <Pressable onPress={()=>{setPicked(null);uploadRef.current=null;}}><Text style={css.link}>Bỏ</Text></Pressable></View>}
       <View style={css.compose}>
-        <Pressable onPress={()=>pick('media')}><Text style={css.link}>▧</Text></Pressable>
-        <Pressable onPress={()=>pick('file')}><Text style={css.link}>＋</Text></Pressable>
-        <Pressable onPress={toggleVoice} disabled={voiceBusy||sending}><Text style={css.link}>{recordState.isRecording?'■':'🎙'}</Text></Pressable>
+        <Pressable accessibilityLabel="Gửi ảnh hoặc video" accessibilityRole="button"
+          style={css.toolButton} onPress={()=>pick('media')}><Text style={css.toolGlyph}>▧</Text></Pressable>
+        <Pressable accessibilityLabel="Đính kèm tệp" accessibilityRole="button"
+          style={css.toolButton} onPress={()=>pick('file')}><Text style={css.toolGlyph}>＋</Text></Pressable>
+        <Pressable accessibilityLabel={recordState.isRecording?'Dừng ghi âm':'Ghi âm'}
+          accessibilityRole="button" style={css.toolButton}
+          onPress={toggleVoice} disabled={voiceBusy||sending}><Text style={css.toolGlyph}>
+            {recordState.isRecording?'■':'●'}</Text></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
-          value={draft} placeholder="Nhập tin nhắn…" placeholderTextColor={P.soft}
+          value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
             if(value!==draft){nonceRef.current=null;if(value.trim()!==draft.trim())uploadRef.current=null;}
             setDraft(value);
@@ -541,27 +570,61 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onPress={reply?.edit_id?sendEdit:doSend}>{sending?'…':'Gửi'}</Btn>
       </View>
     </KeyboardAvoidingView>:<>
-      {tab==='dm'&&<FlatList data={friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted)}
-        keyExtractor={f=>String(f.other_id)} contentContainerStyle={{padding:12}}
-        ListHeaderComponent={<Text style={css.h2}>Cuộc trò chuyện</Text>}
-        ListEmptyComponent={<Text style={css.empty}>Bạn chưa có cuộc trò chuyện nào.</Text>}
-        renderItem={({item})=><Pressable style={css.rowCard} onPress={()=>openRoom({scope:'dm',id:item.other_id})}>
-          <View style={css.avatar}>{item.avatar_url?<Image source={avatarSource(item.avatar_url,token)} style={css.avatarImage}/>:
-            <Text style={css.avatarText}>{label(item).slice(0,1)}</Text>}</View>
-          <View style={{flex:1}}><Text style={css.strong}>{label(item)}</Text>
-            <Text numberOfLines={1} style={css.muted}>{item.last_message?.body||'Bắt đầu trò chuyện'}</Text></View>
-          {item.unread>0&&<Text style={css.badge}>{item.unread}</Text>}
+      {tab==='dm'&&<FlatList data={matchingFriends}
+        keyboardShouldPersistTaps="handled" keyExtractor={f=>String(f.other_id)}
+        contentContainerStyle={css.inboxContent}
+        ListHeaderComponent={<View style={css.listHeader}>
+          <View style={css.headerTitleRow}><View style={{flex:1,gap:4}}>
+            <Text style={css.eyebrow}>HỘP THƯ CỦA BẠN</Text>
+            <Text style={css.h2}>Cuộc trò chuyện</Text></View>
+            <Text style={css.countPill}>{matchingFriends.length} liên hệ</Text></View>
+          <View style={css.searchWrap}><Text style={css.searchGlyph}>⌕</Text>
+            <TextInput value={inboxQuery} onChangeText={setInboxQuery}
+              placeholder="Tìm cuộc trò chuyện..." placeholderTextColor={P.soft}
+              style={css.searchInput}/></View>
+        </View>}
+        ListEmptyComponent={<EmptyState symbol="✉" title={inboxQuery?'Không tìm thấy hội thoại':'Bắt đầu kết nối'}
+          subtitle={inboxQuery?'Thử nhập tên khác hoặc mở tab Bạn bè.':'Kết bạn để gửi những tin nhắn đầu tiên.'}/>}
+        renderItem={({item})=><Pressable accessibilityRole="button" style={css.chatRow}
+          onPress={()=>openRoom({scope:'dm',id:item.other_id})}>
+          <View style={css.avatarWrap}>
+            <View style={css.avatar}>{item.avatar_url?<Image source={avatarSource(item.avatar_url,token)} style={css.avatarImage}/>:
+              <Text style={css.avatarText}>{label(item).slice(0,1).toUpperCase()}</Text>}</View>
+            {!!item.online&&<View style={css.onlineBadge}/>}
+          </View>
+          <View style={css.chatCopy}>
+            <View style={css.chatTopLine}><Text style={css.chatName} numberOfLines={1}>{label(item)}</Text>
+              {!!item.last_message?.created_at&&<Text style={css.chatTime}>
+                {readableTime(item.last_message.created_at)}</Text>}</View>
+            <View style={css.chatBottomLine}><Text numberOfLines={1}
+              style={[css.previewText,item.unread>0&&css.previewUnread]}>
+              {item.last_message?.body||'Nhấn để bắt đầu trò chuyện'}</Text>
+              {item.unread>0&&<Text style={css.badge}>{item.unread>99?'99+':item.unread}</Text>}</View>
+          </View>
         </Pressable>}/>}
-      {tab==='groups'&&<FlatList data={groups} keyExtractor={g=>String(g.id)}
-        contentContainerStyle={{padding:12}}
-        ListHeaderComponent={<View style={css.hrow}><Text style={css.h2}>Nhóm của tôi</Text>
-          <Btn small onPress={()=>setDialog('createGroup')}>＋ Tạo nhóm</Btn></View>}
-        ListEmptyComponent={<Text style={css.empty}>Chưa tham gia nhóm nào.</Text>}
-        renderItem={({item})=><Pressable style={css.rowCard} onPress={()=>openRoom({scope:'group',id:item.id})}>
-          <View style={css.avatar}><Text style={css.avatarText}>👥</Text></View>
-          <View style={{flex:1}}><Text style={css.strong}>{item.title}</Text>
-            <Text numberOfLines={1} style={css.muted}>{item.member_count} thành viên · {item.last_message?.body||'Chưa có tin'}</Text></View>
-          {item.unread>0&&<Text style={css.badge}>{item.unread}</Text>}
+      {tab==='groups'&&<FlatList data={matchingGroups} keyExtractor={g=>String(g.id)}
+        keyboardShouldPersistTaps="handled" contentContainerStyle={css.inboxContent}
+        ListHeaderComponent={<View style={css.listHeader}>
+          <View style={css.headerTitleRow}><View style={{flex:1,gap:3}}>
+            <Text style={css.eyebrow}>CỘNG ĐỒNG RIÊNG</Text>
+            <Text style={css.h2}>Nhóm của tôi</Text></View>
+            <Btn small onPress={()=>setDialog('createGroup')}>＋ Tạo</Btn></View>
+          <View style={css.searchWrap}><Text style={css.searchGlyph}>⌕</Text>
+            <TextInput value={groupQuery} onChangeText={setGroupQuery}
+              placeholder="Tìm nhóm..." placeholderTextColor={P.soft} style={css.searchInput}/></View>
+        </View>}
+        ListEmptyComponent={<EmptyState symbol="♧" title={groupQuery?'Không tìm thấy nhóm':'Chưa có nhóm nào'}
+          subtitle="Tạo nhóm riêng để trò chuyện cùng bạn bè."/>}
+        renderItem={({item})=><Pressable style={css.chatRow} onPress={()=>openRoom({scope:'group',id:item.id})}>
+          <View style={[css.avatar,{backgroundColor:'#24466a'}]}>
+            <Text style={[css.avatarText,{fontSize:24}]}>▦</Text></View>
+          <View style={css.chatCopy}><View style={css.chatTopLine}>
+            <Text style={css.chatName} numberOfLines={1}>{item.title}</Text>
+            {!!item.last_message?.created_at&&<Text style={css.chatTime}>
+              {readableTime(item.last_message.created_at)}</Text>}</View>
+            <View style={css.chatBottomLine}><Text numberOfLines={1} style={css.previewText}>
+              {item.member_count} người · {item.last_message?.body||'Chưa có tin nhắn'}</Text>
+              {item.unread>0&&<Text style={css.badge}>{item.unread}</Text>}</View></View>
         </Pressable>}/>}
       {tab==='people'&&<ScrollView contentContainerStyle={{padding:12,gap:12}}>
         <Text style={css.h2}>Tìm kiếm & kết bạn</Text>
@@ -621,10 +684,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
           {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
       </ScrollView>}
-      <View style={css.tabs}>{tabs.map(([id,title])=><Pressable key={id}
+      <View style={css.tabs}>{tabs.map(([id,title,glyph])=><Pressable key={id}
+        accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:tab===id}}
         onPress={()=>{setTab(id);setError('');if(id==='settings')loadSettings();}}
-        style={[css.tab,tab===id&&css.tabActive]}>
-        <Text style={[css.tabText,tab===id&&{color:P.accent}]}>{title}</Text>
+        style={({pressed})=>[css.tab,tab===id&&css.tabActive,pressed&&{opacity:.8}]}>
+        <Text style={[css.tabIcon,tab===id&&css.tabIconActive]}>{glyph}</Text>
+        <Text numberOfLines={1} style={[css.tabText,tab===id&&css.tabTextActive]}>{title}</Text>
       </Pressable>)}</View>
     </>}
     <ModalSheet visible={!!selection&&dialog!=='forward'} onClose={()=>setSelection(null)} title="Tùy chọn tin nhắn">
@@ -824,41 +889,106 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 }
 
 const css=StyleSheet.create({
-  btn:{backgroundColor:P.accent,padding:11,paddingHorizontal:15,alignItems:'center',justifyContent:'center',
-    borderRadius:11,minHeight:40},ghost:{backgroundColor:P.card,borderWidth:1,borderColor:P.border},
-  danger:{backgroundColor:'#63324a'},smallBtn:{paddingHorizontal:10,paddingVertical:7,minHeight:34},
+  btn:{backgroundColor:P.accent,paddingVertical:12,paddingHorizontal:15,alignItems:'center',
+    justifyContent:'center',borderRadius:12,minHeight:45},
+  ghost:{backgroundColor:'#213751',borderWidth:1,borderColor:P.border},
+  danger:{backgroundColor:'#63324a'},smallBtn:{paddingHorizontal:12,paddingVertical:8,minHeight:39},
   btnTxt:{color:P.bg,fontWeight:'800',fontSize:13},disabled:{opacity:.45},
-  input:{backgroundColor:P.card,borderRadius:12,borderWidth:1,borderColor:P.border,color:P.text,
-    minHeight:45,paddingHorizontal:13,marginVertical:2},title:{fontSize:15,color:P.text,fontWeight:'800'},
-  logo:{fontSize:26,fontWeight:'900',color:P.accent},h2:{fontSize:16,fontWeight:'800',color:P.text},
-  strong:{fontSize:14,fontWeight:'700',color:P.text},muted:{fontSize:12,color:P.soft},
-  link:{color:P.accent,fontSize:14,fontWeight:'800'},top:{minHeight:67,borderBottomWidth:1,
-    borderColor:P.border,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:14},
-  errorBar:{backgroundColor:'#432333',padding:8},hrow:{flexDirection:'row',alignItems:'center',
-    justifyContent:'space-between',gap:9,flexWrap:'wrap'},
-  section:{padding:13,backgroundColor:P.card,borderRadius:12,gap:10},
-  rowCard:{flexDirection:'row',alignItems:'center',gap:12,padding:13,
-    backgroundColor:P.card,borderRadius:14,marginVertical:3},
-  avatar:{width:43,height:43,borderRadius:22,backgroundColor:'#30547f',alignItems:'center',justifyContent:'center',
-    overflow:'hidden'},avatarImage:{width:43,height:43},avatarText:{color:P.text,fontWeight:'800',fontSize:20},
-  badge:{backgroundColor:P.accent,color:P.bg,fontWeight:'800',borderRadius:12,overflow:'hidden',paddingHorizontal:8,paddingVertical:4},
+  input:{backgroundColor:'#0c1b2e',borderRadius:13,borderWidth:1,borderColor:'#35506d',
+    color:P.text,minHeight:49,paddingHorizontal:14,marginVertical:2,fontSize:14},
+  title:{fontSize:20,lineHeight:24,color:P.text,fontWeight:'900',letterSpacing:-.3},
+  logo:{fontSize:25,fontWeight:'900',color:P.accent},
+  h2:{fontSize:21,fontWeight:'900',color:P.text,letterSpacing:-.5},
+  strong:{fontSize:14,fontWeight:'700',color:P.text},
+  muted:{fontSize:12,lineHeight:18,color:P.soft},
+  link:{color:P.accent,fontSize:14,fontWeight:'800'},
+  top:{minHeight:76,borderBottomWidth:1,borderColor:'#243750',flexDirection:'row',
+    alignItems:'center',gap:12,paddingHorizontal:15,backgroundColor:'#101e32'},
+  headerMark:{height:44,width:44,borderRadius:14,backgroundColor:'#233f5f',borderWidth:1,
+    borderColor:'#3b5d7f',alignItems:'center',justifyContent:'center'},
+  backGlyph:{fontSize:34,color:P.text,fontWeight:'500',lineHeight:40},
+  headerAction:{minWidth:47,minHeight:42,alignItems:'center',justifyContent:'center',
+    paddingHorizontal:8,borderRadius:12,backgroundColor:'#1b3451'},
+  headerActionText:{color:P.accent,fontWeight:'800',fontSize:12},
+  refreshGlyph:{color:P.accent,fontWeight:'600',fontSize:24},
+  eyebrow:{fontSize:10,fontWeight:'900',letterSpacing:1.3,color:'#86bef2'},
+  statusRow:{flexDirection:'row',alignItems:'center',gap:6},
+  statusDot:{height:7,width:7,borderRadius:4,backgroundColor:P.green},
+  statusOffline:{backgroundColor:'#f0c583'},
+  statusText:{fontSize:11,color:P.soft},
+  errorBar:{backgroundColor:'#40243a',borderBottomWidth:1,borderColor:'#704157',padding:11},
+  hrow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:9,flexWrap:'wrap'},
+  section:{padding:15,backgroundColor:P.card,borderWidth:1,borderColor:P.border,
+    borderRadius:16,gap:11},
+  rowCard:{flexDirection:'row',alignItems:'center',gap:12,padding:14,
+    backgroundColor:P.card,borderRadius:15,marginVertical:4,
+    borderWidth:1,borderColor:P.border},
+  inboxContent:{paddingHorizontal:14,paddingBottom:20,flexGrow:1},
+  listHeader:{gap:16,paddingTop:22,paddingBottom:15},
+  headerTitleRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+  countPill:{color:'#a8d7ff',fontSize:11,fontWeight:'800',paddingVertical:7,
+    paddingHorizontal:11,borderRadius:16,backgroundColor:'#203c59',overflow:'hidden'},
+  searchWrap:{flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:'#304866',
+    backgroundColor:'#15283e',borderRadius:14,paddingHorizontal:13,minHeight:49,gap:10},
+  searchGlyph:{fontSize:24,color:P.soft,fontWeight:'600'},
+  searchInput:{flex:1,color:P.text,fontSize:14,minHeight:46,padding:0},
+  chatRow:{flexDirection:'row',alignItems:'center',gap:13,minHeight:77,
+    paddingHorizontal:11,paddingVertical:13,borderBottomWidth:1,borderColor:'#22354e'},
+  avatarWrap:{width:52,height:52,position:'relative'},
+  avatar:{width:52,height:52,borderRadius:18,backgroundColor:'#31567c',
+    alignItems:'center',justifyContent:'center',overflow:'hidden'},
+  avatarImage:{width:52,height:52},avatarText:{color:P.text,fontWeight:'900',fontSize:21},
+  onlineBadge:{position:'absolute',right:-1,bottom:-1,width:13,height:13,borderRadius:7,
+    backgroundColor:P.green,borderWidth:2,borderColor:P.bg},
+  chatCopy:{flex:1,gap:7},
+  chatTopLine:{flexDirection:'row',alignItems:'center',gap:8},
+  chatName:{flex:1,color:P.text,fontSize:15,fontWeight:'800',letterSpacing:-.2},
+  chatTime:{color:P.soft,fontSize:10},
+  chatBottomLine:{flexDirection:'row',alignItems:'center',gap:8},
+  previewText:{flex:1,color:P.soft,fontSize:12,lineHeight:17},
+  previewUnread:{fontWeight:'800',color:'#dfecff'},
+  badge:{backgroundColor:P.accent,color:P.bg,fontWeight:'900',fontSize:11,borderRadius:13,
+    overflow:'hidden',paddingHorizontal:8,paddingVertical:4,minWidth:24,textAlign:'center'},
   empty:{textAlign:'center',padding:40,color:P.soft},
-  tabs:{flexDirection:'row',borderTopWidth:1,borderTopColor:P.border,padding:4},
-  tab:{flex:1,alignItems:'center',justifyContent:'center',minHeight:47,borderRadius:11},
-  tabActive:{backgroundColor:P.card},tabText:{fontSize:10,color:P.soft,fontWeight:'800'},
-  bubble:{padding:11,borderRadius:16,maxWidth:'86%',minWidth:94,marginVertical:4,gap:6},
-  bubbleMine:{backgroundColor:P.mine,alignSelf:'flex-end',borderBottomRightRadius:4},
-  bubbleOther:{backgroundColor:P.card,alignSelf:'flex-start',borderBottomLeftRadius:4},
-  sender:{color:P.accent,fontSize:11,fontWeight:'800'},reply:{color:P.soft,fontSize:11},
-  msg:{color:P.text,fontSize:15,lineHeight:21},time:{fontSize:10,color:'#d4e4fa'},
-  attachment:{padding:8,borderWidth:1,borderColor:P.border,borderRadius:12,gap:5},
-  thumb:{width:210,height:156,maxWidth:'100%',backgroundColor:P.bg,borderRadius:8},
-  attachmentText:{color:P.text,fontSize:12,fontWeight:'700'},reactionText:{color:P.text,fontSize:13},
-  compose:{flexDirection:'row',gap:11,padding:9,alignItems:'flex-end',borderTopColor:P.border,borderTopWidth:1},
-  composeInput:{flex:1,minHeight:43,maxHeight:110,borderRadius:12,backgroundColor:P.card,
-    color:P.text,padding:10,textAlignVertical:'top'},
-  replyBar:{padding:8,borderTopColor:P.border,borderTopWidth:1,flexDirection:'row',
-    justifyContent:'space-between',gap:8},
-  overlay:{flex:1,justifyContent:'flex-end',backgroundColor:'#0009'},
-  sheet:{maxHeight:'82%',backgroundColor:P.bg,borderTopLeftRadius:24,borderTopRightRadius:24,padding:16,gap:13},
+  emptyPanel:{alignItems:'center',paddingVertical:48,paddingHorizontal:20,gap:11},
+  emptySymbol:{width:76,height:76,borderRadius:25,backgroundColor:'#1d3552',
+    alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#37577a'},
+  emptySymbolText:{fontSize:35,color:P.accent},
+  emptyTitle:{fontSize:17,color:P.text,fontWeight:'800'},
+  emptySubtitle:{fontSize:13,color:P.soft,lineHeight:20,textAlign:'center',maxWidth:260},
+  tabs:{flexDirection:'row',borderTopWidth:1,borderTopColor:P.border,
+    paddingHorizontal:5,paddingTop:5,paddingBottom:6,backgroundColor:'#0e1c2f'},
+  tab:{flex:1,alignItems:'center',justifyContent:'center',gap:2,minHeight:54,
+    borderRadius:14,paddingHorizontal:1},
+  tabActive:{backgroundColor:'#1b3654'},tabIcon:{fontSize:20,color:P.soft,fontWeight:'700'},
+  tabIconActive:{color:P.accent},tabText:{fontSize:10,color:P.soft,fontWeight:'800'},
+  tabTextActive:{color:'#b8dfff'},
+  messageList:{paddingHorizontal:12,paddingVertical:17,flexGrow:1},
+  bubble:{paddingVertical:11,paddingHorizontal:13,borderRadius:19,maxWidth:'83%',
+    minWidth:86,marginVertical:4,gap:7},
+  bubbleMine:{backgroundColor:P.mine,alignSelf:'flex-end',borderBottomRightRadius:5},
+  bubbleOther:{backgroundColor:'#1a2c45',alignSelf:'flex-start',borderBottomLeftRadius:5},
+  sender:{color:P.accent,fontSize:11,fontWeight:'800'},
+  reply:{color:P.soft,fontSize:11},
+  msg:{color:P.text,fontSize:15,lineHeight:22},
+  time:{fontSize:10,color:'#c9d9ed'},
+  attachment:{padding:8,borderWidth:1,borderColor:'#3d5a79',borderRadius:12,gap:6},
+  thumb:{width:220,height:164,maxWidth:'100%',backgroundColor:P.bg,borderRadius:9},
+  attachmentText:{color:P.text,fontSize:12,fontWeight:'700'},
+  reactionText:{color:P.text,fontSize:13},
+  compose:{flexDirection:'row',gap:6,paddingHorizontal:8,paddingTop:10,paddingBottom:9,
+    alignItems:'flex-end',borderTopColor:P.border,borderTopWidth:1,
+    backgroundColor:'#101e32'},
+  toolButton:{width:35,height:44,borderRadius:11,alignItems:'center',justifyContent:'center',
+    backgroundColor:'#1e3854'},
+  toolGlyph:{color:P.accent,fontSize:20,fontWeight:'800'},
+  composeInput:{flex:1,minWidth:40,minHeight:44,maxHeight:115,borderRadius:14,
+    borderWidth:1,borderColor:'#315071',backgroundColor:'#1a2d46',
+    color:P.text,paddingHorizontal:11,paddingVertical:10,textAlignVertical:'top',
+    fontSize:14},
+  replyBar:{paddingVertical:10,paddingHorizontal:13,borderTopColor:P.border,borderTopWidth:1,
+    flexDirection:'row',justifyContent:'space-between',gap:8,backgroundColor:'#11243b'},
+  overlay:{flex:1,justifyContent:'flex-end',backgroundColor:'#020914b3'},
+  sheet:{maxHeight:'85%',backgroundColor:P.bg,borderTopLeftRadius:25,
+    borderTopRightRadius:25,padding:18,gap:14,borderWidth:1,borderColor:P.border},
 });

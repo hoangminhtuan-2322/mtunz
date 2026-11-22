@@ -10,7 +10,8 @@
       "package": "com.mtunz.mobile",
       "permissions": [
         "POST_NOTIFICATIONS"
-      ]
+      ],
+      "softwareKeyboardLayoutMode": "resize"
     },
     "ios": {
       "bundleIdentifier": "com.mtunz.mobile",
