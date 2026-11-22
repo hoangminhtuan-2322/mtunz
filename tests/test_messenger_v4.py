@@ -128,3 +128,107 @@ def test_authenticated_voice_media_waveform_and_size_limits():
     bad=alice.post('/api/uploads',files={'file':('fake.webm',io.BytesIO(b'NOT_MEDIA'),'audio/webm')},
        data={'waveform':'0'*32,'duration_ms':'999'})
     assert bad.status_code==415
+
+
+def set_privacy(client, show_online=True, show_receipts=True):
+    me=client.get('/api/me').json()['user']
+    result=client.patch('/api/me/profile',json={
+        'display_name':me['display_name'],'bio':me.get('bio',''),
+        'show_online':show_online,'show_receipts':show_receipts})
+    assert result.status_code==200,result.text
+
+
+def test_reciprocal_online_visibility_in_friends_profile_and_events(monkeypatch):
+    _,alice,bob,aid,bid=pair()
+    with db() as c:
+        c.execute('UPDATE users SET last_seen=? WHERE id IN (?,?)',(now()-100,aid,bid))
+    aid_socket=object()
+    bid_socket=object()
+    core.hub.users[aid].add(aid_socket)
+    core.hub.users[bid].add(bid_socket)
+    events=[]
+
+    async def capture(uid, event, **data):
+        events.append((uid,event,data))
+
+    monkeypatch.setattr(core.hub,'user',capture)
+    try:
+        def friend(client, peer_id):
+            return next(x for x in client.get('/api/friends').json()['friends']
+                        if x['other_id']==peer_id)
+
+        assert friend(alice,bid)['online'] is True
+        assert friend(alice,bid)['last_seen']
+        assert alice.get('/api/profile/'+str(bid)).json()['profile']['last_seen']
+
+        set_privacy(alice,show_online=False)
+        assert friend(alice,bid)['online'] is False
+        assert friend(alice,bid)['last_seen'] is None
+        assert friend(bob,aid)['online'] is False
+        assert friend(bob,aid)['last_seen'] is None
+        assert alice.get('/api/profile/'+str(bid)).json()['profile']['last_seen'] is None
+        assert bob.get('/api/profile/'+str(aid)).json()['profile']['last_seen'] is None
+        assert any(uid==bid and event=='privacy-updated' for uid,event,_ in events)
+
+        events.clear()
+        asyncio.run(core.notify_presence(bid,True))
+        assert not any(event=='presence' and uid==aid for uid,event,_ in events)
+        set_privacy(alice,show_online=True)
+        assert friend(alice,bid)['online'] is True
+        assert friend(bob,aid)['online'] is True
+        events.clear()
+        asyncio.run(core.notify_presence(bid,True))
+        assert any(event=='presence' and uid==aid for uid,event,_ in events)
+
+        set_privacy(bob,show_online=False)
+        assert friend(alice,bid)['online'] is False
+        assert friend(alice,bid)['last_seen'] is None
+        assert friend(bob,aid)['online'] is False
+    finally:
+        core.hub.users[aid].discard(aid_socket)
+        core.hub.users[bid].discard(bid_socket)
+
+
+def test_reciprocal_receipts_hide_history_replay_and_live_events(monkeypatch):
+    _,alice,bob,aid,bid=pair()
+    nonce='privacy_test_12345678901234567890'
+    payload={'recipient_id':bid,'body':'Visible only with consent',
+             'client_message_id':nonce}
+    sent=alice.post('/api/messages',json=payload)
+    assert sent.status_code==200,sent.text
+    mid=sent.json()['message']['id']
+    assert bob.post('/api/messages/delivered/'+str(aid),
+                    json={'up_to':mid}).status_code==200
+    assert bob.post('/api/messages/read/'+str(aid)).status_code==200
+    original=alice.get('/api/messages/'+str(bid)).json()['messages'][0]
+    assert original['delivered_at'] and original['read_at']
+
+    set_privacy(alice,show_receipts=False)
+    hidden=alice.get('/api/messages/'+str(bid)).json()['messages'][0]
+    assert hidden['delivered_at'] is None and hidden['read_at'] is None
+    replay=alice.post('/api/messages',json=payload)
+    assert replay.status_code==200 and replay.json()['replayed']
+    assert replay.json()['message']['read_at'] is None
+    assert replay.json()['message']['delivered_at'] is None
+    assert alice.get('/api/friends').json()['friends'][0]['receipt_visible'] is False
+
+    events=[]
+
+    async def capture(uid, event, **data):
+        events.append((uid,event,data))
+
+    monkeypatch.setattr(core.hub,'user',capture)
+    another=alice.post('/api/messages',json={'recipient_id':bid,'body':'Second'}).json()['message']
+    assert bob.post('/api/messages/delivered/'+str(aid),
+                    json={'up_to':another['id']}).status_code==200
+    assert bob.post('/api/messages/read/'+str(aid)).status_code==200
+    assert not any(uid==aid and event in ('read','delivered')
+                   for uid,event,_ in events)
+
+    set_privacy(alice,show_receipts=True)
+    set_privacy(bob,show_receipts=False)
+    assert alice.get('/api/friends').json()['friends'][0]['receipt_visible'] is False
+    assert alice.get('/api/messages/'+str(bid)).json()['messages'][0]['read_at'] is None
+    set_privacy(bob,show_receipts=True)
+    assert alice.get('/api/friends').json()['friends'][0]['receipt_visible'] is True
+    assert alice.get('/api/messages/'+str(bid)).json()['messages'][0]['read_at']
