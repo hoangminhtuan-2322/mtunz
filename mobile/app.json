@@ -25,7 +25,14 @@
           "cameraPermission": "Cho phép mtunz sử dụng máy ảnh khi bạn yêu cầu."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Cho phép mtunz ghi tin nhắn thoại khi bạn yêu cầu.",
+          "enableBackgroundRecording": false
+        }
+      ]
     ]
   }
 }
