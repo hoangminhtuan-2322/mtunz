@@ -13,6 +13,8 @@ assert(css.includes('.v5-maint-dates')&&css.includes('.v5-maint-presets'));
 assert(css.includes('@media(max-width:650px)'),'Narrow-viewport layout required');
 assert(css.includes('position:sticky'),'Save actions remain available while modal scrolls');
 assert(js.includes('adminV3PinPayload(host)'),'Privileged save requires Admin PIN');
+assert(js.includes('scheduleActive?')&&js.includes('Hủy lịch bảo trì; không thể đổi'),
+ 'An active maintenance window must not be silently rescheduled from the UI');
 assert(server.includes('core.verify_admin_pin_stepup(request,admin,body.admin_pin)'));
 assert(server.includes('at+30*86400')&&server.includes('body.starts_at+7*86400'));
 assert(js.includes("new Intl.DateTimeFormat('vi-VN'"),'Review times must be in 24h Vietnamese format');
