@@ -1,0 +1,57 @@
+/* MTUNZ V15 - phone-only paint budget.
+   Desktop styles intentionally untouched. Keep functional loading indicators. */
+@media (max-width:800px) {
+  /* Avoid compositor layers for every item in long chat lists. */
+  #app .shell:not(.admin-shell) .thread .bubble-wrap,
+  #app .shell:not(.admin-shell) .thread .bubble,
+  #app .shell:not(.admin-shell) .group-thread .bubble-wrap,
+  #app .shell:not(.admin-shell) .world-message,
+  #app .shell:not(.admin-shell) .world-live-page .world-chat-message,
+  #app .shell:not(.admin-shell) .main.view-enter,
+  #app .shell:not(.admin-shell) .view-arrival,
+  #app .shell:not(.admin-shell) .entry-arrival {
+    animation:none!important;
+    will-change:auto!important;
+  }
+  #app .shell:not(.admin-shell) .thread .bubble-wrap,
+  #app .shell:not(.admin-shell) .world-message {
+    transition:none!important;
+  }
+  /* Programmatic chat scroll-to-bottom must finish synchronously on phones.
+     Smooth scrolling a 100-message thread can cause persistent frame skips. */
+  html,
+  #app .thread,
+  #app .side-scroll,
+  #app .main-body,
+  #app .world-feed,
+  #app .world-live-page,
+  #app .support-chat-thread,
+  #app .premium-dialog {
+    scroll-behavior:auto!important;
+  }
+  /* Blurring an entire full-screen layer on every frame is costly on mobile
+     GPUs, especially during keyboard resize and modal scrolling. */
+  #app .main-head,
+  #app .shell:not(.admin-shell) .conversation .main-head,
+  #modal-root .modal-backdrop,
+  #modal-root .premium-dialog .modal-actions,
+  #toast-root .toast,
+  #toast-root .premium-toast {
+    -webkit-backdrop-filter:none!important;
+    backdrop-filter:none!important;
+  }
+  #modal-root .modal-backdrop {background:rgba(2,5,12,.88)}
+  #modal-root .premium-dialog .modal-actions {background:#18253b}
+  #app .shell:not(.admin-shell) .conversation .main-head {box-shadow:none!important}
+  /* Auth artwork stays attractive but never animates continuously on a phone. */
+  #app .auth-art .mock-chat,
+  #app .auth-art .showcase,
+  #app .auth-art .showcase-note,
+  #app .auth-art .art-aurora,
+  #app .auth-panel,
+  #app .auth-art .showcase-typing-dots i {
+    animation:none!important;
+    will-change:auto!important;
+  }
+  #app .auth-art .art-aurora {filter:none!important}
+}

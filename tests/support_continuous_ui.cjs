@@ -15,7 +15,7 @@ assert(guestSend.includes('finishSupportReply(form,text)'), 'Guest keeps compose
 assert(adminSend.includes('finishSupportReply(form,text)'), 'Admin keeps composer after sending');
 assert(!guestSend.includes('loadTicketMessages()'), 'Guest send must not reload thread');
 assert(!adminSend.includes('loadAdmin()'), 'Admin send must not rebuild dashboard');
-assert(html.includes('/static/app.js?v=20.4'));
+assert(html.includes('/static/app.js?v=20.5'));
 assert(html.includes('/static/member-experience.css?v=1.2'));
 assert(style.includes('.support-chat-composer .support-chat-entry'));
 

@@ -6,7 +6,7 @@
  const match=window.matchMedia?.('(max-width: 800px)');
  if(!match)return;
  const root=document.documentElement,body=document.body;
- let cleanHeight=0,frame=0,blurTimer=0;
+ let cleanHeight=0,frame=0,blurTimer=0,appliedHeight='';
  const editable=element=>{
   if(!element||typeof element.closest!=='function')return false;
   return !!element.closest('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),textarea,select,[contenteditable="true"]');
@@ -21,7 +21,7 @@
   frame=0;
   if(!root||!body)return;
   if(!isMobile()){
-   root.style.removeProperty('--mt-mobile-viewport-height');
+   if(appliedHeight){root.style.removeProperty('--mt-mobile-viewport-height');appliedHeight='';}
    body.classList.remove('mt-mobile-keyboard','mt-mobile-editing');
    cleanHeight=0;
    return;
@@ -35,8 +35,14 @@
   const reduced=typing&&visible>0&&baseline-visible>110;
   body.classList.toggle('mt-mobile-editing',typing);
   body.classList.toggle('mt-mobile-keyboard',reduced);
-  if(reduced)root.style.setProperty('--mt-mobile-viewport-height',Math.round(visible)+'px');
-  else root.style.removeProperty('--mt-mobile-viewport-height');
+  const nextHeight=reduced?Math.round(visible)+'px':'';
+  // Safari fires viewport scroll/resize frequently as browser chrome moves.
+  // Only touch the root style when the actual keyboard height changes.
+  if(nextHeight!==appliedHeight){
+   if(nextHeight)root.style.setProperty('--mt-mobile-viewport-height',nextHeight);
+   else root.style.removeProperty('--mt-mobile-viewport-height');
+   appliedHeight=nextHeight;
+  }
  }
  function schedule(){
   if(frame)return;
@@ -60,6 +66,8 @@
  window.addEventListener('pageshow',schedule);
  match.addEventListener?.('change',schedule);
  window.visualViewport?.addEventListener?.('resize',schedule,{passive:true});
- window.visualViewport?.addEventListener?.('scroll',schedule,{passive:true});
+ window.visualViewport?.addEventListener?.('scroll',()=>{
+  if(isMobile()&&editable(document.activeElement))schedule();
+ },{passive:true});
  syncViewport();
 })();

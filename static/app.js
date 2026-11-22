@@ -1061,13 +1061,24 @@ function syncThreadJump(box,arrived=false){
  if(!button)return;
  const away=box.scrollHeight-box.clientHeight-box.scrollTop>145;
  const count=away?Number(button.dataset.newCount||0)+(arrived?1:0):0;
- button.dataset.newCount=String(count);
- button.hidden=!away;
+ if(button.dataset.newCount!==String(count))button.dataset.newCount=String(count);
+ if(button.hidden===away)button.hidden=!away;
  const label=count?'↓ '+count+' tin mới':'↓ Tin mới nhất';
  if(button.textContent!==label)button.textContent=label;
 }
+// Safari can deliver many scroll events per display frame. Read layout once
+// before painting instead of mixing 60+ reads/writes inside touch scrolling.
+let threadJumpFrameQueued=false;
 document.addEventListener('scroll',event=>{
- if(event.target.id==='chat-messages')syncThreadJump(event.target);
+ if(event.target?.id!=='chat-messages'||threadJumpFrameQueued)return;
+ const box=event.target;
+ threadJumpFrameQueued=true;
+ const paint=()=>{
+  threadJumpFrameQueued=false;
+  if(box.isConnected)syncThreadJump(box);
+ };
+ if(typeof requestAnimationFrame==='function')requestAnimationFrame(paint);
+ else paint();
 },true);
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
@@ -1084,17 +1095,26 @@ function convoHeader(f){if(!f)return '';
  <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}" title="${f.archived?'Bỏ lưu trữ':'Lưu trữ'} hội thoại">${icon('archive',15)}</button>
  <button class="btn ghost sm" data-act="chat-restrict" data-id="${f.other_id}" title="Hạn chế / bỏ hạn chế">${icon('shield',15)} <span class="button-word">${f.restricted?'Bỏ hạn chế':'Hạn chế'}</span></button>
  <button class="btn danger sm" data-act="chat-block" data-id="${f.other_id}" title="Chặn tài khoản">${icon('ban',15)} <span class="button-word">Chặn</span></button></header>`;}
+function chatHeaderKey(f){
+ return JSON.stringify([f.other_id,f.username,f.display_name,f.online,f.last_seen,
+   f.avatar_url,f.vanish_seconds,f.muted,f.pinned,f.archived,f.restricted]);
+}
 function updateChatHeader(){
  const f=state.friends.find(x=>x.other_id===state.selected);
- if(f&&state.tab==='messages'){
-   const chat=$('#chat-header');if(chat)chat.innerHTML=convoHeader(f);
- }
+ if(!f||state.tab!=='messages')return;
+ const chat=$('#chat-header');if(!chat)return;
+ const key=chatHeaderKey(f);
+ // A routine friends refresh must not destroy/rebuild the chat toolbar,
+ // especially when a touch menu is open on a phone.
+ if(chat.dataset.peerHeaderKey===key)return;
+ chat.innerHTML=convoHeader(f);
+ chat.dataset.peerHeaderKey=key;
 }
 function renderBubbles(){return bubblesFor(state.messages,false);}
 function conversation(){
  const f=state.friends.find(x=>x.other_id===state.selected&&x.state==='accepted');
  if(!f)return welcomeEmpty();
- return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
+ return `<div class="conversation"><div id="chat-header" data-peer-header-key="${esc(chatHeaderKey(f))}">${convoHeader(f)}</div>
  <div class="thread" id="chat-messages" data-paper="${esc(state.user.chat_wallpaper||'midnight')}" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>${threadJump()}
  <div class="composer"><div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
  <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>

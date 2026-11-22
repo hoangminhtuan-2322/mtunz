@@ -38,7 +38,7 @@ assert(profileCss.includes('max-width:800px'), 'Only mobile should show top Prof
 assert(html.includes('/static/profile-separation.css?v=1.2'), 'Cache-bust the updated mobile profile styles');
 
 assert(html.includes('/static/mobile-polish.css?v=1.0'));
-assert(html.includes('/static/mobile-polish.js?v=1.0'));
+assert(html.includes('/static/mobile-polish.js?v=1.1'));
 assert(html.indexOf('mobile-polish.css')>html.indexOf('group-lobby.css'),'Mobile CSS must be last for targeted overrides');
 assert(html.indexOf('mobile-polish.js')>html.indexOf('world-moderation.js'),'Keyboard handler must load after app scripts');
 assert(!/localStorage|sessionStorage|document\.cookie/.test(js),'Mobile handler may not persist user data');

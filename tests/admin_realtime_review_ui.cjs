@@ -24,7 +24,7 @@ assert(app.includes('data-admin-presence='),'Admin table and detail have live pr
 assert(app.includes('function adminPatchUserActivity('),'Admin patches fields without rerender');
 assert(!app.includes('window.localStorage.setItem("admin-user-details"'),
        'Sensitive details must not persist to browser storage');
-assert(html.includes('/static/app.js?v=20.4'),'V14 cache bust');
+assert(html.includes('/static/app.js?v=20.5'),'V14 cache bust');
 
 const begin=app.indexOf('function adminPatchUserActivity(');
 const end=app.indexOf('function adminUsers(){',begin);
