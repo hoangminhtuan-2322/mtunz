@@ -12,12 +12,12 @@ for(const [path,s] of [['member-profile.js',profile],['extras.js',extras],['soci
                        ['world-moderation.js',world],['messenger-v4.js',voice]]){
  new vm.Script(s,{filename:path});
 }
-assert(html.includes('/static/app.js?v=20.8'));
-assert(html.includes('/static/extras.js?v=18.4'));
+assert(html.includes('/static/app.js?v=20.9'));
+assert(html.includes('/static/extras.js?v=18.5'));
 assert(html.includes('/static/social-v2.js?v=1.2'));
 assert(html.includes('/static/social-v2.css?v=1.3'));
 assert(html.includes('/static/messenger-v4.js?v=1.2'));
-assert(html.includes('/static/world-moderation.js?v=4.4'));
+assert(html.includes('/static/world-moderation.js?v=4.5'));
 assert(profile.includes('identitySettingsPanel()'),'Identity controls appear inside member profile');
 assert(!extras.includes('name="display_name"'),'Profile form has no unverified name editor');
 assert(api.includes("body.display_name!=current['display_name']"),

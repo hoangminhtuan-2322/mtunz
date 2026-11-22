@@ -111,3 +111,59 @@ def test_support_ticket_accepts_empty_optional_memory():
         ticket = c.execute('SELECT kind, claim FROM tickets WHERE id=?', (ticket_id,)).fetchone()
     assert ticket['kind'] == 'other'
     assert ticket['claim'] == ''
+
+
+def test_admin_can_pause_new_intake_while_open_chats_continue():
+    admin=logged_admin()
+    guest,ticket=guest_ticket()
+    intake='/api/admin/support/intake'
+    assert guest.patch(intake,json={'paused':True,'admin_pin':'2345'}).status_code==401
+    assert admin.patch(intake,json={'paused':True}).status_code==401
+    try:
+        assert admin.patch(intake,json={'paused':True,'admin_pin':'2345'}).json()['paused']
+        assert admin.get('/api/admin/tickets').json()['paused']
+        assert guest.get('/api/support/tickets').json()['paused']
+        fresh=TestClient(app)
+        fresh.get('/')
+        blocked=fresh.post('/api/support/tickets',json={'kind':'other'})
+        assert blocked.status_code==503 and blocked.json()['detail']['code']=='support_paused'
+        assert guest.post(f'/api/support/tickets/{ticket}/messages',json={'body':'Tiếp tục hỗ trợ'}).status_code==200
+        assert admin.post(f'/api/admin/tickets/{ticket}/messages',
+                          json={'body':'Đã nhận','admin_pin':'2345'}).status_code==200
+        assert len(guest.get(f'/api/support/tickets/{ticket}/messages').json()['messages'])==2
+    finally:
+        assert not admin.patch(intake,json={'paused':False,'admin_pin':'2345'}).json()['paused']
+    assert fresh.post('/api/support/tickets',json={'kind':'other'}).status_code==200
+
+
+def test_delete_closed_ticket_removes_history_and_revokes_unused_grant():
+    from test_flows import register_user
+
+    admin=logged_admin()
+    guest=register_user(admin,'old_support')
+    res=guest.post('/api/support/tickets',json={'kind':'pin','claim':'Nội dung cần xóa'})
+    assert res.status_code==200,res.text
+    ticket=res.json()['id']
+    path=f'/api/admin/tickets/{ticket}'
+    assert guest.request('DELETE',path,json={'admin_pin':'2345'}).status_code==403
+    assert admin.request('DELETE',path,json={'admin_pin':'2345'}).status_code==409
+    issued=admin.post(path+'/grant',json={'username':'old_support','verified':True,'admin_pin':'2345'})
+    assert issued.status_code==200,issued.text
+    history=f'/api/support/tickets/{ticket}/messages'
+    text=guest.get(history).json()['messages'][-1]['body']
+    code=text.split(': ')[-1].split('.')[0]
+    assert admin.post(path+'/status',json={'status':'closed','admin_pin':'2345'}).status_code==200
+    assert guest.get(history).json()['status']=='closed'
+    assert admin.request('DELETE',path,json={}).status_code==401
+    assert admin.request('DELETE',path,json={'admin_pin':'2345'}).status_code==200
+    assert guest.get(history).status_code==404
+    assert admin.get(path+'/messages').status_code==404
+    assert not any(item['id']==ticket for item in admin.get('/api/admin/tickets').json()['tickets'])
+    assert not any(item['id']==ticket for item in guest.get('/api/support/tickets').json()['tickets'])
+    assert guest.post('/api/support/reset',json={'code':code,'new_value':'6789','pin_length':4}).status_code==403
+    with db() as c:
+        assert c.execute('SELECT 1 FROM ticket_messages WHERE ticket_id=?',(ticket,)).fetchone() is None
+        assert c.execute('SELECT 1 FROM recovery_grants WHERE ticket_id=?',(ticket,)).fetchone() is None
+        tombstone=c.execute('SELECT guest_id,owner_id,claim FROM tickets WHERE id=?',(ticket,)).fetchone()
+        assert tuple(tombstone)==('',None,'')
+        assert c.execute("SELECT 1 FROM audit WHERE action='support_delete' AND detail=?",(f'ticket_id={ticket}',)).fetchone()

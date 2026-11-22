@@ -134,6 +134,7 @@ async function api(url,{method='GET',data,signal}={}){
     if(detail?.code==='account_deletion_pending')showDeletionHold(detail.purge_at);
     const error=new Error(typeof detail==='string'?detail:detail?.message||detail?.reason||'Yêu cầu không thành công.');
     error.status=response.status;
+    error.code=detail?.code;
     error.maintenance=detail?.code==='maintenance'||detail?.code==='account_deletion_pending';
     throw error;
   }
@@ -496,11 +497,19 @@ function connectSocket(retry=false){
    if(t==='presence' && state.user && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=data.online;renderSideItems();updateChatHeader();}}
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
    if(state.user&&!state.user.is_admin)await extraSocket(data);
+   if(t==='support-deleted'&&!state.user?.is_admin){
+     state.tickets=state.tickets.filter(ticket=>ticket.id!==data.ticket_id);
+     if(state.supportTicket===data.ticket_id){
+       state.supportTicket=null;state.ticketMessages=[];
+       renderSupportPage();
+     }else if(!state.supportTicket)renderSupportPage();
+     return;
+   }
    if(t==='support-updated'||t==='support-message'){
      if(state.user?.is_admin){await loadAdmin();}
      else if(state.supportTicket&&(!data.ticket_id||data.ticket_id===state.supportTicket)){
        if(data.message&&data.ticket_id===state.supportTicket)appendSupportMessage(data.ticket_id,data.message);
-       else await loadTicketMessages();
+       else await loadTicketMessages().catch(error=>toast(error.message,'error'));
      }
    }
  };
@@ -832,18 +841,22 @@ function authRegister(){
 function authSupport(){
  if(!state.supportTicket)return `<span class="eyebrow">TRUNG TÂM HỖ TRỢ</span><h1>Admin ở đây để hỗ trợ.</h1>
  <p class="hint">Tạo cuộc trò chuyện riêng với quản trị viên. Trường hợp khôi phục tài khoản, bạn cần chứng minh quyền sở hữu.</p>
- <form data-form="support-new"><div class="field"><label>Vấn đề bạn gặp phải</label><select class="select" name="kind">
+ ${state.supportPaused?`<div class="support-intake-banner" role="status"><div><strong>Tạm ngừng nhận phiếu mới</strong>
+ <p class="hint">Bạn vẫn có thể mở các cuộc trò chuyện hiện có.</p></div>
+ <button class="btn ghost sm" type="button" data-act="support-refresh">${icon('refresh',15)} Kiểm tra lại</button></div>`:
+ `<form data-form="support-new"><div class="field"><label>Vấn đề bạn gặp phải</label><select class="select" name="kind">
  <option value="username" ${state.supportKind==='username'?'selected':''}>Quên tên đăng nhập</option>
  <option value="password" ${state.supportKind==='password'?'selected':''}>Quên mật khẩu</option>
  <option value="pin" ${state.supportKind==='pin'?'selected':''}>Quên mã PIN</option>
  <option value="other" ${state.supportKind==='other'?'selected':''}>Vấn đề khác</option></select></div>
  ${inputField('Thông tin gợi nhớ (không bắt buộc)','claim','text','','maxlength="160"',false)}
- <button class="btn primary full">Bắt đầu trò chuyện ${icon('chat',17)}</button></form>
+ <button class="btn primary full">Bắt đầu trò chuyện ${icon('chat',17)}</button></form>`}
  ${state.tickets.length?`<div class="sep"></div><span class="eyebrow">CUỘC TRÒ CHUYỆN GẦN ĐÂY</span><div class="stack" style="margin-top:12px">${state.tickets.slice(0,5).map(t=>`<button class="btn ghost full" style="justify-content:space-between" data-act="support-open" data-id="${t.id}">#${t.id} · ${esc(t.kind)} <span class="pill">${esc(t.status)}</span></button>`).join('')}</div>`:''}`;
+ const status=state.tickets.find(ticket=>ticket.id===state.supportTicket)?.status||'open';
  return `<div class="row between" style="margin-bottom:17px"><button class="linkbtn" data-act="support-back">${icon('back',15)} Các yêu cầu</button><span class="pill">Phiếu hỗ trợ #${state.supportTicket}</span></div>
  <h1>Trò chuyện với admin</h1><p class="hint">Đối thoại này chỉ hiển thị cho trình duyệt đã mở yêu cầu và quản trị viên. Không chia sẻ mã khôi phục với người khác.</p>
  <div class="support-list" id="support-list" data-ticket-id="${state.supportTicket}" style="min-height:200px;margin-top:19px">${renderTicketBubbles(state.ticketMessages)}</div>
- <form data-form="support-reply" style="margin-top:12px"><div class="row"><input name="body" class="input" maxlength="1500" placeholder="Nhắn cho admin..." required><button class="btn primary circle" title="Gửi">${icon('send')}</button></div></form>
+ ${status==='open'?`<form data-form="support-reply" style="margin-top:12px"><div class="row"><input name="body" class="input" maxlength="1500" placeholder="Nhắn cho admin..." required><button class="btn primary circle" title="Gửi">${icon('send')}</button></div></form>`:'<p class="hint">Phiếu này đã đóng.</p>'}
  <div class="sep"></div><h3>Đặt lại mật khẩu hoặc PIN</h3><p class="hint">Sau khi xác minh, admin sẽ cấp mã dùng một lần trong cuộc trò chuyện trên.</p>
  <form data-form="support-reset">${inputField('Mã khôi phục từ admin','code','text','','autocomplete="off"')}
  <div class="field"><label>Đặt lại loại thông tin</label><select name="kind" class="select" id="reset-kind"><option value="password">Mật khẩu</option><option value="pin">Mã PIN</option></select></div>
@@ -899,7 +912,15 @@ function renderAuth(){
    }
  }
 }
-async function loadTickets(){const r=await api('/api/support/tickets');state.tickets=r.tickets;}
+async function loadTickets(){
+ const result=await api('/api/support/tickets');
+ state.tickets=result.tickets;
+ state.supportPaused=!!result.paused;
+}
+function renderSupportPage(){
+ if(state.user&&!state.user.is_admin&&state.tab==='support')renderApp();
+ else if(!state.user&&state.mode==='support')renderAuth();
+}
 let supportHistoryRequest=0;
 function paintSupportMessages(ticket,follow=false){
  const box=$('#support-list');
@@ -923,13 +944,29 @@ async function loadTicketMessages(){
  if(!ticket)return;
  const request=++supportHistoryRequest;
  const baseline=new Set(state.ticketMessages.map(m=>m.id));
- const result=await api(`/api/support/tickets/${ticket}/messages`);
+ let result;
+ try{result=await api(`/api/support/tickets/${ticket}/messages`);}
+ catch(error){
+  if(error.status!==404)throw error;
+  if(request===supportHistoryRequest&&state.supportTicket===ticket&&state.user?.id===id){
+   state.tickets=state.tickets.filter(item=>item.id!==ticket);
+   state.supportTicket=null;state.ticketMessages=[];
+   renderSupportPage();
+  }
+  return;
+ }
  if(request!==supportHistoryRequest||state.supportTicket!==ticket||state.user?.id!==id)return;
  const merged=new Map(result.messages.map(m=>[m.id,m]));
  for(const message of state.ticketMessages){
   if(!baseline.has(message.id))merged.set(message.id,message);
  }
  state.ticketMessages=[...merged.values()].sort((a,b)=>a.id-b.id);
+ const entry=state.tickets.find(item=>item.id===ticket);
+ if(entry&&result.status&&entry.status!==result.status){
+  entry.status=result.status;
+  renderSupportPage();
+  return;
+ }
  if(paintSupportMessages(ticket))return;
  if(state.mode==='support'&&!state.user)renderAuth();
  else if(state.tab==='support')renderApp();
@@ -1705,7 +1742,8 @@ async function loadAdmin(){
    }
    case 'tickets':{
     const ticket=state.adminTicket,sequence=adminTicketSequence;
-    update.adminData=(await api('/api/admin/tickets')).tickets;
+    const data=await api('/api/admin/tickets');
+    update.adminData=data.tickets;update.adminSupportPaused=!!data.paused;
     if(!current())return;
     if(ticket&&update.adminData.some(t=>t.id===ticket)&&sequence===adminTicketSequence){
      const result=await api(`/api/admin/tickets/${ticket}/messages`);
@@ -1810,7 +1848,12 @@ function adminTickets(){const tickets=state.adminData||[];
  const spamCount=tickets.filter(t=>t.status==='spam').length;
  const visible=tickets.filter(t=>state.adminShowSpam||t.status!=='spam');
  const chosen=visible.find(t=>t.id===state.adminTicket);
- return `<div class="admin-ticket-layout"><div class="card" style="padding:0;overflow:hidden"><div class="row between" style="padding:17px;border-bottom:1px solid var(--line)"><b>Cuộc trò chuyện (${tickets.length})</b><button class="btn sm ghost" data-act="admin-refresh">${icon('refresh',15)}</button></div>
+ const paused=state.adminSupportPaused;
+ return `<div class="support-intake-banner">
+ <div><strong>${paused?'Tạm ngừng nhận phiếu mới':'Đang nhận phiếu mới'}</strong>
+ <p class="hint">Các phiếu đã mở vẫn có thể tiếp tục trao đổi.</p></div>
+ <button type="button" class="btn ${paused?'primary':'ghost'} sm" data-act="admin-support-intake">${paused?'Nhận hỗ trợ trở lại':'Tạm ngừng nhận hỗ trợ'}</button></div>
+ <div class="admin-ticket-layout"><div class="card" style="padding:0;overflow:hidden"><div class="row between" style="padding:17px;border-bottom:1px solid var(--line)"><b>Cuộc trò chuyện (${tickets.length})</b><button class="btn sm ghost" data-act="admin-refresh">${icon('refresh',15)}</button></div>
  <div style="padding:9px 14px;border-bottom:1px solid var(--line)"><button class="btn ghost sm" type="button" data-act="admin-show-spam">${state.adminShowSpam?'Ẩn phiếu spam':'Xem phiếu spam'} (${spamCount})</button></div>
  <div class="ticket-list">${visible.length?visible.map(t=>`<div class="ticket-item ${t.id===state.adminTicket?'selected':''}" data-act="admin-open-ticket" data-id="${t.id}">
  <div class="row between"><b>#${t.id} · ${esc(t.kind)}</b><span class="pill ${t.status==='open'?'good':'bad'}">${t.status==='open'?'Mở':t.status==='spam'?'Spam':'Đóng'}</span></div>
@@ -1819,11 +1862,12 @@ function adminTickets(){const tickets=state.adminData||[];
  <div class="row between"><div><h2>Phiếu hỗ trợ #${chosen.id}</h2><div class="hint">Loại: ${esc(chosen.kind)} · ${esc(chosen.claim)}</div></div>
  <div class="row" style="gap:7px;flex-wrap:wrap">
  <button class="btn ghost sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="${chosen.status==='open'?'closed':'open'}">${chosen.status==='open'?'Đóng':'Mở lại'}</button>
+ ${chosen.status!=='open'?`<button type="button" class="btn danger sm" data-act="admin-delete-ticket" data-id="${chosen.id}">${icon('trash',15)} Xóa cuộc trò chuyện</button>`:''}
  ${chosen.status==='spam'?'':`<button class="btn danger sm" data-act="admin-close-ticket" data-id="${chosen.id}" data-status="spam">${icon('ban',14)} Đánh dấu spam</button>`}
  </div></div>
  <div class="support-list grow" id="admin-ticket-messages" style="max-height:380px;min-height:240px">${renderTicketBubbles(state.adminTicketMessages)}</div>
- <form data-form="admin-ticket-reply" data-ticket-id="${chosen.id}"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>
- ${['password','pin'].includes(chosen.kind)?`<div class="info-strip" style="margin:0">Chỉ cấp mã đặt lại khi đã <b>xác minh danh tính bằng kênh độc lập</b>. Không dựa đơn thuần vào thông tin mà người lạ tự khai trong chat.</div>
+ ${chosen.status==='open'?`<form data-form="admin-ticket-reply" data-ticket-id="${chosen.id}"><div class="row"><input class="input" name="body" placeholder="Trả lời người dùng..." required maxlength="1500"><button class="btn primary circle">${icon('send')}</button></div></form>`:'<p class="hint">Mở lại phiếu để tiếp tục trao đổi.</p>'}
+ ${chosen.status!=='open'?'':['password','pin'].includes(chosen.kind)?`<div class="info-strip" style="margin:0">Chỉ cấp mã đặt lại khi đã <b>xác minh danh tính bằng kênh độc lập</b>. Không dựa đơn thuần vào thông tin mà người lạ tự khai trong chat.</div>
  <button class="btn ghost" data-act="admin-recovery-grant" data-id="${chosen.id}">${icon('lock',16)} Cấp mã khôi phục một lần (15 phút)</button>`:
  '<div class="hint">Nếu người dùng quên tên đăng nhập, xác minh danh tính rồi trả lời tên tài khoản trong chat.</div>'}
  `:`<div class="empty" style="margin:auto"><span class="big-emoji">💬</span>Chọn một phiếu hỗ trợ ở bên trái.</div>`}</div></div>`;
@@ -1882,6 +1926,7 @@ const auditNames={
  admin_view_user_friends:'Xem danh sách bạn bè',moderation_messages:'Kiểm tra tin nhắn',moderation_group:'Kiểm duyệt nhóm',
  moderation_attachment:'Kiểm duyệt tệp đính kèm',
  enable_admin_pin:'Bật PIN quản trị',capacity:'Thay đổi giới hạn tài khoản',
+ support_intake:'Thay đổi tiếp nhận hỗ trợ',support_delete:'Xóa cuộc trò chuyện hỗ trợ',
  ticket_status:'Thay đổi trạng thái hỗ trợ',support_mark_spam:'Đánh dấu yêu cầu spam',
  support_reply:'Trả lời yêu cầu hỗ trợ',issue_recovery:'Cấp mã khôi phục',
  broadcast:'Gửi thông báo toàn hệ thống',admin_stepup_denied:'Xác minh quyền thất bại',
@@ -1904,6 +1949,8 @@ const auditDescriptions={
  moderation_attachment:'Đã ghi nhận thao tác kiểm duyệt tệp đính kèm.',
  enable_admin_pin:'Tài khoản quản trị đã kích hoạt bảo vệ bằng mã PIN.',
  capacity:'Giới hạn số tài khoản trong hệ thống đã được thay đổi.',
+ support_intake:'Quản trị viên đã thay đổi trạng thái tiếp nhận phiếu mới.',
+ support_delete:'Quản trị viên đã xóa nội dung một cuộc hỗ trợ đã đóng.',
  ticket_status:'Trạng thái của một phiếu hỗ trợ đã được thay đổi.',
  support_mark_spam:'Một phiếu hỗ trợ đã được đánh dấu spam để ngăn gửi tin mới.',
  support_reply:'Quản trị viên đã gửi phản hồi trong phiếu hỗ trợ.',
@@ -2369,7 +2416,7 @@ async function userMessageLog(uid,peer,trigger){
   list:m=>`<article class="admin-inspection-item"><div class="grow">
    <div class="small muted">${esc(m.sender)} → ${esc(m.recipient)} · ${date(m.created_at)}</div>
    <div class="admin-inspection-message">${esc(m.body)}</div>
-   ${m.attachment_id?`<a href="/api/attachments/${m.attachment_id}" target="_blank" rel="noopener">${icon('file',14)} ${esc(m.attachment_name||'Tệp đính kèm')}</a>`:''}
+   ${m.attachment_id?`<a href="/api/attachments/${m.attachment_id}" ${m.attachment_mime?.startsWith('image/')?`data-image-viewer data-image-name="${esc(m.attachment_name||'Ảnh đính kèm')}"`:'target="_blank" rel="noopener"'}>${icon('file',14)} ${esc(m.attachment_name||'Tệp đính kèm')}</a>`:''}
    ${peer?'':`<button type="button" class="btn ghost sm" data-act="admin-view-messages" data-id="${uid}" data-peer="${m.sender_id===uid?m.recipient_id:m.sender_id}">Xem cuộc trò chuyện</button>`}
   </div></article>`,
   renderNext:before!==null?async()=>{
@@ -2426,6 +2473,7 @@ async function clickAction(button){
   case 'refresh-registration':await refreshRegistration();break;
   case 'retry-registration':state.regStatus='';state.regName='';state.regPhone='';state.regEmail='';renderAuth();break;
   case 'support-open':state.supportTicket=id;state.ticketMessages=[];await loadTicketMessages();break;
+  case 'support-refresh':await loadTickets();renderSupportPage();break;
   case 'support-back':state.supportTicket=null;state.ticketMessages=[];await loadTickets();state.user?renderApp():renderAuth();break;
   case 'delete-own-account':showPermanentDeleteDialog();break;
   case 'cancel-own-deletion':showCancelDeletionDialog();break;
@@ -2520,6 +2568,27 @@ async function clickAction(button){
    break;
   }
   case 'admin-recovery-grant':grantDialog(id);break;
+  case 'admin-support-intake':{
+   const paused=!state.adminSupportPaused,title=paused?'Tạm ngừng nhận hỗ trợ':'Nhận hỗ trợ trở lại';
+   modal({title,description:paused?'Người dùng sẽ thấy thông báo tạm ngừng khi tạo phiếu mới. Phiếu đang mở vẫn trao đổi được.':'Người dùng có thể tạo phiếu hỗ trợ mới.',
+    content:adminProofFields(),confirm:title,handler:async host=>{
+     await api('/api/admin/support/intake',{method:'PATCH',data:{paused,...adminProofValue(host)}});
+     toast(paused?'Đã tạm ngừng nhận phiếu mới.':'Đã mở lại tiếp nhận hỗ trợ.','ok');
+     await loadAdmin();
+    }});
+   break;
+  }
+  case 'admin-delete-ticket':{
+   modal({title:'Xóa cuộc trò chuyện #'+id,danger:true,confirm:'Xóa cuộc trò chuyện',
+    description:'Nội dung, tin nhắn và mã khôi phục của phiếu này sẽ bị xóa vĩnh viễn.',
+    content:adminProofFields(),handler:async host=>{
+     await api('/api/admin/tickets/'+id,{method:'DELETE',data:adminProofValue(host)});
+     if(state.adminTicket===id){adminTicketSequence++;state.adminTicket=null;state.adminTicketMessages=[];}
+     toast('Đã xóa cuộc trò chuyện hỗ trợ.','ok');
+     await loadAdmin();
+    }});
+   break;
+  }
   case 'admin-close-ticket':{
     const status=button.dataset.status;
     const labels={closed:'Đóng phiếu',open:'Mở lại phiếu',spam:'Đánh dấu spam'};
@@ -2652,8 +2721,17 @@ document.addEventListener('submit',async event=>{
     await enterApp();break;
    }
    case 'support-new':{
-    state.supportKind=val('kind');const r=await post('/api/support/tickets',{kind:state.supportKind,claim:val('claim')});
-    state.supportTicket=r.id;state.ticketMessages=[];state.user?renderApp():renderAuth();
+    state.supportKind=val('kind');
+    const claim=val('claim');
+    let r;
+    try{r=await post('/api/support/tickets',{kind:state.supportKind,claim});}
+    catch(error){
+     if(error.code==='support_paused'){state.supportPaused=true;renderSupportPage();}
+     throw error;
+    }
+    state.tickets.unshift({id:r.id,kind:state.supportKind,claim,status:'open'});
+    state.supportPaused=false;
+    state.supportTicket=r.id;state.ticketMessages=[];renderSupportPage();
     toast('Đã mở cuộc trò chuyện với admin.','ok');break;
    }
    case 'support-reply':{

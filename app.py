@@ -308,6 +308,7 @@ def init_db():
         );
         ''')
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('max_users','100')")
+        c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('support_intake_paused','0')")
         # Stable per-installation secret: never store identifiable client IPs in support counters.
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
                   ('support_rate_salt', token()))
@@ -1599,11 +1600,38 @@ class CreateTicket(BaseModel):
     claim:str=Field(default='',max_length=160)
 
 
+def support_paused(c, *, lock=False):
+    suffix=' FOR UPDATE' if POSTGRES_MODE and lock else ''
+    row=one(c,"SELECT value FROM settings WHERE key='support_intake_paused'"+suffix)
+    return bool(row and row['value']=='1')
+
+
+def lock_support_write(c):
+    if not POSTGRES_MODE:
+        c.execute('BEGIN IMMEDIATE')
+
+
+def support_ticket(c,tid,*,guest_id=None,lock=False):
+    query="SELECT * FROM tickets WHERE id=? AND status<>'deleted'"
+    values=(tid,)
+    if guest_id is not None:
+        query+=' AND guest_id=?'
+        values+=(guest_id,)
+    if POSTGRES_MODE and lock:query+=' FOR UPDATE'
+    ticket=one(c,query,values)
+    if not ticket:raise HTTPException(404,'Không tìm thấy cuộc trò chuyện hỗ trợ.')
+    return ticket
+
+
 @app.post('/api/support/tickets')
 async def create_ticket(request:Request,body:CreateTicket):
     throttle(request, 'ticket-new', 8, 3600)
     u=current_user(request,False)
     with db() as c:
+        lock_support_write(c)
+        if support_paused(c,lock=True):
+            raise HTTPException(503,{'code':'support_paused',
+                'message':'Trung tâm hỗ trợ đang tạm ngừng nhận phiếu mới.'})
         # Guest IDs are cookie-scoped, so apply a second, wider cap to the network peer.
         support_limit(c,request,'ticket-create-guest-minute',request.state.gid,1,60)
         support_limit(c,request,'ticket-create-guest-hour',request.state.gid,3,3600)
@@ -1623,20 +1651,17 @@ async def create_ticket(request:Request,body:CreateTicket):
 @app.get('/api/support/tickets')
 async def list_my_tickets(request:Request):
     with db() as c:
-        return {'tickets':many(c,'SELECT id,kind,claim,status,created_at FROM tickets WHERE guest_id=? ORDER BY id DESC LIMIT 30',(request.state.gid,))}
-
-
-def ticket_for_guest(c,request,tid):
-    r=one(c,'SELECT * FROM tickets WHERE id=? AND guest_id=?',(tid,request.state.gid))
-    if not r:raise HTTPException(404,'Không tìm thấy cuộc trò chuyện hỗ trợ.')
-    return r
+        tickets=many(c,'''SELECT id,kind,claim,status,created_at FROM tickets
+                          WHERE guest_id=? AND status<>'deleted' ORDER BY id DESC LIMIT 30''',
+                     (request.state.gid,))
+        return {'tickets':tickets,'paused':support_paused(c)}
 
 
 @app.get('/api/support/tickets/{tid}/messages')
 async def my_ticket_messages(request:Request,tid:int):
     with db() as c:
-        ticket_for_guest(c,request,tid)
-        return {'messages':many(c,'SELECT * FROM ticket_messages WHERE ticket_id=? ORDER BY id',(tid,))}
+        ticket=support_ticket(c,tid,guest_id=request.state.gid)
+        return {'status':ticket['status'],'messages':many(c,'SELECT * FROM ticket_messages WHERE ticket_id=? ORDER BY id',(tid,))}
 
 
 class SupportMessage(BaseModel):
@@ -1650,7 +1675,8 @@ async def send_ticket_message(request:Request,tid:int,body:SupportMessage):
     if not message:
         raise HTTPException(422,'Tin nhắn không được để trống.')
     with db() as c:
-        r=ticket_for_guest(c,request,tid)
+        lock_support_write(c)
+        r=support_ticket(c,tid,guest_id=request.state.gid,lock=True)
         if r['status']!='open':raise HTTPException(403,'Yêu cầu đã đóng.')
         current=now()
         last=one(c,'''SELECT body,created_at FROM ticket_messages
@@ -1684,10 +1710,18 @@ class ResetAccount(BaseModel):
 async def reset_account(request:Request,body:ResetAccount):
     throttle(request, 'ticket-reset', 12, 900)
     with db() as c:
-        r=one(c,'''SELECT g.*,t.guest_id FROM recovery_grants g
-                   JOIN tickets t ON t.id=g.ticket_id WHERE g.token_hash=?''',(digest(body.code.strip()),))
-        if not r or r['guest_id']!=request.state.gid or r['expires_at']<now() or r['used_at']:
-            raise HTTPException(403,'Mã khôi phục không hợp lệ hoặc đã hết hạn.')
+        lock_support_write(c)
+        key=digest(body.code.strip())
+        grant=one(c,'SELECT ticket_id FROM recovery_grants WHERE token_hash=?',(key,))
+        invalid='Mã khôi phục không hợp lệ hoặc đã hết hạn.'
+        if not grant:raise HTTPException(403,invalid)
+        try:
+            support_ticket(c,grant['ticket_id'],guest_id=request.state.gid,lock=True)
+        except HTTPException as error:
+            raise HTTPException(403,invalid) from error
+        r=one(c,'SELECT * FROM recovery_grants WHERE token_hash=?',(key,))
+        if not r or r['expires_at']<now() or r['used_at']:
+            raise HTTPException(403,invalid)
         if r['kind']=='password':
             ensure_password(body.new_value)
             c.execute('UPDATE users SET password_hash=? WHERE id=?',(hash_secret(body.new_value),r['user_id']))
@@ -1696,7 +1730,7 @@ async def reset_account(request:Request,body:ResetAccount):
             c.execute('UPDATE users SET pin_hash=?,pin_length=? WHERE id=?',
                       (hash_secret(body.new_value),body.pin_length,r['user_id']))
         else:raise HTTPException(400,'Loại khôi phục không được hỗ trợ.')
-        c.execute('UPDATE recovery_grants SET used_at=? WHERE token_hash=?',(now(),digest(body.code.strip())))
+        c.execute('UPDATE recovery_grants SET used_at=? WHERE token_hash=?',(now(),key))
         c.execute('DELETE FROM sessions WHERE user_id=?',(r['user_id'],))
         c.execute('DELETE FROM trusted_devices WHERE user_id=?',(r['user_id'],))
     await hub.user(r['user_id'],'session-ended',reason='Thông tin xác minh vừa được thay đổi.')
@@ -1937,7 +1971,7 @@ async def admin_user_messages(request:Request,response:Response,uid:int,peer_id:
             pair_filter='(m.sender_id=? OR m.recipient_id=?)'
             pair_params=(uid,uid)
         rows=many(c,f'''SELECT m.id,m.sender_id,m.recipient_id,s.username sender,r.username recipient,
-                              m.body,m.created_at,m.read_at,m.attachment_id,a.original_name attachment_name,
+                              m.body,m.created_at,m.read_at,m.attachment_id,a.original_name attachment_name,a.mime AS attachment_mime,
                               m.deleted_at
                        FROM messages m JOIN users s ON s.id=m.sender_id JOIN users r ON r.id=m.recipient_id
                        LEFT JOIN attachments a ON a.id=m.attachment_id
@@ -1955,15 +1989,61 @@ async def admin_user_messages(request:Request,response:Response,uid:int,peer_id:
 @app.get('/api/admin/tickets')
 async def admin_tickets(request:Request):
     require_admin(request)
-    with db() as c:return {'tickets':many(c,'SELECT * FROM tickets ORDER BY id DESC LIMIT 120')}
+    with db() as c:
+        return {'tickets':many(c,"SELECT * FROM tickets WHERE status<>'deleted' ORDER BY id DESC LIMIT 120"),
+                'paused':support_paused(c)}
 
 
 @app.get('/api/admin/tickets/{tid}/messages')
 async def admin_ticket_messages(request:Request,tid:int):
     require_admin(request)
     with db() as c:
-        if not one(c,'SELECT 1 FROM tickets WHERE id=?',(tid,)):raise HTTPException(404,'Không tìm thấy yêu cầu.')
+        support_ticket(c,tid)
         return {'messages':many(c,'SELECT * FROM ticket_messages WHERE ticket_id=? ORDER BY id',(tid,))}
+
+
+class SupportIntakeIn(BaseModel):
+    paused:bool
+    admin_pin:str=Field(default='',max_length=6)
+
+
+@app.patch('/api/admin/support/intake')
+async def set_support_intake(request:Request,body:SupportIntakeIn):
+    admin=require_admin(request)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
+    with db() as c:
+        lock_support_write(c)
+        if support_paused(c,lock=True)!=body.paused:
+            c.execute("UPDATE settings SET value=? WHERE key='support_intake_paused'",
+                      ('1' if body.paused else '0',))
+            admin_log(c,admin['id'],'support_intake','paused' if body.paused else 'open')
+    await hub.admins('support-updated')
+    return {'paused':body.paused}
+
+
+class DeleteSupportTicketIn(BaseModel):
+    admin_pin:str=Field(default='',max_length=6)
+
+
+@app.delete('/api/admin/tickets/{tid}')
+async def delete_support_ticket(request:Request,tid:int,body:DeleteSupportTicketIn):
+    admin=require_admin(request)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
+    with db() as c:
+        lock_support_write(c)
+        ticket=support_ticket(c,tid,lock=True)
+        if ticket['status'] not in ('closed','spam'):
+            raise HTTPException(409,'Hãy đóng phiếu trước khi xóa cuộc trò chuyện.')
+        c.execute('DELETE FROM recovery_grants WHERE ticket_id=?',(tid,))
+        c.execute('DELETE FROM ticket_messages WHERE ticket_id=?',(tid,))
+        # Keep the identifier so SQLite does not issue it to a different ticket.
+        c.execute("UPDATE tickets SET status='deleted',guest_id='',owner_id=NULL,claim='',kind='other',created_at=0 WHERE id=?",(tid,))
+        admin_log(c,admin['id'],'support_delete',f'ticket_id={tid}')
+    await hub.guest(ticket['guest_id'],'support-deleted',ticket_id=tid)
+    if ticket['owner_id']:
+        await hub.user(ticket['owner_id'],'support-deleted',ticket_id=tid)
+    await hub.admins('support-updated',ticket_id=tid)
+    return {'ok':True}
 
 
 class AdminSupportMessage(SupportMessage):
@@ -1975,8 +2055,9 @@ async def admin_send_ticket(request:Request,tid:int,body:AdminSupportMessage):
     admin=require_admin(request)
     verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
-        t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
-        if not t:raise HTTPException(404,'Không tìm thấy yêu cầu.')
+        lock_support_write(c)
+        t=support_ticket(c,tid,lock=True)
+        if t['status']!='open':raise HTTPException(409,'Hãy mở lại phiếu trước khi trả lời.')
         cur=c.execute('INSERT INTO ticket_messages(ticket_id,from_admin,body,created_at) VALUES(?,1,?,?)',
                       (tid,body.body.strip(),now()))
         msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':1,'body':body.body.strip(),'created_at':now()}
@@ -1999,9 +2080,10 @@ async def admin_grant(request:Request,tid:int,body:RecoveryGrantIn):
     verify_admin_pin_stepup(request,admin,body.admin_pin)
     username=norm_username(body.username)
     with db() as c:
-        t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
+        lock_support_write(c)
+        t=support_ticket(c,tid,lock=True)
         u=one(c,'SELECT * FROM users WHERE username=? AND is_admin=0',(username,))
-        if not t or not u or t['kind'] not in ('password','pin'):
+        if not u or t['kind'] not in ('password','pin'):
             raise HTTPException(400,'Chỉ yêu cầu quên mật khẩu hoặc PIN mới có thể cấp mã.')
         if t['status']!='open':raise HTTPException(409,'Phiếu hỗ trợ đã đóng.')
         raw=secrets.token_urlsafe(12)
@@ -2024,8 +2106,8 @@ async def admin_ticket_status(request:Request,tid:int,body:TicketClose):
     admin=require_admin(request)
     verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
-        t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
-        if not t:raise HTTPException(404,'Không tìm thấy yêu cầu.')
+        lock_support_write(c)
+        t=support_ticket(c,tid,lock=True)
         c.execute('UPDATE tickets SET status=? WHERE id=?',(body.status,tid))
         admin_log(c,admin['id'],'support_mark_spam' if body.status=='spam' else 'ticket_status',f'{tid}: {body.status}')
     await hub.guest(t['guest_id'],'support-updated',ticket_id=tid)
@@ -2055,7 +2137,7 @@ async def admin_broadcast(request:Request,body:Broadcast):
 # inspect/export them, but cannot alter or erase evidence through the web API.
 AUDIT_HIGH_RISK = {
     'maintenance_mode', 'admin_cancel_account_deletion', 'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
-    'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin',
+    'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin', 'support_delete',
     'sanction_ban', 'sanction_lock', 'admin_password_change',
 }
 AUDIT_MEDIUM_RISK = {

@@ -192,6 +192,19 @@ with TestClient(app, base_url="https://testserver") as admin:
             history=admin.get(f"/api/admin/reports/{report_id}/history").json()["events"]
             assert [event["status"] for event in history]==["in_review","reviewed"]
 
+        ticket=guest.post("/api/support/tickets",json={"kind":"other","claim":"Kiểm thử xóa phiếu"})
+        assert ticket.status_code==200,ticket.text
+        ticket_id=ticket.json()["id"]
+        intake="/api/admin/support/intake"
+        assert admin.patch(intake,json={"paused":True,"admin_pin":"2345"}).json()["paused"]
+        assert guest.post("/api/support/tickets",json={"kind":"other"}).json()["detail"]["code"]=="support_paused"
+        assert guest.post(f"/api/support/tickets/{ticket_id}/messages",json={"body":"Tin nhắn kiểm thử"}).status_code==200
+        path=f"/api/admin/tickets/{ticket_id}"
+        assert admin.post(path+"/status",json={"status":"closed","admin_pin":"2345"}).status_code==200
+        assert admin.request("DELETE",path,json={"admin_pin":"2345"}).status_code==200
+        assert guest.get(f"/api/support/tickets/{ticket_id}/messages").status_code==404
+        assert not admin.patch(intake,json={"paused":False,"admin_pin":"2345"}).json()["paused"]
+
         endpoint="/api/admin/security/maintenance"
         enabled=admin.post(endpoint,json={"enabled":True,"admin_pin":"2345"})
         assert enabled.status_code==200,enabled.text

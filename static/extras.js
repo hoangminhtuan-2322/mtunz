@@ -74,7 +74,7 @@ function uploadMarkup(m){
  const save=url+'?download=1';
  if(mime.startsWith('audio/')&&typeof v4AudioMarkup==='function')return v4AudioMarkup(a);
  if(safeImage(a))return `<div class="chat-media-attachment">
-  <a href="${esc(url)}" target="_blank" rel="noopener" title="Xem ảnh gốc"><img class="attached-image" src="${esc(url)}" alt="${esc(a.name)}" loading="lazy" decoding="async"></a>
+  <a href="${esc(url)}" data-image-viewer title="Xem ảnh"><img class="attached-image" src="${esc(url)}" alt="${esc(a.name)}" loading="lazy" decoding="async"></a>
   <a class="chat-media-save" href="${esc(save)}" download="${esc(a.name)}">↓ Lưu ảnh về máy</a></div>`;
  if(mime.startsWith('video/'))return `<div class="chat-media-attachment">
   <video class="chat-video" controls preload="none" playsinline src="${esc(url)}" aria-label="${esc(a.name)}"></video>
