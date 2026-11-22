@@ -180,7 +180,7 @@ function renderPins(){
   jump.title='Chuyển đến tin nhắn được ghim';
   jump.addEventListener('click',()=>{
    const target=$('#msg-'+ctx.scope+'-'+item.message_id);
-   if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('mt-highlight-message');setTimeout(()=>target.classList.remove('mt-highlight-message'),1700);}
+   if(target){pauseChatFollow(target.closest('#chat-messages'));target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('mt-highlight-message');setTimeout(()=>target.classList.remove('mt-highlight-message'),1700);}
    else toast('Tin đã ghim nằm ngoài 70 tin mới nhất. Tìm trong lịch sử để xem.','info');
   });
   const remove=el('button','mt-pin-remove','×');remove.type='button';remove.title='Bỏ ghim tin nhắn';

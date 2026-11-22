@@ -92,7 +92,7 @@ async function v6ShowAdvancedSearch(){
   const row=document.getElementById('msg-'+(group?'group':'dm')+'-'+id);
   if(row&&thread.contains(row)){
    document.querySelector('#modal-root').replaceChildren();
-   thread.dataset.followChatEnd='false';
+   pauseChatFollow(thread);
    row.scrollIntoView({block:'center',behavior:'instant'});
    row.tabIndex=-1;row.focus({preventScroll:true});
    row.classList.add('search-target');

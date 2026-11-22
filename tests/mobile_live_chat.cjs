@@ -51,7 +51,10 @@ const {chromium}=require('playwright-core');
    assert.equal(await text.inputValue(),'');
    assert(await text.evaluate(el=>document.activeElement===el));
    await text.fill('Bản nháp mới');
-   await page.locator('#chat-messages').evaluate(el=>el.scrollTo({top:120,behavior:'instant'}));
+   await page.locator('#chat-messages').evaluate(el=>{
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
+    el.scrollTo({top:120,behavior:'instant'});
+   });
    await page.getByRole('button',{name:'Về tin nhắn mới nhất'}).waitFor();
    finish();
    await page.locator('#msg-dm-42').waitFor({state:'attached'});
@@ -70,15 +73,56 @@ const {chromium}=require('playwright-core');
    assert((await searched).ok(),'Search response on '+width+'px');
    await page.locator('[data-found-message="3"]').click({timeout:8000});
    await page.locator('#msg-dm-3.search-target').waitFor();
+   // Use the real sidebar and back controls, including the collapsed mobile sidebar.
+   const latest=async()=>{
+    try{
+     await page.waitForFunction(()=>{
+      const thread=document.querySelector('#chat-messages');
+      return thread&&thread.scrollHeight-thread.scrollTop-thread.clientHeight<=2&&!thread.dataset.positioningChat;
+     },null,{timeout:8000});
+    }catch(error){
+     const metrics=await page.locator('#chat-messages').evaluate(el=>({
+      ...el.dataset,top:el.scrollTop,height:el.scrollHeight,viewport:el.clientHeight,
+      rows:el.querySelectorAll('.bubble-wrap').length
+     }));
+     throw Error('Latest message was not reached on '+width+'px '+JSON.stringify(metrics),{cause:error});
+    }
+   };
+   const selectChat=async id=>{
+    if(width<800)await page.locator('.main-head [data-act="back-to-list"]').click();
+    await page.locator('.side-item[data-act="open-chat"][data-id="'+id+'"]').click();
+    await page.waitForFunction(id=>{
+     const thread=document.querySelector('#chat-messages');
+     return thread?.dataset.chatKey==='dm-'+id&&thread.dataset.historyReady==='true';
+    },id);
+    await latest();
+   };
    await page.route('**/api/messages/14',r=>r.fulfill({json:{messages:history.map(m=>({...m,recipient_id:14}))}}));
    await page.evaluate(()=>{
     state.friends.push({other_id:14,username:'Bạn thứ hai',state:'accepted'});
-    return openChat(14);
+    renderSideItems();
    });
-   await page.waitForFunction(()=>{const el=document.querySelector('#chat-messages');return el.scrollHeight-el.scrollTop-el.clientHeight<=2&&!el.dataset.positioningChat;});
-   await page.evaluate(()=>openChat(12));
+   await selectChat(14);
+   assert.equal(await page.locator('#chat-messages .bubble-wrap').count(),40);
+   await selectChat(12);
    assert.equal(await text.inputValue(),'Bản nháp mới');
-   await page.waitForFunction(()=>{const el=document.querySelector('#chat-messages');return el.scrollHeight-el.scrollTop-el.clientHeight<=2&&!el.dataset.positioningChat;});
+
+   // A layout shift can happen after the initial frames, with a scroll event already queued.
+   const thread=page.locator('#chat-messages');
+   await thread.evaluate(el=>{
+    el.style.paddingBottom='300px';
+    el.dispatchEvent(new Event('scroll'));
+   });
+   await latest();
+   await thread.evaluate(el=>{
+    el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
+    el.scrollTo({top:0,behavior:'instant'});
+   });
+   await page.getByRole('button',{name:'Về tin nhắn mới nhất'}).waitFor();
+   assert.equal(await thread.evaluate(el=>el.scrollTop),0);
+   // Desktop reselects the active row. Mobile returns to the list and reopens it.
+   await selectChat(12);
+   assert.equal(await text.inputValue(),'Bản nháp mới');
    const alerts=await page.evaluate(()=>{
     let tones=0;
     playChatSound=()=>tones++;
