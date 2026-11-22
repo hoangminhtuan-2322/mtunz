@@ -1,0 +1,19 @@
+.chat-unread-marker{display:flex;align-items:center;gap:10px;flex:none;color:#c0b8ff;font-size:12px;font-weight:700;scroll-margin-block-start:12px}
+.chat-unread-marker::before,.chat-unread-marker::after{content:'';height:1px;flex:1;background:#8f80d47a}
+.chat-next-page{flex:none;align-self:center;margin-block:6px}
+.chat-return-position{margin-block-end:7px}
+.chat-context-list{display:grid;gap:8px;max-height:50dvh;overflow:auto;overscroll-behavior:contain}
+.chat-context-list article{padding:10px;border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere}
+.chat-context-list article.chat-context-hit{border-color:#b5a8ff;background:#383458}
+.chat-context-list article small{display:block;color:var(--muted);margin-block:3px}
+.chat-context-list article p{margin:0;white-space:pre-wrap}
+.chat-library-filters{margin-bottom:10px}
+.chat-library-filters summary{cursor:pointer;color:var(--text);padding-block:7px}
+.chat-library-filter-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:end;padding-bottom:8px}
+.chat-library-filter-form label{min-width:0;font-size:12px;color:var(--muted)}
+.chat-library-filter-form .input,.chat-library-filter-form .select{width:100%;min-width:0}
+.chat-library-result{min-width:0}
+.chat-library-actions,.report-stage-filter{display:flex;flex-wrap:wrap;gap:6px;margin-block:6px}
+.report-stage-filter button[aria-pressed=true]{border-color:#a99cff;background:#35315d;color:var(--text)}
+.compose-upload-status{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-block:4px;font-size:12px}
+.compose-upload-status progress{flex:1;min-width:48px;max-width:160px;accent-color:#a49dff}

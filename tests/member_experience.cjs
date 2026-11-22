@@ -28,7 +28,7 @@ assert(member.includes('uploadSelected(result)'),'Photo upload reuses authorized
 assert(member.includes('state.pendingAttachment'),'Attachment preview must reuse existing message state');
 assert(member.includes('photoPreparing=true'),'Only one photo may prepare at a time');
 assert(member.includes('if(!sameContext(context))'),'A photo cannot be silently attached to a different conversation');
-assert(extras.includes("await fetch('/api/uploads'"),'Existing authenticated upload remains available');
+assert(fs.readFileSync('static/chat-workflow.js','utf8').includes("xhr.open('POST','/api/uploads')"),'Existing authenticated upload remains available');
 assert(extras.includes('uploadMarkup(m)'),'Picture bubbles remain supported in direct and group messages');
 assert(app.includes('attachment_id:attachment?.id||null'),'Direct messages keep authorized attachment IDs from the captured send context');
 assert(extras.includes('attachment_id:attachment?.id||null'),'Group messages keep attachment support');
@@ -52,7 +52,7 @@ assert(css.includes('.chat-shared-location')&&css.includes('.chat-location-dialo
 assert(css.includes('@media(max-width:800px)')&&css.includes('@media(max-width:420px)'));
 assert(css.includes('prefers-reduced-motion:reduce'));
 assert(!css.includes('display:none}\n .shell:not(.admin-shell) .conversation .main-head .btn[data-act="call-video"]'),'Video call must not be hidden on mobile');
-assert(html.includes('member-experience.js?v=1.2')&&html.includes('member-experience.css?v=1.0'));
+assert(html.includes('member-experience.js?v=1.3')&&html.includes('member-experience.css?v=1.0'));
 assert(html.indexOf('member-experience.js')>html.indexOf('extras.js'),'Use existing upload functions before member enhancement');
 const events={};
 let geolocationCalls=0;

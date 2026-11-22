@@ -63,6 +63,8 @@ function groupHeader(){
  ${avatar(g.title,false,'sm')}<div class="grow"><h3>${esc(g.title)}</h3><div class="small muted">${g.member_count} thành viên</div></div>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin nhắn">${icon('search',17)}</button>
  <button type="button" class="btn ghost sm" data-chat-library aria-label="Nội dung đã chia sẻ" title="Nội dung đã chia sẻ">${icon('file',16)}</button>
+ <button type="button" class="btn ghost sm" data-workflow-alert title="Thông báo hội thoại">${icon('bell',16)}</button>
+ <button type="button" class="btn ghost sm" data-workflow-mention title="Nhắc tên thành viên">@</button>
  <button class="btn ghost sm" data-act="group-manage" title="Quản lý thành viên">${icon('users',17)} <span class="button-word">Thành viên</span></button>
  <button class="btn danger sm" data-act="group-leave" title="Rời nhóm">${icon('logout',17)}</button></header>`;
 }
@@ -201,7 +203,7 @@ function composerExtras(){
  return `<div class="compose-extra" id="compose-extra">
  ${m?`<div class="compose-reply">↳ Đang trả lời: ${esc(short(m.body||'Tệp đính kèm',80))}<button class="icon-only" data-act="cancel-reply">${icon('x',13)}</button></div>`:''}
  ${a?`<div class="compose-file">${icon('paperclip',15)} ${esc(short(a.name,45))} (${fmtSize(a.size)})<button class="icon-only" data-act="cancel-file">${icon('x',13)}</button></div>`:''}
- ${state.uploading?'<div class="compose-file">Đang tải tệp lên…</div>':''}
+ ${uploadPanel()}
  ${typeof v4VoiceComposer==='function'?v4VoiceComposer():''}</div>`;
 }
 function groupConversation(){
@@ -213,8 +215,8 @@ function groupConversation(){
  <label class="btn ghost attachment-button" title="Đính kèm ảnh, video hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Viết vào nhóm…" maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('group',g.id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
- <button type="submit" class="btn primary send" aria-label="Gửi tin nhắn">${icon('send',20)}</button>
- <div class="hint" style="margin-top:7px;font-size:10px">Tối đa 12 MB/tệp · Enter gửi · Shift+Enter xuống dòng</div></div></div>`;
+ <button type="submit" class="btn primary send" aria-label="Gửi tin nhắn">${icon('send',20)}</button></form>
+ <div class="hint" style="margin-top:7px;font-size:10px">Enter gửi · Shift+Enter xuống dòng</div></div></div>`;
 }
 async function openGroup(gid){
  const thread=$('#chat-messages');
@@ -231,12 +233,17 @@ function paintGroupThread(scroll=false){
 }
 let groupHistoryRequest=0;
 async function loadGroupMessages(scroll=true){
- const gid=state.groupSelected;if(!gid||state.tab!=='groups')return;
+ const gid=state.groupSelected;if(!gid||state.tab!=='groups'||$('#chat-messages')?.dataset.moreAfter==='true')return;
  const request=++groupHistoryRequest,uid=state.user?.id;
  const existing=new Map(state.groupMessages.map(message=>[message.id,message]));
  const current=()=>request===groupHistoryRequest&&state.tab==='groups'&&state.groupSelected===gid&&state.user?.id===uid;
  try{
-  const result=await api(`/api/groups/${gid}/messages`);
+  const box=$('#chat-messages');
+  const path=`/api/groups/${gid}/messages`;
+  let result=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
+  if(!current())return;
+  if(box?.dataset.openingChat==='true'&&result.first_unread_id&&!result.messages.some(m=>m.id===result.first_unread_id))
+   result=await api(path+'?unread_window=1');
   if(!current())return;
   const incoming=new Map(result.messages.map(message=>[message.id,message]));
   for(const message of state.groupMessages){
@@ -247,7 +254,7 @@ async function loadGroupMessages(scroll=true){
   const merged=[...incoming.values()].sort((a,b)=>a.id-b.id);
   state.groupMessages=$('#chat-messages')?.dataset.expandedHistory?merged:merged.slice(-100);
   const opening=applyChatHistoryPosition();
-  paintGroupThread(scroll||opening);
+  finishChatHistory($('#chat-messages'),result,opening,scroll,paintGroupThread);
   queueChatRead($('#chat-messages'));
  }catch(e){if(current())toast(e.message,'error');}
 }
@@ -455,15 +462,15 @@ async function extraAction(btn){
   if(state.user?.id===owner&&state.tab==='messages'&&state.selected===id)showMemberProfile(result.profile);
   break;
  }
- case 'mute-chat':case 'archive-chat':case 'pin-chat':{
+ case 'mute-chat':alertSettingsDialog();break;
+ case 'archive-chat':case 'pin-chat':{
   const f=state.friends.find(x=>x.other_id===id);if(!f)return;
-  const muted=act==='mute-chat'?!f.muted:f.muted;
+  const muted=f.muted;
   const archived=act==='archive-chat'?!f.archived:f.archived;
   const pinned=act==='pin-chat'?!f.pinned:f.pinned;
   await post(`/api/chats/${id}/preferences`,{muted,archived,pinned});
   await refreshFriends(true);
   toast(act==='pin-chat'?(pinned?'Đã ghim hội thoại lên đầu danh sách.':'Đã bỏ ghim hội thoại.'):
-   act==='mute-chat'?(muted?'Đã tắt thông báo hội thoại.':'Đã bật thông báo.'):
    (archived?'Đã lưu trữ hội thoại.':'Đã bỏ lưu trữ.'),'ok');
   break;
  }
@@ -507,15 +514,8 @@ async function extraAction(btn){
  case 'call-video':await startCall(id,true);break;
  }
 }
-async function uploadSelected(file){
- if(file.size>12*1024*1024)throw Error('Tệp tối đa 12 MB.');
- state.uploading=true;$('#compose-extra').innerHTML=composerExtras();
- try{
-  const body=new FormData();body.append('file',file);
-  const res=await fetch('/api/uploads',{method:'POST',body,credentials:'same-origin'});
-  const payload=await res.json();if(!res.ok)throw Error(typeof payload.detail==='string'?payload.detail:'Không thể tải tệp lên.');
-  state.pendingAttachment=payload.attachment;
- }finally{state.uploading=false;if($('#compose-extra'))$('#compose-extra').innerHTML=composerExtras();}
+function uploadSelected(file){
+ return sendAttachment(file);
 }
 let notificationWorker;
 function chatNotificationRegistration(){
@@ -612,7 +612,7 @@ function alertChatMessage(scope,id,message){
  seenChatAlerts.add(key);
  if(seenChatAlerts.size>120)seenChatAlerts.delete(seenChatAlerts.keys().next().value);
  const direct=scope==='dm';
- if(direct&&state.friends.find(friend=>friend.other_id===id)?.muted)return;
+ if(!workflowAllowsAlert({scope,id},message))return;
  const viewing=direct?state.tab==='messages'&&state.selected===id:state.tab==='groups'&&state.groupSelected===id;
  const text=direct?'Bạn có tin nhắn mới.':'Bạn có tin nhắn mới trong nhóm.';
  if(document.hidden){void notifyBrowser(text,'chat:'+scope+':'+id,!chatSoundEnabled());return;}
@@ -626,7 +626,7 @@ function scheduleGroupsRefresh(delay=450){
  groupRefreshTimer=setTimeout(()=>refreshGroups(false).then(()=>renderSideItems()).catch(()=>{}),delay);
 }
 function appendGroupMessage(groupId,message){
- if(!message||state.groupSelected!==groupId||state.tab!=='groups')return;
+ if(!message||state.groupSelected!==groupId||state.tab!=='groups'||$('#chat-messages')?.dataset.moreAfter==='true')return;
  const messages=state.groupMessages;
  if(messages.some(item=>item.id===message.id))return;
  const previous=messages.at(-1);
@@ -814,17 +814,32 @@ document.addEventListener('submit',async event=>{
   }
   if(key==='send-group-message'){
     if(state.uploading)throw Error('Tệp vẫn đang được tải lên.');
+    if(workflowUpload?.status==='failed'&&workflowCurrent(workflowUpload.ctx))throw Error('Thử tải tệp lại hoặc bỏ tệp trước khi gửi.');
     const body=String(fd.get('body')||'').trim();
     if(!body&&!state.pendingAttachment)return;
     const gid=state.groupSelected,owner=state.user.id;
     const current=()=>state.user?.id===owner&&state.tab==='groups'&&state.groupSelected===gid;
+    if($('#chat-messages')?.dataset.moreAfter==='true'){
+     await bringChatLatest();
+     if(!current()||!form.isConnected)return;
+    }
     const field=form.querySelector('#chat-text'),submitted=field.value;
     const attachment=state.pendingAttachment,reply=state.replyTo;
+    const payload={body,attachment_id:attachment?.id||null,reply_to:reply?.scope==='group'?reply.id:null};
+    const location=owner+':'+gid,signature=JSON.stringify(payload);
+    let retry=groupSendRetries.get(location);
+    if(!retry||retry.signature!==signature){
+     retry={signature,nonce:v4Nonce()};
+     if(groupSendRetries.size>=60)groupSendRetries.delete(groupSendRetries.keys().next().value);
+     groupSendRetries.set(location,retry);
+    }
+
     clearSentComposer(form,'group:'+gid);
     const thread=$('#chat-messages');
     if(thread?.dataset.chatKey==='group-'+gid)settleChatEnd(thread);
     try{
-     const {message}=await post('/api/groups/'+gid+'/messages',{body,attachment_id:attachment?.id||null,reply_to:reply?.scope==='group'?reply.id:null});
+     const {message}=await post('/api/groups/'+gid+'/messages',{...payload,client_message_id:retry.nonce});
+     if(groupSendRetries.get(location)===retry)groupSendRetries.delete(location);
      if(current())appendGroupMessage(gid,message);
      if(state.user?.id===owner)scheduleGroupsRefresh();
     }catch(error){

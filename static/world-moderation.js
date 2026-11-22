@@ -291,13 +291,14 @@ function adminWorldContent(){
  '<button type="button" class="btn ghost sm" data-act="admin-tab" data-tab="reports">Mở hàng chờ báo cáo</button></div>'+
  '<div class="world-admin-grid">'+control+muted+'</div>'+recent+'</div>';
 }
+const reportStages={pending:'Chờ xử lý',in_review:'Đang xem xét',reviewed:'Đã xử lý',dismissed:'Đã bác bỏ'};
 function adminReportsContent(){
  const d=state.adminData||{},items=d.reports||[];
  const cards=items.map(r=>{
-  const pending=r.status==='pending';
+  const pending=r.status==='pending',open=pending||r.status==='in_review';
   return '<article class="world-report-card"><header><strong>#'+Number(r.id)+' · '+worldEscape(worldReasonNames[r.reason]||r.reason)+'</strong>'+
    '<span class="pill '+(pending?'warn':r.status==='reviewed'?'good':'')+'">'+
-   (pending?'Chờ xem xét':r.status==='reviewed'?'Đã xem xét':'Đã bác bỏ')+'</span></header>'+
+   (reportStages[r.status]||'Không rõ')+'</span></header>'+
    '<p><b>Người báo cáo:</b> '+worldEscape(r.reporter_name||'Thành viên')+' (#'+Number(r.reporter_id)+
    ') · <b>Tài khoản bị báo cáo:</b> '+worldEscape(r.target_name||'Thành viên')+' (#'+Number(r.target_id)+')</p>'+
    '<div class="world-report-description">'+worldEscape(r.description)+'</div>'+
@@ -305,13 +306,19 @@ function adminReportsContent(){
    '<p class="hint">Nguồn: '+worldEscape(r.scope)+' · '+worldDate(r.created_at)+
    (r.source_message_id?' · Tin #'+Number(r.source_message_id):'')+'</p>'+
    (r.admin_note?'<p class="hint"><b>Ghi chú quản trị:</b> '+worldEscape(r.admin_note)+'</p>':'')+
-   (pending?'<div class="world-report-actions"><button type="button" class="btn primary sm" data-world-action="admin-review" data-world-report="'+Number(r.id)+'" data-world-decision="reviewed">Đã xem xét</button>'+
+   '<div class="world-report-actions">'+
+   (pending?'<button type="button" class="btn ghost sm" data-world-action="admin-review" data-world-report="'+Number(r.id)+'" data-world-decision="in_review">Bắt đầu xem xét</button>':'')+
+   (open?'<button type="button" class="btn primary sm" data-world-action="admin-review" data-world-report="'+Number(r.id)+'" data-world-decision="reviewed">Đánh dấu đã xử lý</button>'+
     '<button class="btn ghost sm" data-world-action="admin-review" data-world-report="'+Number(r.id)+'" data-world-decision="dismissed">Bác báo cáo</button>'+
-    '<button class="btn danger sm" data-world-action="admin-mute-user" data-world-user="'+Number(r.target_id)+'">Hạn chế Chat thế giới</button></div>':'')+
+    '<button class="btn danger sm" data-world-action="admin-mute-user" data-world-user="'+Number(r.target_id)+'">Hạn chế Chat thế giới</button>':'')+
+   (r.reviewed_at?'<button type="button" class="btn ghost sm" data-world-action="report-history" data-world-report="'+Number(r.id)+'">Nhật ký xử lý</button>':'')+
+   '</div>'+
   '</article>';
  }).join('');
- return '<div class="world-admin-page"><div class="world-admin-stats"><strong>'+Number(d.pending||0)+' báo cáo đang chờ</strong>'+
+ return '<div class="world-admin-page"><div class="world-admin-stats"><strong>'+Number(d.pending||0)+' chờ xử lý · '+Number(d.in_review||0)+' đang xem xét</strong>'+
  '<span class="hint">Chỉ admin có quyền đọc nội dung và quyết định. Các hành động được ghi nhật ký.</span></div>'+
+ '<nav class="report-stage-filter" aria-label="Trạng thái báo cáo">'+
+ Object.entries({all:'Tất cả',...reportStages}).map(([stage,label])=>'<button type="button" class="btn ghost sm" data-world-action="report-filter" data-report-stage="'+stage+'" aria-pressed="'+String((state.adminReportFilter||'all')===stage)+'">'+label+'</button>').join('')+'</nav>'+
  (cards||'<div class="card"><p class="hint">Chưa có báo cáo nào.</p></div>')+'</div>';
 }
 function worldAdminMuteDialog(uid){
@@ -379,13 +386,28 @@ document.addEventListener('click',async event=>{
     handler:async host=>{await post('/api/admin/world/messages/'+mid+'/remove',{reason:host.querySelector('#world-remove-reason').value,...adminProofValue(host)});toast('Đã gỡ tin.','ok');await loadAdmin();}});
    return;
   }
+  if(action==='report-filter'){
+   state.adminReportFilter=target.dataset.reportStage;
+   await loadAdmin();
+   return;
+  }
+  if(action==='report-history'){
+   const id=Number(target.dataset.worldReport);
+   const data=await api('/api/admin/reports/'+id+'/history');
+   if(!target.isConnected||state.adminTab!=='reports')return;
+   modal({title:'Nhật ký báo cáo #'+id,description:'Các quyết định và ghi chú của quản trị viên.',confirm:'Đóng',cancel:null,
+    content:'<div class="chat-context-list">'+data.events.map(item=>'<article><strong>'+
+     worldEscape(reportStages[item.status]||item.status)+'</strong><small>'+worldDate(item.created_at)+' · '+
+     worldEscape(item.admin_name||'Admin #'+Number(item.admin_id||0))+'</small><p>'+worldEscape(item.note)+'</p></article>').join('')+'</div>'});
+   return;
+  }
   if(action==='admin-review'){
    const id=Number(target.dataset.worldReport),decision=target.dataset.worldDecision;
-   modal({title:decision==='reviewed'?'Xác nhận xem xét báo cáo':'Bác bỏ báo cáo',
+   modal({title:decision==='in_review'?'Bắt đầu xem xét báo cáo':decision==='reviewed'?'Xác nhận đã xử lý báo cáo':'Bác bỏ báo cáo',
     description:'Quyết định được lưu cùng người thực hiện và thời gian để có thể kiểm toán.',
     confirm:'Lưu quyết định',cancel:'Hủy',
     content:'<label>Ghi chú xử lý<input id="world-review-note" class="input" maxlength="600" value="'+
-     (decision==='reviewed'?'Đã kiểm tra và xem xét nội dung báo cáo':'Không đủ bằng chứng để xử lý')+'"></label>'+
+     (decision==='in_review'?'Đã tiếp nhận để kiểm tra':decision==='reviewed'?'Đã kiểm tra và xử lý nội dung báo cáo':'Không đủ bằng chứng để xử lý')+'"></label>'+
      adminProofFields(),
     handler:async host=>{const note=host.querySelector('#world-review-note').value.trim();
       if(note.length<5)throw Error('Ghi chú cần tối thiểu 5 ký tự.');

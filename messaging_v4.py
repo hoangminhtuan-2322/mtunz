@@ -226,9 +226,7 @@ def install(core):
                     c.execute('''UPDATE scheduled_messages
                               SET state='sent',updated_at=?,message_id=? WHERE id=?''',
                               (now(),saved.lastrowid,row['id']))
-                    p=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
-                          (recipient_id,sender_id))
-                    if not p or not p['muted']:
+                    if core.alert_allowed(c,'dm',recipient_id,sender_id,row['body'],now()):
                         core.notify_user_persist(c,recipient_id,
                             (f'Tin nhắn tự biến mất từ {sender["display_name"] or "Thành viên"}.'
                              if lifespan else

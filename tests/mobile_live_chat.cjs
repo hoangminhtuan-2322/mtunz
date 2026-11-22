@@ -46,6 +46,29 @@ const {chromium}=require('playwright-core');
    assert(await page.locator('.chat-library').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
    await page.locator('#modal-confirm').click();
 
+   await page.evaluate(()=>{
+    window.workflowTestUploadKeys=[];
+    const send=XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send=function(data){
+     if(data instanceof FormData&&data.has('upload_key'))window.workflowTestUploadKeys.push(data.get('upload_key'));
+     return send.call(this,data);
+    };
+   });
+   let uploadCount=0;
+   await page.route('**/api/uploads',r=>{
+    if(++uploadCount===1)return r.fulfill({status:503,json:{detail:'Kết nối bị gián đoạn.'}});
+    return r.fulfill({json:{attachment:{id:8,name:'draft.txt',mime:'text/plain',size:4,url:'/api/attachments/8'}}});
+   });
+   await page.locator('#chat-text').fill('Giữ nội dung đang soạn');
+   await page.locator('.chat-file-tool input').setInputFiles({name:'draft.txt',mimeType:'text/plain',buffer:Buffer.from('test')});
+   await page.getByRole('button',{name:'Thử lại',exact:true}).click();
+   await page.locator('.compose-file').filter({hasText:'draft.txt'}).waitFor();
+   const uploadKeys=await page.evaluate(()=>window.workflowTestUploadKeys);
+   assert(uploadKeys[0]&&uploadKeys[0]===uploadKeys[1]);
+   assert.equal(await page.locator('#chat-text').inputValue(),'Giữ nội dung đang soạn');
+   await page.locator('[data-act="cancel-file"]').click();
+   await page.locator('#chat-text').fill('');
+
    await page.route('**/api/chats/12/nickname',r=>r.fulfill({json:{nickname:r.request().postDataJSON().nickname}}));
    await page.locator('.chat-header-more summary').click();
    await page.locator('[data-chat-nickname="12"]').click();
@@ -187,6 +210,7 @@ const {chromium}=require('playwright-core');
    assert((await searched).ok(),'Search response on '+width+'px');
    await page.locator('[data-found-message="3"]').click({timeout:8000});
    await page.locator('#msg-dm-3.search-target').waitFor();
+   await page.getByRole('button',{name:'Về vị trí đang đọc',exact:true}).click();
    // Use the real sidebar and back controls, including the collapsed mobile sidebar.
    const latest=async()=>{
     try{

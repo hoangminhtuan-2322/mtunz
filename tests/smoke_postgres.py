@@ -165,16 +165,32 @@ with TestClient(app, base_url="https://testserver") as admin:
             full=peer.get(media,params={"download":"1"},headers={"Range":"bytes=0-1"})
             assert full.status_code==200 and full.content==video
             assert full.headers["content-disposition"].startswith("attachment;")
+
+            group=guest.post("/api/groups",json={"title":"Nhóm kiểm thử","member_ids":[victim["id"]]})
+            assert group.status_code==200,group.text
+            gid=group.json()["id"]
+            send={"body":"Nhắn một lần","client_message_id":"c_postgres_retry_1234567"}
+            grouped=guest.post(f"/api/groups/{gid}/messages",json=send)
+            assert grouped.status_code==200,grouped.text
+            repeat=guest.post(f"/api/groups/{gid}/messages",json=send)
+            assert repeat.json()["message"]["id"]==grouped.json()["message"]["id"]
+            seen=peer.get(f"/api/groups/{gid}/messages")
+            assert seen.status_code==200 and seen.json()["first_unread_id"]==grouped.json()["message"]["id"],seen.text
             complaint=peer.post("/api/reports",json={
                 "target_id":original["id"],"scope":"world","message_id":message_id,
                 "reason":"spam","description":"Tin nhắn công cộng cần kiểm tra"})
             assert complaint.status_code==200,complaint.text
             report_id=complaint.json()["report_id"]
             assert report_id>0
+            started=admin.post(f"/api/admin/reports/{report_id}/review",json={
+                "decision":"in_review","note":"Đang kiểm tra","admin_pin":"2345"})
+            assert started.status_code==200,started.text
             review=admin.post(f"/api/admin/reports/{report_id}/review",json={
                 "decision":"reviewed","note":"Đã kiểm tra trên PostgreSQL",
                 "admin_pin":"2345"})
             assert review.status_code==200,review.text
+            history=admin.get(f"/api/admin/reports/{report_id}/history").json()["events"]
+            assert [event["status"] for event in history]==["in_review","reviewed"]
 
         endpoint="/api/admin/security/maintenance"
         enabled=admin.post(endpoint,json={"enabled":True,"admin_pin":"2345"})

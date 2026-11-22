@@ -503,7 +503,7 @@ async def cookies_and_origin(request: Request, call_next):
             path in ('/api/uploads','/api/world/messages',
                      '/api/registration/request','/api/registration/complete',
                      '/api/me/profile','/api/me/social')
-            or (path.startswith('/api/chats/') and path.endswith('/nickname'))
+            or (path.startswith('/api/chats/') and path.endswith(('/nickname','/alerts')))
             or path.startswith(('/api/messages','/api/scheduled-messages',
                                 '/api/groups','/api/message-requests',
                                 '/api/world/polls/','/api/chat/pins',
@@ -1282,7 +1282,7 @@ async def get_friends(request: Request):
                  COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,
                  u.display_name,u.show_online,u.last_seen,u.public_id,
                  u.avatar_attachment_id,u.profile_visibility,
-                 COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
+                 COALESCE(p.muted,0) AS muted,COALESCE(p.mute_until,0) AS mute_until,COALESCE(p.archived,0) AS archived,
                  COALESCE(p.pinned,0) AS pinned,COALESCE(p.vanish_seconds,0) AS vanish_seconds,
                  CASE WHEN f.state='accepted' THEN COALESCE(p.nickname,'') ELSE '' END AS nickname,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
@@ -1432,7 +1432,8 @@ class SendMessage(BaseModel):
 
 
 @app.get('/api/messages/{other_id}')
-async def message_history(request:Request,other_id:int,before:int=0):
+async def message_history(request:Request,other_id:int,before:int=Query(0,ge=0,le=2**63-1),
+                              after:int=Query(0,ge=0,le=2**63-1),latest:bool=False,unread_window:bool=False):
     u=current_user(request)
     with db() as c:
         require_peer(c,u['id'],other_id)
@@ -1441,10 +1442,13 @@ async def message_history(request:Request,other_id:int,before:int=0):
         params=[u['id'],other_id,other_id,u['id']]
         sql+=' AND (expires_at IS NULL OR expires_at>?)'
         params.append(now())
-        if before>0:
-            sql+=' AND id<?';params.append(before)
-        sql+=' ORDER BY id DESC LIMIT 70'
-        result=message_page(c,many(c,sql,params)[::-1],viewer_id=u['id'])
+        unread=None
+        if not before and not after and not latest:
+            unread=one(c,'''SELECT MIN(id) AS id FROM messages WHERE sender_id=? AND recipient_id=?
+                            AND deleted_at IS NULL AND read_at IS NULL AND (expires_at IS NULL OR expires_at>?)''',
+                       (other_id,u['id'],params[-1]))['id']
+        rows,more_after=history_window(c,many,sql,params,before,after,latest or not unread_window,unread)
+        result=message_page(c,rows,viewer_id=u['id'])
         # Hide read receipts when the reader opted out or restricted the sender.
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
         if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
@@ -1452,7 +1456,7 @@ async def message_history(request:Request,other_id:int,before:int=0):
                 if item['sender_id']==u['id']:
                     item['read_at']=None
                     item['delivered_at']=None
-    return {'messages':result}
+    return {'messages':result,'first_unread_id':unread,'more_after':more_after}
 
 
 @app.post('/api/messages')
@@ -1511,9 +1515,7 @@ async def send_message(request:Request,body:SendMessage):
                 replay=True
             else:
                 msg=message_details(c,one(c,'SELECT * FROM messages WHERE id=?',(cursor.lastrowid,)),viewer_id=u['id'])
-                pref=one(c,'SELECT muted FROM chat_preferences WHERE user_id=? AND other_id=?',
-                         (body.recipient_id,u['id']))
-                if not pref or not pref['muted']:
+                if alert_allowed(c,'dm',body.recipient_id,u['id'],text,now()):
                     notify_user_persist(c,body.recipient_id,
                        (f'Tin nhắn tự biến mất từ {u["display_name"] or "Thành viên"}.'
                         if vanish else
@@ -2322,7 +2324,7 @@ async def websocket_events(ws:WebSocket):
 import sys as _sys
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
-from chat_library import install as _install_chat_library
+from chat_library import alert_allowed, history_window, install as _install_chat_library
 _install_chat_library(_sys.modules[__name__])
 from web_notifications import install as _install_web_notifications
 _install_web_notifications(_sys.modules[__name__])

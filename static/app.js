@@ -388,6 +388,10 @@ function connectSocket(retry=false){
    socketRetryDelay=2500;
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='chat-alert-settings'&&state.user&&!state.user.is_admin){
+    applyWorkflowAlerts(data.scope,data.chat_id,data.mode,data.until);
+    return;
+   }
    if(t==='identity-updated'&&state.user&&!state.user.is_admin){
      const owner=state.user.id;
      const fresh=(await api('/api/me').catch(()=>null))?.user;
@@ -1135,6 +1139,8 @@ function queueChatRead(box){
    if(next!==box)queueChatRead(next);
    return;
   }
+  const partial=box.dataset.moreAfter==='true';
+  if(partial&&box.scrollHeight-box.clientHeight-box.scrollTop>2)return;
   const rows=group?state.groupMessages:state.messages;
   const latest=rows.reduce((max,m)=>m.sender_id!==owner&&!m.deleted_at?Math.max(max,m.id):max,0);
   const accountKey=owner+':'+key;
@@ -1147,7 +1153,8 @@ function queueChatRead(box){
    const current=group?state.groupMessages:state.messages;
    if(current.some(m=>m.sender_id!==owner&&m.id>latest))return;
    const item=group?state.groups.find(g=>g.id===id):state.friends.find(f=>f.other_id===id);
-   if(item?.unread){item.unread=0;renderSideItems();}
+   if(partial){if(group)scheduleGroupsRefresh(0);else scheduleFriendsRefresh(0);}
+   else if(item?.unread){item.unread=0;renderSideItems();}
   }).catch(()=>{
    if(chatReadThrough.get(accountKey)===latest)chatReadThrough.delete(accountKey);
   });
@@ -1155,7 +1162,7 @@ function queueChatRead(box){
 }
 function updateLatestButton(box){
  const button=box.parentElement.querySelector('.chat-latest');
- if(button)button.hidden=chatNearEnd(box);
+ if(button)button.hidden=box.dataset.moreAfter!=='true'&&chatNearEnd(box);
 }
 function latestChatButton(){
  return '<button type="button" class="chat-latest" data-act="chat-latest" aria-label="Về tin nhắn mới nhất" hidden>'+icon('chevron',15)+' Tin mới nhất</button>';
@@ -1191,6 +1198,7 @@ async function loadOlderChat(box=$('#chat-messages')){
    if(group)state.groupMessages=[...older,...current];
    else state.messages=[...older,...current];
    box.innerHTML=chatHistoryMarkup(rows(),group);
+   paintChatMarkers(box);
    if(box.dataset.historyDone)box.querySelector('.chat-older')?.remove();
    const next=document.getElementById('msg-'+(group?'group':'dm')+'-'+first.id);
    box.scrollTop=top+(next&&anchorTop!==undefined?next.getBoundingClientRect().top-anchorTop:box.scrollHeight-height);
@@ -1320,6 +1328,7 @@ function restoreThreadPosition(box,position){
 function paintChatThread(box,markup,scroll){
  const position=scroll?null:captureThreadPosition(box);
  box.innerHTML=markup;
+ paintChatMarkers(box);
  if(box.dataset.historyDone)box.querySelector('.chat-older')?.remove();
  if(scroll)settleChatEnd(box);
  else restoreThreadPosition(box,position);
@@ -1349,7 +1358,7 @@ function patchThreadRow(box,message,previous,messages,scope,replaceId,redraw){
 }
 function appendDirectMessage(message,reveal=false){
  if(!message||!state.selected||state.tab!=='messages')return;
- if(![message.sender_id,message.recipient_id].includes(state.selected))return;
+ if(![message.sender_id,message.recipient_id].includes(state.selected)||$('#chat-messages')?.dataset.moreAfter==='true')return;
  const nonce=message.client_message_id;
  const currentIndex=state.messages.findIndex(x=>x.id===message.id||
    (nonce&&x.id<0&&x.client_message_id===nonce&&x.sender_id===message.sender_id));
@@ -1381,12 +1390,16 @@ function compareChatMessages(a,b){
  return (a.id<0)-(b.id<0)||b.id-a.id;
 }
 async function loadMessages(scroll=true){
- const friend=state.selected;if(!friend)return;
+ const friend=state.selected;if(!friend||$('#chat-messages')?.dataset.moreAfter==='true')return;
  const seq=++dmLoadGeneration,userId=state.user?.id;
  const existing=new Map(state.messages.map(m=>[m.id,{message:m,read:m.read_at,delivered:m.delivered_at}]));
  const current=()=>seq===dmLoadGeneration&&state.selected===friend&&state.tab==='messages'&&state.user?.id===userId;
  try{
-  const r=await api('/api/messages/'+friend);
+  const box=$('#chat-messages');
+  const path='/api/messages/'+friend;
+  let r=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
+  if(!current())return;
+  if(box?.dataset.openingChat==='true'&&r.first_unread_id&&!r.messages.some(m=>m.id===r.first_unread_id))r=await api(path+'?unread_window=1');
   if(!current())return;
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
   for(const message of r.messages){
@@ -1411,7 +1424,7 @@ async function loadMessages(scroll=true){
   const merged=[...known.values(),...local].sort(compareChatMessages);
   state.messages=$('#chat-messages')?.dataset.expandedHistory?merged:merged.slice(-100);
   const opening=applyChatHistoryPosition();
-  renderMessageThread(scroll||opening);
+  finishChatHistory($('#chat-messages'),r,opening,scroll,renderMessageThread);
   const inbound=[...r.messages].reverse().find(m=>m.sender_id===friend);
   if(inbound&&typeof v4AckIncoming==='function')v4AckIncoming(inbound);
   queueChatRead($('#chat-messages'));
@@ -1561,6 +1574,7 @@ function worldComingSoon(){
  </div>`;
 }
 function renderApp(){
+ abortStaleWorkflowUpload();
  const oldThread=$('#chat-messages');
  const previousKey=oldThread?.dataset.chatKey;
  const opening=oldThread?.dataset.openingChat==='true';
@@ -1589,6 +1603,10 @@ function renderApp(){
   const same=thread.dataset.chatKey===previousKey;
   if(same&&opening)thread.dataset.openingChat='true';
   if(same&&ready)thread.dataset.historyReady='true';
+  if(same){
+   for(const key of ['firstUnread','moreAfter'])if(oldThread.dataset[key])thread.dataset[key]=oldThread.dataset[key];
+   paintChatMarkers(thread);
+  }
   if(same&&oldThread.dataset.expandedHistory)thread.dataset.expandedHistory='true';
   if(same&&oldThread.dataset.historyDone){
    thread.dataset.historyDone='true';
@@ -1666,7 +1684,7 @@ async function loadAdmin(){
     break;
    }
    case 'ops':update.adminData=await api('/api/admin/ops/overview');break;
-   case 'reports':update.adminData=await api('/api/admin/reports?status=all');break;
+   case 'reports':update.adminData=await api('/api/admin/reports?status='+encodeURIComponent(state.adminReportFilter||'all'));break;
    case 'overview':{
     const [st,reg,aud]=await Promise.all([api('/api/admin/stats'),api('/api/admin/registrations'),api('/api/admin/audit')]);
     update.adminData={stats:st,registrations:reg.registrations,activity:(aud.logs||[]).slice(0,6)};break;
@@ -2419,7 +2437,7 @@ async function clickAction(button){
    break;
   }
   case 'chat-older':await loadOlderChat();break;
-  case 'chat-latest':followChatEnd($('#chat-messages'));break;
+  case 'chat-latest':await bringChatLatest();break;
   case 'app-tab':await goTab(button.dataset.tab);break;
   case 'rail-more':state.railMoreOpen=!state.railMoreOpen;renderApp();break;
   case 'back-to-list':state.selected=null;state.groupSelected=null;state.tab=state.tab==='groups'?'groups':'messages';renderApp();break;
@@ -2661,10 +2679,15 @@ document.addEventListener('submit',async event=>{
    }
    case 'send-message':{
     if(state.uploading)throw Error('Tệp vẫn đang tải lên.');
+    if(workflowUpload?.status==='failed'&&workflowCurrent(workflowUpload.ctx))throw Error('Thử tải tệp lại hoặc bỏ tệp trước khi gửi.');
     const content=String(fd.get('body')||'').trim();
     if(!content&&!state.pendingAttachment)return;
     const recipient=state.selected,attachment=state.pendingAttachment,owner=state.user.id;
     if(!recipient)throw Error('Hãy chọn người nhận.');
+    if($('#chat-messages')?.dataset.moreAfter==='true'){
+     await bringChatLatest();
+     if(!form.isConnected||state.selected!==recipient||state.user?.id!==owner)return;
+    }
     const key=owner+':'+recipient;
     const queue=directSendQueues.get(key)||[];
     if(queue.length>=20)throw Error('Đang chờ gửi nhiều tin nhắn. Vui lòng đợi một chút.');

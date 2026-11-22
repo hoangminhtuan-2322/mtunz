@@ -75,6 +75,12 @@ def install(core):
           reviewed_by INTEGER,
           admin_note TEXT NOT NULL DEFAULT ''
         );
+        CREATE TABLE IF NOT EXISTS report_review_events (
+          report_id BIGINT NOT NULL REFERENCES user_reports(id) ON DELETE CASCADE,
+          status TEXT NOT NULL, note TEXT NOT NULL,
+          admin_id INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at BIGINT NOT NULL,
+          PRIMARY KEY(report_id,status)
+        );
         CREATE INDEX IF NOT EXISTS user_reports_queue_idx
           ON user_reports(status,created_at);
         CREATE INDEX IF NOT EXISTS user_reports_reporter_idx
@@ -451,7 +457,7 @@ def install(core):
                     raise HTTPException(422,'Hãy chọn nguồn tin nhắn hợp lệ.')
                 evidence=msg['body'][:500]
             recent=one(c,'''SELECT id FROM user_reports WHERE reporter_id=? AND target_id=?
-                            AND created_at>? AND status='pending' LIMIT 1''',
+                            AND created_at>? AND status IN ('pending','in_review') LIMIT 1''',
                        (reporter['id'],target_id,at-3600))
             if recent:
                 raise HTTPException(429,'Bạn đã gửi báo cáo cho thành viên này. Vui lòng chờ admin xem xét.')
@@ -469,7 +475,7 @@ def install(core):
     @app.get('/api/admin/reports')
     async def list_reports(request:Request,status:str='pending'):
         require_admin(request)
-        if status not in ('pending','reviewed','dismissed','all'):
+        if status not in ('pending','in_review','reviewed','dismissed','all'):
             raise HTTPException(422,'Bộ lọc không hợp lệ.')
         with db() as c:
             query='''SELECT r.*,a.display_name AS reporter_name,b.display_name AS target_name
@@ -482,10 +488,24 @@ def install(core):
             query+=' ORDER BY r.created_at DESC LIMIT 120'
             rows=many(c,query,args)
             pending=one(c,"SELECT COUNT(*) AS n FROM user_reports WHERE status='pending'")['n']
-            return {'reports':rows,'pending':pending}
+            in_review=one(c,"SELECT COUNT(*) AS n FROM user_reports WHERE status='in_review'")['n']
+            return {'reports':rows,'pending':pending,'in_review':in_review}
+
+    @app.get('/api/admin/reports/{report_id}/history')
+    async def report_history(request:Request,report_id:int):
+        require_admin(request)
+        with db() as c:
+            report=one(c,'SELECT status,admin_note,reviewed_at,reviewed_by FROM user_reports WHERE id=?',(report_id,))
+            if not report:raise HTTPException(404,'Báo cáo không tồn tại.')
+            events=many(c,'''SELECT e.status,e.note,e.created_at,e.admin_id,u.username AS admin_name
+                             FROM report_review_events e LEFT JOIN users u ON u.id=e.admin_id
+                             WHERE e.report_id=? ORDER BY e.created_at,CASE WHEN e.status='in_review' THEN 0 ELSE 1 END''',(report_id,))
+            if not events and report['reviewed_at']:
+                events=[{'status':report['status'],'note':report['admin_note'],'created_at':report['reviewed_at'],'admin_id':report['reviewed_by']}]
+        return {'events':events}
 
     class ReportReview(BaseModel):
-        decision:Literal['reviewed','dismissed']
+        decision:Literal['in_review','reviewed','dismissed']
         note:str=Field(min_length=5,max_length=600)
         admin_pin:str=Field(default='',max_length=6)
 
@@ -497,15 +517,24 @@ def install(core):
         with db() as c:
             report=one(c,'SELECT * FROM user_reports WHERE id=?',(report_id,))
             if not report:raise HTTPException(404,'Báo cáo không tồn tại.')
-            if report['status']!='pending':raise HTTPException(409,'Báo cáo đã được xử lý.')
-            c.execute('''UPDATE user_reports SET status=?,admin_note=?,reviewed_at=?,reviewed_by=?
-                         WHERE id=?''',(body.decision,body.note.strip(),at,admin['id'],report_id))
+            allowed=('pending',) if body.decision=='in_review' else ('pending','in_review')
+            if report['status'] not in allowed:raise HTTPException(409,'Trạng thái báo cáo đã thay đổi.')
+            note=body.note.strip()
+            if len(note)<5:raise HTTPException(422,'Ghi chú cần tối thiểu 5 ký tự.')
+            changed=c.execute('''UPDATE user_reports SET status=?,admin_note=?,reviewed_at=?,reviewed_by=?
+                                 WHERE id=? AND status=?''',(body.decision,note,at,admin['id'],report_id,report['status']))
+            if not changed.rowcount:raise HTTPException(409,'Trạng thái báo cáo đã thay đổi.')
+            c.execute('INSERT INTO report_review_events(report_id,status,note,admin_id,created_at) VALUES(?,?,?,?,?)',
+                      (report_id,body.decision,note,admin['id'],at))
+
             admin_log(c,admin['id'],'member_report_review',
                       f'report_id={report_id}; decision={body.decision}; target_id={report["target_id"]}')
-            c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
-                      (report['reporter_id'],
-                       'Báo cáo #'+str(report_id)+' đã được quản trị viên xem xét.',at))
-        await hub.user(report['reporter_id'],'notifications-updated')
+            if body.decision!='in_review':
+                c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
+                          (report['reporter_id'],'Báo cáo #'+str(report_id)+' đã được quản trị viên xem xét.',at))
+        if body.decision!='in_review':
+            await hub.user(report['reporter_id'],'notifications-updated')
+        await hub.admins('world-report-new',report_id=report_id)
         return {'ok':True,'decision':body.decision}
 
     class DeleteWorldMessage(BaseModel):
