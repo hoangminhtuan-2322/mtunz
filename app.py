@@ -624,8 +624,20 @@ def require_member_service(c, lock=False):
         raise HTTPException(503,{'code':'maintenance','message':detail})
 
 
+def request_session_token(request):
+    """Browser HttpOnly session cookie or native bearer session from same database."""
+    cookie=request.cookies.get('s')
+    if cookie:return cookie
+    header=request.headers.get('authorization','')
+    if header.startswith('Bearer '):
+        token=header[7:]
+        if re.fullmatch(r'[A-Za-z0-9_-]{30,128}',token):
+            return token
+    return None
+
+
 def current_user(request: Request, require=True, *, allow_deletion=False):
-    t = request.cookies.get('s')
+    t = request_session_token(request)
     with db() as c:
         row = one(c, '''SELECT u.*,s.expires_at,
                        (SELECT purge_at FROM account_deletion_requests WHERE user_id=u.id) AS deletion_purge_at,
@@ -1144,9 +1156,9 @@ async def setup_admin_pin(request:Request,body:SetupAdminPin):
                   (hash_secret(body.pin),body.pin_length,u['id']))
         c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
         c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
-                  (u['id'],digest(request.cookies.get('s',''))))
+                  (u['id'],digest(request_session_token(request) or '')))
         admin_log(c,u['id'],'enable_admin_pin','Administrator enabled PIN for remembered devices')
-    await hub.terminate_user(u['id'],except_hash=digest(request.cookies.get('s','')))
+    await hub.terminate_user(u['id'],except_hash=digest(request_session_token(request) or ''))
     return {'ok':True,'pin_length':body.pin_length}
 
 
@@ -1181,7 +1193,7 @@ async def complete_display_name(request: Request, body: SetOnboardingName):
 
 @app.post('/api/auth/logout')
 async def logout(request: Request):
-    t = request.cookies.get('s')
+    t = request_session_token(request)
     remembered = request.cookies.get(REMEMBER_COOKIE)
     with db() as c:
         if t:
@@ -1239,9 +1251,9 @@ async def change_password(request: Request, body: ChangePassword):
             raise HTTPException(401,'Mật khẩu hiện tại không đúng.')
         c.execute('UPDATE users SET password_hash=? WHERE id=?', (hash_secret(body.new_password),u['id']))
         c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
-                  (u['id'],digest(request.cookies.get('s',''))))
+                  (u['id'],digest(request_session_token(request) or '')))
         c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
-    await hub.terminate_user(u['id'], except_hash=digest(request.cookies.get('s','')))
+    await hub.terminate_user(u['id'], except_hash=digest(request_session_token(request) or ''))
     return {'ok':True}
 
 
@@ -1541,6 +1553,8 @@ async def read_messages(request:Request,other_id:int,
         suppress=is_restricted(c,u['id'],other_id) or not u['show_receipts']
     if cursor.rowcount and not suppress:
         await hub.user(other_id,'read',by=u['id'],at=t,up_to=up_to)
+    if cursor.rowcount:
+        await hub.user(u['id'],'friends-updated')
     return {'ok':True}
 
 
@@ -2282,10 +2296,15 @@ async def websocket_events(ws:WebSocket):
     origin = ws.headers.get('origin')
     # Browsers send Origin for websocket upgrades. A public deployment refuses
     # cookie-authenticated browser connections without an origin check.
-    if PUBLIC_MODE and not origin:
+    auth=ws.headers.get('authorization','')
+    native_token=(auth[7:] if auth.startswith('Bearer ')
+                  and re.fullmatch(r'[A-Za-z0-9_-]{30,128}',auth[7:]) else None)
+    # Keep Origin enforcement for browser cookie connections. Native client
+    # uses a revocable bearer session validated against the same DB.
+    if PUBLIC_MODE and not origin and not native_token:
         await ws.close(code=1008)
         return
-    if origin:
+    if origin and not native_token:
         from urllib.parse import urlsplit
         try:
             actual = urlsplit(origin)
@@ -2299,7 +2318,7 @@ async def websocket_events(ws:WebSocket):
             await ws.close(code=1008)
             return
     await ws.accept()
-    sid=ws.cookies.get('s')
+    sid=ws.cookies.get('s') or native_token
     gid=ws.cookies.get('g')
     if gid and (len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}',gid)):
         gid = None
@@ -2404,12 +2423,16 @@ async def websocket_events(ws:WebSocket):
 
 # Persistent upgrades and additional routed features.
 import sys as _sys
+from mobile_api import install as _install_mobile_api
+_install_mobile_api(_sys.modules[__name__])
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
 from chat_library import alert_allowed, history_window, install as _install_chat_library
 _install_chat_library(_sys.modules[__name__])
 from web_notifications import install as _install_web_notifications
 _install_web_notifications(_sys.modules[__name__])
+from mobile_push import install as _install_mobile_push
+_install_mobile_push(_sys.modules[__name__])
 from world_chat import install as _install_world_chat
 _install_world_chat(_sys.modules[__name__])
 from social_profile import install as _install_social_profile
