@@ -26,7 +26,7 @@ function openImageViewer(origin,url){
  dialog.querySelector('#image-viewer-title').textContent=filename;
  download.href=url.pathname+'?download=1';
  download.download=originalImage?.alt||origin.dataset.imageName||'';
- let zoom=1;
+ let zoom=1,pinch=null;
  function size(){
   if(!image.naturalWidth)return;
   const x=(stage.scrollLeft+stage.clientWidth/2)/Math.max(stage.clientWidth,stage.scrollWidth);
@@ -38,6 +38,29 @@ function openImageViewer(origin,url){
   zoomOut.disabled=zoom<=1;
   zoomIn.disabled=zoom>=4;
  }
+ // Only intercept two-finger touch gestures, so ordinary one-finger
+ // scrolling/panning remains native on small screens.
+ stage.addEventListener('touchstart',event=>{
+  if(event.touches.length!==2||!image.naturalWidth){pinch=null;return;}
+  const [a,b]=event.touches;
+  pinch={distance:Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY),zoom};
+ },{passive:true});
+ stage.addEventListener('touchmove',event=>{
+  if(!pinch||event.touches.length!==2||!image.naturalWidth)return;
+  const [a,b]=event.touches,dist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+  if(!pinch.distance)return;
+  const next=Math.max(1,Math.min(4,pinch.zoom*dist/pinch.distance));
+  if(Math.abs(next-zoom)>.01){zoom=next;size();}
+  event.preventDefault();
+ },{passive:false});
+ stage.addEventListener('touchend',event=>{if(event.touches.length<2)pinch=null;},{passive:true});
+ stage.addEventListener('touchcancel',()=>{pinch=null;},{passive:true});
+ stage.addEventListener('wheel',event=>{
+  if(!event.ctrlKey||!image.naturalWidth)return;
+  event.preventDefault();
+  zoom=Math.max(1,Math.min(4,zoom+(event.deltaY<0?.25:-.25)));
+  size();
+ },{passive:false});
  close.addEventListener('click',()=>dialog.close());
  dialog.addEventListener('click',event=>{
   if(event.target===dialog){dialog.close();return;}

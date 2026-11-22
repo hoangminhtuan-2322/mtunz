@@ -1,0 +1,50 @@
+/* mtunz web stability v9. Mobile-first, strictly bounded changes. */
+.mt-realtime-status{
+ position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;
+ transform:translateX(-50%);z-index:1700;display:flex;align-items:center;gap:10px;
+ width:max-content;max-width:min(550px,calc(100vw - 28px));
+ background:#1d2b44;border:1px solid #71829f;color:#f1f7ff;
+ box-shadow:0 8px 24px #03091899;border-radius:16px;padding:10px 12px;
+ font-size:13px;line-height:1.35
+}
+.mt-realtime-indicator{height:9px;width:9px;border-radius:50%;background:#efba72;flex:none}
+.mt-realtime-copy{min-width:0;flex:1}
+.mt-realtime-retry{
+ border:1px solid #6f8bb2;background:#274d78;color:#fff;border-radius:10px;
+ padding:8px 12px;min-height:39px;font-weight:800;cursor:pointer
+}
+.side-scroll .side-item[data-act="open-chat"]{
+ width:100%;font:inherit;color:inherit;border:0;text-align:left;
+ background:transparent
+}
+.side-scroll .side-item[data-act="open-chat"]:hover,
+.side-scroll .side-item[data-act="open-chat"]:focus-visible{background:#283754}
+.side-scroll .side-item[data-act="open-chat"].active{background:#303455}
+.side-scroll .side-item[data-act="open-chat"]:focus-visible,
+.side-more:focus-visible,.mt-realtime-retry:focus-visible{
+ outline:2px solid #b3caff;outline-offset:2px
+}
+.side-more{
+ display:block;width:calc(100% - 18px);min-height:44px;margin:10px 9px;
+ border:1px solid #4b6183;background:#21314d;color:#dbeaff;
+ border-radius:12px;text-align:center;font-size:12px;font-weight:800;
+ cursor:pointer;padding:10px
+}
+.side-more:hover{background:#304463}
+.image-viewer-stage{overscroll-behavior:contain}
+@media(max-width:800px){
+ .mt-realtime-status{bottom:calc(76px + env(safe-area-inset-bottom,0px));
+  width:calc(100% - 26px);font-size:12px;padding:9px 10px}
+ body.mt-mobile-editing .mt-realtime-status{bottom:calc(8px + env(safe-area-inset-bottom,0px))}
+ .side-scroll .side-item[data-act="open-chat"]{
+  min-height:67px;touch-action:pan-y;-webkit-tap-highlight-color:transparent
+ }
+ .side-more{font-size:13px;min-height:48px}
+ .shell:not(.admin-shell) .thread{overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch}
+ .image-viewer-stage img{user-select:none;-webkit-user-select:none}
+}
+@media(prefers-reduced-motion:reduce){
+ .side-scroll .side-item,.mt-realtime-status,.mt-realtime-retry{
+  transition:none!important;animation:none!important
+ }
+}
