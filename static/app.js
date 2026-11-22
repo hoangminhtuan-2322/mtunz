@@ -1043,7 +1043,7 @@ function conversation(){
  return `<div class="conversation"><div id="chat-header">${convoHeader(f)}</div>
  <div class="thread" id="chat-messages" data-chat-key="dm-${f.other_id}">${renderBubbles()}</div>
  <div class="composer">${latestChatButton()}<div class="typing" id="typing-text"></div>${composerExtras()}<form class="compose-row" data-form="send-message">
- <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
+ <label class="btn ghost attachment-button" title="Đính kèm ảnh hoặc tệp">${icon('paperclip',19)}<input class="upload-input" type="file" accept="image/*,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden></label>
  <textarea class="input" name="body" id="chat-text" placeholder="Nhập tin nhắn của bạn..." maxlength="2000" rows="1">${typeof v4ReadDraft==='function'?esc(v4ReadDraft('dm',f.other_id)):''}</textarea>
  <button type="button" class="btn ghost v4-microphone" data-v4-act="record" title="Ghi tin nhắn thoại" aria-label="Ghi âm giọng nói">🎙️</button>
  <button type="button" class="btn ghost v4-schedule-button" data-v4-act="schedule-new" title="Hẹn giờ gửi tin nhắn" aria-label="Hẹn giờ gửi">⏰</button>
@@ -1406,7 +1406,7 @@ async function loadMessages(scroll=true){
   queueChatRead($('#chat-messages'));
  }catch(e){if(current())toast(e.message,'error');}
 }
-function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
+function personResult(r){return `<div class="people-row">${avatar(r.username,false,'',r.avatar_url)}<div class="grow"><b>${esc(r.username)} ${r.private_profile?'🔒':''}</b><div class="small muted">ID #${Number(r.public_id||r.id)} · ${r.friend_state==='accepted'?'Đã là bạn bè':r.friend_state==='pending'?r.requested_by_me?'Đã gửi lời mời':'Đã nhận lời mời':'Có thể gửi lời mời kết bạn'}</div></div>
  ${r.friend_state==='none'?`<button class="btn primary sm" data-act="friend-request" data-id="${r.id}">${icon('add',15)} Kết bạn</button>`:
  r.friend_state==='pending'&&!r.requested_by_me?`<button class="btn success sm" data-act="friend-accept" data-id="${r.id}">${icon('check',15)} Chấp nhận</button>`:
  r.friend_state==='accepted'?`<button class="btn ghost sm" data-act="open-chat" data-id="${r.id}">Nhắn tin</button>`:'<span class="pill">Chờ duyệt</span>'}
@@ -1445,11 +1445,11 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">Xem tin nhắn</button><button class="btn success sm" data-act="chat-restrict" data-id="${f.other_id}">Bỏ hạn chế</button></div>`).join(''):'<div class="empty">Chưa có người dùng nào bị hạn chế.</div>'}</div>`;}
 function profileContent(){
  return `<div class="section-wrap profile-page"><span class="eyebrow">DANH TÍNH CỘNG ĐỒNG</span><h1 class="section-title">Hồ sơ cá nhân</h1>
- <p class="section-lead">Chỉnh sửa tên hiển thị, giới thiệu và thông tin liên hệ tại đây. Các tùy chọn mật khẩu, PIN và thiết bị nằm trong Cài đặt.</p>
+ <p class="section-lead">Quản lý tài khoản riêng tư, đổi tên có xác minh mật khẩu + PIN, cập nhật hồ sơ và thông tin liên hệ.</p>
  <div class="social-cover" style="${state.user.cover_url?'background-image:url('+esc(state.user.cover_url)+')':''}"><span>MTUNZ · KHÔNG GIAN CỦA TÔI</span></div>
- <div class="row card social-profile-hero" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl',state.user.avatar_url)}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.public_id||state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
+ <div class="row card social-profile-hero" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl',state.user.avatar_url)}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.public_id||state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill">${state.user.profile_visibility!=='everyone'?'🔒 Tài khoản riêng tư':'🌐 Công khai'}</span></div>
  <div class="social-headline">${esc(state.user.headline||'Chào mừng đến với hồ sơ cá nhân của bạn.')}</div>
- <div class="profile-panel-grid">${typeof socialSettingsPanel==='function'?socialSettingsPanel():''}${profileSettings()}</div></div>`;
+ <div class="profile-panel-grid">${typeof identitySettingsPanel==='function'?identitySettingsPanel():''}${typeof socialSettingsPanel==='function'?socialSettingsPanel():''}${profileSettings()}</div></div>`;
 }
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
