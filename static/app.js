@@ -319,14 +319,37 @@ async function setup(){
   }
  }
 }
+let memberActivitySentAt=0;
+function sendMemberActivity(){
+ if(!state.user||state.user.is_admin||document.visibilityState!=='visible')return;
+ if(!state.ws||state.ws.readyState!==WebSocket.OPEN)return;
+ const stamp=Date.now();
+ if(stamp-memberActivitySentAt<25000)return;
+ memberActivitySentAt=stamp;
+ state.ws.send(JSON.stringify({type:'member-activity'}));
+}
+// Only interaction timestamps are sent, never input contents or user activity details.
+// Guard headless test and embed environments that do not supply a DOM.
+if(typeof document!=='undefined'){
+ document.addEventListener('pointerdown',sendMemberActivity,{passive:true});
+ document.addEventListener('keydown',sendMemberActivity,{passive:true});
+ document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')sendMemberActivity();
+ });
+}
 function connectSocket(){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
  const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
  state.ws=socket;
+ socket.onopen=()=>{if(!state.user?.is_admin)sendMemberActivity();};
  socket.onmessage=async ev=>{
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
+   if(t==='admin-member-activity'&&state.user?.is_admin){
+     adminPatchUserActivity(data);
+     return;
+   }
    if(t==='account-sanction'){showSanction(data);return;}
    if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
      await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
@@ -1497,11 +1520,30 @@ function adminJoinedAt(timestamp){
   '<strong class="admin-member-joined-date">'+fullDate+'</strong>'+
   '<span class="admin-member-joined-clock">'+fullTime+' <small>UTC+7</small></span></time>';
 }
+function adminPatchUserActivity(data){
+ const uid=Number(data.user_id),stamp=Number(data.last_seen);
+ if(!Number.isSafeInteger(uid)||uid<=0||!Number.isSafeInteger(stamp)||stamp<=0)return;
+ const online=!!data.online;
+ if(state.adminTab==='users'&&Array.isArray(state.adminData)){
+  const item=state.adminData.find(u=>u.id===uid);
+  if(item&&stamp>=Number(item.last_seen||0)){item.last_seen=stamp;item.online=online;}
+ }
+ document.querySelectorAll('[data-admin-last-seen="'+uid+'"]').forEach(el=>{
+  const previous=Number(el.dataset.lastSeenAt||0);
+  if(previous>stamp)return;
+  el.dataset.lastSeenAt=String(stamp);
+  el.textContent=deadlineDate(stamp);
+  if(el.tagName==='TIME')el.dateTime=new Date(stamp*1000).toISOString();
+ });
+ document.querySelectorAll('[data-admin-presence="'+uid+'"]').forEach(el=>{
+  el.textContent=online?'Đang kết nối':'Ngoại tuyến';
+ });
+}
 function adminUsers(){const data=state.adminData||[];
- return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên đăng nhập, tên hiển thị hoặc ID" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
- <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
+ return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên, ID, số điện thoại hoặc email" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
+ <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Kết nối</th><th>Hoạt động gần nhất</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">${u.display_name?esc(u.display_name)+' · ':''}#${u.id}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${adminJoinedAt(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td><span data-admin-presence="${Number(u.id)}">${u.online?'Đang kết nối':'Ngoại tuyến'}</span></td><td><time data-admin-last-seen="${Number(u.id)}" data-last-seen-at="${Number(u.last_seen||0)}">${deadlineDate(u.last_seen)}</time></td><td data-sort-value="${Number(u.created_at)}">${adminJoinedAt(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
@@ -1509,7 +1551,7 @@ function adminUsers(){const data=state.adminData||[];
  <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Cấm</button>
  <button class="btn ghost sm" data-act="admin-sanction" data-kind="lock" data-id="${u.id}">Khóa</button>
  <button class="btn danger sm" type="button" data-act="admin-delete-user" data-id="${u.id}">${icon('ban',14)} Xóa vĩnh viễn</button>
- ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
+ ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="8" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
 }
 function adminDeletionQueue(){
  const items=state.adminData||[];
@@ -1927,18 +1969,28 @@ async function userDetails(uid){
      <h3>${icon('users',17)} Thông tin cá nhân</h3>
      ${adminDetailRow('ID tài khoản','#'+u.id)}
      ${adminDetailRow('Tên đăng nhập',esc(u.username))}
+     ${adminDetailRow('ID công khai',u.public_id?'#'+Number(u.public_id):'Chưa có')}
      ${adminDetailRow('Tên hiển thị',contact(u.display_name))}
      ${adminDetailRow('Số điện thoại',contact(u.phone))}
      ${adminDetailRow('Email / Gmail',contact(u.email))}
      ${adminDetailRow('Giới thiệu',contact(u.bio))}
+     ${adminDetailRow('Tiêu đề hồ sơ',contact(u.headline))}
+     ${adminDetailRow('Liên kết hồ sơ',contact(u.website))}
      <p class="hint">Số điện thoại và email do người dùng khai báo, chưa xác minh qua SMS/email; không hiển thị trong hồ sơ công khai.</p>
    </div>
    <div class="admin-detail-section">
      <h3>${icon('shield',17)} Tài khoản & quyền riêng tư</h3>
      ${adminDetailRow('Ngày tạo',deadlineDate(u.created_at))}
-     ${adminDetailRow('Hoạt động gần nhất',deadlineDate(u.last_seen))}
+     ${adminDetailRow('Hoạt động gần nhất',`<time data-admin-last-seen="${Number(u.id)}" data-last-seen-at="${Number(u.last_seen||0)}">${deadlineDate(u.last_seen)}</time>`)}
+     ${adminDetailRow('Kết nối hiện tại',`<span data-admin-presence="${Number(u.id)}">${u.online?'Đang kết nối':'Ngoại tuyến'}</span>`)}
      ${adminDetailRow('Hiển thị trực tuyến',yesno(u.show_online))}
      ${adminDetailRow('Hiển thị đã đọc',yesno(u.show_receipts))}
+     ${adminDetailRow('Chế độ hồ sơ',esc(u.profile_visibility||'Chưa xác định'))}
+     ${adminDetailRow('Cho phép tin nhắn chờ',yesno(u.allow_message_requests))}
+     ${adminDetailRow('Ẩn danh trong Chat thế giới',yesno(u.world_anonymous))}
+     ${adminDetailRow('Cần hoàn tất tên hiển thị',yesno(u.needs_display_name))}
+     ${adminDetailRow('Điều khoản đã chấp thuận',u.terms_accepted_at?deadlineDate(u.terms_accepted_at)+' · '+esc(u.terms_accepted_version||'Chưa rõ phiên bản'):'Chưa ghi nhận')}
+     <p class="hint">Dấu kết nối phản ánh WebSocket của phiên hiện tại. Thời gian gần nhất cập nhật khi có tương tác; không khẳng định người dùng đang nhìn màn hình.</p>
      ${adminDetailRow('Trạng thái',u.deletion_purge_at?'<span class="pill warn">Chờ xóa</span>':u.sanction_kind?'<span class="pill bad">'+esc(u.sanction_kind)+'</span>':'<span class="pill good">Hoạt động</span>')}
      ${u.sanction_reason?adminDetailRow('Lý do hạn chế',esc(u.sanction_reason)):''}
      ${u.sanction_until?adminDetailRow('Hạn hạn chế',deadlineDate(u.sanction_until)):''}
@@ -1955,6 +2007,34 @@ async function userDetails(uid){
      ${adminDetailRow('Tệp tải lên',String(u.file_count)+' · '+Number(u.file_bytes).toLocaleString('vi-VN')+' byte')}
      ${adminDetailRow('Phiên đăng nhập còn hiệu lực',String(u.session_count))}
      ${adminDetailRow('Thiết bị được ghi nhớ',String(u.remembered_count))}
+     ${adminDetailRow('Phiên đăng nhập còn hiệu lực gần nhất',u.last_active_session_at?deadlineDate(u.last_active_session_at):'Không có phiên còn hiệu lực')}
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('shield',17)} Đối soát tài khoản & nguồn đăng ký</h3>
+     ${adminDetailRow('Đăng ký qua phê duyệt',u.registration?('#'+Number(u.registration.id)+' · '+esc(u.registration.status)):'Không có hồ sơ đăng ký lưu trữ')}
+     ${u.registration?.created_at?adminDetailRow('Ngày gửi yêu cầu',deadlineDate(u.registration.created_at)):''}
+     ${u.registration?.decided_at?adminDetailRow('Ngày duyệt/từ chối',deadlineDate(u.registration.decided_at)):''}
+     ${adminDetailRow('Xác minh độc lập thông tin liên hệ',u.contact_verified?'Đã xác minh':'Chưa ghi nhận xác minh độc lập')}
+     ${adminDetailRow('Yêu cầu hỗ trợ đã tạo',String(u.support_count||0))}
+     <p class="hint">Dữ liệu do tài khoản khai báo và dấu vết đăng ký không xác thực danh tính thật. Không đánh giá gian lận chỉ vì thiếu xác minh.</p>
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('shield',17)} Tín hiệu phục vụ kiểm duyệt</h3>
+     ${adminDetailRow('Báo cáo nhắm tới tài khoản',String(u.reports?.total||0))}
+     ${adminDetailRow('Báo cáo đang chờ xử lý',String(u.reports?.pending||0))}
+     ${adminDetailRow('Báo cáo đã được xem xét',String(u.reports?.reviewed||0))}
+     ${u.reports?.latest_at?adminDetailRow('Báo cáo gần nhất',deadlineDate(u.reports.latest_at)):''}
+     ${adminDetailRow('Số người chặn tài khoản',String(u.blocks_received||0))}
+     ${adminDetailRow('Tài khoản này đã chặn',String(u.blocks_created||0))}
+     ${adminDetailRow('Lời mời kết bạn đang gửi/chờ nhận',Number(u.pending_requests_sent||0)+' / '+Number(u.pending_requests_received||0))}
+     ${(u.recent_reports||[]).length?'<div class="hint" style="margin-top:10px">5 báo cáo gần nhất:</div>':''}
+     ${(u.recent_reports||[]).map(r=>`<div class="admin-detail-row"><span class="muted">Báo cáo #${Number(r.id)} · ${deadlineDate(r.created_at)}</span><strong>${esc(r.reason||'Không có lý do')} · ${esc(r.status||'Chưa rõ')}</strong></div>`).join('')}
+     <p class="hint">Báo cáo và lượt chặn chỉ phản ánh phản hồi của người dùng, không phải bằng chứng hoặc kết luận vi phạm. Đối chiếu bằng chứng trước khi xử lý.</p>
+   </div>
+   <div class="admin-detail-section">
+     <h3>${icon('users',17)} Danh sách bạn bè (chỉ Admin)</h3>
+     <p class="hint">Hiển thị tối đa 50 kết nối gần nhất trong ${Number(u.friend_count||0)} bạn bè. Không công khai lịch sử quan hệ này.</p>
+     ${(u.contacts||[]).map(f=>`<div class="admin-detail-row"><span class="muted">${esc(f.display_name||'Thành viên')} · #${Number(f.public_id||f.id)}</span><strong><button type="button" class="btn ghost sm" data-act="admin-user-detail" data-id="${Number(f.id)}">Xem #${Number(f.id)}</button></strong></div>`).join('')||'<p class="hint">Chưa có bạn bè được chấp nhận.</p>'}
    </div>
    <div class="admin-detail-section">
      <h3>${icon('clock',17)} Nhật ký liên quan đến tài khoản</h3>

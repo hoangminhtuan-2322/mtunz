@@ -1722,7 +1722,7 @@ async def set_capacity(request:Request,body:Capacity):
 async def admin_users(request:Request,q:str=''):
     require_admin(request)
     with db() as c:
-        query=q.strip()[:24]
+        query=q.strip()[:60]
         numeric_id=int(query) if query.isascii() and query.isdigit() and len(query)<=9 else -1
         rows=many(c,'''SELECT u.id,u.username,u.display_name,u.created_at,u.last_seen,u.pin_length,
                               u.sanction_kind,u.sanction_until,u.sanction_reason,
@@ -1730,8 +1730,13 @@ async def admin_users(request:Request,q:str=''):
                               (SELECT count(*) FROM friendships f WHERE f.state='accepted' AND (f.u1=u.id OR f.u2=u.id)) AS friend_count,
                               d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                        FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
-                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ? OR u.id=?)
-                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%','%'+query+'%',numeric_id))
+                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.display_name LIKE ?
+                            OR u.id=? OR u.public_id=? OR u.phone LIKE ? OR u.email LIKE ?)
+                       ORDER BY u.id DESC LIMIT 200''',
+                       ('%'+query+'%','%'+query+'%',numeric_id,numeric_id,
+                        '%'+query+'%','%'+query+'%'))
+        for item in rows:
+            item['online']=bool(hub.users.get(item['id']))
     return {'users':rows}
 
 
@@ -1749,8 +1754,10 @@ async def admin_user_details(request:Request,uid:int):
     admin=require_admin(request)
     throttle(request,'admin-user-details',90,3600,str(admin['id']))
     with db() as c:
-        user=one(c,'''SELECT u.id,u.username,u.display_name,u.bio,u.phone,u.email,
-                     u.created_at,u.last_seen,u.show_online,u.show_receipts,
+        user=one(c,'''SELECT u.id,u.username,u.public_id,u.display_name,u.bio,u.phone,u.email,
+                     u.headline,u.website,u.profile_visibility,u.allow_message_requests,
+                     u.world_anonymous,u.needs_display_name,u.terms_accepted_at,
+                     u.terms_accepted_version,u.created_at,u.last_seen,u.show_online,u.show_receipts,
                      u.sanction_kind,u.sanction_until,u.sanction_reason,
                      d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
                      FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
@@ -1758,6 +1765,37 @@ async def admin_user_details(request:Request,uid:int):
         if not user:
             raise HTTPException(404,'Không tìm thấy tài khoản người dùng.')
         detail=dict(user)
+        detail['online']=bool(hub.users.get(uid))
+        # Security review comprises stored facts and allegations, never a fraud verdict.
+        registration=one(c,'''SELECT id,status,created_at,decided_at,decided_by
+                              FROM registrations WHERE username=?
+                              ORDER BY id DESC LIMIT 1''',(user['username'],))
+        detail['registration']=dict(registration) if registration else None
+        detail['contact_verified']=False  # No independent phone/email verification stored.
+        detail['reports']=dict(one(c,'''SELECT COUNT(*) AS total,
+                             COUNT(CASE WHEN status='pending' THEN 1 END) AS pending,
+                             COUNT(CASE WHEN status!='pending' THEN 1 END) AS reviewed,
+                             MAX(created_at) AS latest_at
+                             FROM user_reports WHERE target_id=?''',(uid,)))
+        detail['recent_reports']=many(c,'''SELECT id,reason,status,created_at
+                           FROM user_reports WHERE target_id=?
+                           ORDER BY id DESC LIMIT 5''',(uid,))
+        detail['blocks_received']=one(c,'SELECT COUNT(*) AS n FROM blocks WHERE blocked_id=?',(uid,))['n']
+        detail['blocks_created']=one(c,'SELECT COUNT(*) AS n FROM blocks WHERE blocker_id=?',(uid,))['n']
+        detail['pending_requests_sent']=one(c,'''SELECT COUNT(*) AS n FROM friendships
+                           WHERE state='pending' AND requested_by=?''',(uid,))['n']
+        detail['pending_requests_received']=one(c,'''SELECT COUNT(*) AS n FROM friendships
+                           WHERE state='pending' AND requested_by!=? AND (u1=? OR u2=?)''',
+                             (uid,uid,uid))['n']
+        detail['contacts']=many(c,'''SELECT p.id,p.public_id,p.display_name,
+                           f.created_at FROM friendships f
+                           JOIN users p ON p.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
+                           WHERE f.state='accepted' AND (f.u1=? OR f.u2=?)
+                           ORDER BY f.created_at DESC LIMIT 50''',(uid,uid,uid))
+        detail['support_count']=one(c,'''SELECT COUNT(*) AS n FROM tickets
+                                       WHERE owner_id=?''',(uid,))['n']
+        detail['last_active_session_at']=one(c,'''SELECT MAX(created_at) AS stamp FROM sessions
+                                         WHERE user_id=? AND expires_at>?''',(uid,now()))['stamp']
         detail['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid))['n']
         activity=one(c,'''SELECT count(*) AS message_count,
                      count(CASE WHEN sender_id=? THEN 1 END) AS sent_count,
@@ -2091,6 +2129,26 @@ async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRe
 
 
 # --- Presence and event bus ---
+async def note_admin_member_activity(uid, *, force=False, session_hash=None, online=None):
+    """Update last activity at a bounded rate; publish to active Admin only.
+
+    No message text, keystrokes, device fingerprints, or session values are sent.
+    """
+    stamp=now()
+    with db() as c:
+        if session_hash and not one(c,'''SELECT 1 FROM sessions
+                WHERE token_hash=? AND user_id=? AND expires_at>?''',
+                (session_hash,uid,stamp)):
+            return False
+        changed=bool(c.execute('''UPDATE users SET last_seen=? WHERE id=? AND is_admin=0
+            AND (last_seen IS NULL OR last_seen<?)''',
+            (stamp,uid,stamp+1 if force else stamp-25)).rowcount)
+    if changed:
+        await hub.admins('admin-member-activity',user_id=uid,last_seen=stamp,
+                         online=bool(hub.users.get(uid)) if online is None else bool(online))
+    return changed
+
+
 async def notify_presence(uid,online):
     with db() as c:
         config=one(c,'SELECT show_online FROM users WHERE id=?',(uid,))
@@ -2143,6 +2201,8 @@ async def websocket_events(ws:WebSocket):
         with db() as c:
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
                       (now(),digest(sid),uid))
+        await note_admin_member_activity(uid,force=not was_online,
+                                         session_hash=digest(sid),online=True)
         if not was_online:await notify_presence(uid,True)
     elif gid:
         hub.guests[gid].add(ws)
@@ -2175,6 +2235,9 @@ async def websocket_events(ws:WebSocket):
                 await ws.close(code=1003)
                 break
             if not isinstance(msg,dict):
+                continue
+            if uid is not None and msg.get('type')=='member-activity':
+                await note_admin_member_activity(uid,session_hash=digest(sid),online=True)
                 continue
             if uid is not None and msg.get('type')=='typing':
                 other=msg.get('to')
@@ -2216,7 +2279,7 @@ async def websocket_events(ws:WebSocket):
             hub.users[uid].discard(ws)
             hub.session_hashes.pop(ws, None)
             if not hub.users[uid]:
-                with db() as c:c.execute('UPDATE users SET last_seen=? WHERE id=?',(now(),uid))
+                await note_admin_member_activity(uid,force=True,online=False)
                 await notify_presence(uid,False)
         elif gid:
             hub.guests[gid].discard(ws)
