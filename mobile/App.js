@@ -1,7 +1,8 @@
 import React,{useCallback,useEffect,useState} from 'react';
-import {ActivityIndicator,KeyboardAvoidingView,Platform,Pressable,SafeAreaView,
+import {ActivityIndicator,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAreaView,
   ScrollView,StatusBar,StyleSheet,Text,TextInput,View} from 'react-native';
-import {api,API_ORIGIN,clearSession,readSession,saveSession} from './src/client';
+import {api,API_ORIGIN,clearSession,readSession,saveSession,
+  savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
 
 const C={bg:'#071222',card:'#15253b',text:'#f5f7ff',muted:'#a1b2cd',accent:'#69b4ff',border:'#293c58'};
@@ -19,6 +20,10 @@ export default function App() {
   const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[pin,setPin]=useState('');
   const [challenge,setChallenge]=useState(null),[newName,setNewName]=useState('');
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [mode,setMode]=useState('login'),[signupToken,setSignupToken]=useState(''),
+    [signupUsername,setSignupUsername]=useState(''),[signupPhone,setSignupPhone]=useState(''),
+    [signupEmail,setSignupEmail]=useState(''),[signupPhase,setSignupPhase]=useState('request'),
+    [accepted,setAccepted]=useState(false);
 
   const clear=useCallback(async()=>{
     await clearSession().catch(()=>{});
@@ -33,6 +38,11 @@ export default function App() {
     let mounted=true;
     (async()=>{
       try{
+        const pending=await readPendingRegistration();
+        if(pending&&mounted){
+          setMode('register');setSignupToken(pending.token);
+          setSignupUsername(pending.username);setSignupPhase('pending');
+        }
         const restored=await readSession();
         if(!restored||!mounted)return;
         const data=await api('/api/me',{token:restored});
@@ -75,6 +85,54 @@ export default function App() {
     }catch(e){setError(e.message);}
     finally{setBusy(false);}
   }
+  async function requestSignup(){
+    if(!signupUsername.trim()||!signupPhone.trim()){setError('Cần nhập tên tài khoản và số điện thoại.');return;}
+    setBusy(true);setError('');
+    try{
+      const result=await api('/api/mobile/registration/request',{method:'POST',data:{
+        username:signupUsername.trim(),phone:signupPhone.trim(),email:signupEmail.trim(),
+      }});
+      await savePendingRegistration({username:result.username,token:result.registration_token});
+      setSignupToken(result.registration_token);setSignupUsername(result.username);setSignupPhase('pending');
+    }catch(e){setError(e.message);}finally{setBusy(false);}
+  }
+  async function checkSignup(){
+    if(!signupToken)return;
+    setBusy(true);setError('');
+    try{
+      const result=await api('/api/mobile/registration/status',{method:'POST',data:{token:signupToken}});
+      const state=result.registration?.status;
+      if(state==='approved')setSignupPhase('approved');
+      else if(state==='pending')setSignupPhase('pending');
+      else if(state==='rejected'){setError('Đăng ký đã bị từ chối. Liên hệ quản trị viên.');}
+      else setError('Không tìm thấy yêu cầu đăng ký. Bạn có thể thử lại.');
+    }catch(e){setError(e.message);}finally{setBusy(false);}
+  }
+  async function finishSignup(){
+    if(!accepted){setError('Hãy đọc và đồng ý điều khoản và chính sách riêng tư.');return;}
+    if(!password||pin.length<4){setError('Hãy đặt mật khẩu mạnh và PIN 4–6 chữ số.');return;}
+    setBusy(true);setError('');
+    try{
+      const result=await api('/api/mobile/registration/complete',{method:'POST',data:{
+        token:signupToken,username:signupUsername,password,pin,pin_length:pin.length,accepted_terms:true,
+      }});
+      const session=result.access_token;
+      const profile=await api('/api/me',{token:session});
+      await saveSession(session);await clearPendingRegistration();
+      setToken(session);setUser(profile.user);setSignupToken('');setPassword('');setPin('');
+      setMode('login');setSignupPhase('request');
+    }catch(e){setError(e.message);}finally{setBusy(false);}
+  }
+  async function cancelSignup(){
+    await clearPendingRegistration();
+    setSignupToken('');setSignupPhase('request');setMode('login');setError('');setPassword('');setPin('');
+  }
+  useEffect(()=>{
+    if(mode!=='register'||signupPhase!=='pending'||!signupToken)return;
+    const poll=setInterval(()=>{if(!busy)checkSignup();},60000);
+    return()=>clearInterval(poll);
+  },[mode,signupPhase,signupToken,busy]);
+
   async function finishOnboarding(){
     setBusy(true);setError('');
     try{
@@ -106,12 +164,35 @@ export default function App() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.centerInner}>
         <View style={styles.card}>
           <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
-          <Text style={styles.title}>{user?.onboarding_required?'Hoàn tất hồ sơ':challenge?'Xác minh PIN':'Đăng nhập'}</Text>
+          <Text style={styles.title}>{user?.onboarding_required?'Hoàn tất hồ sơ':mode==='register'?'Tạo tài khoản mtunz':challenge?'Xác minh PIN':'Đăng nhập'}</Text>
           <Text style={styles.muted}>Một tài khoản cho cả website, Android và iOS.</Text>
           {user?.onboarding_required?<>
             <Input value={newName} onChangeText={setNewName} placeholder="Tên hiển thị"/>
             <Button onPress={finishOnboarding} disabled={busy||newName.trim().length<2}>Hoàn tất</Button>
             <Button onPress={logout} quiet>Đăng xuất</Button>
+          </>:mode==='register'?<>
+            {signupPhase==='request'?<>
+              <Input value={signupUsername} onChangeText={setSignupUsername} placeholder="Tên đăng nhập (chữ thường, 3–24 ký tự)"/>
+              <Input value={signupPhone} onChangeText={setSignupPhone} placeholder="Số điện thoại"/>
+              <Input value={signupEmail} onChangeText={setSignupEmail} placeholder="Email (không bắt buộc)"/>
+              <Button onPress={requestSignup} disabled={busy}>Gửi yêu cầu đăng ký</Button>
+            </>:signupPhase==='pending'?<>
+              <Text style={styles.muted}>Đã gửi yêu cầu @{signupUsername}. Chờ Admin phê duyệt trên website.</Text>
+              <Button onPress={checkSignup} disabled={busy}>Kiểm tra trạng thái duyệt</Button>
+            </>:<>
+              <Text style={styles.muted}>Yêu cầu đã duyệt. Tạo mật khẩu và PIN để hoàn tất.</Text>
+              <Input value={password} onChangeText={setPassword} placeholder="Mật khẩu mạnh" secret/>
+              <Input value={pin} onChangeText={setPin} placeholder="PIN 4–6 chữ số" secret number/>
+              <Pressable onPress={()=>setAccepted(x=>!x)}>
+                <Text style={styles.muted}>{accepted?'☑':'□'} Tôi đồng ý Điều khoản và Chính sách quyền riêng tư</Text>
+              </Pressable>
+              <View style={{flexDirection:'row',gap:14,flexWrap:'wrap'}}>
+                <Pressable onPress={()=>Linking.openURL(API_ORIGIN+'/terms')}><Text style={styles.link}>Điều khoản</Text></Pressable>
+                <Pressable onPress={()=>Linking.openURL(API_ORIGIN+'/privacy')}><Text style={styles.link}>Quyền riêng tư</Text></Pressable>
+              </View>
+              <Button onPress={finishSignup} disabled={busy||!accepted}>Tạo tài khoản</Button>
+            </>}
+            <Button quiet onPress={cancelSignup}>Về đăng nhập</Button>
           </>:challenge?<>
             <Input value={pin} onChangeText={setPin} placeholder="Mã PIN" secret number/>
             <Button onPress={verifyPin} disabled={busy||!pin}>{busy?'Đang xác minh…':'Mở khóa'}</Button>
@@ -120,6 +201,7 @@ export default function App() {
             <Input value={username} onChangeText={setUsername} placeholder="Tên đăng nhập / số điện thoại"/>
             <Input value={password} onChangeText={setPassword} placeholder="Mật khẩu" secret/>
             <Button onPress={signIn} disabled={busy}>{busy?'Đang kiểm tra…':'Đăng nhập'}</Button>
+            <Button quiet onPress={()=>{setMode('register');setError('');}}>Đăng ký tài khoản mới</Button>
           </>}
           {!!error&&<Text style={styles.error}>{error}</Text>}
           <Text style={styles.muted}>Đăng ký và quản trị qua website mtunz.</Text>
@@ -135,7 +217,7 @@ const styles=StyleSheet.create({
   card:{backgroundColor:C.card,borderRadius:23,padding:22,gap:14,maxWidth:460,width:'100%',alignSelf:'center'},
   brand:{fontSize:36,fontWeight:'900',color:C.text},title:{fontSize:23,fontWeight:'800',color:C.text},
   muted:{fontSize:12,color:C.muted},error:{color:'#ff9e9e',padding:8},
-  server:{color:C.muted,fontSize:10},input:{borderColor:C.border,borderWidth:1,borderRadius:12,
+  server:{color:C.muted,fontSize:10},link:{color:C.accent,fontSize:13,fontWeight:'700'},input:{borderColor:C.border,borderWidth:1,borderRadius:12,
     paddingHorizontal:14,minHeight:49,color:C.text,backgroundColor:C.bg},
   button:{backgroundColor:C.accent,borderRadius:12,alignItems:'center',
     justifyContent:'center',padding:12,minHeight:45},quiet:{backgroundColor:C.border},
