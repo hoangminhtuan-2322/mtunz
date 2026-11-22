@@ -11,11 +11,16 @@
       "permissions": [
         "POST_NOTIFICATIONS"
       ],
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#121b36"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.mtunz.mobile",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "icon": "./assets/icon.png"
     },
     "plugins": [
       "expo-secure-store",
@@ -34,6 +39,7 @@
           "enableBackgroundRecording": false
         }
       ]
-    ]
+    ],
+    "icon": "./assets/icon.png"
   }
 }

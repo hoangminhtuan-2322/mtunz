@@ -515,7 +515,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <Pressable accessibilityRole="button" accessibilityLabel={room?'Trở lại danh sách':'Về tin nhắn'}
         style={css.headerMark}
         onPress={room?jumpBack:()=>{setTab('dm');refreshLists().catch(()=>{});}}>
-        <Text style={room?css.backGlyph:css.logo}>{room?'‹':'✦'}</Text>
+        {room?<Text style={css.backGlyph}>‹</Text>:
+          <Image source={require('../assets/brand-logo.png')} style={css.webIcon} resizeMode="contain"/>}
       </Pressable>
       <View style={{flex:1,gap:3}}>
         {!room&&<Text style={css.eyebrow}>MTUNZ MESSENGER</Text>}
@@ -945,6 +946,7 @@ const css=StyleSheet.create({
   headerMark:{height:44,width:44,borderRadius:14,backgroundColor:'#233f5f',borderWidth:1,
     borderColor:'#3b5d7f',alignItems:'center',justifyContent:'center'},
   backGlyph:{fontSize:34,color:P.text,fontWeight:'500',lineHeight:40},
+  webIcon:{width:43,height:43},
   headerAction:{minWidth:47,minHeight:42,alignItems:'center',justifyContent:'center',
     paddingHorizontal:8,borderRadius:12,backgroundColor:'#1b3451'},
   headerActionText:{color:P.accent,fontWeight:'800',fontSize:12},

@@ -1,5 +1,5 @@
 import React,{useCallback,useEffect,useState} from 'react';
-import {ActivityIndicator,AppState,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {ActivityIndicator,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
 
 const P={bg:'#08111f',surface:'#14243a',line:'#2c4160',ink:'#f4f8ff',muted:'#a5b6cf',accent:'#67bcff',danger:'#ff9393'};
@@ -75,9 +75,12 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên']];
  return <View style={{flex:1,backgroundColor:P.bg}}>
-  <View style={s.top}><View style={{gap:1}}>
-    <Text style={s.brand}>mtunz<Text style={{color:P.accent}}>.</Text> <Text style={s.adminBadge}>ADMIN</Text></Text>
-    <Text style={s.topMeta}>Trung tâm điều hành · Đồng bộ với web</Text></View>
+  <View style={s.top}><View style={s.adminBrandRow}>
+    <Image source={require('../assets/brand-logo.png')} style={s.adminLogo} resizeMode="contain"/>
+    <View style={{gap:1,flexShrink:1}}>
+      <Text style={s.brand}>mtunz<Text style={{color:P.accent}}>.</Text> <Text style={s.adminBadge}>ADMIN</Text></Text>
+      <Text style={s.topMeta}>Trung tâm điều hành · Đồng bộ với web</Text>
+    </View></View>
     <Action label="Thoát" subtle onPress={onLogout}/></View>
   <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
     contentContainerStyle={s.page}>
@@ -171,6 +174,8 @@ const s=StyleSheet.create({
   top:{paddingHorizontal:17,paddingVertical:15,flexDirection:'row',justifyContent:'space-between',
     alignItems:'center',backgroundColor:P.bg,borderBottomWidth:1,borderColor:P.line},
   brand:{fontSize:23,fontWeight:'900',letterSpacing:-.5,color:P.ink},
+  adminBrandRow:{flexDirection:'row',alignItems:'center',gap:7,flexShrink:1},
+  adminLogo:{width:39,height:39},
   adminBadge:{fontSize:10,letterSpacing:1,color:'#9ecfff',fontWeight:'900'},
   topMeta:{fontSize:11,color:P.muted,marginTop:3},
   page:{padding:16,gap:16,paddingBottom:60},

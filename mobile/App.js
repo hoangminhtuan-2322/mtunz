@@ -1,6 +1,6 @@
 import React,{useCallback,useEffect,useState} from 'react';
 import {ActivityIndicator,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAreaView,
-  ScrollView,StatusBar,StyleSheet,Text,TextInput,View} from 'react-native';
+  ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image} from 'react-native';
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
@@ -202,7 +202,7 @@ export default function App() {
         showsVerticalScrollIndicator={false}>
         <View style={styles.intro}>
           <View style={styles.brandRow}>
-            <View style={styles.brandMark}><Text style={styles.brandMarkText}>✦</Text></View>
+            <Image source={require('./assets/brand-logo.png')} style={styles.brandMark} resizeMode="contain"/>
             <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
           </View>
           <Text style={styles.introTitle}>Kết nối mọi khoảnh khắc.</Text>
@@ -276,9 +276,7 @@ const styles=StyleSheet.create({
     paddingHorizontal:20,maxWidth:480,width:'100%',alignSelf:'center',gap:26},
   intro:{gap:10,alignItems:'flex-start',paddingHorizontal:4},
   brandRow:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:9},
-  brandMark:{height:39,width:39,borderRadius:13,backgroundColor:'#1a3858',
-    borderWidth:1,borderColor:'#426c96',alignItems:'center',justifyContent:'center'},
-  brandMarkText:{fontSize:24,color:C.accent,fontWeight:'800'},
+  brandMark:{height:46,width:46},
   brand:{fontSize:34,fontWeight:'900',color:C.text,letterSpacing:-1.1},
   introTitle:{fontSize:26,lineHeight:34,fontWeight:'800',color:C.text,letterSpacing:-.5},
   introSub:{fontSize:14,color:C.muted,lineHeight:21},
