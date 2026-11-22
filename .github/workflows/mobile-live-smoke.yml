@@ -1,0 +1,43 @@
+name: Probe live mtunz mobile API
+
+on:
+  push:
+    branches:
+      - feature/native-mobile-chat-v1
+    paths:
+      - '.github/workflows/mobile-live-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - name: Verify deployed native backend without reading user data
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://mtunz.onrender.com
+          curl --fail --silent --show-error --location --max-time 90 \
+            --retry 4 --retry-delay 8 --retry-connrefused \
+            "$base/health" > /tmp/mtunz-mobile-health.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          body=json.loads(Path('/tmp/mtunz-mobile-health.json').read_text())
+          print('Health:', body)
+          assert body.get('ok') is True and body.get('app')=='mtunz'
+          PY
+          for path in /api/mobile/auth/password /api/mobile/auth/pin /api/mobile/registration/request /api/mobile/push; do
+            code=$(curl --silent --show-error --location --max-time 45 \
+              --output /dev/null --write-out '%{http_code}' "$base$path")
+            echo "$path: GET -> $code"
+            if [[ "$code" != "405" ]]; then
+              echo "::error::$path is not deployed or responded unexpectedly"
+              exit 1
+            fi
+          done
+          echo 'Native authentication and push endpoints are present in deployed web backend.'
