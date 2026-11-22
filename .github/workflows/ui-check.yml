@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main, feat/private-identity-download-v17]
+    branches: [main, feat/private-identity-download-v17, feature/web-quality-upgrade-v9]
   workflow_dispatch:
 
 permissions:
@@ -42,6 +42,7 @@ jobs:
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
+          node --check static/image-viewer.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -135,7 +136,7 @@ jobs:
           assert '.auth-art.art-v5' in nova and 'prefers-reduced-motion' in nova
           assert 'nova-orbit-spin' in nova and 'nova-stage-enter' in nova
           assert '/static/signals.css?v=4.0' in h
-          assert '/static/app.js?v=20.9' in h
+          assert '/static/app.js?v=21.0' in h
           assert '/static/auth-glow.css?v=16.0' in h
           assert '/static/form-layout.css?v=8.4' in h
           assert '/static/account-delete.css?v=9.0' in h
@@ -147,7 +148,7 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=18.5' in h
+          assert '/static/extras.js?v=18.6' in h
           assert '/static/group-lobby.css?v=1.0' in h
           assert '/static/device-sessions.css?v=11.0' in h
           assert 'auth-remember-choice' in application
@@ -197,4 +198,5 @@ jobs:
           trap 'kill "$server_pid" || true' EXIT
           curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
           node tests/mobile_live_chat.cjs
+          node tests/web_quality_v9.cjs
           node tests/private_identity_media_browser.cjs

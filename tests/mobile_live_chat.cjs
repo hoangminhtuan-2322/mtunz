@@ -48,6 +48,14 @@ const {chromium}=require('playwright-core');
    const zoom=viewer.getByRole('button',{name:'Phóng to ảnh',exact:true});
    await zoom.click();
    assert(await viewer.getByRole('button',{name:'Thu nhỏ ảnh',exact:true}).isEnabled());
+   // Trackpad pinch/ctrl-wheel zoom should work without opening a browser tab.
+   const wheelWidths=await viewer.locator('.image-viewer-stage').evaluate(stage=>{
+    const image=stage.querySelector('img');
+    const before=parseFloat(image.style.width);
+    stage.dispatchEvent(new WheelEvent('wheel',{deltaY:-60,ctrlKey:true,bubbles:true,cancelable:true}));
+    return {before,after:parseFloat(image.style.width)};
+   });
+   assert(wheelWidths.after>wheelWidths.before,'Ctrl+wheel zoom must enlarge the in-page image');
    assert.equal(await viewer.getByRole('link',{name:'Lưu ảnh'}).getAttribute('href'),'/api/attachments/7?download=1');
    await page.keyboard.press('Escape');
    await viewer.waitFor({state:'detached'});
