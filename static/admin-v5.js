@@ -66,7 +66,8 @@ function adminV5SecurityHtml(s){
    '<button type="button" class="btn '+(manual?'ghost':'danger')+'" data-admin-v5="maintenance" data-v5-enable="'+(manual?'0':'1')+'" '+(s&&!scheduleActive?'':'disabled')+'>'+
     (manual?'Kết thúc bảo trì thủ công':'Bật bảo trì ngay')+'</button>'+
    (schedule?'<p class="hint">⏱ Bắt đầu: '+esc(adminV5FormatWhen(schedule.starts_at))+'<br>Kết thúc: '+esc(adminV5FormatWhen(schedule.ends_at))+' · '+esc(adminV5MaintenanceDuration(schedule.ends_at-schedule.starts_at))+'<br>Thông báo: '+esc(schedule.reason)+'</p>':'')+
-   '<button type="button" class="btn ghost" data-admin-v5="maintenance-schedule">'+(schedule?'Đổi lịch bảo trì':'Lên lịch bảo trì')+'</button>'+
+   (scheduleActive?'<p class="hint">Lịch đang chạy. Nếu cần kết thúc sớm, hãy chọn Hủy lịch bảo trì; không thể đổi giờ bắt đầu sau khi lịch đã chạy.</p>':
+   '<button type="button" class="btn ghost" data-admin-v5="maintenance-schedule">'+(schedule?'Đổi lịch bảo trì':'Lên lịch bảo trì')+'</button>')+
    (schedule?'<button type="button" class="btn ghost" data-admin-v5="maintenance-cancel">Hủy lịch bảo trì</button>':'')+'</article>'+
   '<article class="v5-action-card"><div class="v5-action-card-head"><span>📱</span><h3>Thu hồi phiên khác</h3></div>'+
    '<p>Đăng xuất ngay mọi phiên Admin khác, hủy các thiết bị chờ phê duyệt và phiên ghi nhớ; giữ chính phiên Admin đang thao tác.</p>'+
