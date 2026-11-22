@@ -10,7 +10,7 @@ const app=read('app.py');
 const css=read('static/prepublic-v8.css');
 
 assert(html.includes('/static/prepublic-v8.css?v=1.0'),'Smooth scroll stylesheet linked');
-assert(html.includes('/static/world-moderation.js?v=4.4'),'World UI cache-busted');
+assert(html.includes('/static/world-moderation.js?v=4.5'),'World UI cache-busted');
 assert(html.includes('/static/admin-v5.js?v=1.1'),'Admin UI cache-busted');
 assert(world.includes('worldStatusPaintKey')&&world.includes('worldFeedPaintKey'),
  'Poll rendering must compare meaningful message and status changes');

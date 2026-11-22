@@ -67,7 +67,7 @@ function worldBubble(message){
   (!message.deleted&&message.attachment?(()=>{
    const media=message.attachment,url='/api/attachments/'+Number(media.id),save=url+'?download=1';
    if(media.mime?.startsWith('image/'))return '<div class="chat-media-attachment">'+
-    '<a class="world-media-link" target="_blank" rel="noopener noreferrer" href="'+worldEscape(url)+'"><img class="world-media-image" src="'+worldEscape(url)+'" loading="lazy" decoding="async" alt="'+worldEscape(media.name)+'"></a>'+
+    '<a class="world-media-link" data-image-viewer href="'+worldEscape(url)+'"><img class="world-media-image" src="'+worldEscape(url)+'" loading="lazy" decoding="async" alt="'+worldEscape(media.name)+'"></a>'+
     '<a class="chat-media-save" href="'+worldEscape(save)+'" download="'+worldEscape(media.name)+'">↓ Lưu ảnh</a></div>';
    if(media.mime?.startsWith('video/'))return '<div class="chat-media-attachment">'+
     '<video class="chat-video" controls playsinline preload="metadata" src="'+worldEscape(url)+'" aria-label="'+worldEscape(media.name)+'"></video>'+

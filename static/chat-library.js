@@ -18,7 +18,7 @@ function chatLibraryItem(item,kind){
   const video=item.mime.startsWith('video/'),label=video?'Tải video':'Tải ảnh';
   return `<article class="chat-library-media">
    ${video?`<video src="${url}" controls playsinline preload="none" aria-label="${esc(item.name)}"></video>`:
-    `<a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${esc(item.name)}" loading="lazy" decoding="async"></a>`}
+    `<a href="${url}" data-image-viewer><img src="${url}" alt="${esc(item.name)}" loading="lazy" decoding="async"></a>`}
    <small>${stamp}</small>
    ${origin}
    <a class="chat-library-save" href="${url}?download=1" download="${esc(item.name)}" aria-label="${label} ${esc(item.name)}">${icon('download',15)} ${label}</a>

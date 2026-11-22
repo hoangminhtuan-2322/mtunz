@@ -29,12 +29,30 @@ const {chromium}=require('playwright-core');
     }
     return r.fulfill({json:{items:query.get('kind')==='files'?[{id:30,display_name:'Minh',created_at:now,
      attachment_id:5,name:'Bản tóm tắt.pdf',size:2048,mime:'application/pdf'}]:
-     [{id:20,display_name:'Minh',created_at:now,attachment_id:6,name:'Đoạn phim.mp4',size:4096,mime:'video/mp4'}],
+     [{id:20,display_name:'Minh',created_at:now,attachment_id:6,name:'Đoạn phim.mp4',size:4096,mime:'video/mp4'},
+      {id:21,display_name:'Minh',created_at:now,attachment_id:7,name:'Ảnh trong chat.png',size:68,mime:'image/png'}],
      next_before:null}});
    });
+   await page.route('**/api/attachments/7',r=>r.fulfill({contentType:'image/png',body:
+    Buffer.from('iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAIAAABvFaqvAAAAH0lEQVR4nGMo7zhDFcQwatCoQaMGjRo0atCoQQNvEAAHqgj9RkS8uwAAAABJRU5ErkJggg==','base64')}));
    const libraryButton=page.getByRole('button',{name:'Nội dung đã chia sẻ'});
    await libraryButton.click();
    await page.locator('.chat-library-media video[preload="none"]').waitFor();
+   const originalUrl=page.url();
+   const thumbnail=page.getByRole('link',{name:'Ảnh trong chat.png',exact:true});
+   await thumbnail.click();
+   const viewer=page.locator('.image-viewer[open]');
+   await viewer.locator('img:visible').waitFor();
+   assert.equal(page.context().pages().length,1);
+   assert.equal(page.url(),originalUrl);
+   const zoom=viewer.getByRole('button',{name:'Phóng to ảnh',exact:true});
+   await zoom.click();
+   assert(await viewer.getByRole('button',{name:'Thu nhỏ ảnh',exact:true}).isEnabled());
+   assert.equal(await viewer.getByRole('link',{name:'Lưu ảnh'}).getAttribute('href'),'/api/attachments/7?download=1');
+   await page.keyboard.press('Escape');
+   await viewer.waitFor({state:'detached'});
+   assert(await thumbnail.evaluate(el=>document.activeElement===el));
+
    assert.equal(await page.getByRole('link',{name:'Tải video Đoạn phim.mp4'}).getAttribute('href'),'/api/attachments/6?download=1');
    await page.getByRole('button',{name:'Liên kết',exact:true}).click();
    await page.locator('a[href="https://example.org/new"]').waitFor();
@@ -341,6 +359,42 @@ const {chromium}=require('playwright-core');
    await page.locator('#member-profile-audience').selectOption('everyone');
    await preview.getByText('Chi tiết hồ sơ đang được giới hạn theo quyền riêng tư.').waitFor();
    assert.equal(await preview.getByText('Giới thiệu chỉ bạn bè').count(),0);
+   await page.locator('#modal-confirm').click();
+   if(width===1440){
+    let paused=false,removed=false;
+    await page.route('**/api/admin/tickets',r=>r.fulfill({json:{paused,tickets:removed?[]:[
+      {id:27,kind:'other',status:'closed',claim:'Phiếu cũ để kiểm thử',created_at:now}
+    ]}}));
+    await page.route('**/api/admin/tickets/27/messages',r=>r.fulfill({json:{messages:[]}}));
+    await page.route('**/api/admin/support/intake',r=>{
+     const data=r.request().postDataJSON();
+     assert.equal(data.admin_pin,'2345');
+     paused=data.paused;
+     return r.fulfill({json:{paused}});
+    });
+    await page.route('**/api/admin/tickets/27',r=>{
+     assert.equal(r.request().method(),'DELETE');
+     assert.equal(r.request().postDataJSON().admin_pin,'2345');
+     removed=true;
+     return r.fulfill({json:{ok:true}});
+    });
+    await page.evaluate(async()=>{
+     Object.assign(state.user,{is_admin:true,pin_length:4});
+     state.adminTab='tickets';state.adminTicket=null;
+     await loadAdmin();
+    });
+    await page.getByRole('button',{name:'Tạm ngừng nhận hỗ trợ',exact:true}).click();
+    const pin=page.locator('#admin-confirm-pin');
+    await pin.click();await pin.fill('2345');
+    await page.locator('#modal-confirm').click();
+    await page.getByRole('button',{name:'Nhận hỗ trợ trở lại',exact:true}).waitFor();
+    await page.locator('[data-act="admin-open-ticket"][data-id="27"]').click();
+    await page.getByRole('button',{name:'Xóa cuộc trò chuyện',exact:true}).click();
+    await pin.click();await pin.fill('2345');
+    await page.locator('#modal-confirm').click();
+    await page.getByText('Chưa có yêu cầu hỗ trợ.',{exact:true}).waitFor();
+    assert(paused&&removed);
+   }
    await page.close();
   }
  }finally{await browser.close();}
