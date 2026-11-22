@@ -48,6 +48,7 @@ function adminV5SecurityHtml(s){
  const result=adminV5Summary(s);
  const locked=!!s?.emergency_lockdown,maintenance=!!s?.maintenance_mode;
  const manual=s?.maintenance?.manual??maintenance,schedule=s?.maintenance?.schedule;
+ const scheduleActive=!!schedule&&maintenance&&!manual;
  return '<section class="v5-security-center" aria-label="Lớp bảo vệ hệ thống">'+
  '<div class="v5-deck-head"><div><span class="v5-kicker">DEFENSE IN DEPTH</span>'+
  '<h2>Bảo vệ Admin và dữ liệu</h2>'+
@@ -61,10 +62,10 @@ function adminV5SecurityHtml(s){
     (locked?'Mở lại hệ thống':'Bật chế độ khẩn cấp')+'</button></article>'+
   '<article class="v5-action-card"><div class="v5-action-card-head"><span>🔧</span><h3>Bảo trì hệ thống</h3></div>'+
    '<p>Thông báo cho thành viên đang online, kết thúc phiên thành viên và tạm chặn đăng nhập.</p>'+
-   '<strong class="v5-action-state">'+(s?(maintenance?'Đang bảo trì':'Đang hoạt động'):'Đang tải')+'</strong>'+
-   '<button type="button" class="btn '+(manual?'ghost':'danger')+'" data-admin-v5="maintenance" data-v5-enable="'+(manual?'0':'1')+'" '+(s?'':'disabled')+'>'+
+   '<strong class="v5-action-state">'+(s?(manual?'Đang bảo trì thủ công':scheduleActive?'Đang bảo trì theo lịch':schedule?'Đã lên lịch · chờ bắt đầu':'Đang hoạt động'):'Đang tải')+'</strong>'+
+   '<button type="button" class="btn '+(manual?'ghost':'danger')+'" data-admin-v5="maintenance" data-v5-enable="'+(manual?'0':'1')+'" '+(s&&!scheduleActive?'':'disabled')+'>'+
     (manual?'Kết thúc bảo trì thủ công':'Bật bảo trì ngay')+'</button>'+
-   (schedule?'<p class="hint">Lịch: '+esc(deadlineDate(schedule.starts_at))+' – '+esc(deadlineDate(schedule.ends_at))+' · '+esc(schedule.reason)+'</p>':'')+
+   (schedule?'<p class="hint">⏱ Bắt đầu: '+esc(adminV5FormatWhen(schedule.starts_at))+'<br>Kết thúc: '+esc(adminV5FormatWhen(schedule.ends_at))+' · '+esc(adminV5MaintenanceDuration(schedule.ends_at-schedule.starts_at))+'<br>Thông báo: '+esc(schedule.reason)+'</p>':'')+
    '<button type="button" class="btn ghost" data-admin-v5="maintenance-schedule">'+(schedule?'Đổi lịch bảo trì':'Lên lịch bảo trì')+'</button>'+
    (schedule?'<button type="button" class="btn ghost" data-admin-v5="maintenance-cancel">Hủy lịch bảo trì</button>':'')+'</article>'+
   '<article class="v5-action-card"><div class="v5-action-card-head"><span>📱</span><h3>Thu hồi phiên khác</h3></div>'+
@@ -324,6 +325,7 @@ function adminV5ScheduleMaintenance(cancel=false){
  const updating=!!schedule&&!cancel;
  const content=cancel?`<div class="v5-maint-cancel"><strong>Lịch sẽ bị hủy</strong>
   <p>${schedule?esc(adminV5FormatWhen(schedule.starts_at))+' → '+esc(adminV5FormatWhen(schedule.ends_at)):'Không có lịch đang chờ.'}</p>
+  <p>${schedule&&Number(schedule.starts_at)<=Date.now()/1000?'Lịch đã bắt đầu: hủy lúc này sẽ cho phép thành viên đăng nhập lại, trừ khi bật bảo trì thủ công.':'Hủy lịch đang chờ không ảnh hưởng đến hoạt động hiện tại.'}</p>
   <p>Việc hủy lịch không tắt bảo trì thủ công đã được bật riêng.</p></div>
   <div class="v5-maint-proof">${adminV3PinFields()}</div>`:adminV5MaintenanceFormMarkup(schedule);
  modal({
