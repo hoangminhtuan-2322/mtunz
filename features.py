@@ -256,17 +256,26 @@ def install(core):
                 raise HTTPException(404,'Không tìm thấy người dùng.')
             allowed=(uid==u['id'] or bool(u['is_admin']) or r['profile_visibility']=='everyone' or
                      (r['profile_visibility']=='friends' and friends(c,uid,u['id'])))
-            p=dict(r)
-            if uid!=u['id'] and (not allowed or not r['show_online'] or core.is_restricted(c,uid,u['id'])):
-                p['last_seen']=None
-            p['avatar_url']=f'/api/profile/{uid}/avatar' if allowed and r['avatar_attachment_id'] else None
-            p['cover_url']=f'/api/profile/{uid}/cover' if allowed and r['cover_attachment_id'] else None
-            p['headline']=r['headline'] if allowed else ''
-            p['bio']=r['bio'] if allowed else ''
-            p['website']=r['website'] if allowed else ''
-            p.pop('avatar_attachment_id',None)
-            p.pop('cover_attachment_id',None)
-            p['private']=not allowed
+            if not allowed:
+                # Minimal identity only: a stranger can still send a friend
+                # request, but no profile details, activity or media leaks.
+                p={'id':r['id'],'public_id':r['public_id'],
+                   'display_name':r['display_name'],'created_at':None,
+                   'last_seen':None,'show_online':False,
+                   'profile_visibility':r['profile_visibility'],
+                   'avatar_url':None,'cover_url':None,'headline':'',
+                   'bio':'','website':'','private':True}
+            else:
+                p=dict(r)
+                if uid!=u['id'] and (not r['show_online'] or
+                                   not u['show_online'] or
+                                   core.is_restricted(c,uid,u['id'])):
+                    p['last_seen']=None
+                p['avatar_url']=f'/api/profile/{uid}/avatar' if r['avatar_attachment_id'] else None
+                p['cover_url']=f'/api/profile/{uid}/cover' if r['cover_attachment_id'] else None
+                p.pop('avatar_attachment_id',None)
+                p.pop('cover_attachment_id',None)
+                p['private']=False
         return {'profile':p}
 
     @app.get('/api/me/sessions')
