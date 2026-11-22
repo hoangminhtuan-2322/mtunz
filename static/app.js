@@ -362,8 +362,32 @@ function connectSocket(){
      if(state.user?.is_admin)loadAdmin();
    }
    if(t==='friends-updated'){if(state.user&&!state.user.is_admin)scheduleFriendsRefresh(60);}
+   if(t==='privacy-updated'&&state.user&&!state.user.is_admin){
+     // Clear cached indicators before fetching this viewer's filtered data.
+     const peer=state.friends.find(f=>f.other_id===data.user_id);
+     if(peer){peer.online=false;peer.last_seen=null;peer.receipt_visible=false;}
+     renderSideItems();updateChatHeader();
+     if(typeof v4PaintStatuses==='function')v4PaintStatuses();
+     await refreshFriends(false).catch(()=>{});
+     renderSideItems();updateChatHeader();
+     if(typeof v4PaintStatuses==='function')v4PaintStatuses();
+     return;
+   }
+   if(t==='privacy-self-updated'&&state.user&&!state.user.is_admin){
+     state.user.show_online=!!data.show_online;
+     state.user.show_receipts=!!data.show_receipts;
+     if(!state.user.show_online)for(const f of state.friends){f.online=false;f.last_seen=null;}
+     if(!state.user.show_receipts)for(const f of state.friends)f.receipt_visible=false;
+     renderSideItems();updateChatHeader();
+     if(typeof v4PaintStatuses==='function')v4PaintStatuses();
+     await refreshFriends(false).catch(()=>{});
+     if(state.tab==='settings')renderApp();
+     else{renderSideItems();updateChatHeader();if(typeof v4PaintStatuses==='function')v4PaintStatuses();}
+     return;
+   }
    if(t==='message-requests-updated'&&state.user&&!state.user.is_admin&&typeof loadMessageRequests==='function')loadMessageRequests(state.tab==='friends').catch(()=>{});
-   if(t==='delivered'&&state.selected===data.by&&state.user&&!state.user.is_admin){
+   if(t==='delivered'&&state.selected===data.by&&state.user&&!state.user.is_admin
+      &&typeof canViewDmReceipts==='function'&&canViewDmReceipts()){
      for(const message of state.messages){
        if(message.sender_id===state.user.id&&message.id>0&&message.id<=Number(data.up_to)&&!message.delivered_at)
          message.delivered_at=data.at;
@@ -392,7 +416,8 @@ function connectSocket(){
        if(m.sender_id!==state.user.id && state.selected!==m.sender_id)toast('Bạn có tin nhắn mới','info');
      }
    }
-   if(t==='read' && state.selected===data.by){
+   if(t==='read' && state.selected===data.by && state.user?.show_receipts
+      &&typeof canViewDmReceipts==='function'&&canViewDmReceipts()){
      let changed=false;
      for(const message of state.messages){
        if(message.sender_id===state.user?.id&&!message.read_at){message.read_at=data.at;changed=true;}
@@ -403,7 +428,7 @@ function connectSocket(){
      }
    }
    if(t==='typing' && state.selected===data.from_id){const el=$('#typing-text');if(el){el.textContent=data.on?'Đang nhập tin nhắn…':'';}}
-   if(t==='presence' && state.user && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=data.online;renderSideItems();updateChatHeader();}}
+   if(t==='presence' && state.user?.show_online && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=!!data.online;renderSideItems();updateChatHeader();}}
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
    if(t==='message'&&data.message.sender_id!==state.user?.id)notifyBrowser('Có tin nhắn từ bạn bè');
    if(state.user&&!state.user.is_admin)await extraSocket(data);
@@ -892,7 +917,7 @@ async function refreshFriends(redraw=true){
   if(state.selected && !state.friends.some(f=>f.other_id===state.selected&&f.state==='accepted')){
     state.selected=null;
   }
-  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
+  if(redraw){renderSideItems();if(state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();if(typeof v4PaintStatuses==='function')v4PaintStatuses();}
 }
 function friendItem(f,draft){
   const active=state.selected===f.other_id&&state.tab==='messages';
@@ -1023,7 +1048,7 @@ document.addEventListener('scroll',event=>{
 },true);
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
- ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':`Hoạt động gần nhất: ${date(f.last_seen)}`}</div></div>
+ ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':f.last_seen?`Hoạt động gần nhất: ${date(f.last_seen)}`:'Ẩn trạng thái hoạt động'}</div></div>
  <button class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}" title="Xem hồ sơ">${icon('users',15)}</button>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin">${icon('search',15)}</button>
  <button type="button" class="btn ghost sm v6-disappear-control" data-v6-act="disappear"
