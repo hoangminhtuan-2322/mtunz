@@ -2126,6 +2126,26 @@ async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRe
 
 
 # --- Presence and event bus ---
+async def note_admin_member_activity(uid, *, force=False, session_hash=None, online=None):
+    """Update last activity at a bounded rate; publish to active Admin only.
+
+    No message text, keystrokes, device fingerprints, or session values are sent.
+    """
+    stamp=now()
+    with db() as c:
+        if session_hash and not one(c,'''SELECT 1 FROM sessions
+                WHERE token_hash=? AND user_id=? AND expires_at>?''',
+                (session_hash,uid,stamp)):
+            return False
+        changed=bool(c.execute('''UPDATE users SET last_seen=? WHERE id=? AND is_admin=0
+            AND (last_seen IS NULL OR last_seen<?)''',
+            (stamp,uid,stamp+1 if force else stamp-25)).rowcount)
+    if changed:
+        await hub.admins('admin-member-activity',user_id=uid,last_seen=stamp,
+                         online=bool(hub.users.get(uid)) if online is None else bool(online))
+    return changed
+
+
 async def notify_presence(uid,online):
     with db() as c:
         config=one(c,'SELECT show_online FROM users WHERE id=?',(uid,))
@@ -2178,6 +2198,8 @@ async def websocket_events(ws:WebSocket):
         with db() as c:
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
                       (now(),digest(sid),uid))
+        await note_admin_member_activity(uid,force=not was_online,
+                                         session_hash=digest(sid),online=True)
         if not was_online:await notify_presence(uid,True)
     elif gid:
         hub.guests[gid].add(ws)
@@ -2210,6 +2232,9 @@ async def websocket_events(ws:WebSocket):
                 await ws.close(code=1003)
                 break
             if not isinstance(msg,dict):
+                continue
+            if uid is not None and msg.get('type')=='member-activity':
+                await note_admin_member_activity(uid,session_hash=digest(sid),online=True)
                 continue
             if uid is not None and msg.get('type')=='typing':
                 other=msg.get('to')
@@ -2251,7 +2276,7 @@ async def websocket_events(ws:WebSocket):
             hub.users[uid].discard(ws)
             hub.session_hashes.pop(ws, None)
             if not hub.users[uid]:
-                with db() as c:c.execute('UPDATE users SET last_seen=? WHERE id=?',(now(),uid))
+                await note_admin_member_activity(uid,force=True,online=False)
                 await notify_presence(uid,False)
         elif gid:
             hub.guests[gid].discard(ws)
