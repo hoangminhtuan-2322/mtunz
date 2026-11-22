@@ -51,9 +51,6 @@ def setup():
     assert b.post('/api/friends/accept/'+str(aid)).status_code==200
     return admin,a,b,aid,bid
 
-def set_pin(admin):
-    r=admin.post('/api/me/pin/setup',json={'current_password':'mtunz7','pin':'2345','pin_length':4})
-    assert r.status_code==200,r.text
 
 def test_disappearing_dm_privacy_and_attachment_expiry():
     admin,a,b,aid,bid=setup()
@@ -106,10 +103,10 @@ def test_edit_history_author_only_and_filtered_search():
         assert c.execute('SELECT COUNT(*) n FROM message_edit_history').fetchone()['n']==0
 
 def test_room_slow_mode_polls_one_vote_and_admin_permissions():
-    admin,a,b,aid,bid=setup();set_pin(admin)
+    admin,a,b,aid,bid=setup()
     enable=admin.post('/api/admin/world/config',json={
         'enabled':True,'schedule_enabled':False,'open_minute':540,'close_minute':1320,
-        'admin_password':'mtunz7','admin_pin':'2345'})
+        'admin_pin':'2345'})
     assert enable.status_code==200,enable.text
     rooms=a.get('/api/world/rooms').json()['rooms']
     assert rooms and rooms[0]['slug']=='general'
@@ -152,7 +149,7 @@ def test_room_slow_mode_polls_one_vote_and_admin_permissions():
     assert admin.get('/api/admin/world/polls').status_code==200
 
 def test_ops_restricted_flags_and_factory_reset_scopes():
-    admin,a,b,aid,bid=setup();set_pin(admin)
+    admin,a,b,aid,bid=setup()
     assert a.get('/api/admin/ops/overview').status_code==403
     info=admin.get('/api/admin/ops/overview')
     assert info.status_code==200,info.text

@@ -65,7 +65,7 @@ def create_member(admin, name):
     pending = admin.get('/api/admin/registrations').json()['registrations']
     ticket = next(x['id'] for x in pending if x['username'] == name)
     assert admin.post(f'/api/admin/registrations/{ticket}/decision',
-                      json={'approve':True}).status_code == 200
+                      json={'approve':True,'admin_pin':PIN}).status_code == 200
     assert client.post('/api/registration/complete',json={
         'username':name,'password':PASSWORD,'pin':PIN,'pin_length':6,'accepted_terms':True
     }).status_code == 200
@@ -84,7 +84,7 @@ def create_member(admin, name):
 
 def delete_payload(name, password=PASSWORD, pin=PIN, *, schedule=False):
     return {'username':name,'password':password,'pin':pin,
-            'confirm':'XOA SAU 30 NGAY' if schedule else CONFIRM}
+            'confirm':'XOA SAU 3 NGAY' if schedule else CONFIRM}
 
 
 def test_self_delete_requires_live_password_pin_username_and_explicit_phrase():
@@ -157,12 +157,12 @@ def test_self_delete_cleans_dependencies_and_preserves_surviving_group():
     response=member.post('/api/me/delete',json=delete_payload('erase_self',schedule=True))
     assert response.status_code==200,response.text
     assert response.json()['pending'] is True
-    assert response.json()['purge_at']-response.json()['requested_at']==30*86400
+    assert response.json()['purge_at']-response.json()['requested_at']==3*86400
     assert member.get('/api/me').json()['user']['username']=='erase_self'
     assert path.exists(),'Grace period must preserve uploaded content.'
     assert admin.get('/api/admin/deletions').json()['requests'][0]['username']=='erase_self'
     response=admin.post(f'/api/admin/users/{uid}/delete',
-                        json=delete_payload('erase_self',password='mtunz7'))
+                        json={'username':'erase_self','confirm':CONFIRM,'admin_pin':PIN})
     assert response.status_code==200,response.text
     assert response.json()['deleted_user_id']==uid
     assert member.get('/api/me').json()['user'] is None
@@ -191,18 +191,18 @@ def test_self_delete_cleans_dependencies_and_preserves_surviving_group():
     assert member.post('/api/auth/start',json={'username':'erase_self'}).status_code==404
 
 
-def test_admin_permanent_delete_requires_admin_password_and_never_deletes_admin():
+def test_admin_permanent_delete_requires_pin_and_never_deletes_admin():
     admin=login_admin()
     target,uid=create_member(admin,'remove_target')
     other,other_id=create_member(admin,'keep_target')
-    payload=delete_payload('remove_target',password='mtunz7',pin=PIN)
+    payload={'username':'remove_target','confirm':CONFIRM,'admin_pin':PIN}
     guest=TestClient(app)
     assert guest.post(f'/api/admin/users/{uid}/delete',json=payload).status_code==401
     assert other.post(f'/api/admin/users/{uid}/delete',json=payload).status_code==403
     assert admin.post('/api/admin/users/1/delete',
-                      json=delete_payload('admin',password='mtunz7',pin=PIN)).status_code==404
+                      json={'username':'admin','confirm':CONFIRM,'admin_pin':PIN}).status_code==404
     assert admin.post(f'/api/admin/users/{uid}/delete',
-                      json={**payload,'password':'wrong'}).status_code==401
+                      json={**payload,'admin_pin':'000000'}).status_code==401
     assert admin.post(f'/api/admin/users/{uid}/delete',
                       json={**payload,'username':'keep_target'}).status_code==422
     assert target.get('/api/me').json()['user']['username']=='remove_target'
@@ -218,7 +218,7 @@ def test_admin_permanent_delete_requires_admin_password_and_never_deletes_admin(
         assert c.execute("SELECT 1 FROM audit WHERE action='permanent_user_delete'").fetchone()
 
 
-def test_30_day_cancellation_is_authenticated_and_preserves_data():
+def test_three_day_cancellation_is_authenticated_and_preserves_data():
     admin=login_admin()
     member,uid=create_member(admin,'reconsider')
     created=member.post('/api/me/delete',json=delete_payload('reconsider',schedule=True))
@@ -267,6 +267,6 @@ def test_admin_immediate_delete_requires_enrolled_pin():
     with db() as c:
         c.execute("UPDATE users SET pin_hash=NULL,pin_length=NULL WHERE username='admin'")
     response=admin.post(f'/api/admin/users/{uid}/delete',
-                        json=delete_payload('protect_user',password='mtunz7'))
+                        json={'username':'protect_user','confirm':CONFIRM,'admin_pin':PIN})
     assert response.status_code==403
     assert member.get('/api/me').json()['user']['id']==uid

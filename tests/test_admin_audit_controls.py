@@ -58,11 +58,11 @@ def test_sensitive_admin_user_edit_and_session_revoke():
                'phone': '0912345678', 'email': 'test@example.com',
                'reason': 'Yêu cầu hỗ trợ từ người dùng'}
 
-    assert member.post(endpoint, json={**payload, 'admin_password': 'mtunz7'}).status_code == 403
-    assert TestClient(app).post(endpoint, json={**payload, 'admin_password': 'mtunz7'}).status_code == 401
-    assert admin.post(endpoint, json={**payload, 'admin_password': 'incorrect'}).status_code == 401
-    assert admin.post(endpoint, json=payload).status_code == 422
-    assert admin.post(endpoint, json={**payload, 'admin_password': 'mtunz7'}).status_code == 200
+    assert member.post(endpoint, json={**payload, 'admin_pin':'2345'}).status_code == 403
+    assert TestClient(app).post(endpoint, json={**payload, 'admin_pin':'2345'}).status_code == 401
+    assert admin.post(endpoint, json={**payload, 'admin_pin':'0000'}).status_code == 401
+    assert admin.post(endpoint, json=payload).status_code == 401
+    assert admin.post(endpoint, json={**payload, 'admin_pin':'2345'}).status_code == 200
     info = admin.get(f'/api/admin/users/{user_id}/details').json()['user']
     assert info['display_name'] == 'Tên được chỉnh'
     assert info['phone'] == '+84912345678'
@@ -70,9 +70,9 @@ def test_sensitive_admin_user_edit_and_session_revoke():
 
     revoke = f'/api/admin/users/{user_id}/sessions/revoke'
     reason = {'reason': 'Người dùng yêu cầu thu hồi phiên'}
-    assert member.post(revoke, json={**reason, 'admin_password': 'mtunz7'}).status_code == 403
-    assert admin.post(revoke, json={**reason, 'admin_password': 'wrong'}).status_code == 401
-    result = admin.post(revoke, json={**reason, 'admin_password': 'mtunz7'})
+    assert member.post(revoke, json={**reason, 'admin_pin':'2345'}).status_code == 403
+    assert admin.post(revoke, json={**reason, 'admin_pin':'0000'}).status_code == 401
+    result = admin.post(revoke, json={**reason, 'admin_pin':'2345'})
     assert result.status_code == 200, result.text
     assert result.json()['sessions_revoked'] >= 1
     assert member.get('/api/me').json()['user'] is None

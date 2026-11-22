@@ -87,7 +87,7 @@ def test_admin_can_mark_spam_and_reopen(monkeypatch):
     guest, ticket = guest_ticket()
     endpoint = f'/api/admin/tickets/{ticket}/status'
     assert guest.post(endpoint, json={'status': 'spam'}).status_code in (401, 403)
-    resp = admin.post(endpoint, json={'status': 'spam'})
+    resp = admin.post(endpoint, json={'status': 'spam','admin_pin':'2345'})
     assert resp.status_code == 200, resp.text
     assert next(x for x in admin.get('/api/admin/tickets').json()['tickets']
                 if x['id'] == ticket)['status'] == 'spam'
@@ -96,7 +96,7 @@ def test_admin_can_mark_spam_and_reopen(monkeypatch):
     with db() as c:
         log = c.execute("SELECT action FROM audit WHERE action='support_mark_spam'").fetchone()
     assert log is not None
-    assert admin.post(endpoint, json={'status': 'open'}).status_code == 200
+    assert admin.post(endpoint, json={'status': 'open','admin_pin':'2345'}).status_code == 200
     assert guest.post(f'/api/support/tickets/{ticket}/messages',
                       json={'body': 'Tin nhắn hợp lệ sau khi mở lại'}).status_code == 200
 

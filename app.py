@@ -572,15 +572,34 @@ async def public_privacy():
     return FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
 
 
+def maintenance_enabled(c, lock=False):
+    query = "SELECT value FROM settings WHERE key='maintenance_mode'"
+    if lock and POSTGRES_MODE:
+        query += ' FOR UPDATE'
+    row = one(c, query)
+    return bool(row and row['value'] == '1')
+
+
+def require_member_service(c, lock=False):
+    if maintenance_enabled(c, lock):
+        raise HTTPException(503, {'code':'maintenance',
+                                  'message':'Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'})
+
+
 def current_user(request: Request, require=True):
     t = request.cookies.get('s')
     with db() as c:
-        row = one(c, '''SELECT u.*,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id
-                       WHERE s.token_hash=?''', (digest(t),)) if t else None
+        row = one(c, '''SELECT u.*,s.expires_at,
+                       (SELECT value FROM settings WHERE key='maintenance_mode') AS maintenance_mode
+                       FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?''', (digest(t),)) if t else None
         if not row or row['expires_at'] <= now():
+            if t:
+                require_member_service(c)
             if require:
                 raise HTTPException(401, 'Phiên đăng nhập đã hết hạn.')
             return None
+        if not row['is_admin'] and row['maintenance_mode']=='1':
+            require_member_service(c)
         if row['sanction_kind'] and row['sanction_until'] and row['sanction_until'] <= now():
             c.execute('UPDATE users SET sanction_kind=NULL,sanction_until=NULL,sanction_reason=NULL WHERE id=?', (row['id'],))
             row = current_user_no_sanction(c, row['id'])
@@ -606,24 +625,6 @@ def require_admin(request):
     return u
 
 
-def verify_admin_stepup(request: Request, admin: dict, password: str, pin: str = ''):
-    """Re-authenticate a privileged change against server-side hashes.
-
-    Never log, persist or echo secrets. The proof is scoped to this request,
-    so stealing an admin session cookie alone cannot perform these actions.
-    """
-    throttle(request, 'admin-stepup', 100, 900, str(admin['id']))
-    password_ok = bool(password) and verify_secret(admin['password_hash'], password)
-    pin_ok = (not admin['pin_hash']) or (
-        bool(pin) and len(pin) == admin['pin_length'] and
-        pin.isascii() and pin.isdigit() and verify_secret(admin['pin_hash'], pin))
-    if not (password_ok and pin_ok):
-        throttle(request, 'admin-stepup-failure', 5, 900, str(admin['id']))
-        with db() as c:
-            admin_log(c, admin['id'], 'admin_stepup_denied', 'Privileged action rejected')
-        raise HTTPException(401, 'Xác minh bảo mật không đúng. Nhập lại mật khẩu quản trị và PIN.')
-
-
 def public_user(u):
     return {'id': u['id'], 'username': u['username'], 'is_admin': bool(u['is_admin']),
             'pin_length': u['pin_length'], 'created_at': u['created_at'],
@@ -644,6 +645,8 @@ def issue_session(c, uid, request):
     info = device_metadata(request)
     created = now()
     is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(uid,))['is_admin'])
+    if not is_admin and POSTGRES_MODE:
+        require_member_service(c, lock=True)
     expires = created + (2 * 3600 if is_admin else 7 * 86400)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
                  device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
@@ -651,6 +654,8 @@ def issue_session(c, uid, request):
               (digest(raw), uid, expires, created, created,
                info['device_name'], info['device_type'], info['browser'], info['os_name'],
                info['location_hint'], info['network_hint'], info['ip_address']))
+    if not is_admin and not POSTGRES_MODE:
+        require_member_service(c)
     return raw
 
 
@@ -744,6 +749,7 @@ async def registration_request(request: Request, body: RegistrationRequest):
     email = normalize_email(body.email)
     throttle(request, 'signup', 6, 3600)
     with db() as c:
+        require_member_service(c)
         if one(c,'SELECT id FROM users WHERE phone=?',(phone,)):
             raise HTTPException(409,'Số điện thoại đã liên kết với tài khoản khác. Vui lòng dùng số khác hoặc liên hệ hỗ trợ.')
         if name == 'admin' or one(c,'SELECT 1 FROM users WHERE username=?',(name,)):
@@ -787,6 +793,7 @@ async def register_complete(request: Request, body: RegisterComplete):
     ensure_password(body.password)
     ensure_pin(body.pin,body.pin_length)
     with db() as c:
+        require_member_service(c)
         r = one(c, 'SELECT * FROM registrations WHERE username=? AND guest_id=?', (name,request.state.gid))
         if not r or r['status'] != 'approved':
             raise HTTPException(403,'Yêu cầu của bạn chưa được admin chấp thuận.')
@@ -823,6 +830,8 @@ async def auth_start(request: Request, body: UsernameIn):
     throttle(request, 'auth-start', 60, 900)
     with db() as c:
         u = login_user(c, name, 'id,is_admin')
+        if not u or not u['is_admin']:
+            require_member_service(c)
     if not u:
         raise HTTPException(404,'Không tìm thấy tài khoản hoặc số điện thoại chưa liên kết duy nhất.')
     return {'username':name,'is_admin':bool(u['is_admin']),'next':'password'}
@@ -839,6 +848,8 @@ async def auth_password(request: Request, body: PasswordLogin):
     throttle(request, 'password-login', 15, 900, name)
     with db() as c:
         u = login_user(c, name)
+        if not u or not u['is_admin']:
+            require_member_service(c)
         if not u or not verify_secret(u['password_hash'],body.password):
             raise HTTPException(401,'Tên tài khoản hoặc mật khẩu không đúng.')
         if u['sanction_kind'] and (not u['sanction_until'] or u['sanction_until'] > now()):
@@ -875,11 +886,13 @@ class PinLogin(BaseModel):
 async def auth_pin(request: Request, body: PinLogin):
     throttle(request, 'pin-login', 12, 900, request.state.gid)
     with db() as c:
-        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until
+        r = one(c, '''SELECT l.*,u.pin_hash,u.pin_length,u.needs_display_name,u.sanction_kind,u.sanction_until,u.is_admin
                      FROM login_challenges l JOIN users u ON u.id=l.user_id WHERE l.token_hash=?''',
                 (digest(body.challenge),))
         if not r or r['guest_id'] != request.state.gid or r['expires_at'] <= now():
             raise HTTPException(401,'Phiên xác minh PIN hết hạn, vui lòng đăng nhập lại.')
+        if not r['is_admin']:
+            require_member_service(c)
         pin_valid = (len(body.pin) == r['pin_length'] and body.pin.isascii()
                      and body.pin.isdigit() and verify_secret(r['pin_hash'],body.pin))
         if not pin_valid:
@@ -990,6 +1003,7 @@ async def remembered_unlock(request: Request, body: RememberedUnlock):
     raw = None
     is_admin = False
     with db() as c:
+        require_member_service(c)
         r = one(c, '''SELECT d.*,u.pin_hash,u.pin_length,u.is_admin,u.sanction_kind,u.sanction_until
                       FROM trusted_devices d JOIN users u ON u.id=d.user_id
                       WHERE d.token_hash=?''',(digest(saved),))
@@ -1131,8 +1145,10 @@ async def change_pin(request: Request, body: ChangePin):
     if not u['pin_hash']:
         raise HTTPException(403,'Tài khoản chưa thiết lập PIN.')
     ensure_pin(body.new_pin, body.pin_length)
+    if u['is_admin']:
+        verify_admin_pin_stepup(request,u,body.old_pin)
     with db() as c:
-        if not verify_secret(u['pin_hash'],body.old_pin):
+        if not u['is_admin'] and not verify_secret(u['pin_hash'],body.old_pin):
             raise HTTPException(401,'Mã PIN hiện tại không đúng.')
         c.execute('UPDATE users SET pin_hash=?,pin_length=? WHERE id=?',
                   (hash_secret(body.new_pin),body.pin_length,u['id']))
@@ -1141,17 +1157,20 @@ async def change_pin(request: Request, body: ChangePin):
 
 
 class ChangePassword(BaseModel):
-    old_password: str
+    old_password: str = ''
+    admin_pin: str = Field(default='',max_length=6)
     new_password: str
 
 
 @app.post('/api/me/password')
 async def change_password(request: Request, body: ChangePassword):
     u=current_user(request)
+    if u['is_admin']:
+        verify_admin_pin_stepup(request,u,body.admin_pin)
     throttle(request, 'change-password', 12, 3600, str(u['id']))
     ensure_password(body.new_password)
     with db() as c:
-        if not verify_secret(u['password_hash'],body.old_password):
+        if not u['is_admin'] and not verify_secret(u['password_hash'],body.old_password):
             raise HTTPException(401,'Mật khẩu hiện tại không đúng.')
         c.execute('UPDATE users SET password_hash=? WHERE id=?', (hash_secret(body.new_password),u['id']))
         c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
@@ -1634,12 +1653,14 @@ async def admin_registrations(request:Request):
 
 
 class Decision(BaseModel):
+    admin_pin:str=Field(default='',max_length=6)
     approve:bool
 
 
 @app.post('/api/admin/registrations/{rid}/decision')
 async def admin_decision(request:Request,rid:int,body:Decision):
     admin=require_admin(request)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
         r=one(c,'SELECT * FROM registrations WHERE id=?',(rid,))
         if not r or r['status']!='pending':raise HTTPException(409,'Yêu cầu không còn chờ duyệt.')
@@ -1657,14 +1678,13 @@ async def admin_decision(request:Request,rid:int,body:Decision):
 
 class Capacity(BaseModel):
     max_users:int=Field(ge=1,le=100000)
-    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/capacity')
 async def set_capacity(request:Request,body:Capacity):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
         total,reserved,_=registration_capacity(c)
         if body.max_users<total+reserved:
@@ -1675,21 +1695,49 @@ async def set_capacity(request:Request,body:Capacity):
 
 
 @app.get('/api/admin/users')
-async def admin_users(request:Request,q:str=''):
+async def admin_users(request:Request,q:str=Query('',max_length=120),
+                      status:Literal['all','active','locked','banned','pending_deletion']='all',
+                      sort:Literal['newest','oldest','name','activity']='newest',
+                      limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0,le=100000)):
     require_admin(request)
+    query=q.strip()
+    conditions=['u.is_admin=0']
+    args=[]
+    if query:
+        needle='%'+query.lower().replace('!','!!').replace('%','!%').replace('_','!_')+'%'
+        conditions.append("""(LOWER(u.username) LIKE ? ESCAPE '!' OR LOWER(COALESCE(u.display_name,'')) LIKE ? ESCAPE '!'
+                            OR LOWER(COALESCE(u.email,'')) LIKE ? ESCAPE '!' OR COALESCE(u.phone,'') LIKE ? ESCAPE '!'
+                            OR u.id=? OR u.public_id=? OR u.phone=?)""")
+        identity=query.removeprefix('#')
+        numeric=int(identity) if identity.isascii() and identity.isdigit() and len(identity)<=18 else -1
+        phone=''
+        if re.fullmatch(r'[+0-9(). -]+',query):
+            try:
+                phone=normalize_phone(query)
+            except HTTPException:
+                pass
+        args.extend((needle,needle,needle,needle,numeric,numeric,phone))
+    if status in ('locked','banned'):
+        conditions.append('u.sanction_kind=? AND (u.sanction_until IS NULL OR u.sanction_until>?)')
+        args.extend(('lock' if status=='locked' else 'ban',now()))
+    elif status=='active':
+        conditions.append('(u.sanction_kind IS NULL OR u.sanction_until<=?) AND d.purge_at IS NULL')
+        args.append(now())
+    elif status=='pending_deletion':
+        conditions.append('d.purge_at IS NOT NULL')
+    order={'newest':'u.created_at DESC,u.id DESC','oldest':'u.created_at,u.id',
+           'name':"LOWER(COALESCE(NULLIF(u.display_name,''),u.username)),u.id",
+           'activity':'COALESCE(u.last_seen,0) DESC,u.id DESC'}[sort]
+    source=' FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id WHERE '+' AND '.join(conditions)
     with db() as c:
-        query=q.strip()[:24]
-        numeric_id=int(query) if query.isascii() and query.isdigit() and len(query)<=9 else -1
-        rows=many(c,'''SELECT u.id,u.username,u.created_at,u.last_seen,u.pin_length,
-                              u.sanction_kind,u.sanction_until,u.sanction_reason,
-                              d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at
-                       FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id
-                       WHERE u.is_admin=0 AND (u.username LIKE ? OR u.id=?)
-                       ORDER BY u.id DESC LIMIT 200''',('%'+query+'%',numeric_id))
-        for r in rows:
-            r['message_count']=one(c,'SELECT count(*) n FROM messages WHERE sender_id=? OR recipient_id=?',(r['id'],r['id']))['n']
-            r['friend_count']=one(c,"SELECT count(*) n FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(r['id'],r['id']))['n']
-    return {'users':rows}
+        total=one(c,'SELECT COUNT(*) n'+source,args)['n']
+        rows=many(c,"""SELECT u.id,u.public_id,u.username,u.display_name,u.phone,u.email,
+                            u.created_at,u.last_seen,u.pin_length,u.sanction_kind,u.sanction_until,u.sanction_reason,
+                            d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at,
+                            (SELECT COUNT(*) FROM messages m WHERE m.sender_id=u.id OR m.recipient_id=u.id) AS message_count,
+                            (SELECT COUNT(*) FROM friendships f WHERE f.state='accepted' AND (f.u1=u.id OR f.u2=u.id)) AS friend_count"""
+                  +source+' ORDER BY '+order+' LIMIT ? OFFSET ?',(*args,limit,offset))
+    return {'users':rows,'total':total,'offset':offset,'limit':limit}
 
 
 class Sanction(BaseModel):
@@ -1697,7 +1745,6 @@ class Sanction(BaseModel):
     minutes:int|None=Field(default=None,ge=1,le=5256000)
     seconds:int|None=Field(default=None,ge=1,le=157680000)
     reason:str=Field(default='',max_length=250)
-    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
@@ -1756,10 +1803,7 @@ async def admin_sanction(request:Request,uid:int,body:Sanction):
         raise HTTPException(422, 'Khóa tạm thời cần có thời hạn cụ thể.')
     if body.kind!='unban' and len(body.reason.strip())<5:
         raise HTTPException(422,'Phải ghi rõ lý do xử lý tối thiểu 5 ký tự.')
-    if admin['pin_hash']:
-        verify_admin_pin_stepup(request,admin,body.admin_pin)
-    else:
-        verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
         u=one(c,'SELECT * FROM users WHERE id=? AND is_admin=0',(uid,))
         if not u:raise HTTPException(404,'Không tìm thấy tài khoản.')
@@ -1810,9 +1854,14 @@ async def admin_ticket_messages(request:Request,tid:int):
         return {'messages':many(c,'SELECT * FROM ticket_messages WHERE ticket_id=? ORDER BY id',(tid,))}
 
 
+class AdminSupportMessage(SupportMessage):
+    admin_pin:str=Field(default='',max_length=6)
+
+
 @app.post('/api/admin/tickets/{tid}/messages')
-async def admin_send_ticket(request:Request,tid:int,body:SupportMessage):
+async def admin_send_ticket(request:Request,tid:int,body:AdminSupportMessage):
     admin=require_admin(request)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
         t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
         if not t:raise HTTPException(404,'Không tìm thấy yêu cầu.')
@@ -1827,7 +1876,6 @@ async def admin_send_ticket(request:Request,tid:int,body:SupportMessage):
 class RecoveryGrantIn(BaseModel):
     username:str
     verified:bool=False
-    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
@@ -1836,7 +1884,7 @@ async def admin_grant(request:Request,tid:int,body:RecoveryGrantIn):
     admin=require_admin(request)
     if not body.verified:
         raise HTTPException(422,'Admin phải xác nhận đã kiểm tra danh tính qua kênh độc lập.')
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     username=norm_username(body.username)
     with db() as c:
         t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
@@ -1855,12 +1903,14 @@ async def admin_grant(request:Request,tid:int,body:RecoveryGrantIn):
 
 
 class TicketClose(BaseModel):
+    admin_pin:str=Field(default='',max_length=6)
     status:Literal['open','closed','spam']
 
 
 @app.post('/api/admin/tickets/{tid}/status')
 async def admin_ticket_status(request:Request,tid:int,body:TicketClose):
     admin=require_admin(request)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
         t=one(c,'SELECT * FROM tickets WHERE id=?',(tid,))
         if not t:raise HTTPException(404,'Không tìm thấy yêu cầu.')
@@ -1872,14 +1922,13 @@ async def admin_ticket_status(request:Request,tid:int,body:TicketClose):
 
 class Broadcast(BaseModel):
     body:str=Field(min_length=1,max_length=500)
-    admin_password:str=Field(default='',max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/broadcast')
 async def admin_broadcast(request:Request,body:Broadcast):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     with db() as c:
         ids=[r['id'] for r in c.execute('SELECT id FROM users WHERE is_admin=0')]
         for uid in ids:
@@ -1893,7 +1942,7 @@ async def admin_broadcast(request:Request,body:Broadcast):
 # Security events are intentionally append-only. A privileged administrator can
 # inspect/export them, but cannot alter or erase evidence through the web API.
 AUDIT_HIGH_RISK = {
-    'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
+    'maintenance_mode', 'admin_cancel_account_deletion', 'maintenance_member_reset', 'permanent_user_delete', 'issue_recovery', 'admin_stepup_denied',
     'admin_revoke_user_sessions', 'admin_edit_user', 'enable_admin_pin',
     'sanction_ban', 'sanction_lock', 'admin_password_change',
 }
@@ -1972,14 +2021,13 @@ class AdminUserEdit(BaseModel):
     phone:str=Field(min_length=0,max_length=40)
     email:str=Field(default='',max_length=254)
     reason:str=Field(min_length=5,max_length=250)
-    admin_password:str=Field(min_length=1,max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/users/{uid}/edit')
 async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     throttle(request,'admin-edit-user',30,3600,str(admin['id']))
     phone=normalize_phone(body.phone)
     email=normalize_email(body.email)
@@ -2001,14 +2049,13 @@ async def admin_edit_user(request:Request,uid:int,body:AdminUserEdit):
 
 class AdminSessionRevoke(BaseModel):
     reason:str=Field(min_length=5,max_length=250)
-    admin_password:str=Field(min_length=1,max_length=128)
     admin_pin:str=Field(default='',max_length=6)
 
 
 @app.post('/api/admin/users/{uid}/sessions/revoke')
 async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRevoke):
     admin=require_admin(request)
-    verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)
+    verify_admin_pin_stepup(request,admin,body.admin_pin)
     throttle(request,'admin-revoke-user-sessions',15,3600,str(admin['id']))
     with db() as c:
         user=one(c,'SELECT id FROM users WHERE id=? AND is_admin=0',(uid,))
@@ -2065,12 +2112,15 @@ async def websocket_events(ws:WebSocket):
     uid=None
     if sid:
         with db() as c:
-            r=one(c,'''SELECT u.id,u.sanction_kind,u.sanction_until,u.needs_display_name FROM sessions s
+            r=one(c,'''SELECT u.id,u.is_admin,u.sanction_kind,u.sanction_until,u.needs_display_name FROM sessions s
                        JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?''',
                   (digest(sid),now()))
-            if r and not r['needs_display_name'] and (not r['sanction_kind'] or
+            paused=(not r or not r['is_admin']) and maintenance_enabled(c)
+            if not paused and r and not r['needs_display_name'] and (not r['sanction_kind'] or
                     (r['sanction_until'] and r['sanction_until']<=now())):
                 uid=r['id']
+        if paused:
+            await hub.send([ws], {'type':'maintenance-mode'})
     if uid is not None:
         was_online=bool(hub.users.get(uid))
         hub.users[uid].add(ws)

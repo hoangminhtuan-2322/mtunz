@@ -33,7 +33,7 @@ def isolate():
     RATE_BUCKETS.clear()
 
 def users():
-    admin=logged_admin()
+    admin=logged_admin(enroll=False)
     assert admin.post('/api/me/pin/setup',json={'current_password':'mtunz7','pin':'2345','pin_length':4}).status_code==200
     a=register_user(admin,'plus_alice')
     b=register_user(admin,'plus_bob')

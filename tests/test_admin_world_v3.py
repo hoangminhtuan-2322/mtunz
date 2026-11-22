@@ -34,7 +34,7 @@ def clean_v3():
 
 
 def admin_with_pin():
-    admin=logged_admin()
+    admin=logged_admin(enroll=False)
     r=admin.post('/api/me/pin/setup',json={'current_password':'mtunz7',
                                             'pin':'2345','pin_length':4})
     assert r.status_code==200,r.text
@@ -110,7 +110,7 @@ def test_world_media_remains_readable_after_admin_closes_room():
     admin=admin_with_pin()
     member=register_user(admin,'v3_world')
     config={'enabled':True,'schedule_enabled':False,'open_minute':540,
-            'close_minute':1320,'admin_password':'mtunz7','admin_pin':'2345'}
+            'close_minute':1320,'admin_pin':'2345'}
     assert admin.post('/api/admin/world/config',json=config).status_code==200
     payload=member.post('/api/uploads',files={
         'file':('world.png',io.BytesIO(b'\x89PNG\r\n\x1a\n'+b'8'*128),'image/png')

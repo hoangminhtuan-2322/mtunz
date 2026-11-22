@@ -27,13 +27,12 @@ assert(admin.includes('CSV'),'Audit export identified');
 assert(admin.includes('replace(/\\r?\\n/g'),'CSV values prevent line injection');
 assert(admin.includes("s=\"'\"+s"),'CSV formulas neutralized');
 assert(app.includes('function adminProofFields('),'Privileged confirmation is rendered');
-assert(app.includes('function adminProofValue('),'Privileged confirmation reads password/PIN');
+assert(app.includes('function adminProofValue('),'Privileged confirmation reads PIN');
 for(const url of ['/api/admin/capacity','/api/admin/broadcast','/api/admin/tickets/']){
  assert(app.includes(url),'Existing admin flow preserved '+url);
 }
-assert(server.includes('def verify_admin_stepup('),'Server performs independent proof checks');
+assert(server.includes('verify_admin_pin_stepup('),'Server performs independent proof checks');
 assert(server.includes("'admin_stepup_denied'"),'Failed privileged reauth is audited');
-assert(server.includes('verify_secret(admin[\'password_hash\'], password)'));
-assert(server.includes('verify_secret(admin[\'pin_hash\'], pin)'));
 assert(!admin.includes('localStorage.setItem('),'Never cache sensitive admin data');
+assert(!app.includes('id="admin-confirm-password"'),'Privileged confirmation asks for PIN only');
 console.log('Admin workspace OK: assets, navigation, filters, a11y, safe CSV and server reauthentication.');

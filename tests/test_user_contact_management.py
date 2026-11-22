@@ -39,7 +39,7 @@ def test_signup_requires_phone_and_admin_can_review_contact():
     assert pending['phone']=='+84912345678'
     assert pending['email']=='demo.person@gmail.com'
     assert admin.post(f"/api/admin/registrations/{pending['id']}/decision",
-                      json={'approve':True}).status_code==200
+                      json={'approve':True,'admin_pin':'2345'}).status_code==200
     complete=guest.post('/api/registration/complete',json={
         'username':'contact_demo','password':'SecurePassword123!',
         'pin':'123456','pin_length':6,'accepted_terms':True})

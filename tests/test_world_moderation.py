@@ -36,7 +36,7 @@ def reset_world():
 def admin_config(admin, enabled=True, scheduled=False, start=540, end=1320):
     return admin.post('/api/admin/world/config',json={
         'enabled':enabled,'schedule_enabled':scheduled,
-        'open_minute':start,'close_minute':end,'admin_password':'mtunz7'
+        'open_minute':start,'close_minute':end,'admin_pin':'2345'
     })
 
 
@@ -153,20 +153,20 @@ def test_admin_can_mute_and_reset_world_without_disabling_private_messages():
     assert alice.post(f'/api/friends/request/{b}').status_code==200
     assert bob.post(f'/api/friends/accept/{a}').status_code==200
     assert admin_config(admin).status_code==200
-    bad=admin.post('/api/admin/world/mute',json={'user_id':a,'minutes':720,'reason':'Vi phạm nội quy','admin_password':'wrong'})
+    bad=admin.post('/api/admin/world/mute',json={'user_id':a,'minutes':720,'reason':'Vi phạm nội quy','admin_pin':'0000'})
     assert bad.status_code==401
     mute=admin.post('/api/admin/world/mute',json={
-        'user_id':a,'minutes':720,'reason':'Spam cộng đồng','admin_password':'mtunz7'})
+        'user_id':a,'minutes':720,'reason':'Spam cộng đồng','admin_pin':'2345'})
     assert mute.status_code==200,mute.text
     assert alice.get('/api/world/status').json()['muted_until']>core.now()
     assert alice.post('/api/world/messages',json={'body':'Bị khóa'}).status_code==423
     assert alice.post('/api/messages',json={'recipient_id':b,'body':'Chat bạn bè'}).status_code==200
     assert admin.post('/api/admin/world/reset',json={
-        'user_id':a,'reason':'Đã kiểm chứng', 'admin_password':'mtunz7'}).status_code==200
+        'user_id':a,'reason':'Đã kiểm chứng', 'admin_pin':'2345'}).status_code==200
     # Reset escalation must not remove an admin-imposed world mute.
     assert alice.get('/api/world/status').json()['muted_until']>core.now()
     assert admin.post('/api/admin/world/mute',json={
-        'user_id':a,'minutes':0,'reason':'Đã gỡ hạn chế','admin_password':'mtunz7'}).status_code==200
+        'user_id':a,'minutes':0,'reason':'Đã gỡ hạn chế','admin_pin':'2345'}).status_code==200
     assert alice.post('/api/world/messages',json={'body':'Hết hạn chế'}).status_code==200
 
 
@@ -191,13 +191,13 @@ def test_member_reports_are_permission_checked_and_admin_reviews_are_logged():
     items=admin.get('/api/admin/reports').json()['reports']
     assert items[0]['id']==rid and items[0]['evidence']=='Vi phạm cần xem xét'
     fail=admin.post(f'/api/admin/reports/{rid}/review',json={
-        'decision':'reviewed','note':'Đã kiểm tra','admin_password':'wrong'})
+        'decision':'reviewed','note':'Đã kiểm tra','admin_pin':'0000'})
     assert fail.status_code==401
     reviewed=admin.post(f'/api/admin/reports/{rid}/review',json={
-        'decision':'reviewed','note':'Đã đối soát nội dung','admin_password':'mtunz7'})
+        'decision':'reviewed','note':'Đã đối soát nội dung','admin_pin':'2345'})
     assert reviewed.status_code==200,reviewed.text
     assert admin.post(f'/api/admin/reports/{rid}/review',json={
-        'decision':'dismissed','note':'Không phù hợp','admin_password':'mtunz7'}).status_code==409
+        'decision':'dismissed','note':'Không phù hợp','admin_pin':'2345'}).status_code==409
     with db() as c:
         audit=c.execute("SELECT action FROM audit WHERE action='member_report_review' ORDER BY id DESC LIMIT 1").fetchone()
         assert audit and audit['action']=='member_report_review'

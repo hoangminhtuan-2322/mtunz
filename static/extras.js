@@ -399,8 +399,9 @@ async function extraAction(btn){
   const data=await api(`/api/admin/groups/${id}/messages`);
   modal({title:`Lịch sử nhóm #${id}`,description:'Truy cập này được ghi vào nhật ký quản trị.',content:`<div class="moderation-log">${data.messages.map(m=>`<div class="people-row"><div class="grow"><b>${esc(m.sender)}</b><div class="hint">${date(m.created_at)}</div><div>${esc(m.deleted_at?'[Đã thu hồi]':m.body)}</div></div>${m.deleted_at?'':`<button class="btn danger sm" data-act="admin-group-delete" data-id="${m.id}" data-group="${id}">Gỡ</button>`}</div>`).join('')||'<div class="empty">Chưa có tin nhắn.</div>'}</div>`,confirm:'Đóng'});break;
  }
- case 'admin-group-delete':ask('Gỡ nội dung vi phạm','Tin nhắn này sẽ bị ẩn đối với mọi thành viên; thao tác được ghi nhật ký.',async()=>{
-  await del(`/api/admin/groups/${Number(btn.dataset.group)}/messages/${id}`);await loadAdmin();toast('Đã gỡ nội dung.','ok');},'Gỡ tin',true);break;
+ case 'admin-group-delete':modal({title:'Gỡ tin nhắn nhóm',content:adminProofFields(),confirm:'Gỡ tin',danger:true,handler:async host=>{
+  await api(`/api/admin/groups/${Number(btn.dataset.group)}/messages/${id}`,{method:'DELETE',data:adminProofValue(host)});
+  await loadAdmin();toast('Đã gỡ nội dung.','ok');}});break;
  case 'call-audio':await startCall(id,false);break;
  case 'call-video':await startCall(id,true);break;
  }

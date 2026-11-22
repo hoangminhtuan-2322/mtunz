@@ -90,7 +90,7 @@ def test_world_anonymous_is_snapshot_and_admin_can_moderate():
     admin,a,b,au,_=pair()
     enable=admin.post('/api/admin/world/config',json={
         'enabled':True,'schedule_enabled':False,'open_minute':540,'close_minute':1320,
-        'admin_password':'mtunz7'
+        'admin_pin':'2345'
     })
     assert enable.status_code==200,enable.text
     assert a.patch('/api/me/social',json={'world_anonymous':True}).status_code==200

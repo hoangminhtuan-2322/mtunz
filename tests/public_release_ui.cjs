@@ -19,7 +19,7 @@ assert(terms.includes('href="/privacy"')&&privacy.includes('href="/terms"'));
 assert(privacy.includes('không có mã hóa đầu-cuối (E2EE)'));
 assert(privacy.includes('Quản trị viên có thể xem thông tin tài khoản'));
 assert(privacy.includes('Neon PostgreSQL')&&privacy.includes('Render'));
-assert(terms.includes('Trung tâm hỗ trợ')&&terms.includes('30 ngày'));
+assert(terms.includes('Trung tâm hỗ trợ')&&terms.includes('3 ngày'));
 assert(css.includes('.registration-consent a:focus-visible'));
 assert(ui.includes('href="/terms"')&&ui.includes('href="/privacy"'));
 assert(ui.includes("accepted_terms:fd.get('accepted_terms')==='on'"));

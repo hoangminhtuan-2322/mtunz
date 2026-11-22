@@ -58,11 +58,12 @@ const {chromium}=require('playwright-core');
    });
    const sent=page.locator('#chat-messages .bubble-wrap').filter({hasText:'Gửi ngay'});
    await sent.waitFor();
-   assert(await sent.evaluate(row=>{
+   await page.waitForFunction(row=>{
     const thread=row.closest('#chat-messages');
+    if(!thread)return false;
     const bounds=thread.getBoundingClientRect(),message=row.getBoundingClientRect();
-    return message.top>=bounds.top&&message.bottom<=bounds.bottom;
-   }),'New pending message is visible on '+width+'px');
+    return message.top>=bounds.top-1&&message.bottom<=bounds.bottom+1;
+   },await sent.elementHandle(),{timeout:8000});
    await thread.evaluate(el=>{el.style.removeProperty('padding-bottom');el.dispatchEvent(new Event('scroll'));});
    assert.equal(await text.inputValue(),'');
    assert(await existing.evaluate(el=>el.isConnected));

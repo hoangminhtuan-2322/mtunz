@@ -38,7 +38,7 @@ assert(server.includes('RESET_AFTER = 30 * 86400'));
 assert(server.includes('ACCOUNT_LOCK_SECONDS = 15*86400'));
 assert(server.includes('MUTE_DURATIONS = (12*3600, 86400, 3*86400, 7*86400)'));
 assert(server.includes('class WorldConfig(BaseModel)'));
-assert(server.includes("verify_admin_stepup(request,admin,body.admin_password,body.admin_pin)"));
+assert(server.includes("verify_admin_pin_stepup(request,admin,body.admin_pin)"));
 assert(server.includes('UPDATE world_penalties SET window_count=window_count'),'Persistent row lock protects rate rule');
 assert(server.includes('scope:Literal'), 'Evidence scope is validated');
 assert(server.includes("decision:Literal['reviewed','dismissed']"), 'Report decision must be validated');

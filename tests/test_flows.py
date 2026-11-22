@@ -25,11 +25,18 @@ def clean_database():
 
 
 
-def logged_admin():
+def logged_admin(enroll=True):
     c=TestClient(app)
     assert c.get('/').status_code==200
     assert c.post('/api/auth/start',json={'username':'admin'}).status_code==200
-    assert c.post('/api/auth/password',json={'username':'admin','password':'mtunz7'}).json()['admin'] is True
+    login=c.post('/api/auth/password',json={'username':'admin','password':'mtunz7'}).json()
+    if login.get('challenge'):
+        assert c.post('/api/auth/pin',json={'challenge':login['challenge'],'pin':'2345'}).json()['ok']
+    else:
+        assert login['admin'] is True
+        if enroll:
+            result=c.post('/api/me/pin/setup',json={'current_password':'mtunz7','pin':'2345','pin_length':4})
+            assert result.status_code==200,result.text
     assert c.get('/api/me').json()['user']['is_admin'] is True
     return c
 
@@ -42,7 +49,7 @@ def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     assert guest.post('/api/registration/request',json={'username':name,'phone':phone,'email':'demo@example.com'}).json()['status']=='pending'
     assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin),'accepted_terms':True}).status_code==403
     pending=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']==name][0]
-    assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True}).status_code==200
+    assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True,'admin_pin':'2345'}).status_code==200
     assert guest.get('/api/registration/status').json()['requests'][0]['status']=='approved'
     missing=guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin)})
     assert missing.status_code==422, missing.text
@@ -82,10 +89,10 @@ def test_full_user_friend_chat_admin_and_recovery():
     # Guest recovery chat and admin-signed one-time reset (manual verification step).
     ticket=first.post('/api/support/tickets',json={'kind':'pin','claim':'Tôi quên mã PIN'}).json()['id']
     first.post(f'/api/support/tickets/{ticket}/messages',json={'body':'Xin hỗ trợ khôi phục PIN'})
-    assert admin.post(f'/api/admin/tickets/{ticket}/messages',json={'body':'Hãy cung cấp bằng chứng sở hữu.'}).status_code==200
+    assert admin.post(f'/api/admin/tickets/{ticket}/messages',json={'body':'Hãy cung cấp bằng chứng sở hữu.','admin_pin':'2345'}).status_code==200
     assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':False}).status_code==422
     assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':True}).status_code==401
-    assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':True, 'admin_password':'mtunz7'}).status_code==200
+    assert admin.post(f'/api/admin/tickets/{ticket}/grant',json={'username':'hoa_demo','verified':True, 'admin_pin':'2345'}).status_code==200
     text=first.get(f'/api/support/tickets/{ticket}/messages').json()['messages'][-1]['body']
     code=text.split(': ')[-1].split('.')[0]
     assert len(code)>10
@@ -96,10 +103,10 @@ def test_full_user_friend_chat_admin_and_recovery():
     assert first.post('/api/auth/pin',json={'challenge':login['challenge'],'pin':'65432'}).status_code==200
     assert first.post('/api/me/pin',json={'old_pin':'65432','new_pin':'987654','pin_length':6}).json()['ok']
     # Sanction immediately invalidates the session.
-    assert admin.post(f'/api/admin/users/{u["id"]}/sanction',json={'kind':'lock','minutes':60,'reason':'Kiểm tra', 'admin_password':'mtunz7'}).status_code==200
+    assert admin.post(f'/api/admin/users/{u["id"]}/sanction',json={'kind':'lock','minutes':60,'reason':'Kiểm tra', 'admin_pin':'2345'}).status_code==200
     assert first.get('/api/me').json()['user'] is None
     assert first.post('/api/messages',json={'recipient_id':v['id'],'body':'Lẽ ra bị khóa'}).status_code in (401,403)
-    assert admin.post(f'/api/admin/users/{u["id"]}/sanction',json={'kind':'unban', 'admin_password':'mtunz7'}).status_code==200
+    assert admin.post(f'/api/admin/users/{u["id"]}/sanction',json={'kind':'unban', 'admin_pin':'2345'}).status_code==200
 
 
 def test_permissions_and_capacity():
@@ -108,14 +115,14 @@ def test_permissions_and_capacity():
     assert guest.get('/api/admin/users').status_code==401
     assert guest.post('/api/auth/password',json={'username':'admin','password':'wrong'}).status_code==401
     assert admin.post('/api/admin/capacity',json={'max_users':1}).status_code==401
-    assert admin.post('/api/admin/capacity',json={'max_users':1, 'admin_password':'mtunz7'}).status_code==200
+    assert admin.post('/api/admin/capacity',json={'max_users':1, 'admin_pin':'2345'}).status_code==200
     assert admin.post('/api/admin/broadcast',json={'body':'Thông báo'}).status_code==401
-    assert admin.post('/api/admin/broadcast',json={'body':'Thông báo', 'admin_password':'mtunz7'}).status_code==200
+    assert admin.post('/api/admin/broadcast',json={'body':'Thông báo', 'admin_pin':'2345'}).status_code==200
     first=register_user(admin,'first_one')
     guest.post('/api/registration/request',json={'username':'second_one','phone':'0912345678'})
     rid=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']=='second_one'][0]['id']
-    assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True}).status_code==409
-    assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':False}).status_code==200
+    assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True,'admin_pin':'2345'}).status_code==409
+    assert admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':False,'admin_pin':'2345'}).status_code==200
     assert first.get('/api/people/search?q=admin').json()['users']==[]
     assert first.post('/api/admin/capacity',json={'max_users':100}).status_code==403
 
@@ -132,7 +139,7 @@ def test_realtime_message_and_immediate_admin_sanction():
         assert bob.post('/api/messages',json={'recipient_id':alice_id,'body':'Tin nhắn trực tiếp'}).status_code==200
         event=alice_ws.receive_json()
         assert event['type']=='message' and event['message']['body']=='Tin nhắn trực tiếp'
-        assert admin.post(f'/api/admin/users/{alice_id}/sanction',json={'kind':'ban','reason':'Vi phạm', 'admin_password':'mtunz7'}).status_code==200
+        assert admin.post(f'/api/admin/users/{alice_id}/sanction',json={'kind':'ban','reason':'Vi phạm', 'admin_pin':'2345'}).status_code==200
         event=alice_ws.receive_json()
         assert event['type']=='account-sanction' and event['kind']=='ban'
     assert alice.get('/api/me').json()['user'] is None

@@ -22,7 +22,7 @@ def clean_security_v5():
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
                   (hash_secret('mtunz7'),))
         c.execute("UPDATE settings SET value='100' WHERE key='max_users'")
-        c.execute("UPDATE settings SET value='0' WHERE key='emergency_lockdown'")
+        c.execute("UPDATE settings SET value='0' WHERE key IN ('emergency_lockdown','maintenance_mode')")
         c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0 WHERE id=1')
     yield
     with db() as c:
@@ -31,12 +31,12 @@ def clean_security_v5():
         c.execute('DELETE FROM admin_login_requests')
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
                   (hash_secret('mtunz7'),))
-        c.execute("UPDATE settings SET value='0' WHERE key='emergency_lockdown'")
+        c.execute("UPDATE settings SET value='0' WHERE key IN ('emergency_lockdown','maintenance_mode')")
     RATE_BUCKETS.clear()
 
 
 def admin_with_pin():
-    admin=logged_admin()
+    admin=logged_admin(enroll=False)
     resp=admin.post('/api/me/pin/setup',json={'current_password':'mtunz7','pin':'2345','pin_length':4})
     assert resp.status_code==200,resp.text
     return admin
@@ -158,3 +158,54 @@ def test_revoke_others_clears_pending_admin_second_session_without_current_logou
     assert admin.get('/api/me').json()['user']['is_admin'] is True
     assert second.post('/api/auth/admin/approval/status',
                        json={'approval_token':waiting.json()['approval_token']}).status_code==404
+
+
+def test_maintenance_reaches_online_members_and_keeps_admin_access():
+    admin=admin_with_pin()
+    member=register_user(admin,'maint_member')
+    endpoint='/api/admin/security/maintenance'
+    assert admin.post(endpoint,json={'enabled':True,'admin_password':'mtunz7'}).status_code==422
+    assert member.post(endpoint,json={'enabled':True,'admin_pin':'2345'}).status_code==403
+    with member.websocket_connect('/ws') as socket:
+        result=admin.post(endpoint,json={'enabled':True,'admin_pin':'2345'})
+        assert result.status_code==200,result.text
+        assert result.json()['revoked_sessions']==1
+        assert socket.receive_json()['type']=='maintenance-mode'
+        assert member.get('/api/me').status_code==503
+        assert admin.get('/api/me').json()['user']['is_admin']
+        assert admin.get('/api/admin/security/overview').json()['maintenance_mode']
+        assert member.post('/api/auth/start',json={'username':'maint_member'}).status_code==503
+    assert admin.post(endpoint,json={'enabled':False,'admin_pin':'2345'}).status_code==200
+    assert member.post('/api/auth/start',json={'username':'maint_member'}).status_code==200
+
+
+def test_admin_search_details_and_pin_protected_cancel():
+    admin=admin_with_pin()
+    member=register_user(admin,'lookup_member')
+    user=member.get('/api/me').json()['user']
+    uid=user['id']
+    phone=user['phone']
+    path='/api/admin/users'
+    assert member.get(path,params={'q':phone}).status_code==403
+    for query in ('lookup_member','Thành viên lookup',phone,'demo@example.com','#'+str(uid),'#'+str(user['public_id'])):
+        response=admin.get(path,params={'q':query,'limit':1})
+        assert response.status_code==200,response.text
+        page=response.json()
+        assert page['total']==1 and page['users'][0]['id']==uid
+        assert page['users'][0]['phone']==phone
+        assert 'password_hash' not in page['users'][0]
+    assert admin.get(path,params={'q':'%'}).json()['total']==0
+    schedule=member.post('/api/me/delete',json={'username':'lookup_member','password':'GreatPassword123',
+                                                'pin':'1234','confirm':'XOA SAU 3 NGAY'})
+    assert schedule.status_code==200,schedule.text
+    clock=schedule.json()
+    assert clock['purge_at']-clock['requested_at']==3*86400
+    assert admin.get(path,params={'status':'pending_deletion'}).json()['total']==1
+    endpoint=f'/api/admin/users/{uid}/delete/cancel'
+    assert member.post(endpoint,json={'admin_pin':'2345'}).status_code==403
+    assert admin.post(endpoint,json={'admin_password':'mtunz7'}).status_code==401
+    response=admin.post(endpoint,json={'admin_pin':'2345'})
+    assert response.status_code==200,response.text
+    assert admin.post(endpoint,json={'admin_pin':'2345'}).status_code==409
+    assert not member.get('/api/me/deletion').json()['pending']
+    assert any('đã hủy yêu cầu xóa' in n['body'] for n in member.get('/api/notifications').json()['notifications'])

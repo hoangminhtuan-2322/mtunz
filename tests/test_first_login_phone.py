@@ -26,7 +26,7 @@ def create_approved(admin,name='private_account',phone='0912345678'):
     assert req.status_code==200,req.text
     rid=next(r['id'] for r in admin.get('/api/admin/registrations').json()['registrations']
              if r['username']==name)
-    approved=admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True})
+    approved=admin.post(f'/api/admin/registrations/{rid}/decision',json={'approve':True,'admin_pin':'2345'})
     assert approved.status_code==200,approved.text
     complete=guest.post('/api/registration/complete',json={
         'username':name,'password':'LongPasswordForTest123!','pin':'123456','pin_length':6,'accepted_terms':True})
