@@ -313,7 +313,18 @@
           button.removeAttribute('aria-busy');
         }
       }
-      if (mutation.type === 'childList' && mutation.addedNodes.length) needsEnhance = true;
+      if (mutation.type === 'childList' && mutation.addedNodes.length) {
+        // Chat can append dozens of bubbles per second. Password/registration
+        // enhancement only belongs to auth and actual forms, not every DOM edit.
+        for (const added of mutation.addedNodes) {
+          if (added.nodeType !== 1) continue;
+          if (added.matches('form[data-form],.auth-panel,.field,input[type="password"]') ||
+              added.querySelector('form[data-form],.auth-panel,.field input[type="password"]')) {
+            needsEnhance = true;
+            break;
+          }
+        }
+      }
     }
     if (needsEnhance) scheduleEnhance();
   });
