@@ -17,12 +17,14 @@ function socialSettingsPanel(){
     <input class="input" id="social-headline" name="headline" maxlength="90" value="${esc(u.headline||'')}" placeholder="Ví dụ: Thích công nghệ, âm nhạc và những kết nối mới"></div>
    <div class="field"><label for="social-website">Trang web (nếu có)</label>
     <input class="input" id="social-website" name="website" type="url" maxlength="180" value="${esc(u.website||'')}" placeholder="https://..." inputmode="url"></div>
-   <div class="field"><label for="social-visibility">Ai được xem hồ sơ của bạn?</label>
+   <label class="social-toggle social-private-control"><input type="checkbox" id="social-private-switch" ${u.profile_visibility!=='everyone'?'checked':''}>
+     <span><strong>🔒 Tài khoản riêng tư</strong><small>Khi bật, người chưa kết bạn không thể xem ảnh, giới thiệu hoặc liên kết hồ sơ. Họ vẫn có thể tìm bằng tên/ID để gửi lời mời kết bạn.</small></span></label>
+   <div class="field"><label for="social-visibility">Ai được xem nội dung hồ sơ?</label>
     <select class="select" id="social-visibility" name="profile_visibility">
      <option value="everyone" ${u.profile_visibility==='everyone'?'selected':''}>Thành viên mtunz</option>
      <option value="friends" ${u.profile_visibility==='friends'?'selected':''}>Chỉ bạn bè</option>
      <option value="only_me" ${u.profile_visibility==='only_me'?'selected':''}>Chỉ mình tôi</option>
-    </select></div>
+    </select><small class="hint">Riêng tư = chỉ bạn bè. Chế độ “Chỉ mình tôi” ẩn cả với bạn bè. Tin gửi trong Chat thế giới vẫn công khai nếu không bật ẩn danh.</small></div>
    <label class="social-toggle"><input type="checkbox" name="allow_message_requests" ${u.allow_message_requests?'checked':''}>
      <span><strong>Nhận tin nhắn chờ</strong><small>Người chưa kết bạn có thể gửi một lời nhắn. Chỉ khi bạn chấp nhận mới mở hội thoại.</small></span></label>
    <label class="social-toggle"><input type="checkbox" name="world_anonymous" ${u.world_anonymous?'checked':''}>
