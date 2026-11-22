@@ -47,7 +47,7 @@ def test_admin_account_review_is_audited_and_excludes_secrets():
                for a in logs)
 
     own_friends=alice.get('/api/friends').json()['friends']
-    public_profile=bob.get(f'/api/profile/{aid}').json()['profile']
+    public_profile=alice.get(f'/api/profile/{aid}').json()['profile']
     for record in [*own_friends,public_profile]:
         assert 'reports' not in record and 'contacts' not in record
         assert 'blocks_received' not in record and 'registration' not in record
