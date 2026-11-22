@@ -1,0 +1,60 @@
+.chat-library-picker{display:flex;gap:8px;margin-block:8px 14px}
+.chat-library-picker .btn{flex:1;min-width:0;min-height:42px;white-space:normal}
+.chat-library-picker [aria-pressed=true]{background:#343b66;border-color:#9290eb;color:#f5f3ff}
+.chat-library-list{display:grid;gap:9px;max-height:min(52dvh,540px);overflow:auto;overscroll-behavior:contain;padding:2px}
+.chat-library-list[data-kind=media]{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}
+.chat-library-row,.chat-library-media{color:var(--text);text-decoration:none;border:1px solid var(--line);background:#182239;border-radius:12px}
+.chat-library-row{min-width:0;display:grid;grid-template-columns:40px minmax(0,1fr);gap:10px;align-items:center;padding:10px}
+.chat-library-row strong,.chat-library-url,.chat-library-row small,.chat-library-media small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-library-row small,.chat-library-media small,.chat-library-url{color:var(--muted);font-size:11px}
+.chat-library-icon{height:40px;display:grid;place-items:center;border-radius:10px;background:#323759;color:#d0c9fc}
+.chat-library-media{min-width:0;overflow:hidden}
+.chat-library-media img{display:block;width:100%;aspect-ratio:1;object-fit:cover;background:#252c44}
+.chat-library-media small,.chat-library-save{padding:6px 8px}
+.chat-library-save{min-height:32px;display:flex;gap:4px;align-items:center;border-top:1px solid var(--line);color:#cfc6ff;font-size:12px;text-decoration:none}
+.chat-library-save:hover{text-decoration:underline}
+.chat-library-media:hover,.chat-library-row:hover{border-color:#a49df0}
+.chat-library-status{margin-block:10px}
+.chat-library-status:empty{display:none}
+#modal-root .modal:has(.chat-library){width:min(540px,100%)}
+@media(min-width:801px){
+ #modal-root .modal-backdrop:has(.chat-library){justify-content:flex-end}
+}
+@media(max-width:420px){
+ .chat-library-picker{gap:5px}
+ .chat-library-list[data-kind=media]{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .main-head [data-chat-library]{min-width:36px}
+}
+.member-profile-page{padding-block:4px 28px}
+.member-profile-page .section-title{margin-bottom:16px}
+.member-profile-card{border:1px solid var(--line);border-radius:20px;background:#171f32;overflow:hidden}
+.member-profile-banner{height:clamp(92px,18vw,185px);background:radial-gradient(ellipse at 80% 20%,#2e6476 1%,transparent 52%),linear-gradient(118deg,#333368,#52468b 61%,#282e53)}
+.member-profile-banner img{display:block;width:100%;height:100%;object-fit:cover}
+.member-profile-identity{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:0 20px 10px}
+.member-profile-identity .avatar{margin-top:-19px;border:3px solid #171f32}
+.member-profile-name{min-width:min(12rem,100%);flex:1;overflow-wrap:anywhere;padding-top:9px}
+.member-profile-name h2{margin:0;font-size:clamp(20px,4vw,26px)}
+.member-profile-name .hint{margin:2px 0;color:var(--muted)}
+.member-profile-about,.member-profile-private,.member-profile-actions{padding:8px 20px 15px;margin:0;overflow-wrap:anywhere}
+.member-profile-about p{white-space:pre-wrap;margin:4px 0}
+.member-profile-about a{display:inline-block;margin-top:5px;color:#c3b5ff}
+.member-profile-private{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+.member-profile-actions{display:flex;gap:8px;flex-wrap:wrap}
+.member-profile-nav{display:flex;flex-wrap:wrap;gap:8px;margin-block:14px}
+.member-profile-nav button{min-height:40px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:#202b43;color:var(--text);font:inherit;cursor:pointer}
+.member-profile-nav button:hover{border-color:#a49df0}
+.member-profile-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.member-profile-editor section[id]{scroll-margin:12px;min-width:0}
+.member-profile-editor section[id] > .card{margin-bottom:0!important}
+.member-profile-editor #member-profile-privacy{grid-column:2;grid-row:1/span 2}
+.member-profile-editor input[hidden],.member-profile-editor button[hidden]{display:none}
+@media(max-width:880px){
+ .member-profile-editor{grid-template-columns:minmax(0,1fr)}
+ .member-profile-editor #member-profile-privacy{grid-column:auto;grid-row:auto}
+ .member-profile-identity{padding-inline:14px}
+ .member-profile-about,.member-profile-private,.member-profile-actions{padding-inline:14px}
+}
+
+.chat-library [hidden]{display:none}
+.conversation .main-head .grow{min-width:0}
+.conversation .main-head h3{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

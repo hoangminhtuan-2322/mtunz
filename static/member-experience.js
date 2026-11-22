@@ -317,6 +317,8 @@ function mountHeader(header){
  const group=!!q('button[data-act="group-leave"]',header);
  const actions=group?['group-manage','group-leave']:['profile-view','call-audio','call-video','pin-chat','mute-chat','archive-chat','chat-restrict','chat-block'];
  const buttons=actions.map(action=>q('button[data-act="'+action+'"]',header)).filter(Boolean);
+ const nickname=q('[data-chat-nickname]',header);
+ if(nickname)buttons.unshift(nickname);
  if(!group)buttons.unshift(...all('[data-v6-act="disappear"],[data-v4-act="schedule-list"]',header));
  if(!buttons.length)return;
  const details=make('details','chat-header-more');

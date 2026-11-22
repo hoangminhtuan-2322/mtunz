@@ -123,6 +123,18 @@ with TestClient(app, base_url="https://testserver") as admin:
                 "display_name":"Hội viên phản ánh"}).status_code==200
             victim=peer.get("/api/me").json()["user"]
             original=guest.get("/api/me").json()["user"]
+            assert guest.post(f"/api/friends/request/{victim['id']}").status_code==200
+            assert peer.post(f"/api/friends/accept/{original['id']}").status_code==200
+            alias=guest.put(f"/api/chats/{victim['id']}/nickname",json={"nickname":"Bạn thử nghiệm"})
+            assert alias.status_code==200,alias.text
+            assert guest.get("/api/friends").json()["friends"][0]["nickname"]=="Bạn thử nghiệm"
+            direct=guest.post("/api/messages",json={"recipient_id":victim["id"],"body":"https://example.org/share"})
+            assert direct.status_code==200,direct.text
+            shared=f"/api/chats/dm/{original['id']}/shared"
+            assert peer.get(shared).json()["items"]==[]
+            links=peer.get(shared,params={"kind":"links"})
+            assert links.status_code==200,links.text
+            assert links.json()["items"][0]["links"][0]["host"]=="example.org"
             complaint=peer.post("/api/reports",json={
                 "target_id":original["id"],"scope":"world","message_id":message_id,
                 "reason":"spam","description":"Tin nhắn công cộng cần kiểm tra"})

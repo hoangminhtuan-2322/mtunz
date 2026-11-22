@@ -17,6 +17,39 @@ const {chromium}=require('playwright-core');
      friends:[{state:'accepted',other_id:12,username:'Minh',display_name:'Minh'}]});
     return openChat(12);
    });
+   await page.route(/\/api\/chats\/dm\/12\/shared\?/,r=>{
+    const query=new URL(r.request().url()).searchParams;
+    if(query.get('kind')==='links'&&query.get('before')){
+     return r.fulfill({json:{items:[{id:10,display_name:'Minh',created_at:now,
+      links:[{url:'https://docs.example.org/old',host:'docs.example.org'}]}],next_before:null}});
+    }
+    if(query.get('kind')==='links'){
+     return r.fulfill({json:{items:[{id:40,display_name:'Minh',created_at:now,
+      links:[{url:'https://example.org/new',host:'example.org'}]}],next_before:40}});
+    }
+    return r.fulfill({json:{items:query.get('kind')==='files'?[{id:30,display_name:'Minh',created_at:now,
+     attachment_id:5,name:'Bản tóm tắt.pdf',size:2048,mime:'application/pdf'}]:[],next_before:null}});
+   });
+   const libraryButton=page.getByRole('button',{name:'Nội dung đã chia sẻ'});
+   await libraryButton.click();
+   await page.getByText('Chưa có nội dung thuộc mục này.').waitFor();
+   await page.getByRole('button',{name:'Liên kết',exact:true}).click();
+   await page.locator('a[href="https://example.org/new"]').waitFor();
+   await page.getByRole('button',{name:'Xem thêm',exact:true}).click();
+   await page.locator('a[href="https://docs.example.org/old"]').waitFor();
+   assert.equal(await page.locator('.chat-library-list a').count(),2);
+   await page.getByRole('button',{name:'Tệp',exact:true}).click();
+   assert.equal(await page.getByRole('link',{name:/Bản tóm tắt/}).getAttribute('href'),'/api/attachments/5?download=1');
+   assert(await page.locator('.chat-library').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+   await page.locator('#modal-confirm').click();
+
+   await page.route('**/api/chats/12/nickname',r=>r.fulfill({json:{nickname:r.request().postDataJSON().nickname}}));
+   await page.locator('.chat-header-more summary').click();
+   await page.locator('[data-chat-nickname="12"]').click();
+   await page.locator('#chat-nickname').fill('Minh 🐱');
+   await page.locator('#modal-confirm').click();
+   await page.locator('.main-head h3').filter({hasText:'Minh 🐱'}).waitFor();
+   assert(await page.locator('.main-head').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
    const row=page.locator('#msg-dm-40');
    assert.equal(await row.locator('.bubble-actions').isVisible(),width>=800);
    await page.locator('.chat-header-more [data-act="call-video"]').waitFor({state:'attached'});
@@ -268,6 +301,19 @@ const {chromium}=require('playwright-core');
     });
     assert.deepEqual(background,[['Bạn có tin nhắn mới.',true]]);
    }
+   await page.evaluate(()=>{
+    Object.assign(state.user,{bio:'Giới thiệu chỉ bạn bè',profile_visibility:'friends',public_id:1234567});
+    state.tab='profile';
+    state.selected=null;
+    state.groupSelected=null;
+    renderApp();
+   });
+   await page.getByRole('button',{name:'Xem như người khác'}).click();
+   const preview=page.locator('#member-profile-preview');
+   await preview.getByText('Giới thiệu chỉ bạn bè').waitFor();
+   await page.locator('#member-profile-audience').selectOption('everyone');
+   await preview.getByText('Chi tiết hồ sơ đang được giới hạn theo quyền riêng tư.').waitFor();
+   assert.equal(await preview.getByText('Giới thiệu chỉ bạn bè').count(),0);
    await page.close();
   }
  }finally{await browser.close();}

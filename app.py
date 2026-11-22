@@ -494,6 +494,7 @@ async def cookies_and_origin(request: Request, call_next):
             path in ('/api/uploads','/api/world/messages',
                      '/api/registration/request','/api/registration/complete',
                      '/api/me/profile','/api/me/social')
+            or (path.startswith('/api/chats/') and path.endswith('/nickname'))
             or path.startswith(('/api/messages','/api/scheduled-messages',
                                 '/api/groups','/api/message-requests',
                                 '/api/world/polls/','/api/chat/pins',
@@ -1267,6 +1268,7 @@ async def get_friends(request: Request):
                  u.avatar_attachment_id,u.profile_visibility,
                  COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
                  COALESCE(p.pinned,0) AS pinned,COALESCE(p.vanish_seconds,0) AS vanish_seconds,
+                 CASE WHEN f.state='accepted' THEN COALESCE(p.nickname,'') ELSE '' END AS nickname,
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
                  last.body AS last_body, last.created_at AS last_created,
@@ -2300,6 +2302,8 @@ async def websocket_events(ws:WebSocket):
 import sys as _sys
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
+from chat_library import install as _install_chat_library
+_install_chat_library(_sys.modules[__name__])
 from web_notifications import install as _install_web_notifications
 _install_web_notifications(_sys.modules[__name__])
 from world_chat import install as _install_world_chat
