@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main]
+    branches: [main, feat/private-identity-download-v17]
   workflow_dispatch:
 
 permissions:
@@ -89,7 +89,9 @@ jobs:
       - name: Verify optimized mobile keyboard, touch and responsive layouts
         run: node tests/mobile_polish.cjs
       - name: Verify friendship, pin, forwarding and settings UI
-        run: node tests/social_upgrade.cjs
+        run: |
+          node tests/social_upgrade.cjs
+          node tests/private_identity_media_ui.cjs
       - name: Verify World Chat concept page (no live public messaging)
         run: node tests/world_preview.cjs
       - name: Verify group lobby spacing and simple Coming soon
@@ -195,3 +197,4 @@ jobs:
           trap 'kill "$server_pid" || true' EXIT
           curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
           node tests/mobile_live_chat.cjs
+          node tests/private_identity_media_browser.cjs
