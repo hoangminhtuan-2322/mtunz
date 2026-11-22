@@ -1156,9 +1156,9 @@ async def setup_admin_pin(request:Request,body:SetupAdminPin):
                   (hash_secret(body.pin),body.pin_length,u['id']))
         c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
         c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
-                  (u['id'],digest(request.cookies.get('s',''))))
+                  (u['id'],digest(request_session_token(request) or '')))
         admin_log(c,u['id'],'enable_admin_pin','Administrator enabled PIN for remembered devices')
-    await hub.terminate_user(u['id'],except_hash=digest(request.cookies.get('s','')))
+    await hub.terminate_user(u['id'],except_hash=digest(request_session_token(request) or ''))
     return {'ok':True,'pin_length':body.pin_length}
 
 
@@ -1251,9 +1251,9 @@ async def change_password(request: Request, body: ChangePassword):
             raise HTTPException(401,'Mật khẩu hiện tại không đúng.')
         c.execute('UPDATE users SET password_hash=? WHERE id=?', (hash_secret(body.new_password),u['id']))
         c.execute('DELETE FROM sessions WHERE user_id=? AND token_hash!=?',
-                  (u['id'],digest(request.cookies.get('s',''))))
+                  (u['id'],digest(request_session_token(request) or '')))
         c.execute('DELETE FROM trusted_devices WHERE user_id=?',(u['id'],))
-    await hub.terminate_user(u['id'], except_hash=digest(request.cookies.get('s','')))
+    await hub.terminate_user(u['id'], except_hash=digest(request_session_token(request) or ''))
     return {'ok':True}
 
 
