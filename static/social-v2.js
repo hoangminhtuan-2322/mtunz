@@ -24,7 +24,7 @@ function socialSettingsPanel(){
      <option value="everyone" ${u.profile_visibility==='everyone'?'selected':''}>Thành viên mtunz</option>
      <option value="friends" ${u.profile_visibility==='friends'?'selected':''}>Chỉ bạn bè</option>
      <option value="only_me" ${u.profile_visibility==='only_me'?'selected':''}>Chỉ mình tôi</option>
-    </select><small class="hint">Riêng tư = chỉ bạn bè. Chế độ “Chỉ mình tôi” ẩn cả với bạn bè. Tin gửi trong Chat thế giới vẫn công khai nếu không bật ẩn danh.</small></div>
+    </select><small class="hint">Đổi quyền xem sẽ lưu ngay. “Riêng tư” = chỉ bạn bè; “Chỉ mình tôi” ẩn cả với bạn bè. Tin trong Chat thế giới vẫn công khai nếu bạn không bật ẩn danh.</small></div>
    <label class="social-toggle"><input type="checkbox" name="allow_message_requests" ${u.allow_message_requests?'checked':''}>
      <span><strong>Nhận tin nhắn chờ</strong><small>Người chưa kết bạn có thể gửi một lời nhắn. Chỉ khi bạn chấp nhận mới mở hội thoại.</small></span></label>
    <label class="social-toggle"><input type="checkbox" name="world_anonymous" ${u.world_anonymous?'checked':''}>
@@ -102,15 +102,39 @@ document.addEventListener('click',async event=>{
  catch(err){toast(err.message||'Không thể mở chức năng đổi tên.','error');}
  finally{if(button.isConnected)button.disabled=false;}
 });
-document.addEventListener('change',event=>{
+document.addEventListener('change',async event=>{
  const el=event.target;
- if(el.id==='social-private-switch'){
-  const visibility=document.getElementById('social-visibility');
-  if(visibility)visibility.value=el.checked?'friends':'everyone';
- }
- if(el.id==='social-visibility'){
-  const toggle=document.getElementById('social-private-switch');
-  if(toggle)toggle.checked=el.value!=='everyone';
+ if(el.id!=='social-private-switch'&&el.id!=='social-visibility')return;
+ const viewer=state.user?.id;
+ if(!viewer||state.user.is_admin)return;
+ const form=el.closest('form[data-social-form="profile"]');
+ const visibility=form?.querySelector('#social-visibility');
+ const toggle=form?.querySelector('#social-private-switch');
+ if(!visibility||!toggle)return;
+ const previous=state.user.profile_visibility||'everyone';
+ const desired=el.id==='social-private-switch'?(el.checked?'friends':'everyone'):visibility.value;
+ visibility.value=desired;
+ toggle.checked=desired!=='everyone';
+ if(previous===desired)return;
+ const submit=form.querySelector('button[type="submit"]');
+ visibility.disabled=true;toggle.disabled=true;
+ if(submit)submit.disabled=true;
+ try{
+  await api('/api/me/social',{method:'PATCH',data:{profile_visibility:desired}});
+  if(state.user?.id!==viewer)return;
+  state.user.profile_visibility=desired;
+  toast(desired==='everyone'?'Đã bật hồ sơ công khai.':
+        desired==='only_me'?'Đã bật chế độ chỉ mình tôi.':
+        'Đã bật tài khoản riêng tư: chỉ bạn bè xem được hồ sơ.','ok');
+ }catch(error){
+  if(state.user?.id===viewer){
+   visibility.value=previous;toggle.checked=previous!=='everyone';
+   toast(error.message||'Không lưu được quyền riêng tư.','error');
+  }
+ }finally{
+  if(visibility.isConnected)visibility.disabled=false;
+  if(toggle.isConnected)toggle.disabled=false;
+  if(submit?.isConnected)submit.disabled=false;
  }
 });
 function messageRequestsPanel(){
