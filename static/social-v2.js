@@ -68,7 +68,7 @@ async function openIdentityChange(kind){
   modal({title:'Đã hết lượt đổi tên',description:'Bạn đã dùng hết '+quota.limit+' lượt trong '+quota.window_days+' ngày gần nhất. Có thể đổi lại từ '+identityNextTime(quota.next_at)+'.',confirm:'Đã hiểu'});
   return;
  }
- modal({title,description:'Còn '+quota.remaining+'/'+quota.limit+' lượt. '+hint,
+ modal({title,description:'Còn '+quota.remaining+'/'+quota.limit+' lượt trong '+quota.window_days+' ngày gần nhất. '+hint,
   confirm:'Xác nhận đổi tên',
   content:`<div class="identity-change-form">
    <div class="field"><label for="identity-new">Tên mới</label>
