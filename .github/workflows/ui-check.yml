@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main, feat/private-identity-download-v17]
+    branches: [main, feat/private-identity-download-v17, feature/web-quality-upgrade-v9]
   workflow_dispatch:
 
 permissions:
