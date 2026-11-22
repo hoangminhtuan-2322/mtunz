@@ -1,4 +1,7 @@
 """Native auth regression on disposable local SQLite database."""
+import os
+import tempfile
+os.environ.setdefault('DATA_DIR', tempfile.mkdtemp(prefix='mtunz_native_test_'))
 import pytest
 from fastapi.testclient import TestClient
 from app import app, db, RATE_BUCKETS, hub
