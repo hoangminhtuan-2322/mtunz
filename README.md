@@ -209,3 +209,8 @@ bị đá ra khi mở thêm tab, tab mới yêu cầu xác thực và lỗi mạ
 6. Chưa bật index tìm kiếm hoặc Chat thế giới rộng rãi cho đến khi chủ dự án phê duyệt. Bảo đảm người dùng biết tin nhắn không phải E2EE và có kênh hỗ trợ xử lý sự cố.
 
 **Quy tắc:** GitHub CI xanh là điều kiện cần, **không đủ** để kết luận website production đã cập nhật hoặc an toàn cho tất cả người dùng. Nếu Render chưa đồng bộ, Neon chưa migrate hoặc chưa thử nghiệm hoạt động thực tế, giữ trạng thái **NO-GO PUBLIC**.
+
+
+## Ứng dụng mtunz Android/iOS
+
+Mã ứng dụng native React Native/Expo nằm trong thư mục [mobile](mobile/). APK Android sử dụng cùng backend FastAPI, PostgreSQL và WebSocket với website; không dùng WebView và không tạo cơ sở dữ liệu tài khoản/tin nhắn riêng. Xem [hướng dẫn mobile](mobile/README.md) để chạy và build. APK thử nghiệm không thay cho kiểm thử trên thiết bị thực, và thông báo đẩy khi app đóng cần cấu hình Firebase/Expo riêng.
