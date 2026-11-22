@@ -64,9 +64,16 @@ function worldBubble(message){
   '<div class="world-message-avatar" aria-hidden="true">'+(message.anonymous?'?':worldEscape((message.display_name||'T').slice(0,1).toUpperCase()))+'</div>'+
   '<div class="world-message-body"><div class="world-message-meta"><b>'+name+'</b><span>· '+worldDate(message.created_at)+'</span></div>'+
   '<p class="world-message-text">'+(message.deleted?'<em>Tin nhắn đã được gỡ.</em>':worldEscape(message.body))+'</p>'+
-  (!message.deleted&&message.attachment?(message.attachment.mime?.startsWith('image/')?
-   '<a class="world-media-link" target="_blank" rel="noopener noreferrer" href="'+worldEscape(message.attachment.url)+'"><img class="world-media-image" src="'+worldEscape(message.attachment.url)+'" loading="lazy" decoding="async" alt="'+worldEscape(message.attachment.name)+'"></a>':
-   '<a class="world-media-file" href="'+worldEscape(message.attachment.url)+'" download>'+icon('file',16)+' '+worldEscape(message.attachment.name)+'</a>'):'')+
+  (!message.deleted&&message.attachment?(()=>{
+   const media=message.attachment,url='/api/attachments/'+Number(media.id),save=url+'?download=1';
+   if(media.mime?.startsWith('image/'))return '<div class="chat-media-attachment">'+
+    '<a class="world-media-link" target="_blank" rel="noopener noreferrer" href="'+worldEscape(url)+'"><img class="world-media-image" src="'+worldEscape(url)+'" loading="lazy" decoding="async" alt="'+worldEscape(media.name)+'"></a>'+
+    '<a class="chat-media-save" href="'+worldEscape(save)+'" download="'+worldEscape(media.name)+'">↓ Lưu ảnh</a></div>';
+   if(media.mime?.startsWith('video/'))return '<div class="chat-media-attachment">'+
+    '<video class="chat-video" controls playsinline preload="metadata" src="'+worldEscape(url)+'" aria-label="'+worldEscape(media.name)+'"></video>'+
+    '<a class="chat-media-save" href="'+worldEscape(save)+'" download="'+worldEscape(media.name)+'">↓ Tải video</a></div>';
+   return '<a class="world-media-file" href="'+worldEscape(save)+'" download="'+worldEscape(media.name)+'">'+icon('file',16)+' ↓ '+worldEscape(media.name)+'</a>';
+  })():'')+
   '</div>'+
   (!own&&!message.deleted?'<button type="button" class="world-report-mini" data-world-report-user="'+Number(message.sender_id)+'" data-world-message="'+Number(message.id)+'" aria-label="Báo cáo tin nhắn của '+name+'">Báo cáo</button>':'')+
   '</article>';
@@ -104,7 +111,7 @@ function worldPage(){
   (closed?'<div class="world-readonly-note" role="status">'+icon('shield',16)+' Phòng hiện đóng. Bạn vẫn được xem toàn bộ lịch sử và phương tiện; chỉ mở lại tính năng gửi khi Admin cho phép.</div>':
   '<form data-world-form="send" class="world-compose">'+
    '<label class="world-file-pick" title="Đính kèm ảnh hoặc tệp" aria-label="Chọn tệp đính kèm">'+icon('file',17)+
-   '<input id="world-upload-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.txt,.docx,.xlsx,.zip" hidden '+(blocked?'disabled':'')+'></label>'+
+   '<input id="world-upload-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden '+(blocked?'disabled':'')+'></label>'+
    '<label for="world-compose-text" class="sr-only">Tin nhắn Chat thế giới</label>'+
    '<textarea id="world-compose-text" maxlength="1200" rows="2" class="input" placeholder="'+(blocked?'Đang hạn chế gửi tin...':'Viết điều tích cực đến mọi người...')+'" '+(blocked?'disabled':'')+'></textarea>'+
    '<button type="submit" class="btn primary" '+(blocked?'disabled':'')+'>'+icon('send',16)+' Gửi</button>'+
