@@ -1553,6 +1553,8 @@ async def read_messages(request:Request,other_id:int,
         suppress=is_restricted(c,u['id'],other_id) or not u['show_receipts']
     if cursor.rowcount and not suppress:
         await hub.user(other_id,'read',by=u['id'],at=t,up_to=up_to)
+    if cursor.rowcount:
+        await hub.user(u['id'],'friends-updated')
     return {'ok':True}
 
 
@@ -2221,7 +2223,7 @@ async def websocket_events(ws:WebSocket):
     if PUBLIC_MODE and not origin and not native_token:
         await ws.close(code=1008)
         return
-    if origin:
+    if origin and not native_token:
         from urllib.parse import urlsplit
         try:
             actual = urlsplit(origin)
