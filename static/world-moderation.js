@@ -25,10 +25,11 @@ function worldFollowBottom(feed){
  events.forEach(name=>feed.addEventListener(name,stop,{passive:true}));
  const follow=()=>{
   if(stopped||token!==worldFollowToken||!feed.isConnected){stop();return;}
-  const gap=feed.scrollHeight-feed.scrollTop-feed.clientHeight;
-  if(gap>130){stop();return;}
+  // Layout can reflow substantially after fonts/images settle. Keep following
+  // only for this bounded window; the input listeners above cancel immediately
+  // if a person deliberately scrolls away to read earlier history.
   feed.scrollTop=feed.scrollHeight;
-  if(++frames<18&&typeof requestAnimationFrame==='function')requestAnimationFrame(follow);
+  if(++frames<30&&typeof requestAnimationFrame==='function')requestAnimationFrame(follow);
   else stop();
  };
  follow();
