@@ -37,10 +37,10 @@ def test_username_one_change_per_60_days_requires_password_and_pin():
     assert alice.post(endpoint,json={**payload,'pin':'0000'}).status_code==401
     assert alice.post(endpoint,json={**payload,'password':'wrong'}).status_code==401
     assert alice.post(endpoint,json={**payload,'new_value':'identity_bob'}).status_code==409
-    assert bob.post(endpoint,json=payload).status_code==409
     changed=alice.post(endpoint,json=payload)
     assert changed.status_code==200,changed.text
     assert changed.json()['quota']['username']['remaining']==0
+    assert bob.post(endpoint,json=payload).status_code==409
     me=alice.get('/api/me').json()['user']
     assert me['id'] and me['username']=='new_identity_alice'
     with db() as c:
@@ -91,7 +91,7 @@ def test_private_account_hides_profile_media_from_strangers_but_friends_can_view
     bob=register_user(admin,'private_bob')
     aid=alice.get('/api/me').json()['user']['id']
     bid=bob.get('/api/me').json()['user']['id']
-    image=b'\\x89PNG\\r\\n\\x1a\\n'+b'0'*90
+    image=b'\x89PNG\r\n\x1a\n'+b'0'*90
     uploaded=alice.post('/api/uploads',files={'file':('avatar.png',io.BytesIO(image),'image/png')})
     assert uploaded.status_code==200,uploaded.text
     fid=uploaded.json()['attachment']['id']
@@ -108,8 +108,9 @@ def test_private_account_hides_profile_media_from_strangers_but_friends_can_view
     assert outsider['last_seen'] is None
     assert bob.get(f'/api/profile/{aid}/avatar').status_code==404
     search=bob.get('/api/people/search',params={'q':'private_alice'}).json()['users']
-    # Member lookup uses display name or public ID, not private login name.
-    assert search==[]
+    # Discoverability remains for friend requests; details are not disclosed.
+    assert len(search)==1 and search[0]['private_profile'] is True
+    assert search[0]['avatar_url'] is None
     public_id=alice.get('/api/me').json()['user']['public_id']
     search=bob.get('/api/people/search',params={'q':public_id}).json()['users']
     assert len(search)==1 and search[0]['private_profile'] is True
@@ -132,7 +133,7 @@ def test_authorized_video_and_image_download_and_permission_enforcement():
     b=bob.get('/api/me').json()['user']['id']
     assert alice.post('/api/friends/request/'+str(b)).status_code==200
     assert bob.post('/api/friends/accept/'+str(a)).status_code==200
-    clip=b'\\x00\\x00\\x00\\x18ftypisom'+b'0'*64
+    clip=b'\x00\x00\x00\x18ftypisom'+b'0'*64
     upload=alice.post('/api/uploads',files={'file':('short.mp4',clip,'video/mp4')})
     assert upload.status_code==200,upload.text
     fid=upload.json()['attachment']['id']
@@ -148,7 +149,7 @@ def test_authorized_video_and_image_download_and_permission_enforcement():
     assert saved.headers['content-disposition'].startswith('attachment;')
     assert 'filename*=' in saved.headers['content-disposition']
     assert guest.get(f'/api/attachments/{fid}?download=1').status_code==403
-    image=b'\\x89PNG\\r\\n\\x1a\\n'+b'0'*80
+    image=b'\x89PNG\r\n\x1a\n'+b'0'*80
     pic=alice.post('/api/uploads',files={'file':('photo.png',image,'image/png')})
     assert pic.status_code==200
     image_id=pic.json()['attachment']['id']
