@@ -1281,7 +1281,7 @@ document.addEventListener('load',event=>{
  const box=event.target.closest?.('#chat-messages');
  if(box?.dataset.followChatEnd==='true')followChatEnd(box);
 },true);
-function captureThreadPosition(box,follow=followingChatEnd(box)){
+function captureThreadPosition(box,follow=followingChatEnd(box),changingRow=null){
  if(follow)return {follow:true};
  const top=box.scrollTop,bounds=box.getBoundingClientRect();
  const rows=box.querySelectorAll('.bubble-wrap');
@@ -1291,11 +1291,12 @@ function captureThreadPosition(box,follow=followingChatEnd(box)){
   if(rows[middle].getBoundingClientRect().bottom<=bounds.top)low=middle+1;
   else high=middle;
  }
- const anchor=rows[low];
+ const first=rows[low];
+ const anchor=first&&first===changingRow&&first.getBoundingClientRect().top<bounds.top?rows[low+1]||first:first;
  return {top,id:anchor?.id,offset:anchor?.getBoundingClientRect().top-bounds.top};
 }
-function captureMutationPosition(box){
- return captureThreadPosition(box,box.scrollHeight-box.clientHeight-box.scrollTop<=2);
+function captureMutationPosition(box,changingRow=null){
+ return captureThreadPosition(box,box.scrollHeight-box.clientHeight-box.scrollTop<=2,changingRow);
 }
 function restoreThreadPosition(box,position){
  if(position.follow){followChatEnd(box);return;}

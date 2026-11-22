@@ -90,14 +90,14 @@ const {chromium}=require('playwright-core');
     unexpectedHistoryFetches++;
     return r.fulfill({json:{messages:history}});
    });
-   await page.route('**/api/messages/4/reaction',r=>{
+   await page.route('**/api/messages/14/reaction',r=>{
     reactionRequests++;
-    return r.fulfill({json:{ok:true,message_id:4,user_id:9,emoji:'❤️',active:true}});
+    return r.fulfill({json:{ok:true,message_id:14,user_id:9,emoji:'❤️',active:true}});
    });
-   const target=page.locator('#msg-dm-4');
+   const target=page.locator('#msg-dm-14');
    await thread.evaluate(el=>{
     el.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:-500}));
-    const row=el.querySelector('#msg-dm-4');
+    const row=el.querySelector('#msg-dm-14');
     el.scrollTop+=row.getBoundingClientRect().top-el.getBoundingClientRect().top-95;
    });
    const targetTop=()=>target.evaluate(el=>el.getBoundingClientRect().top);
@@ -120,7 +120,8 @@ const {chromium}=require('playwright-core');
     type:'message-updated',peer_id:12,message_id:1,body:'',edited_at:now,deleted_at:now
    }),{now});
    await page.locator('#msg-dm-1 .deleted').waitFor({state:'attached'});
-   assert(Math.abs((await targetTop())-top)<=1,'Recalling above the viewport must preserve the visible row');
+   const afterRecall=await targetTop();
+   assert(Math.abs(afterRecall-top)<=1,`Recalling above the viewport at ${width}px moved the visible row from ${top} to ${afterRecall}`);
    assert.equal(reactionRequests,1);
    assert.equal(unexpectedHistoryFetches,0);
    assert.equal(await text.inputValue(),'Bản nháp mới');

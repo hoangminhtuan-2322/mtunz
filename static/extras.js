@@ -99,7 +99,7 @@ function applyMessageReaction(scope,chat,change){
  const box=$('#chat-messages');
  const row=document.getElementById('msg-'+scope+'-'+message.id);
  if(!box||!box.contains(row))return;
- const position=captureMutationPosition(box);
+ const position=captureMutationPosition(box,row);
  const old=row.querySelector('.reaction-row');
  const focused=old?.contains(document.activeElement)?document.activeElement.dataset.emoji:null;
  old?.remove();
@@ -132,7 +132,7 @@ function applyMessageChange(scope,chat,change){
  const box=$('#chat-messages');
  if(!box)return;
  const row=document.getElementById('msg-'+scope+'-'+message.id);
- const position=captureMutationPosition(box);
+ const position=captureMutationPosition(box,row);
  if(box.contains(row)){
   const template=document.createElement('template');
   template.innerHTML=bubblesFor([updated],group,messages);
