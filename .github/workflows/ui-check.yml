@@ -42,6 +42,7 @@ jobs:
           node --check static/admin-upgrade.js
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
+          node --check static/image-viewer.js
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
@@ -197,4 +198,5 @@ jobs:
           trap 'kill "$server_pid" || true' EXIT
           curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
           node tests/mobile_live_chat.cjs
+          node tests/web_quality_v9.cjs
           node tests/private_identity_media_browser.cjs
