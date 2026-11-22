@@ -147,7 +147,7 @@ jobs:
           assert '/static/hero-nova.css?v=7.0' in h
           assert '/static/auth-refined.css?v=5.1' in h
           assert '/static/remember-device.css?v=6.0' in h
-          assert '/static/extras.js?v=18.1' in h
+          assert '/static/extras.js?v=18.2' in h
           assert '/static/group-lobby.css?v=1.0' in h
           assert '/static/device-sessions.css?v=11.0' in h
           assert 'auth-remember-choice' in application
