@@ -1517,11 +1517,30 @@ function adminJoinedAt(timestamp){
   '<strong class="admin-member-joined-date">'+fullDate+'</strong>'+
   '<span class="admin-member-joined-clock">'+fullTime+' <small>UTC+7</small></span></time>';
 }
+function adminPatchUserActivity(data){
+ const uid=Number(data.user_id),stamp=Number(data.last_seen);
+ if(!Number.isSafeInteger(uid)||uid<=0||!Number.isSafeInteger(stamp)||stamp<=0)return;
+ const online=!!data.online;
+ if(state.adminTab==='users'&&Array.isArray(state.adminData)){
+  const item=state.adminData.find(u=>u.id===uid);
+  if(item&&stamp>=Number(item.last_seen||0)){item.last_seen=stamp;item.online=online;}
+ }
+ document.querySelectorAll('[data-admin-last-seen="'+uid+'"]').forEach(el=>{
+  const previous=Number(el.dataset.lastSeenAt||0);
+  if(previous>stamp)return;
+  el.dataset.lastSeenAt=String(stamp);
+  el.textContent=deadlineDate(stamp);
+  if(el.tagName==='TIME')el.dateTime=new Date(stamp*1000).toISOString();
+ });
+ document.querySelectorAll('[data-admin-presence="'+uid+'"]').forEach(el=>{
+  el.textContent=online?'Đang kết nối':'Ngoại tuyến';
+ });
+}
 function adminUsers(){const data=state.adminData||[];
- return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên đăng nhập, tên hiển thị hoặc ID" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
- <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
+ return `<form data-form="admin-search-users" class="row" style="max-width:440px;margin-bottom:20px"><input class="input" placeholder="Tên, ID, số điện thoại hoặc email" name="q" value="${esc(state.adminQuery)}"><button class="btn ghost">${icon('search',16)} Tìm</button></form>
+ <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Kết nối</th><th>Hoạt động gần nhất</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.username)}</b><div class="hint">${u.display_name?esc(u.display_name)+' · ':''}#${u.id}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-sort-value="${Number(u.created_at)}">${adminJoinedAt(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
+ <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td><span data-admin-presence="${Number(u.id)}">${u.online?'Đang kết nối':'Ngoại tuyến'}</span></td><td><time data-admin-last-seen="${Number(u.id)}" data-last-seen-at="${Number(u.last_seen||0)}">${deadlineDate(u.last_seen)}</time></td><td data-sort-value="${Number(u.created_at)}">${adminJoinedAt(u.created_at)}</td><td>${u.friend_count}</td><td>${u.message_count}</td>
  <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
@@ -1529,7 +1548,7 @@ function adminUsers(){const data=state.adminData||[];
  <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Cấm</button>
  <button class="btn ghost sm" data-act="admin-sanction" data-kind="lock" data-id="${u.id}">Khóa</button>
  <button class="btn danger sm" type="button" data-act="admin-delete-user" data-id="${u.id}">${icon('ban',14)} Xóa vĩnh viễn</button>
- ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
+ ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="8" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
 }
 function adminDeletionQueue(){
  const items=state.adminData||[];
