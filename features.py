@@ -214,10 +214,23 @@ def install(core):
         with db() as c:
             if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
                 raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
+            previous=one(c,'SELECT show_online,show_receipts FROM users WHERE id=?',(u['id'],))
+            privacy_changed=(bool(previous['show_online'])!=body.show_online or
+                             bool(previous['show_receipts'])!=body.show_receipts)
             c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
                           phone=?,email=? WHERE id=?''',
                       (name,body.bio.strip(),int(body.show_online),
                        int(body.show_receipts),phone,email,u['id']))
+            peers=(many(c,"""SELECT CASE WHEN u1=? THEN u2 ELSE u1 END AS other_id
+                           FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)""",
+                        (u['id'],u['id'],u['id'])) if privacy_changed else [])
+        if privacy_changed:
+            # Notify connected devices immediately; clients then obtain their
+            # individually filtered views through /api/friends.
+            for peer in peers:
+                await hub.user(peer['other_id'],'privacy-updated',user_id=u['id'])
+            await hub.user(u['id'],'privacy-self-updated',
+                           show_online=body.show_online,show_receipts=body.show_receipts)
         return {'ok':True}
 
     @app.get('/api/profile/{uid}')
@@ -232,7 +245,11 @@ def install(core):
             allowed=(uid==u['id'] or bool(u['is_admin']) or r['profile_visibility']=='everyone' or
                      (r['profile_visibility']=='friends' and friends(c,uid,u['id'])))
             p=dict(r)
-            p['last_seen']=r['last_seen'] if r['show_online'] or uid==u['id'] else None
+            visible_online=(uid==u['id'] or
+                            (bool(u['show_online']) and bool(r['show_online'])))
+            p['last_seen']=r['last_seen'] if visible_online else None
+            p['show_online']=bool(r['show_online']) if uid==u['id'] else (
+                bool(u['show_online']) and bool(r['show_online']))
             p['avatar_url']=f'/api/profile/{uid}/avatar' if allowed and r['avatar_attachment_id'] else None
             p['cover_url']=f'/api/profile/{uid}/cover' if allowed and r['cover_attachment_id'] else None
             p['headline']=r['headline'] if allowed else ''

@@ -1193,7 +1193,7 @@ async def get_friends(request: Request):
         allrows=many(c, '''
           SELECT f.*,u.id AS other_id,
                  COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username,
-                 u.display_name,u.show_online,u.last_seen,u.public_id,
+                 u.display_name,u.show_online,u.show_receipts,u.last_seen,u.public_id,
                  u.avatar_attachment_id,u.profile_visibility,
                  COALESCE(p.muted,0) AS muted,COALESCE(p.archived,0) AS archived,
                  COALESCE(p.pinned,0) AS pinned,COALESCE(p.vanish_seconds,0) AS vanish_seconds,
@@ -1238,7 +1238,15 @@ async def get_friends(request: Request):
               u['id'],now(),u['id'],
               u['id'],u['id'],u['id'],u['id'],u['id'],u['id']))
         for r in allrows:
-            r['online']=bool(hub.users.get(r['other_id'])) and bool(r['show_online']) and not bool(r.pop('peer_restricted'))
+            peer_restricted=bool(r.pop('peer_restricted'))
+            viewer_online=bool(u['show_online'])
+            peer_online=bool(r['show_online'])
+            r['online']=bool(hub.users.get(r['other_id'])) and viewer_online and peer_online and not peer_restricted
+            # Hide the timestamp too: no one-way last-seen visibility.
+            if not viewer_online or not peer_online or peer_restricted:
+                r['last_seen']=None
+            r['receipt_visible']=(bool(u['show_receipts']) and bool(r.pop('show_receipts'))
+                                  and not peer_restricted and not bool(r['restricted']))
             r['muted']=bool(r['muted'])
             r['archived']=bool(r['archived'])
             r['pinned']=bool(r['pinned'])
@@ -1373,9 +1381,9 @@ async def message_history(request:Request,other_id:int,before:int=0,limit:int=70
         result=many(c,sql.replace('SELECT id,sender_id,recipient_id,body,created_at,read_at',
                                   'SELECT *'),params)
         result=[message_details(c,r) for r in result[::-1]]
-        # Hide read receipts when the reader opted out or restricted the sender.
+        # Both participants must enable receipts before the sender can view them.
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
-        if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
+        if not u['show_receipts'] or not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
             for item in result:
                 if item['sender_id']==u['id']:
                     item['read_at']=None
@@ -1447,6 +1455,15 @@ async def send_message(request:Request,body:SendMessage):
                         if vanish else
                         f'Tin nhắn từ {u["display_name"] or "Thành viên"}'),
                        message_id=msg['id'],preview_kind=None if vanish else 'direct')
+    # An idempotent replay can contain old read/delivery timestamps.
+    # Do not leak them via the send response or socket echo.
+    with db() as c:
+        recipient=one(c,'SELECT show_receipts FROM users WHERE id=?',(body.recipient_id,))
+        visible=bool(u['show_receipts'] and recipient and recipient['show_receipts']
+                     and not is_restricted(c,body.recipient_id,u['id']))
+    if not visible:
+        msg['read_at']=None
+        msg['delivered_at']=None
     if not replay:
         await asyncio.gather(hub.user(body.recipient_id,'message',message=msg),
                              hub.user(u['id'],'message',message=msg))
@@ -1463,8 +1480,9 @@ async def read_messages(request:Request,other_id:int):
                      AND sender_id=? AND delivered_at IS NULL''',(t,u['id'],other_id))
         cursor=c.execute('UPDATE messages SET read_at=? WHERE recipient_id=? AND sender_id=? AND read_at IS NULL',
                          (t,u['id'],other_id))
-        peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(u['id'],))
-        suppress=is_restricted(c,u['id'],other_id) or not peer['show_receipts']
+        sender=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
+        suppress=(is_restricted(c,u['id'],other_id) or
+                  not u['show_receipts'] or not sender or not sender['show_receipts'])
     if cursor.rowcount and not suppress:
         await hub.user(other_id,'read',by=u['id'],at=t)
     return {'ok':True}
@@ -2077,8 +2095,13 @@ async def notify_presence(uid,online):
     with db() as c:
         config=one(c,'SELECT show_online FROM users WHERE id=?',(uid,))
         if not config or not config['show_online']:return
-        rows=many(c,"SELECT CASE WHEN u1=? THEN u2 ELSE u1 END other_id FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid,uid))
-        targets=[r['other_id'] for r in rows if not is_restricted(c,uid,r['other_id'])]
+        rows=many(c,"""SELECT CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END other_id
+                       FROM friendships f
+                       JOIN users viewer ON viewer.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
+                       WHERE f.state='accepted' AND (f.u1=? OR f.u2=?) AND viewer.show_online=1""",
+                  (uid,uid,uid,uid))
+        targets=[r['other_id'] for r in rows if not is_restricted(c,uid,r['other_id'])
+                 and not is_restricted(c,r['other_id'],uid)]
     for other in targets:
         await hub.user(other,'presence',user_id=uid,online=online)
 

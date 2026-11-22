@@ -83,10 +83,15 @@ function replyAuthor(message,isGroup){
  const peer=state.friends.find(f=>f.other_id===message.sender_id);
  return peer?.display_name||peer?.username||'Thành viên';
 }
+function canViewDmReceipts(){
+ const peer=state.friends?.find(f=>f.other_id===state.selected);
+ return !!(state.user?.show_receipts && peer?.receipt_visible);
+}
 function bubblesFor(messages,isGroup=false,context=messages){
  if(!messages.length)return '<div class="spacer"></div><div class="empty">Chưa có tin nhắn. Hãy bắt đầu trò chuyện! ✨</div>';
  let html='<div class="spacer"></div>',prevDay='';
  const scope=isGroup?'group':'dm';
+ const receiptsVisible=!isGroup&&typeof canViewDmReceipts==='function'&&canViewDmReceipts();
  const byId=new Map(context.map(m=>[m.id,m]));
  const current=new Date(),today=current.toLocaleDateString('vi-VN');
  current.setDate(current.getDate()-1);
@@ -113,7 +118,7 @@ function bubblesFor(messages,isGroup=false,context=messages){
     ${m.deleted_at?'<span class="muted"><i>Tin nhắn đã được thu hồi</i></span>':`${m.body?`<div>${esc(m.body)}</div>`:''}${uploadMarkup(m)}`}
     <div class="stamp">${clock(m.created_at)} ${m.edited_at?'· Đã sửa':''}
      ${!isGroup&&m.expires_at?`<span class="v6-expiration-stamp" title="Tin nhắn tự biến mất khi hết hạn">⌛ ${new Date(Number(m.expires_at)*1000).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}</span>`:''}
-     ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
+     ${mine&&!isGroup?`<span class="v4-delivery-status ${m.failed?'v4-error':''}" data-v4-status-id="${Number(m.id)}">${m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':receiptsVisible&&m.read_at?'✓✓ Đã xem':receiptsVisible&&m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi'}</span>`:''}
      ${m.failed&&!isGroup?`<button type="button" class="v4-retry-inline" data-v4-act="retry-message" data-v4-id="${Number(m.id)}">Gửi lại</button>`:''}
     </div></div>
     ${reacted.length?`<div class="reaction-row">${reacted.map(emoji=>`<button class="reaction-chip ${(m.reactions||[]).some(r=>r.user_id===state.user.id&&r.emoji===emoji)?'mine':''}" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}">${emoji} ${(m.reactions||[]).filter(r=>r.emoji===emoji).length}</button>`).join('')}</div>`:''}${actions}${m.id>0?`<button type="button" class="message-delete-menu-trigger" data-act="message-options" data-id="${Number(m.id)}" data-scope="${scope}" aria-haspopup="dialog" aria-label="Xóa hoặc thu hồi tin nhắn" title="Xóa tin nhắn">${icon('dots',14)} <span>Xóa</span></button>`:''}</div>`;
@@ -180,7 +185,9 @@ function profileSettings(){
  <div class="field"><label>Tên hiển thị</label><input class="input" name="display_name" value="${esc(u.display_name||'')}" maxlength="50"></div>
  <div class="field"><label>Giới thiệu</label><textarea class="input" name="bio" maxlength="220" rows="2">${esc(u.bio||'')}</textarea></div>
  <label class="profile-check"><input type="checkbox" name="show_online" ${u.show_online?'checked':''}> Hiển thị trạng thái đang hoạt động</label>
+ <p class="hint" style="margin:4px 0 12px">Nếu tắt, bạn cũng không xem được ai đang hoạt động hoặc hoạt động gần nhất.</p>
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
+ <p class="hint" style="margin:4px 0 12px">Nếu tắt, bạn cũng không xem được người khác đã đọc hay nhận tin nhắn của mình.</p>
  <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
  <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
  <p class="hint" style="margin:10px 0 14px">Số điện thoại và email không hiển thị trên hồ sơ công khai.</p>
@@ -702,7 +709,9 @@ document.addEventListener('submit',async event=>{
    const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),
     show_online:fd.has('show_online'),show_receipts:fd.has('show_receipts')};
    await api('/api/me/profile',{method:'PATCH',data});
-   Object.assign(state.user,data);renderApp();toast('Đã lưu hồ sơ.','ok');
+   Object.assign(state.user,data);
+   await refreshFriends(false);
+   renderApp();toast('Đã lưu hồ sơ.','ok');
   }
   if(key==='settings-contact'){
    const data={display_name:state.user.display_name||'',bio:state.user.bio||'',

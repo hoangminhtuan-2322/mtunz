@@ -319,7 +319,8 @@ function v4PaintStatuses(){
   if(m.sender_id!==state.user.id)continue;
   const node=document.querySelector('[data-v4-status-id="'+m.id+'"]');
   if(node){
-   let label=m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':m.read_at?'✓✓ Đã xem':m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi';
+   let visible=typeof canViewDmReceipts==='function'&&canViewDmReceipts();
+   let label=m.failed?'⚠ Chưa gửi':m.pending?'◌ Đang gửi':visible&&m.read_at?'✓✓ Đã xem':visible&&m.delivered_at?'✓✓ Đã nhận':'✓ Đã gửi';
    node.textContent=label;
    node.title=label;
   }

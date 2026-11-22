@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12]
+    branches: [main, feat/chat-message-delete-menu-v11, fix/support-chat-continuous-composer-v12, feat/reciprocal-presence-read-privacy-v13]
   workflow_dispatch:
 
 permissions:

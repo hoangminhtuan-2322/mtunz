@@ -102,8 +102,9 @@ def install(core):
             changed=c.execute('''UPDATE messages SET delivered_at=?
                        WHERE sender_id=? AND recipient_id=? AND id<=?
                        AND delivered_at IS NULL''',(stamp,other_id,u['id'],body.up_to)).rowcount
-            prefs=one(c,'SELECT show_receipts FROM users WHERE id=?',(u['id'],))
-            hidden=not prefs['show_receipts'] or core.is_restricted(c,u['id'],other_id)
+            sender=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
+            hidden=(not u['show_receipts'] or not sender or not sender['show_receipts']
+                    or core.is_restricted(c,u['id'],other_id))
         if changed and not hidden:
             await hub.user(other_id,'delivered',by=u['id'],up_to=body.up_to,at=stamp)
         return {'ok':True,'delivered':changed}
