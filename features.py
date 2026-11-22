@@ -231,6 +231,10 @@ def install(core):
         phone=core.normalize_phone(body.phone) if body.phone is not None else u['phone']
         email=core.normalize_email(body.email) if body.email is not None else u['email']
         name=core.validate_display_name(body.display_name,u['username'])
+        # Existing profile/contact endpoints cannot bypass the protected
+        # two-per-30-day identity change process.
+        if name!=(u['display_name'] or ''):
+            raise HTTPException(403,'Để đổi tên hiển thị, hãy dùng mục Đổi tên trong Hồ sơ và xác nhận mật khẩu + PIN.')
         with db() as c:
             if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
                 raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
