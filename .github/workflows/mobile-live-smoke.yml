@@ -32,7 +32,7 @@ jobs:
           print('Health:', body)
           assert body.get('ok') is True and body.get('app')=='mtunz'
           PY
-          for path in /api/mobile/auth/password /api/mobile/auth/pin /api/mobile/registration/request /api/mobile/push; do
+          for path in /api/mobile/auth/password /api/mobile/auth/pin /api/mobile/auth/admin/approval/status /api/mobile/registration/request /api/mobile/push; do
             code=$(curl --silent --show-error --location --max-time 45 \
               --output /dev/null --write-out '%{http_code}' "$base$path")
             echo "$path: GET -> $code"
