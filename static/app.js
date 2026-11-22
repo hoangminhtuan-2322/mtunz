@@ -329,11 +329,14 @@ function sendMemberActivity(){
  state.ws.send(JSON.stringify({type:'member-activity'}));
 }
 // Only interaction timestamps are sent, never input contents or user activity details.
-document.addEventListener('pointerdown',sendMemberActivity,{passive:true});
-document.addEventListener('keydown',sendMemberActivity,{passive:true});
-document.addEventListener('visibilitychange',()=>{
- if(document.visibilityState==='visible')sendMemberActivity();
-});
+// Guard headless test and embed environments that do not supply a DOM.
+if(typeof document!=='undefined'){
+ document.addEventListener('pointerdown',sendMemberActivity,{passive:true});
+ document.addEventListener('keydown',sendMemberActivity,{passive:true});
+ document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')sendMemberActivity();
+ });
+}
 function connectSocket(){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
