@@ -62,6 +62,7 @@ function groupHeader(){
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Trở lại">${icon('back')}</button>
  ${avatar(g.title,false,'sm')}<div class="grow"><h3>${esc(g.title)}</h3><div class="small muted">${g.member_count} thành viên</div></div>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin nhắn">${icon('search',17)}</button>
+ <button type="button" class="btn ghost sm" data-chat-library aria-label="Nội dung đã chia sẻ" title="Nội dung đã chia sẻ">${icon('file',16)}</button>
  <button class="btn ghost sm" data-act="group-manage" title="Quản lý thành viên">${icon('users',17)} <span class="button-word">Thành viên</span></button>
  <button class="btn danger sm" data-act="group-leave" title="Rời nhóm">${icon('logout',17)}</button></header>`;
 }
@@ -253,16 +254,19 @@ async function loadNotices(){if(!state.user||state.user.is_admin)return;state.no
 function profileSettings(){
  const u=state.user;
  return `<section class="card" style="margin-bottom:18px"><h3>${icon('users',17)} Hồ sơ công khai</h3><form data-form="settings-profile" style="margin-top:14px">
- <div class="field"><label>Tên hiển thị</label><input class="input" name="display_name" value="${esc(u.display_name||'')}" maxlength="50"></div>
- <div class="field"><label>Giới thiệu</label><textarea class="input" name="bio" maxlength="220" rows="2">${esc(u.bio||'')}</textarea></div>
+ <div class="field"><label for="member-display-name">Tên hiển thị</label><input class="input" id="member-display-name" name="display_name" value="${esc(u.display_name||'')}" maxlength="50"></div>
+ <div class="field"><label for="member-bio">Giới thiệu</label><textarea class="input" id="member-bio" name="bio" maxlength="220" rows="2">${esc(u.bio||'')}</textarea></div>
  <label class="profile-check"><input type="checkbox" name="show_online" ${u.show_online?'checked':''}> Hiển thị trạng thái đang hoạt động</label>
  <label class="profile-check"><input type="checkbox" name="show_receipts" ${u.show_receipts?'checked':''}> Cho phép người khác xem trạng thái đã đọc</label>
- <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>
- <section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
+ <button class="btn primary" style="margin-top:13px">Lưu hồ sơ</button></form></section>`;
+}
+function profileContactSettings(){
+ const u=state.user;
+ return `<section class="card" style="margin-bottom:18px"><h3>${icon('shield',17)} Thông tin liên hệ riêng tư</h3>
  <p class="hint" style="margin:10px 0 14px">Số điện thoại và email không hiển thị trên hồ sơ công khai.</p>
  <form data-form="settings-contact">
-  <div class="field"><label>Số điện thoại</label><input class="input" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
-  <div class="field"><label>Email / Gmail (không bắt buộc)</label><input class="input" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}"></div>
+  <div class="field"><label for="member-profile-phone">Số điện thoại</label><input class="input" id="member-profile-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required value="${esc(u.phone||'')}"></div>
+  <div class="field"><label for="member-profile-email">Email (không bắt buộc)</label><input class="input" id="member-profile-email" name="email" type="email" autocomplete="email" maxlength="254" value="${esc(u.email||'')}"></div>
   <button class="btn primary" type="submit">Lưu thông tin liên hệ</button>
  </form></section>
 `;
@@ -440,21 +444,10 @@ async function extraAction(btn){
    break;
  }
  case 'profile-view':{
-  const r=(await api('/api/profile/'+id)).profile;
-  const cover=r.cover_url?esc(r.cover_url):null;
-  const website=r.website&&/^https:\/\//.test(r.website)?r.website:null;
-  modal({title:'Hồ sơ thành viên',content:`<div class="social-profile-view">
-   <div class="social-profile-view-cover" ${cover?`style="background-image:url('${cover}')"`:''}></div>
-   <div class="social-profile-view-person">
-     ${avatar(r.display_name||'Thành viên',false,'xl',r.avatar_url)}
-     <div><h3>${esc(r.display_name||'Thành viên')}</h3><div class="hint">ID #${Number(r.public_id||r.id)} · Thành viên từ ${date(r.created_at)}</div></div>
-   </div>
-   ${r.private?'<p class="hint">Hồ sơ được chủ tài khoản giới hạn quyền xem.</p>':
-     `<strong>${esc(r.headline||'')}</strong>
-      <div class="social-profile-view-bio">${esc(r.bio||'Chưa có lời giới thiệu.')}</div>
-      ${website?`<a href="${esc(website)}" target="_blank" rel="noopener noreferrer">Trang web của thành viên</a>`:''}`}
-   <button class="btn ghost sm" type="button" data-world-report-user="${Number(r.id)}">${icon('shield',15)} Báo cáo người dùng</button>
-   </div>`,confirm:'Đóng'});break;
+  const owner=state.user.id;
+  const result=await api('/api/profile/'+id);
+  if(state.user?.id===owner&&state.tab==='messages'&&state.selected===id)showMemberProfile(result.profile);
+  break;
  }
  case 'mute-chat':case 'archive-chat':case 'pin-chat':{
   const f=state.friends.find(x=>x.other_id===id);if(!f)return;
@@ -841,16 +834,24 @@ document.addEventListener('submit',async event=>{
   if(key==='settings-profile'){
    const data={display_name:String(fd.get('display_name')||''),bio:String(fd.get('bio')||''),
     show_online:fd.has('show_online'),show_receipts:fd.has('show_receipts')};
-   await api('/api/me/profile',{method:'PATCH',data});
-   Object.assign(state.user,data);renderApp();toast('Đã lưu hồ sơ.','ok');
+   const owner=state.user.id;
+   const result=await api('/api/me/profile',{method:'PATCH',data});
+   if(state.user?.id!==owner)return;
+   Object.assign(state.user,result.profile);
+   updateMemberProfileSummary();
+   toast('Đã lưu hồ sơ.','ok');
   }
   if(key==='settings-contact'){
-   const data={display_name:state.user.display_name||'',bio:state.user.bio||'',
-    show_online:!!state.user.show_online,show_receipts:!!state.user.show_receipts,
-    phone:String(fd.get('phone')||'').trim(),email:String(fd.get('email')||'').trim()};
-   await api('/api/me/profile',{method:'PATCH',data});
-   state.user=(await api('/api/me')).user;
-   renderApp();toast('Đã cập nhật thông tin liên hệ riêng tư.','ok');
+   const owner=state.user.id;
+   const data={phone:String(fd.get('phone')||'').trim(),email:String(fd.get('email')||'').trim()};
+   const result=await api('/api/me/profile',{method:'PATCH',data});
+   if(state.user?.id!==owner)return;
+   Object.assign(state.user,result.profile);
+   if(form.isConnected){
+    form.elements.phone.value=result.profile.phone||'';
+    form.elements.email.value=result.profile.email||'';
+   }
+   toast('Đã cập nhật thông tin liên hệ riêng tư.','ok');
   }
  }catch(e){toast(e.message,'error');}
  finally{if(button&&button.isConnected){button.disabled=false;button.classList.remove('is-loading');button.removeAttribute('aria-busy');}}

@@ -941,17 +941,18 @@ async function refreshFriends(redraw=true){
   if(lostChat)state.selected=null;
   if(redraw){renderSideItems();if(lostChat||state.tab==='friends'||state.tab==='restricted'||state.tab==='settings'||state.tab==='archive')renderApp();else updateChatHeader();}
 }
+function chatContactName(f){return f.nickname||f.display_name||f.username;}
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
   return `<div class="side-item ${active?'active':''}" data-act="open-chat" data-id="${f.other_id}">
-   ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(f.display_name||f.username)}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
+   ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(chatContactName(f))}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
    <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></div>`;
 }
 function sideBody(){
   const accepted=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived);
   const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
   const q=state.sideFilter||'';
-  const filtered=accepted.filter(x=>(x.display_name||x.username).toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi')));
+  const filtered=accepted.filter(x=>[chatContactName(x),x.display_name||x.username].some(name=>name.toLocaleLowerCase('vi').includes(q.toLocaleLowerCase('vi'))));
   return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
   <div class="side-label">Cuộc trò chuyện · ${filtered.length}</div>
   ${filtered.length?filtered.map(friendItem).join(''):`<div class="empty" style="padding:35px 12px;font-size:12px">${q?'Không tìm thấy hội thoại.':'Chưa có bạn bè nào. Hãy tìm và kết bạn!'}</div>`}
@@ -1010,7 +1011,9 @@ function welcomeEmpty(){return `<div class="hero-empty"><div><div class="illustr
  <button class="btn primary" data-act="app-tab" data-tab="friends">${icon('add')} Tìm bạn bè</button></div></div>`;}
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
- ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(f.display_name||f.username)}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':f.last_seen?`Hoạt động gần nhất: ${date(f.last_seen)}`: ''}</div></div>
+ ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(chatContactName(f))}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':f.last_seen?`Hoạt động gần nhất: ${date(f.last_seen)}`: ''}</div></div>
+ <button type="button" class="btn ghost sm" data-chat-library aria-label="Nội dung đã chia sẻ" title="Nội dung đã chia sẻ">${icon('file',16)}</button>
+ <button type="button" class="btn ghost sm" data-chat-nickname="${f.other_id}" title="Đặt biệt danh">${icon('edit',15)} <span class="button-word">Biệt danh</span></button>
  <button class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}" title="Xem hồ sơ">${icon('users',15)}</button>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin">${icon('search',15)}</button>
  <button type="button" class="btn ghost sm v6-disappear-control" data-v6-act="disappear"
@@ -1433,7 +1436,7 @@ function archiveContent(){
  <h1 class="section-title">Hội thoại lưu trữ</h1>
  <p class="section-lead">Ẩn cuộc trò chuyện khỏi hộp thư chính nhưng không xóa tin nhắn. Có thể mở lại bất cứ lúc nào.</p>
  ${archived.length?archived.map(f=>`<div class="people-row">${avatar(f.username,false,'sm',f.avatar_url)}
- <div class="grow"><strong>${esc(f.display_name||f.username)}</strong>
+ <div class="grow"><strong>${esc(chatContactName(f))}</strong>
  <div class="hint">${f.last_message?esc(short(f.last_message.body||'Tin nhắn đính kèm',70)):'Chưa có tin nhắn'} ${f.pinned?'· 📌 Đã ghim':''}</div></div>
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">Xem</button>
  <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}">Bỏ lưu trữ</button></div>`).join(''):'<div class="empty">Chưa có hội thoại nào được lưu trữ.</div>'}</div>`;
@@ -1443,14 +1446,7 @@ function restrictedContent(){const rs=state.friends.filter(f=>f.state==='accepte
  <p class="section-lead">Các cuộc trò chuyện bị hạn chế sẽ được ẩn khỏi hộp thư chính; trạng thái trực tuyến và xác nhận đã xem của bạn không hiển thị với họ.</p>
  ${rs.length?rs.map(f=>`<div class="people-row">${avatar(f.username)}<div class="grow"><b>${esc(f.username)}</b><div class="hint">Cuộc trò chuyện đã được ẩn</div></div>
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">Xem tin nhắn</button><button class="btn success sm" data-act="chat-restrict" data-id="${f.other_id}">Bỏ hạn chế</button></div>`).join(''):'<div class="empty">Chưa có người dùng nào bị hạn chế.</div>'}</div>`;}
-function profileContent(){
- return `<div class="section-wrap profile-page"><span class="eyebrow">DANH TÍNH CỘNG ĐỒNG</span><h1 class="section-title">Hồ sơ cá nhân</h1>
- <p class="section-lead">Chỉnh sửa tên hiển thị, giới thiệu và thông tin liên hệ tại đây. Các tùy chọn mật khẩu, PIN và thiết bị nằm trong Cài đặt.</p>
- <div class="social-cover" style="${state.user.cover_url?'background-image:url('+esc(state.user.cover_url)+')':''}"><span>MTUNZ · KHÔNG GIAN CỦA TÔI</span></div>
- <div class="row card social-profile-hero" style="margin-bottom:20px">${avatar(state.user.display_name||state.user.username,false,'xl',state.user.avatar_url)}<div class="grow"><h2>${esc(state.user.display_name||state.user.username)}</h2><div class="hint">Thành viên từ ${date(state.user.created_at)}</div><div class="hint" style="margin-top:6px">ID tài khoản: <strong>#${Number(state.user.public_id||state.user.id)}</strong></div></div><button class="btn ghost sm" type="button" data-act="copy-member-id" aria-label="Sao chép ID tài khoản">${icon('check',14)} Sao chép ID</button><span class="pill good">Đã xác thực</span></div>
- <div class="social-headline">${esc(state.user.headline||'Chào mừng đến với hồ sơ cá nhân của bạn.')}</div>
- <div class="profile-panel-grid">${typeof socialSettingsPanel==='function'?socialSettingsPanel():''}${profileSettings()}</div></div>`;
-}
+function profileContent(){return memberProfilePage();}
 function settingsContent(){
  return `<div class="section-wrap"><span class="eyebrow">TÀI KHOẢN CỦA BẠN</span><h1 class="section-title">Cài đặt & bảo mật</h1>
  <p class="section-lead">Chỉ quản lý bảo mật, thiết bị và quyền truy cập. Hồ sơ công khai và liên hệ đã được chuyển sang mục riêng.</p>

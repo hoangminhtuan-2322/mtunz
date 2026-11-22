@@ -28,5 +28,5 @@ assert(field.includes('maxlength="160"'), 'Retain server-matched maximum length'
 const mandatory = context.inputField('Mã khôi phục', 'code');
 assert(/\srequired(?:\s|>)/.test(mandatory), 'Other inputs remain required by default');
 assert(source.includes("claim:val('claim')"), 'Empty memory content is still sent as an empty string');
-assert(html.includes('/static/app.js?v=20.2'), 'Fresh app script is served instead of cached markup');
+assert(html.includes('/static/app.js?v=20.3'), 'Fresh app script is served instead of cached markup');
 console.log('Optional support field: no required flag, no empty-field error, required inputs unchanged.');

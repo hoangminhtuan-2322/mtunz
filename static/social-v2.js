@@ -4,13 +4,12 @@ state.messageRequests=[];
 function socialSettingsPanel(){
  const u=state.user||{};
  return `<section class="card social-settings-card" aria-label="Tùy chỉnh hồ sơ nâng cao">
-  <div class="social-section-heading"><h3>${icon('users',17)} Hồ sơ nâng cao</h3><span class="pill">Bạn kiểm soát thông tin</span></div>
-  <p class="hint">Ảnh và thông tin này chỉ hiển thị với những người được bạn cho phép. Ảnh được lưu trên hệ thống, không tải từ trang bên ngoài.</p>
+  <div class="social-section-heading"><h3>${icon('users',17)} Ảnh & quyền riêng tư</h3></div>
   <div class="social-photo-actions">
     <label class="social-photo-action">📷 Ảnh đại diện <input type="file" data-social-upload="avatar" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
     <label class="social-photo-action">🖼️ Ảnh bìa <input type="file" data-social-upload="cover" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
-    ${u.avatar_url?'<button class="btn ghost sm" type="button" data-social-clear="avatar">Gỡ ảnh đại diện</button>':''}
-    ${u.cover_url?'<button class="btn ghost sm" type="button" data-social-clear="cover">Gỡ ảnh bìa</button>':''}
+    <button class="btn ghost sm" type="button" data-social-clear="avatar" ${u.avatar_url?'':'hidden'}>Gỡ ảnh đại diện</button>
+    <button class="btn ghost sm" type="button" data-social-clear="cover" ${u.cover_url?'':'hidden'}>Gỡ ảnh bìa</button>
   </div>
   <form data-social-form="profile" class="social-profile-form">
    <div class="field"><label for="social-headline">Dòng giới thiệu ngắn</label>
@@ -54,8 +53,24 @@ async function loadMessageRequests(redraw=false){
  state.messageRequests=r.requests||[];
  if(redraw&&state.tab==='friends')renderApp();
 }
+function applySocialProfile(owner,profile,photo){
+ if(state.user?.id!==owner)return false;
+ if(photo){
+  const field=photo+'_url';
+  state.user[field]=profile[field]?profile[field]+'?v='+Date.now():null;
+  const button=document.querySelector('[data-social-clear="'+photo+'"]');
+  if(button)button.hidden=!profile[field];
+ }else{
+  for(const field of ['headline','website','profile_visibility','allow_message_requests','world_anonymous']){
+   state.user[field]=profile[field];
+  }
+ }
+ updateMemberProfileSummary();
+ return true;
+}
 async function uploadSocialImage(file,kind){
  if(!file)return;
+ const owner=state.user.id;
  if(!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type))throw Error('Chỉ hỗ trợ JPG, PNG, WebP hoặc GIF.');
  let chosen=file;
  if(file.size>1_750_000){
@@ -77,10 +92,9 @@ async function uploadSocialImage(file,kind){
  const result=await response.json().catch(()=>({}));
  if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Không tải được ảnh.');
  const field=kind==='avatar'?'avatar_attachment_id':'cover_attachment_id';
- await api('/api/me/social',{method:'PATCH',data:{[field]:result.attachment.id}});
- state.user=(await api('/api/me')).user;
- renderApp();
- toast('Đã cập nhật '+(kind==='avatar'?'ảnh đại diện':'ảnh bìa')+'.','ok');
+ if(state.user?.id!==owner)return;
+ const {profile}=await api('/api/me/social',{method:'PATCH',data:{[field]:result.attachment.id}});
+ if(applySocialProfile(owner,profile,kind))toast('Đã cập nhật '+(kind==='avatar'?'ảnh đại diện':'ảnh bìa')+'.','ok');
 }
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('[data-social-form="profile"]');
@@ -90,16 +104,14 @@ document.addEventListener('submit',async event=>{
  if(btn?.disabled)return;
  if(btn)btn.disabled=true;
  try{
-  const fd=new FormData(form);
-  await api('/api/me/social',{method:'PATCH',data:{
+  const fd=new FormData(form),owner=state.user.id;
+  const {profile}=await api('/api/me/social',{method:'PATCH',data:{
    headline:String(fd.get('headline')||'').trim(),website:String(fd.get('website')||'').trim(),
    profile_visibility:String(fd.get('profile_visibility')||'everyone'),
    allow_message_requests:fd.has('allow_message_requests'),
    world_anonymous:fd.has('world_anonymous')
   }});
-  state.user=(await api('/api/me')).user;
-  await loadMessageRequests(false);
-  renderApp();toast('Đã lưu hồ sơ và quyền riêng tư.','ok');
+  if(applySocialProfile(owner,profile))toast('Đã lưu hồ sơ và quyền riêng tư.','ok');
  }catch(err){toast(err.message||'Không lưu được cài đặt.','error');}
  finally{if(btn?.isConnected)btn.disabled=false;}
 });
@@ -139,13 +151,13 @@ document.addEventListener('click',async event=>{
   return;
  }
  if(btn.hasAttribute('data-social-clear')){
-  const kind=btn.dataset.socialClear;
+  const kind=btn.dataset.socialClear,owner=state.user.id;
   btn.disabled=true;
   try{
-   await api('/api/me/social',{method:'PATCH',data:{[kind==='avatar'?'avatar_attachment_id':'cover_attachment_id']:0}});
-   state.user=(await api('/api/me')).user;renderApp();
-   toast('Đã gỡ ảnh.','ok');
-  }catch(err){toast(err.message||'Không gỡ được ảnh.','error');btn.disabled=false;}
+   const {profile}=await api('/api/me/social',{method:'PATCH',data:{[kind==='avatar'?'avatar_attachment_id':'cover_attachment_id']:0}});
+   if(applySocialProfile(owner,profile,kind))toast('Đã gỡ ảnh.','ok');
+  }catch(err){toast(err.message||'Không gỡ được ảnh.','error');}
+  finally{btn.disabled=false;}
   return;
  }
  if(btn.hasAttribute('data-social-decision')){

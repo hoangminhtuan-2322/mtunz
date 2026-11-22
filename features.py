@@ -218,27 +218,32 @@ def install(core):
         c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',(uid,body[:500],now()))
 
     class Profile(BaseModel):
-        display_name:str=Field(default='',max_length=50)
-        bio:str=Field(default='',max_length=220)
-        show_online:bool=True
-        show_receipts:bool=True
-        phone:str | None=Field(default=None,max_length=40)
-        email:str | None=Field(default=None,max_length=254)
+        display_name:str|None=Field(default=None,max_length=50)
+        bio:str|None=Field(default=None,max_length=220)
+        show_online:bool|None=None
+        show_receipts:bool|None=None
+        phone:str|None=Field(default=None,max_length=40)
+        email:str|None=Field(default=None,max_length=254)
 
     @app.patch('/api/me/profile')
     async def edit_profile(request:Request, body:Profile):
         u=current_user(request)
-        phone=core.normalize_phone(body.phone) if body.phone is not None else u['phone']
-        email=core.normalize_email(body.email) if body.email is not None else u['email']
-        name=core.validate_display_name(body.display_name,u['username'])
+        updates=body.model_dump(exclude_none=True)
+        for field, transform in {
+            'display_name':lambda value:core.validate_display_name(value,u['username']),
+            'bio':str.strip,'show_online':int,'show_receipts':int,
+            'phone':core.normalize_phone,'email':core.normalize_email,
+        }.items():
+            if field in updates:
+                updates[field]=transform(updates[field])
         with db() as c:
+            phone=updates.get('phone')
             if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
                 raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
-            c.execute('''UPDATE users SET display_name=?,bio=?,show_online=?,show_receipts=?,
-                          phone=?,email=? WHERE id=?''',
-                      (name,body.bio.strip(),int(body.show_online),
-                       int(body.show_receipts),phone,email,u['id']))
-        return {'ok':True}
+            if updates:
+                columns=','.join(field+'=?' for field in updates)
+                c.execute(f'UPDATE users SET {columns} WHERE id=?',(*updates.values(),u['id']))
+        return {'ok':True,'profile':updates}
 
     @app.get('/api/profile/{uid}')
     async def show_profile(request:Request,uid:int):
@@ -620,7 +625,7 @@ def install(core):
         return {'attachment':{'id':ident,'name':safe_name,'mime':mime,'size':total,'url':f'/api/attachments/{ident}'}}
 
     @app.get('/api/attachments/{file_id}')
-    async def download(request:Request,file_id:int):
+    async def download(request:Request,file_id:int,download:bool=False):
         u=current_user(request)
         with db() as c:
             f=one(c,'SELECT id,owner_id,stored_name,original_name,mime,size FROM attachments WHERE id=?',(file_id,))
@@ -650,7 +655,7 @@ def install(core):
                 allowed=bool(one(c,'''SELECT 1 FROM world_messages
                                    WHERE attachment_id=? AND deleted_at IS NULL''',(file_id,)))
             if not allowed:raise HTTPException(403,'Bạn không có quyền tải tệp này.')
-        inline=f['mime'].startswith(('image/','audio/'))
+        inline=not download and f['mime'].startswith(('image/','audio/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
         if hosted:
             from fastapi.responses import Response
