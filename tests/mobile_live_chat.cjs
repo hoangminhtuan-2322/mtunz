@@ -116,12 +116,24 @@ const {chromium}=require('playwright-core');
    }),{now});
    assert.equal(await page.locator('#msg-dm-1 .bubble > div').first().textContent(),'Tin đã sửa\nNội dung dài hơn');
    assert(Math.abs((await targetTop())-top)<=1,'Editing above the viewport must preserve the visible row');
-   await page.evaluate(({now})=>extraSocket({
-    type:'message-updated',peer_id:12,message_id:1,body:'',edited_at:now,deleted_at:now
-   }),{now});
+   const recall=await page.evaluate(async now=>{
+    const thread=document.querySelector('#chat-messages');
+    const row=document.querySelector('#msg-dm-14');
+    const geometry=()=>({
+     top:row.getBoundingClientRect().top,viewport:thread.getBoundingClientRect().top,
+     scroll:thread.scrollTop,height:thread.scrollHeight,following:thread.dataset.followChatEnd,
+     first:document.querySelector('#msg-dm-1').getBoundingClientRect().height,
+     root:window.scrollY,anchor:getComputedStyle(thread).overflowAnchor
+    });
+    const before=geometry(),position=captureMutationPosition(thread,document.querySelector('#msg-dm-1'));
+    await extraSocket({type:'message-updated',peer_id:12,message_id:1,body:'',edited_at:now,deleted_at:now});
+    const immediate=geometry();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    return {before,position,immediate,after:geometry()};
+   },now);
    await page.locator('#msg-dm-1 .deleted').waitFor({state:'attached'});
-   const afterRecall=await targetTop();
-   assert(Math.abs(afterRecall-top)<=1,`Recalling above the viewport at ${width}px moved the visible row from ${top} to ${afterRecall}`);
+   assert(Math.abs((await targetTop())-top)<=1,
+    `Recalling above the viewport at ${width}px changed the position ${JSON.stringify(recall)}`);
    assert.equal(reactionRequests,1);
    assert.equal(unexpectedHistoryFetches,0);
    assert.equal(await text.inputValue(),'Bản nháp mới');
