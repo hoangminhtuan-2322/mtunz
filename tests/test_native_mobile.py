@@ -167,3 +167,50 @@ def test_native_websocket_origin_with_bearer_and_revocation():
         assert ws is not None
     assert client.post('/api/auth/logout',headers=headers).status_code==200
     assert client.get('/api/me',headers=headers).json()['user'] is None
+
+
+
+def test_native_signup_uses_existing_admin_approval_and_web_identity():
+    admin = logged_admin()
+    native = TestClient(app)
+    request = native.post('/api/mobile/registration/request', json={
+        'username':'native_new_signup','phone':'0981234567','email':'native.signup@example.com',
+    })
+    assert request.status_code == 200, request.text
+    claim = request.json()['registration_token']
+    pending = native.post('/api/mobile/registration/status', json={'token':claim})
+    assert pending.status_code == 200 and pending.json()['registration']['status'] == 'pending'
+    rejected = native.post('/api/mobile/registration/complete', json={
+        'token':claim,'username':'native_new_signup','password':'VeryStrongPassword123',
+        'pin':'1234','pin_length':4,'accepted_terms':True,
+    })
+    assert rejected.status_code == 403
+    rows=admin.get('/api/admin/registrations').json()['registrations']
+    entry=next(r for r in rows if r['username']=='native_new_signup')
+    approval=admin.post(f'/api/admin/registrations/{entry["id"]}/decision',
+        json={'approve':True,'admin_pin':'2345'})
+    assert approval.status_code == 200,approval.text
+    approved=native.post('/api/mobile/registration/status',json={'token':claim}).json()
+    assert approved['registration']['status']=='approved'
+    no_consent=native.post('/api/mobile/registration/complete', json={
+        'token':claim,'username':'native_new_signup','password':'VeryStrongPassword123',
+        'pin':'1234','pin_length':4,'accepted_terms':False,
+    })
+    assert no_consent.status_code==422
+    completed=native.post('/api/mobile/registration/complete', json={
+        'token':claim,'username':'native_new_signup','password':'VeryStrongPassword123',
+        'pin':'1234','pin_length':4,'accepted_terms':True,
+    })
+    assert completed.status_code == 200, completed.text
+    headers={'Authorization':'Bearer '+completed.json()['access_token']}
+    profile=native.get('/api/me',headers=headers)
+    assert profile.status_code==200,profile.text
+    assert profile.json()['user']['onboarding_required']
+    name=native.post('/api/me/display-name',headers=headers,
+        json={'display_name':'Thành viên Native'})
+    assert name.status_code==200,name.text
+    assert native.get('/api/me',headers=headers).json()['user']['display_name']=='Thành viên Native'
+    replay=native.post('/api/mobile/registration/complete',json={
+        'token':claim,'username':'native_new_signup','password':'VeryStrongPassword123',
+        'pin':'1234','pin_length':4,'accepted_terms':True})
+    assert replay.status_code==403
