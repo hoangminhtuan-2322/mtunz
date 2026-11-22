@@ -2349,6 +2349,8 @@ from chat_library import alert_allowed, history_window, install as _install_chat
 _install_chat_library(_sys.modules[__name__])
 from web_notifications import install as _install_web_notifications
 _install_web_notifications(_sys.modules[__name__])
+from mobile_push import install as _install_mobile_push
+_install_mobile_push(_sys.modules[__name__])
 from world_chat import install as _install_world_chat
 _install_world_chat(_sys.modules[__name__])
 from social_profile import install as _install_social_profile
