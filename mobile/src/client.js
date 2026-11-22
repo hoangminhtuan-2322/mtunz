@@ -61,3 +61,22 @@ export async function clearSession() {
 export function wsUrl() {
   return API_ORIGIN.replace(/^http/, 'ws') + '/ws';
 }
+
+const SIGNUP_KEY = 'mtunz-native-registration-v1';
+
+export async function savePendingRegistration(registration) {
+  await SecureStore.setItemAsync(SIGNUP_KEY,JSON.stringify({
+    origin:API_ORIGIN,username:registration.username,token:registration.token,
+  }),{keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY});
+}
+export async function readPendingRegistration() {
+  const raw=await SecureStore.getItemAsync(SIGNUP_KEY);
+  if(!raw)return null;
+  try{
+    const saved=JSON.parse(raw);
+    return saved.origin===API_ORIGIN&&/^[A-Za-z0-9_-]{30,128}$/.test(saved.token)?saved:null;
+  }catch{return null;}
+}
+export async function clearPendingRegistration() {
+  await SecureStore.deleteItemAsync(SIGNUP_KEY);
+}
