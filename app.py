@@ -315,6 +315,7 @@ class Hub:
         self.users: dict[int, set[WebSocket]] = defaultdict(set)
         self.guests: dict[str, set[WebSocket]] = defaultdict(set)
         self.session_hashes: dict[WebSocket, str] = {}
+        self.device_hashes: dict[WebSocket, str] = {}
         self.valid_session_until: dict[str, int] = {}
 
     async def send(self, sockets, payload, *, member=False):
@@ -372,9 +373,13 @@ class Hub:
                     except Exception: pass
             sockets = good
         await self.send(sockets, {'type': event, **data}, member=True)
+        if event in ('message','group-message'):
+            online=frozenset(self.device_hashes[ws] for ws in sockets if ws in self.device_hashes)
+            enqueue_web_push(uid,event,online,data)
 
     def detach_session(self, ws):
         sid = self.session_hashes.pop(ws, None)
+        self.device_hashes.pop(ws,None)
         self.valid_session_until.pop(sid, None)
 
     async def close_sockets(self, sockets, notice=None):
@@ -572,25 +577,49 @@ async def public_privacy():
     return FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
 
 
-def maintenance_enabled(c, lock=False):
-    query = "SELECT value FROM settings WHERE key='maintenance_mode'"
+def parse_maintenance_schedule(value):
+    return json.loads(value) if value else None
+
+
+def maintenance_status(c, lock=False):
+    query="SELECT key,value FROM settings WHERE key IN ('maintenance_mode','maintenance_schedule') ORDER BY key"
     if lock and POSTGRES_MODE:
         query += ' FOR UPDATE'
-    row = one(c, query)
-    return bool(row and row['value'] == '1')
+    settings={row['key']:row['value'] for row in c.execute(query)}
+    schedule=parse_maintenance_schedule(settings.get('maintenance_schedule'))
+    at=now()
+    manual=settings.get('maintenance_mode')=='1'
+    return {'manual':manual,'active':manual or bool(schedule and schedule['starts_at']<=at<schedule['ends_at']),
+            'schedule':schedule if schedule and schedule['ends_at']>at else None,'server_time':at}
+
+
+def maintenance_enabled(c, lock=False):
+    return maintenance_status(c,lock)['active']
+
+
+@app.get('/api/system/maintenance')
+def public_maintenance_status():
+    with db() as c:
+        return maintenance_status(c)
 
 
 def require_member_service(c, lock=False):
-    if maintenance_enabled(c, lock):
-        raise HTTPException(503, {'code':'maintenance',
-                                  'message':'Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'})
+    status=maintenance_status(c,lock)
+    if status['active']:
+        schedule=status['schedule']
+        detail='Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'
+        if schedule and schedule['starts_at']<=status['server_time']:
+            detail+=' '+schedule['reason']
+        raise HTTPException(503,{'code':'maintenance','message':detail})
 
 
-def current_user(request: Request, require=True):
+def current_user(request: Request, require=True, *, allow_deletion=False):
     t = request.cookies.get('s')
     with db() as c:
         row = one(c, '''SELECT u.*,s.expires_at,
-                       (SELECT value FROM settings WHERE key='maintenance_mode') AS maintenance_mode
+                       (SELECT purge_at FROM account_deletion_requests WHERE user_id=u.id) AS deletion_purge_at,
+                       (SELECT value FROM settings WHERE key='maintenance_mode') AS maintenance_mode,
+                       (SELECT value FROM settings WHERE key='maintenance_schedule') AS maintenance_schedule
                        FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?''', (digest(t),)) if t else None
         if not row or row['expires_at'] <= now():
             if t:
@@ -598,11 +627,18 @@ def current_user(request: Request, require=True):
             if require:
                 raise HTTPException(401, 'Phiên đăng nhập đã hết hạn.')
             return None
-        if not row['is_admin'] and row['maintenance_mode']=='1':
-            require_member_service(c)
+        if not row['is_admin']:
+            schedule=parse_maintenance_schedule(row['maintenance_schedule'])
+            if row['maintenance_mode']=='1' or schedule and schedule['starts_at']<=now()<schedule['ends_at']:
+                require_member_service(c)
+        deadline=row['deletion_purge_at']
+        if deadline is not None and not allow_deletion:
+            raise HTTPException(423,{'code':'account_deletion_pending','purge_at':deadline,
+                                     'message':'Xác nhận hủy yêu cầu xóa để dùng lại tài khoản.'})
         if row['sanction_kind'] and row['sanction_until'] and row['sanction_until'] <= now():
             c.execute('UPDATE users SET sanction_kind=NULL,sanction_until=NULL,sanction_reason=NULL WHERE id=?', (row['id'],))
             row = current_user_no_sanction(c, row['id'])
+            row['deletion_purge_at']=deadline
         if row['sanction_kind']:
             raise HTTPException(403, {'code': 'sanction', 'kind': row['sanction_kind'],
                                       'until': row['sanction_until'], 'reason': row['sanction_reason']})
@@ -644,10 +680,19 @@ def issue_session(c, uid, request):
     raw = token()
     info = device_metadata(request)
     created = now()
-    is_admin = bool(one(c,'SELECT is_admin FROM users WHERE id=?',(uid,))['is_admin'])
+    sql='SELECT is_admin FROM users WHERE id=?'
+    user=one(c,sql+(' FOR UPDATE' if POSTGRES_MODE else ''),(uid,))
+    if not user:
+        raise HTTPException(401,'Tài khoản không còn khả dụng.')
+    is_admin = bool(user['is_admin'])
     if not is_admin and POSTGRES_MODE:
         require_member_service(c, lock=True)
     expires = created + (2 * 3600 if is_admin else 7 * 86400)
+    deletion=one(c,'SELECT purge_at FROM account_deletion_requests WHERE user_id=?',(uid,)) if not is_admin else None
+    if deletion:
+        if deletion['purge_at']<=created:
+            raise HTTPException(410,'Tài khoản đã đến hạn xóa.')
+        expires=min(expires,deletion['purge_at'],created+900)
     c.execute('''INSERT INTO sessions(token_hash,user_id,expires_at,created_at,last_seen,
                  device_name,device_type,browser,os_name,location_hint,network_hint,ip_address)
                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
@@ -907,7 +952,8 @@ async def auth_pin(request: Request, body: PinLogin):
         if valid_remember_token(previous):
             c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(previous),))
         # Admins never receive a PIN-only long-lived browser credential.
-        saved = token() if body.remember_device and not is_admin and not r['needs_display_name'] else None
+        pending_deletion=not is_admin and one(c,'SELECT 1 FROM account_deletion_requests WHERE user_id=?',(r['user_id'],))
+        saved = token() if body.remember_device and not is_admin and not r['needs_display_name'] and not pending_deletion else None
         if saved:
             info = device_metadata(request)
             created = now()
@@ -1095,7 +1141,9 @@ async def setup_admin_pin(request:Request,body:SetupAdminPin):
 
 @app.get('/api/me')
 async def me(request: Request):
-    u = current_user(request, require=False)
+    u = current_user(request,require=False,allow_deletion=True)
+    if u and u.get('deletion_purge_at') is not None:
+        return {'user':{'id':u['id'],'is_admin':False,'deletion_purge_at':u['deletion_purge_at']}}
     return {'user':public_user(u) if u else None}
 
 
@@ -1121,7 +1169,9 @@ async def logout(request: Request):
     t = request.cookies.get('s')
     remembered = request.cookies.get(REMEMBER_COOKIE)
     with db() as c:
-        if t: c.execute('DELETE FROM sessions WHERE token_hash=?',(digest(t),))
+        if t:
+            forget_push_on_logout(c,digest(t),digest(request.state.gid))
+            c.execute('DELETE FROM sessions WHERE token_hash=?',(digest(t),))
         if valid_remember_token(remembered):
             c.execute('DELETE FROM trusted_devices WHERE token_hash=?',(digest(remembered),))
     if t: await hub.terminate_session(digest(t))
@@ -2113,7 +2163,8 @@ async def websocket_events(ws:WebSocket):
     if sid:
         with db() as c:
             r=one(c,'''SELECT u.id,u.is_admin,u.sanction_kind,u.sanction_until,u.needs_display_name FROM sessions s
-                       JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?''',
+                       JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?
+                       AND NOT EXISTS (SELECT 1 FROM account_deletion_requests WHERE user_id=u.id)''',
                   (digest(sid),now()))
             paused=(not r or not r['is_admin']) and maintenance_enabled(c)
             if not paused and r and not r['needs_display_name'] and (not r['sanction_kind'] or
@@ -2125,6 +2176,7 @@ async def websocket_events(ws:WebSocket):
         was_online=bool(hub.users.get(uid))
         hub.users[uid].add(ws)
         hub.session_hashes[ws] = digest(sid)
+        if gid:hub.device_hashes[ws]=digest(gid)
         with db() as c:
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
                       (now(),digest(sid),uid))
@@ -2210,6 +2262,8 @@ async def websocket_events(ws:WebSocket):
 import sys as _sys
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
+from web_notifications import install as _install_web_notifications
+_install_web_notifications(_sys.modules[__name__])
 from world_chat import install as _install_world_chat
 _install_world_chat(_sys.modules[__name__])
 from social_profile import install as _install_social_profile

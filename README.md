@@ -75,7 +75,8 @@ Trong **Cài đặt → Xóa tài khoản và dữ liệu**, người dùng nh�
 mật khẩu, PIN và cụm `XOA SAU 3 NGAY` để tạo yêu cầu xóa. Dữ liệu **không bị xóa
 ngay**: thời điểm `purge_at = requested_at + 3 × 24 giờ` được lưu bền vững
 trong bảng `account_deletion_requests` (Neon ở môi trường public). Người dùng
-có thể hủy trước hạn bằng mật khẩu và PIN hiện tại. Lịch đã tạo giữ nguyên hạn xóa.
+được đăng xuất sau khi lên lịch. Trước hạn, đăng nhập và chọn giữ tài khoản để hủy
+yêu cầu trước khi vào ứng dụng. Lịch đã tạo giữ hạn xóa ghi trong hệ thống.
 Yêu cầu trùng không gia hạn
 ngầm mốc xóa. Sau hạn, hủy không còn hiệu lực.
 

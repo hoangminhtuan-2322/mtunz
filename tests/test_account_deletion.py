@@ -40,6 +40,10 @@ def reset_test_database():
             'UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL '
             "WHERE username='admin'", (hash_secret('mtunz7'),)
         )
+    yield
+    with db() as c:
+        c.execute('DELETE FROM sessions')
+        c.execute("UPDATE users SET pin_hash=NULL,pin_length=NULL WHERE username='admin'")
 
 
 def login_admin():
@@ -80,6 +84,12 @@ def create_member(admin, name):
     completed=client.post('/api/me/display-name',json={'display_name':'Thành viên '+name})
     assert completed.status_code == 200,completed.text
     return client, client.get('/api/me').json()['user']['id']
+
+
+def login_member(client,name):
+    challenge=client.post('/api/auth/password',json={'username':name,'password':PASSWORD})
+    assert challenge.status_code==200,challenge.text
+    return client.post('/api/auth/pin',json={'challenge':challenge.json()['challenge'],'pin':PIN})
 
 
 def delete_payload(name, password=PASSWORD, pin=PIN, *, schedule=False):
@@ -158,7 +168,7 @@ def test_self_delete_cleans_dependencies_and_preserves_surviving_group():
     assert response.status_code==200,response.text
     assert response.json()['pending'] is True
     assert response.json()['purge_at']-response.json()['requested_at']==3*86400
-    assert member.get('/api/me').json()['user']['username']=='erase_self'
+    assert member.get('/api/me').json()['user'] is None
     assert path.exists(),'Grace period must preserve uploaded content.'
     assert admin.get('/api/admin/deletions').json()['requests'][0]['username']=='erase_self'
     response=admin.post(f'/api/admin/users/{uid}/delete',
@@ -224,7 +234,15 @@ def test_three_day_cancellation_is_authenticated_and_preserves_data():
     created=member.post('/api/me/delete',json=delete_payload('reconsider',schedule=True))
     assert created.status_code==200,created.text
     deadline=created.json()['purge_at']
-    assert member.post('/api/me/delete',json=delete_payload('reconsider',schedule=True)).status_code==409
+    assert member.get('/api/me').json()['user'] is None
+    assert TestClient(app).post('/api/me/delete/keep',json={'confirm':True}).status_code==401
+    login=login_member(member,'reconsider')
+    assert login.status_code==200,login.text
+    held=member.get('/api/me').json()['user']
+    assert held=={'id':uid,'is_admin':False,'deletion_purge_at':deadline}
+    assert member.get('/api/friends').status_code==423
+    assert member.post('/api/me/delete/keep',json={'confirm':False}).status_code==422
+    assert member.post('/api/me/delete',json=delete_payload('reconsider',schedule=True)).status_code==423
     status=member.get('/api/me/deletion').json()
     assert status['pending'] is True and status['purge_at']==deadline
     assert admin.get('/api/admin/deletions').json()['requests'][0]['user_id']==uid
@@ -235,7 +253,10 @@ def test_three_day_cancellation_is_authenticated_and_preserves_data():
     url='/api/me/delete/cancel'
     assert member.post(url,json={'password':'wrong','pin':PIN}).status_code==401
     assert member.post(url,json={'password':PASSWORD,'pin':'000000'}).status_code==401
-    assert member.post(url,json={'password':PASSWORD,'pin':PIN}).status_code==200
+    restricted_cookie=member.cookies.get('s')
+    assert member.post('/api/me/delete/keep',json={'confirm':True}).status_code==200
+    assert member.cookies.get('s')!=restricted_cookie
+    assert member.get('/api/friends').status_code==200
     assert member.get('/api/me/deletion').json()['pending'] is False
     assert member.get('/api/me').json()['user']['id']==uid
     assert admin.get('/api/admin/deletions').json()['requests']==[]
@@ -253,7 +274,9 @@ def test_scheduled_purge_is_idempotent_and_never_early():
         assert c.execute('SELECT 1 FROM users WHERE id=?',(uid,)).fetchone()
         c.execute('UPDATE account_deletion_requests SET purge_at=? WHERE user_id=?',
                   (now_ts-1,uid))
-    assert member.post('/api/me/delete/cancel',json={'password':PASSWORD,'pin':PIN}).status_code==409
+    expired=login_member(member,'expired_plan')
+    assert expired.status_code==410,expired.text
+    assert member.post('/api/me/delete/keep',json={'confirm':True}).status_code==401
     completed=purge_due_deletions(db,now_ts)
     assert [x['deleted_user_id'] for x in completed]==[uid]
     assert purge_due_deletions(db,now_ts)==[]
@@ -270,3 +293,34 @@ def test_admin_immediate_delete_requires_enrolled_pin():
                         json={'username':'protect_user','confirm':CONFIRM,'admin_pin':PIN})
     assert response.status_code==403
     assert member.get('/api/me').json()['user']['id']==uid
+
+
+def test_push_reminder_is_persisted_once_inside_the_last_day(monkeypatch):
+    import app as core
+    import web_notifications as push
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+
+    admin=login_admin()
+    member,uid=create_member(admin,'remind_me')
+    key=ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+        serialization.Encoding.X962,serialization.PublicFormat.UncompressedPoint)
+    payload={'endpoint':'https://fcm.googleapis.com/fcm/send/disposable-test-subscription',
+             'keys':{'p256dh':push.b64(key),'auth':push.b64(b'a'*16)}}
+    assert member.post('/api/me/push',json=payload).status_code==200
+    assert member.get('/api/me/push').json()['enabled']
+    assert member.post('/api/me/delete',json=delete_payload('remind_me',schedule=True)).status_code==200
+    sent=[]
+    class Delivered:
+        status_code=201
+    monkeypatch.setattr(push,'webpush',lambda sub,**kw: sent.append(kw['data']) or Delivered())
+    core.process_deletion_reminders()
+    assert sent==[]
+    with db() as c:
+        c.execute('UPDATE account_deletion_requests SET purge_at=? WHERE user_id=?',(core.now()+3600,uid))
+    core.process_deletion_reminders()
+    core.process_deletion_reminders()
+    assert len(sent)==1 and '"type": "deletion"' in sent[0]
+    assert 'remind_me' not in sent[0]
+    with db() as c:
+        assert c.execute('SELECT reminded_at FROM account_deletion_requests WHERE user_id=?',(uid,)).fetchone()['reminded_at']
