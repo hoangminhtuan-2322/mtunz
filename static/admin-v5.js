@@ -47,6 +47,7 @@ function adminV5OverviewHtml(s){
 function adminV5SecurityHtml(s){
  const result=adminV5Summary(s);
  const locked=!!s?.emergency_lockdown,maintenance=!!s?.maintenance_mode;
+ const manual=s?.maintenance?.manual??maintenance,schedule=s?.maintenance?.schedule;
  return '<section class="v5-security-center" aria-label="Lớp bảo vệ hệ thống">'+
  '<div class="v5-deck-head"><div><span class="v5-kicker">DEFENSE IN DEPTH</span>'+
  '<h2>Bảo vệ Admin và dữ liệu</h2>'+
@@ -61,8 +62,11 @@ function adminV5SecurityHtml(s){
   '<article class="v5-action-card"><div class="v5-action-card-head"><span>🔧</span><h3>Bảo trì hệ thống</h3></div>'+
    '<p>Thông báo cho thành viên đang online, kết thúc phiên thành viên và tạm chặn đăng nhập.</p>'+
    '<strong class="v5-action-state">'+(s?(maintenance?'Đang bảo trì':'Đang hoạt động'):'Đang tải')+'</strong>'+
-   '<button type="button" class="btn '+(maintenance?'ghost':'danger')+'" data-admin-v5="maintenance" data-v5-enable="'+(maintenance?'0':'1')+'" '+(s?'':'disabled')+'>'+
-    (maintenance?'Kết thúc bảo trì':'Bật bảo trì')+'</button></article>'+
+   '<button type="button" class="btn '+(manual?'ghost':'danger')+'" data-admin-v5="maintenance" data-v5-enable="'+(manual?'0':'1')+'" '+(s?'':'disabled')+'>'+
+    (manual?'Kết thúc bảo trì thủ công':'Bật bảo trì ngay')+'</button>'+
+   (schedule?'<p class="hint">Lịch: '+esc(deadlineDate(schedule.starts_at))+' – '+esc(deadlineDate(schedule.ends_at))+' · '+esc(schedule.reason)+'</p>':'')+
+   '<button type="button" class="btn ghost" data-admin-v5="maintenance-schedule">'+(schedule?'Đổi lịch bảo trì':'Lên lịch bảo trì')+'</button>'+
+   (schedule?'<button type="button" class="btn ghost" data-admin-v5="maintenance-cancel">Hủy lịch bảo trì</button>':'')+'</article>'+
   '<article class="v5-action-card"><div class="v5-action-card-head"><span>📱</span><h3>Thu hồi phiên khác</h3></div>'+
    '<p>Đăng xuất ngay mọi phiên Admin khác, hủy các thiết bị chờ phê duyệt và phiên ghi nhớ; giữ chính phiên Admin đang thao tác.</p>'+
    '<strong class="v5-action-state">'+(s?adminV5Num(s.admin_sessions):'—')+' phiên hiện đang hoạt động</strong>'+
@@ -179,6 +183,26 @@ function adminV5DoMaintenance(enabled){
    toast(enabled?'Đã bật bảo trì hệ thống.':'Đã kết thúc bảo trì.','ok');
   });
 }
+function adminV5ScheduleMaintenance(cancel=false){
+ modal({title:cancel?'Hủy lịch bảo trì':'Lên lịch bảo trì',
+  description:cancel?'Lịch bảo trì sẽ được gỡ.':'Thành viên sẽ thấy thông báo trước giờ bắt đầu và có thể đăng nhập lại sau giờ kết thúc.',
+  confirm:cancel?'Hủy lịch':'Lưu lịch',
+  content:(cancel?'':`<div class="field"><label for="v5-maint-start">Bắt đầu</label>
+   <input id="v5-maint-start" class="input" type="datetime-local"></div>
+   <div class="field"><label for="v5-maint-end">Kết thúc</label><input id="v5-maint-end" class="input" type="datetime-local"></div>
+   <div class="field"><label for="v5-maint-reason">Lý do hiển thị cho thành viên</label>
+   <input id="v5-maint-reason" class="input" maxlength="240"></div>`)+adminV3PinFields(),
+  handler:async host=>{
+   const value=id=>host.querySelector(id)?.value||'';
+   const starts_at=cancel?0:Math.floor(new Date(value('#v5-maint-start')).getTime()/1000);
+   const ends_at=cancel?0:Math.floor(new Date(value('#v5-maint-end')).getTime()/1000);
+   const reason=value('#v5-maint-reason').trim();
+   if(!cancel&&(!starts_at||!ends_at||ends_at<=starts_at||!reason))throw Error('Nhập giờ bắt đầu, giờ kết thúc và lý do.');
+   await post('/api/admin/security/maintenance/schedule',{starts_at,ends_at,reason,...adminV3PinPayload(host)});
+   toast(cancel?'Đã hủy lịch bảo trì.':'Đã lưu lịch bảo trì.','ok');
+   await adminV5Refresh(true);
+  }});
+}
 function adminV5DoRevoke(){
  adminV5ProofModal('Thu hồi mọi phiên Admin khác',
   'Các thiết bị khác và các yêu cầu đăng nhập đang chờ sẽ bị thu hồi. Chỉ phiên này tiếp tục hoạt động.',
@@ -200,6 +224,7 @@ document.addEventListener('click',async event=>{
    if(nav)nav.click();return;
   }
   if(action==='revoke-others')return adminV5DoRevoke();
+  if(action==='maintenance-schedule'||action==='maintenance-cancel')return adminV5ScheduleMaintenance(action==='maintenance-cancel');
   if(action==='maintenance')return adminV5DoMaintenance(btn.dataset.v5Enable==='1');
   if(action==='lockdown')return adminV5DoLockdown(btn.dataset.v5Enable==='1');
  }catch(e){toast(e.message||'Không thể thực hiện thao tác Admin.','error');}

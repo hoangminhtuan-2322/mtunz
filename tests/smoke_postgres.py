@@ -86,6 +86,12 @@ with TestClient(app, base_url="https://testserver") as admin:
         assert scheduled.status_code==200,scheduled.text
         cancel=admin.post(f"/api/admin/users/{account['id']}/delete/cancel",json={"admin_pin":"2345"})
         assert cancel.status_code==200,cancel.text
+        login_again=guest.post("/api/auth/password",json={
+            "username":"render_ci_user","password":"RenderTestPassword123!"})
+        assert login_again.status_code==200,login_again.text
+        unlocked=guest.post("/api/auth/pin",json={"challenge":login_again.json()["challenge"],"pin":"123456"})
+        assert unlocked.status_code==200,unlocked.text
+        assert guest.get("/api/me/push").json()["public_key"]
 
         config=admin.post("/api/admin/world/config",json={
             "enabled":True,"schedule_enabled":False,"open_minute":540,"close_minute":1320,

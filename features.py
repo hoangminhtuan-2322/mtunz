@@ -343,7 +343,7 @@ def install(core):
         return {'ok':True}
 
 
-    # 30-day self-service deletion grace period. Admin can irreversibly purge
+    # Self-service deletion grace period. Admin can irreversibly purge
     # immediately after Admin PIN verification.
     class PermanentDelete(BaseModel):
         username: str = Field(min_length=1, max_length=80)
@@ -384,7 +384,7 @@ def install(core):
 
     @app.get('/api/me/deletion')
     async def own_deletion_status(request:Request):
-        actor=current_user(request)
+        actor=current_user(request,allow_deletion=True)
         with db() as c:
             row=one(c,'SELECT requested_at,purge_at FROM account_deletion_requests WHERE user_id=?',
                     (actor['id'],))
@@ -398,6 +398,8 @@ def install(core):
             raise HTTPException(403,'Tài khoản Admin không thể tự xóa tại mục cài đặt.')
         throttle(request,'delete-own-account',5,3600,str(actor['id']))
         with db() as c:
+            if core.POSTGRES_MODE:
+                c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(actor['id'],))
             current=check_delete_identity(c,actor['id'],body)
             if current['username'].casefold()!=body.username.strip().casefold():
                 raise HTTPException(422,'Tên tài khoản xác nhận không khớp.')
@@ -407,27 +409,52 @@ def install(core):
             deadline=requested+DELETION_GRACE_SECONDS
             c.execute('INSERT INTO account_deletion_requests(user_id,requested_at,purge_at) VALUES(?,?,?)',
                       (actor['id'],requested,deadline))
-            c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
-                      (actor['id'],'Bạn đã yêu cầu xóa tài khoản sau 3 ngày. Có thể hủy trong Cài đặt trước hạn.',requested))
+            c.execute('DELETE FROM sessions WHERE user_id=?',(actor['id'],))
+            c.execute('DELETE FROM trusted_devices WHERE user_id=?',(actor['id'],))
+            notify(c,actor['id'],'Tài khoản đã lên lịch xóa sau 3 ngày. Đăng nhập và chọn giữ tài khoản để hủy trước hạn.')
+        sockets=list(hub.users.get(actor['id'],()))
+        await hub.close_sockets(sockets,notice='Tài khoản đang chờ xóa. Đăng nhập lại để quyết định giữ tài khoản.')
         await hub.admins('account-deletion-updated')
-        return {'ok':True,'pending':True,'requested_at':requested,'purge_at':deadline}
+        response=JSONResponse({'ok':True,'pending':True,'requested_at':requested,'purge_at':deadline})
+        response.delete_cookie('s',path='/')
+        response.delete_cookie(core.REMEMBER_COOKIE,path='/')
+        return response
+
+    def cancel_member_request(c,uid):
+        changed=c.execute('DELETE FROM account_deletion_requests WHERE user_id=? AND purge_at>?',
+                          (uid,now()))
+        if changed.rowcount!=1:
+            raise HTTPException(409,'Không có yêu cầu xóa còn hiệu lực để hủy.')
+        notify(c,uid,'Bạn đã hủy yêu cầu xóa tài khoản.')
 
     @app.post('/api/me/delete/cancel')
     async def cancel_own_deletion(request:Request,body:CancelDelete):
-        actor=current_user(request)
+        actor=current_user(request,allow_deletion=True)
         if actor['is_admin']:
             raise HTTPException(403,'Tài khoản quản trị không có yêu cầu tự xóa.')
         throttle(request,'cancel-delete-account',8,3600,str(actor['id']))
         with db() as c:
             check_delete_identity(c,actor['id'],body)
-            changed=c.execute('DELETE FROM account_deletion_requests WHERE user_id=? AND purge_at>?',
-                              (actor['id'],now()))
-            if changed.rowcount!=1:
-                raise HTTPException(409,'Không có yêu cầu xóa còn hiệu lực để hủy.')
-            c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',
-                      (actor['id'],'Bạn đã hủy yêu cầu xóa tài khoản.',now()))
+            cancel_member_request(c,actor['id'])
         await hub.admins('account-deletion-updated')
         return {'ok':True,'pending':False}
+
+    class KeepAccount(BaseModel):
+        confirm: Literal[True]
+
+    @app.post('/api/me/delete/keep')
+    async def keep_own_account(request:Request,body:KeepAccount):
+        actor=current_user(request,allow_deletion=True)
+        if actor['is_admin']:
+            raise HTTPException(403,'Tài khoản quản trị không có yêu cầu tự xóa.')
+        throttle(request,'cancel-delete-account',8,3600,str(actor['id']))
+        with db() as c:
+            cancel_member_request(c,actor['id'])
+            # Replace the restricted session within the same transaction.
+            c.execute('DELETE FROM sessions WHERE token_hash=?',(core.digest(request.cookies['s']),))
+            raw=core.issue_session(c,actor['id'],request)
+        await hub.admins('account-deletion-updated')
+        return core.session_response({'ok':True,'pending':False},raw)
 
     @app.get('/api/admin/deletions')
     async def admin_deletion_queue(request:Request):

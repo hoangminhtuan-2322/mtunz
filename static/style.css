@@ -53,3 +53,6 @@
 .logo-mark,.loading-logo{font-family:Inter,system-ui,sans-serif;font-weight:900;letter-spacing:-1.6px;text-transform:lowercase}
 .logo-mark{font-size:22px;padding-right:2px}
 .loading-logo{font-size:37px}
+
+#maintenance-banner:not([hidden]){position:fixed;z-index:70;top:env(safe-area-inset-top,0);left:50%;transform:translateX(-50%);max-width:min(720px,94vw);width:max-content;padding:6px 12px;border-radius:0 0 12px 12px;background:#372c19;color:#ffe0a2;border:1px solid #775c2f;font-size:12px;line-height:1.35;text-align:center;pointer-events:none}
+.thread .chat-older{align-self:center;flex:none;min-height:40px;margin:4px 0}

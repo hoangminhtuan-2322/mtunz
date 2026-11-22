@@ -131,9 +131,10 @@ async function api(url,{method='GET',data,signal}={}){
     const detail=payload?.detail;
     if(detail?.code==='sanction')showSanction(detail);
     if(detail?.code==='maintenance')showMaintenance(detail.message);
+    if(detail?.code==='account_deletion_pending')showDeletionHold(detail.purge_at);
     const error=new Error(typeof detail==='string'?detail:detail?.message||detail?.reason||'Yêu cầu không thành công.');
     error.status=response.status;
-    error.maintenance=detail?.code==='maintenance';
+    error.maintenance=detail?.code==='maintenance'||detail?.code==='account_deletion_pending';
     throw error;
   }
   return payload;
@@ -257,6 +258,34 @@ function modal({title,description='',content='',danger=false,confirm='Đồng ý
   requestAnimationFrame(()=>{if(panel.isConnected)panel.focus({preventScroll:true});});
 }
 function ask(title,description,handler,confirm='Xác nhận',danger=false){modal({title,description,handler,confirm,danger});}
+function showDeletionHold(deadline){
+ if($('#delete-hold-exit'))return;
+ state.mode='login';state.step='username';state.challenge='';
+ renderAuth();
+ const expired=deadline*1000<=Date.now();
+ modal({title:expired?'Tài khoản đã đến hạn xóa':'Tài khoản đang chờ xóa',
+  description:expired?'Yêu cầu đã đến hạn xử lý. Bạn có thể trở về màn hình đăng nhập.':
+   'Hạn xóa: '+deadlineDate(deadline)+'. Hãy chọn giữ tài khoản để hủy yêu cầu và vào lại ứng dụng.',
+  confirm:expired?'Về đăng nhập':'Hủy xóa và vào tài khoản',closable:false,
+  content:'<button id="delete-hold-exit" class="btn ghost" type="button">Tiếp tục chờ xóa</button>',
+  handler:async host=>{
+   if(expired){await logout();return;}
+   try{await post('/api/me/delete/keep',{confirm:true});}
+   catch(error){if(error.status!==409)throw error;}
+   state.user=(await api('/api/me')).user;
+   if(state.user?.deletion_purge_at)throw Error('Yêu cầu đã hết hạn để hủy.');
+   host.replaceChildren();
+   await enterApp();
+   toast('Đã hủy yêu cầu xóa tài khoản.','ok');
+   return false;
+  }});
+ $('#delete-hold-exit')?.addEventListener('click',async event=>{
+  const button=event.currentTarget;
+  button.disabled=true;
+  try{await logout();$('#modal-root')?.replaceChildren();}
+  catch(error){button.disabled=false;toast(error.message,'error');}
+ });
+}
 function showMaintenance(message='Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'){
  if(state.user?.is_admin||$('#maintenance-notice'))return;
  const endingSession=Boolean(state.user||readActiveTab());
@@ -359,7 +388,10 @@ function connectSocket(retry=false){
    socketRetryDelay=2500;
    let data;try{data=JSON.parse(ev.data)}catch{return;}
    const t=data.type;
-   if(t==='maintenance-mode'){showMaintenance();return;}
+   if(t==='maintenance-status'){applyMaintenanceBanner(data.status);return;}
+   if(t==='maintenance-mode'){
+     showMaintenance(data.reason?'Hệ thống đang bảo trì. '+data.reason:undefined);return;
+   }
    if(t==='account-sanction'){showSanction(data);return;}
    if(t==='world-penalty'&&state.tab==='settings'&&state.user&&!state.user.is_admin){
      await loadWorldStatus().then(()=>renderApp()).catch(()=>{});return;
@@ -516,6 +548,10 @@ function showRequiredDisplayName(){
 }
 async function enterApp(resume=false){
  if(!state.user)return;
+ if(state.user.deletion_purge_at){
+  showDeletionHold(state.user.deletion_purge_at);
+  return;
+ }
  if(!state.user.is_admin&&state.user.onboarding_required){
   showRequiredDisplayName();return;
  }
@@ -1000,7 +1036,7 @@ function updateChatHeader(){
    }
  }
 }
-function renderBubbles(){return bubblesFor(state.messages,false);}
+function renderBubbles(){return chatHistoryMarkup(state.messages,false);}
 function conversation(){
  const f=state.friends.find(x=>x.other_id===state.selected&&x.state==='accepted');
  if(!f)return welcomeEmpty();
@@ -1114,6 +1150,49 @@ function latestChatButton(){
  return '<button type="button" class="chat-latest" data-act="chat-latest" aria-label="Về tin nhắn mới nhất" hidden>'+icon('chevron',15)+' Tin mới nhất</button>';
 }
 
+function chatHistoryMarkup(rows,group){
+ const older=rows.filter(message=>message.id>0).length>=70;
+ return (older?'<button class="btn ghost sm chat-older" type="button" data-act="chat-older">Tải tin nhắn cũ hơn</button>':'')+
+   bubblesFor(rows,group);
+}
+async function loadOlderChat(box=$('#chat-messages')){
+ if(!box||box.dataset.loadingOlder||box.dataset.historyDone||!box.querySelector('.chat-older'))return;
+ const group=state.tab==='groups',id=group?state.groupSelected:state.selected,owner=state.user?.id;
+ if(!id||!owner)return;
+ const rows=()=>group?state.groupMessages:state.messages;
+ const first=rows().find(message=>message.id>0);
+ if(!first)return;
+ const path=group?'/api/groups/'+id+'/messages':'/api/messages/'+id;
+ const button=box.querySelector('.chat-older');
+ box.dataset.loadingOlder='true';button.disabled=true;button.textContent='Đang tải…';
+ try{
+  const page=await api(path+'?before='+first.id);
+  if(!box.isConnected||state.user?.id!==owner||box!==$('#chat-messages'))return;
+  const current=rows(),ids=new Set(current.map(message=>message.id));
+  const older=page.messages.filter(message=>!ids.has(message.id));
+  if(page.messages.length<70||!older.length)box.dataset.historyDone='true';
+  if(older.length){
+   const anchor=document.getElementById('msg-'+(group?'group':'dm')+'-'+first.id);
+   const anchorTop=anchor?.getBoundingClientRect().top;
+   const top=box.scrollTop,height=box.scrollHeight;
+   pauseChatFollow(box);
+   box.dataset.expandedHistory='true';
+   if(group)state.groupMessages=[...older,...current];
+   else state.messages=[...older,...current];
+   box.innerHTML=chatHistoryMarkup(rows(),group);
+   if(box.dataset.historyDone)box.querySelector('.chat-older')?.remove();
+   const next=document.getElementById('msg-'+(group?'group':'dm')+'-'+first.id);
+   box.scrollTop=top+(next&&anchorTop!==undefined?next.getBoundingClientRect().top-anchorTop:box.scrollHeight-height);
+   updateLatestButton(box);
+  }
+ }catch(error){if(box.isConnected)toast(error.message,'error');}
+ finally{
+  delete box.dataset.loadingOlder;
+  const control=box.querySelector('.chat-older');
+  if(box.dataset.historyDone)control?.remove();
+  else if(control){control.disabled=false;control.textContent='Tải tin nhắn cũ hơn';}
+ }
+}
 const chatEndGeometry=new WeakMap();
 const chatEndSettling=new WeakMap();
 function followingChatEnd(box){
@@ -1181,6 +1260,7 @@ document.addEventListener('scroll',event=>{
   return;
  }
  box.dataset.followChatEnd=String(chatNearEnd(box));
+ if(box.scrollTop<65&&box.scrollHeight>box.clientHeight+2)void loadOlderChat(box);
  updateLatestButton(box);
  queueChatRead(box);
 },true);
@@ -1205,6 +1285,7 @@ function paintChatThread(box,markup,scroll){
  const follow=followingChatEnd(box);
  const top=box.scrollTop;
  box.innerHTML=markup;
+ if(box.dataset.historyDone)box.querySelector('.chat-older')?.remove();
  if(scroll)settleChatEnd(box);
  else if(follow)followChatEnd(box);
  else{box.scrollTo({top,behavior:'instant'});updateLatestButton(box);}
@@ -1255,7 +1336,7 @@ function appendDirectMessage(message,reveal=false){
     renderMessageThread(false);
    }else patchThreadRow(box,message,previous,state.messages,'dm',replaced?.id??null,renderMessageThread);
  }
- if(state.messages.length>110){
+ if(state.messages.length>110&&!box?.dataset.expandedHistory){
    state.messages.splice(0,state.messages.length-100);
    renderMessageThread(false);
  }
@@ -1270,7 +1351,7 @@ function compareChatMessages(a,b){
 async function loadMessages(scroll=true){
  const friend=state.selected;if(!friend)return;
  const seq=++dmLoadGeneration,userId=state.user?.id;
- const existing=new Map(state.messages.map(message=>[message.id,message]));
+ const existing=new Map(state.messages.map(m=>[m.id,{message:m,read:m.read_at,delivered:m.delivered_at}]));
  const current=()=>seq===dmLoadGeneration&&state.selected===friend&&state.tab==='messages'&&state.user?.id===userId;
  try{
   const r=await api('/api/messages/'+friend);
@@ -1278,7 +1359,11 @@ async function loadMessages(scroll=true){
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
   for(const message of r.messages){
    const realtime=known.get(message.id);
-   if(realtime&&existing.get(message.id)!==realtime)continue;
+   const prior=existing.get(message.id);
+   if(realtime&&prior?.message!==realtime)continue;
+   if(realtime&&prior&&(realtime.read_at||0)>(prior.read||0))message.read_at=Math.max(message.read_at||0,realtime.read_at);
+   if(realtime&&prior&&(realtime.delivered_at||0)>(prior.delivered||0))
+    message.delivered_at=Math.max(message.delivered_at||0,realtime.delivered_at);
    known.set(message.id,message);
   }
   const failed=(typeof v4FailedSends==='object'?[...v4FailedSends.entries()]
@@ -1290,7 +1375,8 @@ async function loadMessages(scroll=true){
   for(const message of failed)if(confirmed.has(message.client_message_id))v4FailedSends.delete(message.id);
   const pending=queuedDirectMessages(userId,friend).filter(m=>!v4FailedSends.has(m.id));
   const local=[...failed,...pending].filter(m=>!confirmed.has(m.client_message_id));
-  state.messages=[...known.values(),...local].sort(compareChatMessages).slice(-100);
+  const merged=[...known.values(),...local].sort(compareChatMessages);
+  state.messages=$('#chat-messages')?.dataset.expandedHistory?merged:merged.slice(-100);
   const opening=applyChatHistoryPosition();
   renderMessageThread(scroll||opening);
   const inbound=[...r.messages].reverse().find(m=>m.sender_id===friend);
@@ -1477,6 +1563,11 @@ function renderApp(){
   const same=thread.dataset.chatKey===previousKey;
   if(same&&opening)thread.dataset.openingChat='true';
   if(same&&ready)thread.dataset.historyReady='true';
+  if(same&&oldThread.dataset.expandedHistory)thread.dataset.expandedHistory='true';
+  if(same&&oldThread.dataset.historyDone){
+   thread.dataset.historyDone='true';
+   thread.querySelector('.chat-older')?.remove();
+  }
   if(same&&!opening&&reading!==null){
    pauseChatFollow(thread);
    thread.scrollTo({top:reading,behavior:'instant'});
@@ -1953,7 +2044,7 @@ function showPermanentDeleteDialog(target=null){
  modal({
   title:selfDelete?'Yêu cầu xóa sau 3 ngày':'Xóa vĩnh viễn ngay (Admin)',
   description:selfDelete?
-   `Tài khoản ${username} sẽ được lên lịch xóa sau 3 ngày. Trước hạn, bạn có thể hủy tại Cài đặt. Sau thời hạn, tài khoản, tin nhắn và dữ liệu liên quan bị xóa vĩnh viễn.`:
+   `Tài khoản ${username} sẽ được lên lịch xóa sau 3 ngày và đăng xuất. Trước hạn, hãy đăng nhập lại và chọn giữ tài khoản nếu đổi ý.`:
    `Toàn bộ dữ liệu và tài khoản ${username} sẽ bị xóa vĩnh viễn ngay sau khi bạn xác nhận.`,
   danger:true,confirm:selfDelete?'Lên lịch xóa 3 ngày':'Xóa vĩnh viễn ngay',
   content:`<div class="delete-confirm-form">
@@ -1966,7 +2057,7 @@ function showPermanentDeleteDialog(target=null){
       <input id="delete-account-pin" class="input" type="password" inputmode="numeric" autocomplete="off" maxlength="6"></div>`:''}`:adminProofFields()}
     <div class="field"><label for="delete-account-phrase">Nhập <b>${phrase}</b></label>
       <input id="delete-account-phrase" class="input" autocomplete="off" spellcheck="false" maxlength="24"></div>
-    <p class="hint" style="margin-top:12px">${selfDelete?'Bạn có thể tải dữ liệu về trước khi hết hạn xóa.':'Nhóm có thành viên khác sẽ được chuyển quyền chủ nhóm.'}</p>
+    <p class="hint" style="margin-top:12px">${selfDelete?'Hãy tải dữ liệu cần giữ trước khi lên lịch xóa.':'Nhóm có thành viên khác sẽ được chuyển quyền chủ nhóm.'}</p>
   </div>`,
   handler:async host=>{
    const val=name=>String(host.querySelector('#delete-account-'+name)?.value||'').trim();
@@ -1974,9 +2065,9 @@ function showPermanentDeleteDialog(target=null){
    if(val('phrase')!==phrase)throw Error('Hãy nhập chính xác '+phrase+'.');
    if(selfDelete){
     if(!val('password')||(requirePin&&!val('pin')))throw Error('Nhập mật khẩu và PIN hiện tại.');
-    state.accountDeletion=await post('/api/me/delete',{username,password:val('password'),pin:val('pin'),confirm:phrase});
-    renderApp();
-    toast('Đã lên lịch xóa sau 3 ngày. Bạn có thể hủy trước hạn trong Cài đặt.','ok');
+    await post('/api/me/delete',{username,password:val('password'),pin:val('pin'),confirm:phrase});
+    resetAuthAfterLogout();
+    toast('Tài khoản đang chờ xóa. Đăng nhập lại để hủy yêu cầu trước hạn.','ok');
    }else{
     await post(`/api/admin/users/${account.id}/delete`,{username,confirm:phrase,...adminProofValue(host)});
     toast(`Đã xóa vĩnh viễn tài khoản ${username}.`,'ok');
@@ -2232,6 +2323,7 @@ async function clickAction(button){
     'Đăng xuất',true);
    break;
   }
+  case 'chat-older':await loadOlderChat();break;
   case 'chat-latest':followChatEnd($('#chat-messages'));break;
   case 'app-tab':await goTab(button.dataset.tab);break;
   case 'rail-more':state.railMoreOpen=!state.railMoreOpen;renderApp();break;
@@ -2578,3 +2670,37 @@ document.addEventListener('submit',async event=>{
   }
 });
 document.addEventListener('DOMContentLoaded', setup);
+
+
+let maintenanceBannerStatus=null,maintenanceCountdown=0;
+function drawMaintenanceBanner(){
+ const banner=$('#maintenance-banner'),status=maintenanceBannerStatus;
+ if(!banner)return;
+ if(!status){banner.hidden=true;return;}
+ const schedule=status.schedule;
+ const at=Date.now()/1000-status.clientOffset;
+ banner.hidden=!(status.manual||schedule&&schedule.ends_at>at);
+ if(banner.hidden)return;
+ if(status.manual||schedule.starts_at<=at){
+  banner.textContent='🔧 Hệ thống đang bảo trì'+(schedule&&schedule.starts_at<=at?' · '+schedule.reason:'');
+  return;
+ }
+ const minutes=Math.max(1,Math.ceil((schedule.starts_at-at)/60));
+ const duration=minutes>=60?Math.floor(minutes/60)+' giờ '+minutes%60+' phút':minutes+' phút';
+ banner.textContent='🔧 Bảo trì sau '+duration+' · '+schedule.reason;
+}
+function applyMaintenanceBanner(status){
+ if(!status)return;
+ maintenanceBannerStatus={...status,clientOffset:Date.now()/1000-status.server_time};
+ drawMaintenanceBanner();
+ clearInterval(maintenanceCountdown);
+ if(status.schedule)maintenanceCountdown=setInterval(drawMaintenanceBanner,15000);
+}
+async function refreshMaintenanceBanner(){
+ try{applyMaintenanceBanner(await api('/api/system/maintenance'));}catch{}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshMaintenanceBanner();});
+if($('#maintenance-banner')){
+ void refreshMaintenanceBanner();
+ setInterval(()=>{if(!document.hidden)void refreshMaintenanceBanner();},60000);
+}

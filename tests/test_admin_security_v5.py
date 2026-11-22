@@ -23,6 +23,7 @@ def clean_security_v5():
                   (hash_secret('mtunz7'),))
         c.execute("UPDATE settings SET value='100' WHERE key='max_users'")
         c.execute("UPDATE settings SET value='0' WHERE key IN ('emergency_lockdown','maintenance_mode')")
+        c.execute("UPDATE settings SET value='' WHERE key IN ('maintenance_schedule','maintenance_schedule_applied')")
         c.execute('UPDATE world_settings SET enabled=0,schedule_enabled=0 WHERE id=1')
     yield
     with db() as c:
@@ -32,6 +33,7 @@ def clean_security_v5():
         c.execute("UPDATE users SET password_hash=?,pin_hash=NULL,pin_length=NULL WHERE username='admin'",
                   (hash_secret('mtunz7'),))
         c.execute("UPDATE settings SET value='0' WHERE key IN ('emergency_lockdown','maintenance_mode')")
+        c.execute("UPDATE settings SET value='' WHERE key IN ('maintenance_schedule','maintenance_schedule_applied')")
     RATE_BUCKETS.clear()
 
 
@@ -202,10 +204,34 @@ def test_admin_search_details_and_pin_protected_cancel():
     assert clock['purge_at']-clock['requested_at']==3*86400
     assert admin.get(path,params={'status':'pending_deletion'}).json()['total']==1
     endpoint=f'/api/admin/users/{uid}/delete/cancel'
-    assert member.post(endpoint,json={'admin_pin':'2345'}).status_code==403
+    assert member.post(endpoint,json={'admin_pin':'2345'}).status_code==401
     assert admin.post(endpoint,json={'admin_password':'mtunz7'}).status_code==401
     response=admin.post(endpoint,json={'admin_pin':'2345'})
     assert response.status_code==200,response.text
     assert admin.post(endpoint,json={'admin_pin':'2345'}).status_code==409
+    pw=member.post('/api/auth/password',json={'username':'lookup_member','password':'GreatPassword123'})
+    assert member.post('/api/auth/pin',json={'challenge':pw.json()['challenge'],'pin':'1234'}).status_code==200
     assert not member.get('/api/me/deletion').json()['pending']
     assert any('đã hủy yêu cầu xóa' in n['body'] for n in member.get('/api/notifications').json()['notifications'])
+
+
+def test_scheduled_maintenance_announces_then_closes_member_access(monkeypatch):
+    import asyncio
+    import app as core
+    admin=admin_with_pin()
+    member=register_user(admin,'scheduled_maint')
+    at=now()+60
+    payload={'starts_at':at,'ends_at':at+120,'reason':'Cập nhật hệ thống','admin_pin':'2345'}
+    route='/api/admin/security/maintenance/schedule'
+    response=admin.post(route,json=payload)
+    assert response.status_code==200,response.text
+    public=member.get('/api/system/maintenance').json()
+    assert public['schedule']['starts_at']==at and public['active'] is False
+    monkeypatch.setattr(core,'now',lambda:at+5)
+    asyncio.run(core.maintenance_tick())
+    assert member.get('/api/me').status_code==503
+    assert admin.get('/api/system/maintenance').json()['active']
+    assert admin.get('/api/me').json()['user']['is_admin']
+    monkeypatch.setattr(core,'now',lambda:at+121)
+    assert not admin.get('/api/system/maintenance').json()['active']
+    assert member.post('/api/auth/start',json={'username':'scheduled_maint'}).status_code==200

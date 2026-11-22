@@ -179,6 +179,27 @@ const {chromium}=require('playwright-core');
     await page.locator('#msg-group-41').waitFor();
     await latest();
 
+    // A full page exposes older history and prepending keeps the current first row in place.
+    await page.route('**/api/groups/7/messages?before=100',r=>r.fulfill({json:{messages:[
+     {id:99,group_id:7,sender_id:9,body:'Trang cũ hơn',created_at:now-120}
+    ]}}));
+    await page.evaluate(()=>{
+     state.groupMessages=Array.from({length:70},(_,i)=>({id:i+100,group_id:7,sender_id:9,
+      body:'Lịch sử nhóm '+i,created_at:Math.floor(Date.now()/1000)}));
+     paintGroupThread(true);
+    });
+    await latest();
+    const prepend=await page.evaluate(async()=>{
+     const thread=document.querySelector('#chat-messages');
+     pauseChatFollow(thread);
+     thread.scrollTop=85;
+     const first=()=>document.querySelector('#msg-group-100').getBoundingClientRect().top;
+     const before=first();
+     await loadOlderChat(thread);
+     return [Math.abs(first()-before),!!thread.querySelector('#msg-group-99'),!!thread.querySelector('.chat-older')];
+    });
+    assert(prepend[0]<=2&&prepend[1]&&!prepend[2],JSON.stringify(prepend));
+
     await page.context().grantPermissions(['notifications']);
     const background=await page.evaluate(async ()=>{
      Object.defineProperty(document,'hidden',{value:true,configurable:true});
