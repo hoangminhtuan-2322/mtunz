@@ -10,6 +10,11 @@ const {chromium}=require('playwright-core');
    const errors=[];
    page.on('pageerror',e=>errors.push(e.message));
    try{
+    const privacyWrites=[];
+    await page.route('**/api/me/social',route=>{
+     privacyWrites.push(route.request().postDataJSON());
+     return route.fulfill({json:{ok:true}});
+    });
     await page.route('**/api/me/identity/status',route=>route.fulfill({json:{
      username:'demo_member',display_name:'Demo Member',pin_configured:true,
      quota:{username:{remaining:1,limit:1,window_days:60,next_at:null},
@@ -30,11 +35,15 @@ const {chromium}=require('playwright-core');
     });
     const preview=page.locator('#v17-preview');
     await preview.locator('#social-private-switch').check();
+    await page.waitForFunction(()=>state.user.profile_visibility==='friends');
     assert.equal(await preview.locator('#social-visibility').inputValue(),'friends');
     await preview.locator('#social-visibility').selectOption('only_me');
+    await page.waitForFunction(()=>state.user.profile_visibility==='only_me');
     assert.equal(await preview.locator('#social-private-switch').isChecked(),true);
     await preview.locator('#social-private-switch').uncheck();
+    await page.waitForFunction(()=>state.user.profile_visibility==='everyone');
     assert.equal(await preview.locator('#social-visibility').inputValue(),'everyone');
+    assert.deepEqual(privacyWrites.map(x=>x.profile_visibility),['friends','only_me','everyone']);
     await preview.locator('[data-identity-kind="username"]').click();
     await page.waitForFunction(()=>document.querySelector('#identity-new')||
       document.querySelector('#modal-root .premium-dialog'),null,{timeout:10000});
