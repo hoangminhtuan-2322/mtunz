@@ -30,6 +30,9 @@ assert(html.includes('/static/member-experience.js?v=1.2'));
 assert(html.includes('/static/mobile-polish.js?v=1.1'));
 assert(premium.includes("added.matches('form[data-form],.auth-panel,.field"),
  'Do not run global form enhancement for ordinary incoming chat bubbles');
+assert(app.includes('let threadJumpFrameQueued=false;')&&
+       app.includes('requestAnimationFrame(paint)'),
+ 'Mobile scroll indicators must be measured at most once per display frame');
 assert(mobile.includes('if(nextHeight!==appliedHeight)'),
  'Do not rewrite layout variable for unchanged viewport height');
 assert(mobile.includes("if(isMobile()&&editable(document.activeElement))schedule()"),
