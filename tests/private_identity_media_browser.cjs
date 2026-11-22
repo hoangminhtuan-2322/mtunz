@@ -16,6 +16,9 @@ const {chromium}=require('playwright-core');
             display_name:{remaining:2,limit:2,window_days:30,next_at:null}}
     }}));
     await page.goto('http://127.0.0.1:8791/');
+    // Wait for the app's asynchronous anonymous-session bootstrap before
+    // creating an isolated mock member, or it may reset state.user mid-click.
+    await page.locator('form').first().waitFor();
     await page.waitForFunction(()=>typeof socialSettingsPanel==='function'&&typeof identitySettingsPanel==='function');
     await page.evaluate(()=>{
      state.user={id:99,username:'demo_member',display_name:'Demo Member',pin_length:4,
@@ -33,7 +36,14 @@ const {chromium}=require('playwright-core');
     await preview.locator('#social-private-switch').uncheck();
     assert.equal(await preview.locator('#social-visibility').inputValue(),'everyone');
     await preview.locator('[data-identity-kind="username"]').click();
-    await page.locator('#identity-new').waitFor();
+    await page.waitForFunction(()=>document.querySelector('#identity-new')||
+      document.querySelector('#modal-root .premium-dialog'),null,{timeout:10000});
+    if(!await page.locator('#identity-new').count()){
+      const why=await page.evaluate(()=>({dialog:document.querySelector('#modal-root')?.innerText,
+        toast:document.querySelector('#toast-root')?.innerText,
+        signedIn:state.user?.username,mode:state.mode}));
+      throw Error('Identity modal did not open: '+JSON.stringify(why));
+    }
     assert.match(await page.locator('#modal-root').innerText(),/60 ngày/);
     await page.locator('#identity-new').fill('demo_member_new');
     await page.locator('#identity-password').fill('ExamplePassword123');
