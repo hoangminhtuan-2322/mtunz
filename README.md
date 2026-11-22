@@ -4,6 +4,10 @@ Bản này dành riêng cho **Render (Web Service Free)** với cơ sở dữ li
 
 **Đọc `HUONG_DAN_RENDER.md` trước khi triển khai.**
 
+## Ứng dụng Android / iOS (bản thử nghiệm)
+
+Mã nguồn ứng dụng React Native/Expo nằm ở [`mobile/`](mobile/README.md). App kết nối thẳng vào FastAPI/Neon đang dùng, có đăng nhập mật khẩu + PIN, đồng bộ bạn bè, tin nhắn 1–1, trạng thái đọc và WebSocket. Phần này đang ở giai đoạn thử nghiệm và **chưa có APK/IPA phát hành**; chưa tích hợp push khi đóng ứng dụng, đa phương tiện và chat nhóm. Xem hướng dẫn chạy và giới hạn tại `mobile/README.md`.
+
 ## Cấu trúc
 
 - `app.py`: FastAPI, tài khoản, PIN, quản trị, nhắn tin 1–1, thông báo, WebSocket.

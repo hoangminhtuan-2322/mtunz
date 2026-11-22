@@ -1,0 +1,34 @@
+name: Verify native mtunz mobile
+
+on:
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'mobile_api.py'
+      - '.github/workflows/mobile-check.yml'
+  workflow_dispatch:
+
+jobs:
+  expo-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13'
+      - name: Install Expo dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check SDK compatibility
+        run: npx expo-doctor
+      - name: Export Android application bundle
+        env:
+          EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
+        run: npx expo export --platform android --output-dir dist/android
+      - name: Export iOS application bundle
+        env:
+          EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
+        run: npx expo export --platform ios --output-dir dist/ios

@@ -139,6 +139,13 @@ def install(core):
                 expression=','.join(field+'=?' for field in updates)
                 c.execute(f'UPDATE users SET {expression} WHERE id=?',(*updates.values(),u['id']))
             updated=one(c,'SELECT * FROM users WHERE id=?',(u['id'],))
+        if updates:
+            await hub.user(u['id'],'identity-updated')
+            await hub.user(u['id'],'friends-updated')
+            with db() as c:
+                peers=many(c,"SELECT CASE WHEN u1=? THEN u2 ELSE u1 END AS peer FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(u['id'],u['id'],u['id']))
+            for peer in peers:
+                await hub.user(peer['peer'],'friends-updated')
         return {'ok':True,'profile':social_data(updated)}
 
     # Distinct from onboarding: changing an established identity needs both
