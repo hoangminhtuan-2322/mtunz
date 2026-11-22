@@ -1061,13 +1061,24 @@ function syncThreadJump(box,arrived=false){
  if(!button)return;
  const away=box.scrollHeight-box.clientHeight-box.scrollTop>145;
  const count=away?Number(button.dataset.newCount||0)+(arrived?1:0):0;
- button.dataset.newCount=String(count);
- button.hidden=!away;
+ if(button.dataset.newCount!==String(count))button.dataset.newCount=String(count);
+ if(button.hidden===away)button.hidden=!away;
  const label=count?'↓ '+count+' tin mới':'↓ Tin mới nhất';
  if(button.textContent!==label)button.textContent=label;
 }
+// Safari can deliver many scroll events per display frame. Read layout once
+// before painting instead of mixing 60+ reads/writes inside touch scrolling.
+let threadJumpFrameQueued=false;
 document.addEventListener('scroll',event=>{
- if(event.target.id==='chat-messages')syncThreadJump(event.target);
+ if(event.target?.id!=='chat-messages'||threadJumpFrameQueued)return;
+ const box=event.target;
+ threadJumpFrameQueued=true;
+ const paint=()=>{
+  threadJumpFrameQueued=false;
+  if(box.isConnected)syncThreadJump(box);
+ };
+ if(typeof requestAnimationFrame==='function')requestAnimationFrame(paint);
+ else paint();
 },true);
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
