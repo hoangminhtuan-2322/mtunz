@@ -21,15 +21,19 @@ assert(html.includes('/static/world-moderation.js?v=4.3'));
 assert(app.includes('identitySettingsPanel()'),'Identity controls appear inside member profile');
 assert(extras.includes("display_name:state.user.display_name||''"),
  'Old profile editor cannot overwrite display name');
-assert(api.includes("name!=(u['display_name'] or '')"),
+assert(api.includes("name!=(current['display_name'] or '')"),
  'Legacy profile API refuses unverified display name edits');
+assert(api.includes("UPDATE users SET bio=?,show_online=?,show_receipts=?"),
+ 'Legacy profile API cannot write the display_name column');
 assert(backend.includes("identity_change_events"),'Rolling quotas persisted in database');
 assert(backend.includes("FOR UPDATE"),'Verified identity mutations serialize on PostgreSQL');
 assert(backend.includes("BEGIN IMMEDIATE"),'Verified identity mutations serialize on SQLite');
 assert(backend.includes("not core.verify_secret(current['password_hash'],body.password)"));
 assert(backend.includes("not core.verify_secret(current['pin_hash'],body.pin)"));
 assert(backend.includes("('username',60,1),('display_name',30,2)"));
-assert(social.includes('social-private-switch')&&social.includes("visibility.value=el.checked?'friends':'everyone'"));
+assert(social.includes('social-private-switch')&&social.includes("el.checked?'friends':'everyone'"));
+assert(social.includes("api('/api/me/social',{method:'PATCH',data:{profile_visibility:desired}})"));
+assert(social.includes("visibility.value=previous;toggle.checked=previous!=='everyone'"));
 assert(social.includes('Tên đăng nhập')&&social.includes('Tên hiển thị'));
 assert(social.includes("post('/api/me/identity/'+kind,{new_value,password,pin})"));
 assert(!social.includes('localStorage.setItem(')&&!social.includes('sessionStorage.setItem('),
