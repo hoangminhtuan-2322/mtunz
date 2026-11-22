@@ -60,7 +60,7 @@ function form(start,end,reason){
 const now=Math.floor(Date.now()/1000);
 const begin=Math.ceil((now+180)/60)*60;
 assert.equal(ctx.adminV5ReadMaintenanceForm(form(begin,begin+3600,'Nâng cấp hệ thống')).error,'');
-assert.match(ctx.adminV5ReadMaintenanceForm(form(begin,begin+30,'Lý do')).error,/ít nhất 1 phút/);
+assert.match(ctx.adminV5ReadMaintenanceForm(form(begin,begin+30,'Lý do')).error,/tối thiểu 1 phút/);
 assert.match(ctx.adminV5ReadMaintenanceForm(form(begin,begin+8*86400,'Lý do')).error,/7 ngày/);
 assert.match(ctx.adminV5ReadMaintenanceForm(form(begin,begin+3600,'')).error,/lý do/);
 assert.match(ctx.adminV5ReadMaintenanceForm(form(begin-86400,begin,'Lý do')).error,/hiện tại/);
