@@ -4,6 +4,7 @@ import {ActivityIndicator,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAr
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
+import AdminDashboard from './src/AdminDashboard';
 
 const C={bg:'#071222',card:'#15253b',text:'#f5f7ff',muted:'#a1b2cd',accent:'#69b4ff',border:'#293c58'};
 function Input({value,onChangeText,placeholder,secret=false,number=false}) {
@@ -19,6 +20,7 @@ export default function App() {
   const [ready,setReady]=useState(false),[token,setToken]=useState(null),[user,setUser]=useState(null);
   const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[pin,setPin]=useState('');
   const [challenge,setChallenge]=useState(null),[newName,setNewName]=useState('');
+  const [adminApproval,setAdminApproval]=useState(null);
   const [error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [mode,setMode]=useState('login'),[signupToken,setSignupToken]=useState(''),
     [signupUsername,setSignupUsername]=useState(''),[signupPhone,setSignupPhone]=useState(''),
@@ -27,7 +29,7 @@ export default function App() {
 
   const clear=useCallback(async()=>{
     await clearSession().catch(()=>{});
-    setToken(null);setUser(null);setChallenge(null);setPassword('');setPin('');
+    setToken(null);setUser(null);setChallenge(null);setAdminApproval(null);setPassword('');setPin('');
   },[]);
 
   const expired=useCallback(async()=>{
@@ -77,6 +79,10 @@ export default function App() {
     setBusy(true);setError('');
     try{
       const result=await api('/api/mobile/auth/pin',{method:'POST',data:{challenge,pin}});
+      if(result.next==='admin-approval'){
+        setAdminApproval({challenge,approval_token:result.approval_token});
+        setPin('');return;
+      }
       const session=result.access_token;
       const check=await api('/api/me',{token:session});
       if(!check.user||check.user.deletion_purge_at)throw Error('Tài khoản không sẵn sàng cho ứng dụng.');
@@ -84,6 +90,27 @@ export default function App() {
       setToken(session);setUser(check.user);setChallenge(null);setPin('');
     }catch(e){setError(e.message);}
     finally{setBusy(false);}
+  }
+  async function checkAdminApproval(){
+    if(!adminApproval)return;
+    setBusy(true);setError('');
+    try{
+      const result=await api('/api/mobile/auth/admin/approval/status',{
+        method:'POST',data:adminApproval,
+      });
+      if(result.status==='active'&&result.access_token){
+        const profile=await api('/api/me',{token:result.access_token});
+        if(!profile.user?.is_admin)throw Error('Phiên đăng nhập Admin không hợp lệ.');
+        await saveSession(result.access_token);
+        setToken(result.access_token);setUser(profile.user);
+        setChallenge(null);setAdminApproval(null);setPin('');
+      }else if(result.status==='pending'){
+        setError('Thiết bị đang chờ phiên Admin trên website phê duyệt.');
+      }else{
+        setError(result.status==='full'?'Đã đủ 2 phiên Admin. Thu hồi một phiên trên web.':
+          result.status==='denied'?'Yêu cầu đã bị từ chối.':'Yêu cầu đã hết hạn. Hãy đăng nhập lại.');
+      }
+    }catch(e){setError(e.message);}finally{setBusy(false);}
   }
   async function requestSignup(){
     if(!signupUsername.trim()||!signupPhone.trim()){setError('Cần nhập tên tài khoản và số điện thoại.');return;}
@@ -154,7 +181,11 @@ export default function App() {
     <View style={styles.center}><ActivityIndicator color={C.accent}/>
       <Text style={styles.muted}>Đang xác minh phiên đăng nhập…</Text></View>
   </SafeAreaView>;
-  if(user&&!user.onboarding_required&&!user.is_admin)return <SafeAreaView style={styles.root}>
+  if(user?.is_admin)return <SafeAreaView style={styles.root}>
+    <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+    <AdminDashboard token={token} onLogout={logout} onExpired={expired}/>
+  </SafeAreaView>;
+  if(user&&!user.onboarding_required)return <SafeAreaView style={styles.root}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
     <Messenger token={token} user={user} onLogout={logout} onExpired={expired}
       onProfile={refreshProfile}/>
@@ -164,7 +195,7 @@ export default function App() {
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.centerInner}>
         <View style={styles.card}>
           <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
-          <Text style={styles.title}>{user?.onboarding_required?'Hoàn tất hồ sơ':mode==='register'?'Tạo tài khoản mtunz':challenge?'Xác minh PIN':'Đăng nhập'}</Text>
+          <Text style={styles.title}>{user?.onboarding_required?'Hoàn tất hồ sơ':mode==='register'?'Tạo tài khoản mtunz':adminApproval?'Duyệt thiết bị Admin':challenge?'Xác minh PIN':'Đăng nhập'}</Text>
           <Text style={styles.muted}>Một tài khoản cho cả website, Android và iOS.</Text>
           {user?.onboarding_required?<>
             <Input value={newName} onChangeText={setNewName} placeholder="Tên hiển thị"/>
@@ -193,10 +224,14 @@ export default function App() {
               <Button onPress={finishSignup} disabled={busy||!accepted}>Tạo tài khoản</Button>
             </>}
             <Button quiet onPress={cancelSignup}>Về đăng nhập</Button>
+          </>:adminApproval?<>
+            <Text style={styles.muted}>Đăng nhập đã xác minh mật khẩu và PIN. Hãy mở phiên Admin đang hoạt động trên website mtunz và duyệt thiết bị mới trong mục Bảo mật.</Text>
+            <Button onPress={checkAdminApproval} disabled={busy}>{busy?'Đang kiểm tra…':'Kiểm tra phê duyệt'}</Button>
+            <Button quiet onPress={()=>{setAdminApproval(null);setChallenge(null);setPin('');setError('');}}>Hủy đăng nhập</Button>
           </>:challenge?<>
             <Input value={pin} onChangeText={setPin} placeholder="Mã PIN" secret number/>
             <Button onPress={verifyPin} disabled={busy||!pin}>{busy?'Đang xác minh…':'Mở khóa'}</Button>
-            <Button quiet onPress={()=>{setChallenge(null);setPin('');setError('');}}>Đăng nhập lại</Button>
+            <Button quiet onPress={()=>{setChallenge(null);setAdminApproval(null);setPin('');setError('');}}>Đăng nhập lại</Button>
           </>:<>
             <Input value={username} onChangeText={setUsername} placeholder="Tên đăng nhập / số điện thoại"/>
             <Input value={password} onChangeText={setPassword} placeholder="Mật khẩu" secret/>
@@ -204,7 +239,7 @@ export default function App() {
             <Button quiet onPress={()=>{setMode('register');setError('');}}>Đăng ký tài khoản mới</Button>
           </>}
           {!!error&&<Text style={styles.error}>{error}</Text>}
-          <Text style={styles.muted}>Đăng ký và quản trị qua website mtunz.</Text>
+          <Text style={styles.muted}>Thành viên và Admin sử dụng cùng hệ thống mtunz. Các thao tác quản trị chuyên sâu vẫn được bảo vệ trên website.</Text>
           <Text style={styles.server}>{API_ORIGIN||'Chưa có EXPO_PUBLIC_API_URL'}</Text>
         </View>
       </ScrollView>
