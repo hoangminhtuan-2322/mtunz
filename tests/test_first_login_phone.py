@@ -100,6 +100,10 @@ def test_public_profile_search_and_friends_do_not_expose_login_username():
     one=register_user(admin,'private_login_one')
     two=register_user(admin,'private_login_two')
     uid=one.get('/api/me').json()['user']['id']
+    # Identity changes require both the password and PIN after onboarding.
+    verified=one.post('/api/me/identity/display_name',json={
+        'new_value':'Minh Anh','password':'GreatPassword123','pin':'1234'})
+    assert verified.status_code==200,verified.text
     updated=one.patch('/api/me/profile',json={'display_name':'Minh Anh','bio':''})
     assert updated.status_code==200,updated.text
     name=one.get('/api/me').json()['user']['display_name']
