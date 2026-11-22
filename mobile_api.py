@@ -24,10 +24,13 @@ def install(core):
         login = core.normalize_login(body.username)
         core.throttle(request, 'native-password', 15, 900, login)
         with core.db() as c:
-            core.require_member_service(c)
             user = core.login_user(c, login)
-            if not user or user['is_admin'] or not core.verify_secret(user['password_hash'], body.password):
+            if not user or not core.verify_secret(user['password_hash'], body.password):
                 raise HTTPException(401, 'Tài khoản hoặc mật khẩu không chính xác.')
+            if not user['is_admin']:
+                core.require_member_service(c)
+            elif not user['pin_hash']:
+                raise HTTPException(403, 'Admin cần bật PIN trên website trước khi đăng nhập ứng dụng.')
             if user['sanction_kind'] and (not user['sanction_until'] or user['sanction_until'] > core.now()):
                 raise HTTPException(403, 'Tài khoản đang bị hạn chế.')
             if not user['pin_hash']:
@@ -50,14 +53,20 @@ def install(core):
                       WHERE l.token_hash=?''', (core.digest(body.challenge),),
             )
             if (not challenge or challenge['guest_id'] != 'native'
-                    or challenge['expires_at'] <= core.now() or challenge['is_admin']):
+                    or challenge['expires_at'] <= core.now()):
                 raise HTTPException(401, 'Phiên xác minh đã hết hạn, vui lòng đăng nhập lại.')
-            core.require_member_service(c)
-            valid_pin = (len(body.pin) == challenge['pin_length'] and body.pin.isascii()
-                         and body.pin.isdigit()
-                         and core.verify_secret(challenge['pin_hash'], body.pin))
-            if not valid_pin:
-                raise HTTPException(401, 'Mã PIN không chính xác.')
+            if challenge['is_admin']:
+                # Use the same persistent Admin PIN lockout and audit as web.
+                admin = core.one(c, 'SELECT * FROM users WHERE id=?',
+                                 (challenge['user_id'],))
+                core.verify_admin_pin_stepup(request, admin, body.pin)
+            else:
+                core.require_member_service(c)
+                valid_pin = (len(body.pin) == challenge['pin_length'] and body.pin.isascii()
+                             and body.pin.isdigit()
+                             and core.verify_secret(challenge['pin_hash'], body.pin))
+                if not valid_pin:
+                    raise HTTPException(401, 'Mã PIN không chính xác.')
             if challenge['sanction_kind'] and (not challenge['sanction_until']
                 or challenge['sanction_until'] > core.now()):
                 raise HTTPException(403, 'Tài khoản đang bị hạn chế.')
@@ -65,12 +74,64 @@ def install(core):
                         (challenge['user_id'],)):
                 raise HTTPException(423, 'Tài khoản đang chờ xóa. Hãy đăng nhập website để xử lý.')
             c.execute('DELETE FROM login_challenges WHERE token_hash=?', (core.digest(body.challenge),))
+            # The existing web security gate enforces the two-session limit
+            # and requires approval on the currently authenticated Admin device.
+            # Bind the approval request to this native login challenge rather
+            # than the ephemeral web guest cookie.
+            request.state.gid = 'nativeadmin:' + core.digest(body.challenge)[:40]
+            pending = (core.admin_login_gate(c, challenge['user_id'], request)
+                       if challenge['is_admin'] else None)
+            if pending:
+                return {**pending, 'challenge': body.challenge}
             session = core.issue_session(c, challenge['user_id'], request)
             expiry = core.one(c, 'SELECT expires_at FROM sessions WHERE token_hash=?',
                               (core.digest(session),))['expires_at']
         # Token only over HTTPS in production. Client stores it in OS secure storage.
         return {'ok': True, 'access_token': session, 'token_type': 'Bearer',
-                'expires_in': max(0, expiry - core.now())}
+                'expires_in': max(0, expiry - core.now()), 'admin': bool(challenge['is_admin'])}
+
+
+    class NativeAdminApproval(BaseModel):
+        challenge: str = Field(min_length=30, max_length=128)
+        approval_token: str = Field(min_length=30, max_length=128)
+
+    @app.post('/api/mobile/auth/admin/approval/status')
+    async def mobile_admin_approval(request: Request, body: NativeAdminApproval):
+        # A second Admin session may only be claimed after the original device
+        # has approved it with its own Admin PIN on the website.
+        core.throttle(request, 'native-admin-approval', 70, 600,
+                      core.digest(body.approval_token))
+        marker = 'nativeadmin:' + core.digest(body.challenge)[:40]
+        with core.db() as c:
+            row = core.one(c, '''SELECT * FROM admin_login_requests
+                      WHERE token_hash=? AND guest_id=?''',
+                      (core.digest(body.approval_token), marker))
+            if not row:
+                raise HTTPException(404, 'Yêu cầu phê duyệt không tồn tại.')
+            if row['expires_at'] <= core.now():
+                return {'status': 'expired'}
+            if row['state'] != 'approved':
+                return {'status': row['state'] if row['state'] in ('pending','denied')
+                        else 'expired'}
+            if core.POSTGRES_MODE:
+                c.execute('SELECT id FROM users WHERE id=? FOR UPDATE',(row['user_id'],))
+            count = core.one(c, '''SELECT COUNT(*) n FROM sessions
+                       WHERE user_id=? AND expires_at>?''',
+                       (row['user_id'],core.now()))['n']
+            if count >= 2:
+                return {'status': 'full'}
+            changed = c.execute('''UPDATE admin_login_requests SET state='claimed'
+                      WHERE request_id=? AND state='approved' ''',(row['request_id'],))
+            if changed.rowcount != 1:
+                return {'status': 'expired'}
+            session = core.issue_session(c,row['user_id'],request)
+            core.admin_log(c,row['user_id'],'admin_native_approved_session',
+                           'native_request=' + row['request_id'][:8])
+            expires = core.one(c,'SELECT expires_at FROM sessions WHERE token_hash=?',
+                               (core.digest(session),))['expires_at']
+        return {'status':'active', 'admin':True, 'ok':True,
+                'access_token':session, 'token_type':'Bearer',
+                'expires_in':max(0,expires-core.now())}
 
 
     # Registration reuses the existing admin approval table, but binds the
