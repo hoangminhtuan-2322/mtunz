@@ -13,7 +13,7 @@ for(const [path,s] of [['member-profile.js',profile],['extras.js',extras],['soci
  new vm.Script(s,{filename:path});
 }
 assert(html.includes('/static/app.js?v=21.0'));
-assert(html.includes('/static/extras.js?v=18.5'));
+assert(html.includes('/static/extras.js?v=18.6'));
 assert(html.includes('/static/social-v2.js?v=1.2'));
 assert(html.includes('/static/social-v2.css?v=1.3'));
 assert(html.includes('/static/messenger-v4.js?v=1.2'));
