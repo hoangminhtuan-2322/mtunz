@@ -14,7 +14,15 @@
     "react": "19.3.0",
     "react-native": "0.88.1",
     "expo-secure-store": "~58.0.0",
-    "expo-crypto": "~58.0.0"
+    "expo-crypto": "~58.0.0",
+    "expo-image-picker": "~58.0.10",
+    "expo-document-picker": "~58.0.5",
+    "expo-file-system": "~58.0.14",
+    "expo-sharing": "~58.0.23",
+    "expo-notifications": "~58.1.9",
+    "expo-device": "~58.0.5",
+    "expo-constants": "~58.0.16",
+    "expo-clipboard": "~58.0.4"
   },
   "devDependencies": {
     "expo-doctor": "^1.0.0"
