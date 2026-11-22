@@ -369,61 +369,6 @@ async function setup(){
   }
  }
 }
-// Web V9: resilient realtime status and coalesced Admin refresh without
-// replacing an active chat or an administrative form on every socket event.
-function v9ConnectionBanner(connected){
- const old=document.getElementById('mt-realtime-status');
- if(connected||!state.user){old?.remove();return;}
- const banner=old||document.createElement('aside');
- if(!old){
-  banner.id='mt-realtime-status';
-  banner.className='mt-realtime-status';
-  banner.setAttribute('role','status');
-  banner.setAttribute('aria-live','polite');
-  banner.innerHTML='<span class="mt-realtime-indicator" aria-hidden="true"></span>'+
-    '<span class="mt-realtime-copy"></span>'+
-    '<button type="button" class="mt-realtime-retry" data-act="retry-socket">Thử lại</button>';
-  document.body.append(banner);
- }
- banner.querySelector('.mt-realtime-copy').textContent=
-  navigator.onLine===false?'Thiết bị đang ngoại tuyến. Tin nhắn sẽ đồng bộ khi có mạng.':
-  'Đang kết nối lại với mtunz…';
-}
-let v9AdminTimer=0,v9AdminPending=false;
-function v9ScheduleAdminRefresh(delay=240){
- if(!state.user?.is_admin)return;
- clearTimeout(v9AdminTimer);
- v9AdminTimer=setTimeout(()=>{
-  v9AdminTimer=0;
-  if(!state.user?.is_admin)return;
-  if(document.visibilityState==='hidden'||
-     document.activeElement?.matches?.('.admin-page input,.admin-page textarea,.admin-page select')){
-    v9AdminPending=true;return;
-  }
-  v9AdminPending=false;
-  void loadAdmin().catch(()=>{});
- },delay);
-}
-document.addEventListener('focusout',event=>{
- if(!v9AdminPending||!event.target?.closest?.('.admin-page'))return;
- setTimeout(()=>{
-  if(v9AdminPending&&document.visibilityState==='visible')v9ScheduleAdminRefresh(160);
- },220);
-},true);
-window.addEventListener('online',()=>{
- v9ConnectionBanner(state.ws?.readyState===WebSocket.OPEN);
- if(state.user&&(!state.ws||state.ws.readyState===WebSocket.CLOSED))connectSocket(true);
-});
-window.addEventListener('offline',()=>v9ConnectionBanner(false));
-document.addEventListener('visibilitychange',()=>{
- if(document.visibilityState!=='visible'||!state.user)return;
- if(!state.ws||state.ws.readyState===WebSocket.CLOSED){connectSocket(true);return;}
- if(state.user.is_admin){v9ScheduleAdminRefresh(350);return;}
- scheduleFriendsRefresh(350);
- if(state.tab==='messages'&&state.selected)void loadMessages(false);
- if(state.tab==='groups'&&state.groupSelected)void loadGroupMessages(false);
-});
-
 function connectSocket(retry=false){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
@@ -586,6 +531,62 @@ function connectSocket(retry=false){
   socketRetryDelay=Math.min(30000,socketRetryDelay*2);
  };
 }
+// Web V9: resilient realtime status and coalesced Admin refresh without
+// replacing an active chat or an administrative form on every socket event.
+function v9ConnectionBanner(connected){
+ const old=document.getElementById('mt-realtime-status');
+ if(connected||!state.user){old?.remove();return;}
+ const banner=old||document.createElement('aside');
+ if(!old){
+  banner.id='mt-realtime-status';
+  banner.className='mt-realtime-status';
+  banner.setAttribute('role','status');
+  banner.setAttribute('aria-live','polite');
+  banner.innerHTML='<span class="mt-realtime-indicator" aria-hidden="true"></span>'+
+    '<span class="mt-realtime-copy"></span>'+
+    '<button type="button" class="mt-realtime-retry" data-act="retry-socket">Thử lại</button>';
+  document.body.append(banner);
+ }
+ banner.querySelector('.mt-realtime-copy').textContent=
+  navigator.onLine===false?'Thiết bị đang ngoại tuyến. Tin nhắn sẽ đồng bộ khi có mạng.':
+  'Đang kết nối lại với mtunz…';
+}
+let v9AdminTimer=0,v9AdminPending=false;
+function v9ScheduleAdminRefresh(delay=240){
+ if(!state.user?.is_admin)return;
+ clearTimeout(v9AdminTimer);
+ v9AdminTimer=setTimeout(()=>{
+  v9AdminTimer=0;
+  if(!state.user?.is_admin)return;
+  if(document.visibilityState==='hidden'||
+     document.activeElement?.matches?.('.admin-page input,.admin-page textarea,.admin-page select')){
+    v9AdminPending=true;return;
+  }
+  v9AdminPending=false;
+  void loadAdmin().catch(()=>{});
+ },delay);
+}
+document.addEventListener('focusout',event=>{
+ if(!v9AdminPending||!event.target?.closest?.('.admin-page'))return;
+ setTimeout(()=>{
+  if(v9AdminPending&&document.visibilityState==='visible')v9ScheduleAdminRefresh(160);
+ },220);
+},true);
+window.addEventListener('online',()=>{
+ v9ConnectionBanner(state.ws?.readyState===WebSocket.OPEN);
+ if(state.user&&(!state.ws||state.ws.readyState===WebSocket.CLOSED))connectSocket(true);
+});
+window.addEventListener('offline',()=>v9ConnectionBanner(false));
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState!=='visible'||!state.user)return;
+ if(!state.ws||state.ws.readyState===WebSocket.CLOSED){connectSocket(true);return;}
+ if(state.user.is_admin){v9ScheduleAdminRefresh(350);return;}
+ scheduleFriendsRefresh(350);
+ if(state.tab==='messages'&&state.selected)void loadMessages(false);
+ if(state.tab==='groups'&&state.groupSelected)void loadGroupMessages(false);
+});
+
+
 function showRequiredDisplayName(){
  // Newly approved accounts must choose a public display name once.
  // Without it, the API blocks chats, contacts and account settings.
