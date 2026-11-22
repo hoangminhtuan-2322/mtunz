@@ -1637,12 +1637,25 @@ async def create_ticket(request:Request,body:CreateTicket):
 
 @app.get('/api/support/tickets')
 async def list_my_tickets(request:Request):
+    user=current_user(request,False)
     with db() as c:
-        return {'tickets':many(c,'SELECT id,kind,claim,status,created_at FROM tickets WHERE guest_id=? ORDER BY id DESC LIMIT 30',(request.state.gid,))}
+        if user:
+            rows=many(c,'''SELECT id,kind,claim,status,created_at FROM tickets
+                  WHERE guest_id=? OR owner_id=? ORDER BY id DESC LIMIT 30''',
+                  (request.state.gid,user['id']))
+        else:
+            rows=many(c,'''SELECT id,kind,claim,status,created_at FROM tickets
+                  WHERE guest_id=? ORDER BY id DESC LIMIT 30''',(request.state.gid,))
+    return {'tickets':rows}
 
 
 def ticket_for_guest(c,request,tid):
-    r=one(c,'SELECT * FROM tickets WHERE id=? AND guest_id=?',(tid,request.state.gid))
+    user=current_user(request,False)
+    if user:
+        r=one(c,'SELECT * FROM tickets WHERE id=? AND (guest_id=? OR owner_id=?)',
+              (tid,request.state.gid,user['id']))
+    else:
+        r=one(c,'SELECT * FROM tickets WHERE id=? AND guest_id=?',(tid,request.state.gid))
     if not r:raise HTTPException(404,'Không tìm thấy cuộc trò chuyện hỗ trợ.')
     return r
 
