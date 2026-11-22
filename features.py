@@ -320,7 +320,7 @@ def install(core):
         u=current_user(request)
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
-        active_hash=core.digest(request.cookies.get('s',''))
+        active_hash=core.digest(core.request_session_token(request) or '')
         # Member API never returns security-only IP or GeoIP hints.
         columns='token_hash,expires_at,created_at,last_seen,device_label,device_name,device_type,browser,os_name'
         with db() as c:
@@ -365,7 +365,7 @@ def install(core):
     @app.delete('/api/me/sessions/{kind}/{device_id}')
     async def revoke_own_device(request:Request,kind:str,device_id:str):
         u=current_user(request)
-        active_hash=core.digest(request.cookies.get('s',''))
+        active_hash=core.digest(core.request_session_token(request) or '')
         saved=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(saved) if core.valid_remember_token(saved) else ''
         with db() as c:
@@ -383,7 +383,7 @@ def install(core):
     @app.post('/api/me/sessions/revoke-others')
     async def revoke_others(request:Request):
         u=current_user(request)
-        current=core.digest(request.cookies.get('s',''))
+        current=core.digest(core.request_session_token(request) or '')
         remembered=request.cookies.get(core.REMEMBER_COOKIE)
         saved_hash=core.digest(remembered) if core.valid_remember_token(remembered) else ''
         with db() as c:
