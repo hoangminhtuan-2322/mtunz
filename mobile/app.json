@@ -7,14 +7,25 @@
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "android": {
-      "package": "com.mtunz.mobile"
+      "package": "com.mtunz.mobile",
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ]
     },
     "ios": {
       "bundleIdentifier": "com.mtunz.mobile",
       "supportsTablet": true
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Cho phép mtunz chọn ảnh và video để gửi tin nhắn.",
+          "cameraPermission": "Cho phép mtunz sử dụng máy ảnh khi bạn yêu cầu."
+        }
+      ],
+      "expo-notifications"
     ]
   }
 }
