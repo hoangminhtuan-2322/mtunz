@@ -129,7 +129,7 @@ export default function App() {
       };
     }
     connect();
-    const poll=setInterval(()=>{if(!closed&&aliveRef.current&&!wsRef.current?.readyState)schedule();},12000);
+    const poll=setInterval(()=>{if(!closed&&aliveRef.current&&wsRef.current?.readyState!==WebSocket.OPEN)schedule();},12000);
     const sub=AppState.addEventListener('change',next=>{
       aliveRef.current=next==='active';
       if(!aliveRef.current){wsRef.current?.close();return;}
