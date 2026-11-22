@@ -53,11 +53,49 @@ def test_native_pin_session_chat_ws_and_revocation():
     assert native.get('/api/me', headers=headers).json()['user'] is None
 
 
-def test_native_rejects_admin_and_wrong_password():
+def test_native_admin_requires_pin_and_existing_device_approval():
     admin = logged_admin()
+    native = TestClient(app)
+    bad = native.post('/api/mobile/auth/password',
+        json={'username':'admin','password':'incorrect-password'})
+    assert bad.status_code == 401
+    first = native.post('/api/mobile/auth/password',
+        json={'username':'admin','password':'mtunz7'})
+    assert first.status_code == 200, first.text
+    challenge = first.json()['challenge']
+    wrong = native.post('/api/mobile/auth/pin',
+        json={'challenge':challenge,'pin':'0000'})
+    assert wrong.status_code in (401,429)
+    # The web Admin has an active session, so new native login needs approval.
+    pending = native.post('/api/mobile/auth/pin',
+        json={'challenge':challenge,'pin':'2345'})
+    assert pending.status_code == 200, pending.text
+    assert pending.json()['next'] == 'admin-approval'
+    approval_token = pending.json()['approval_token']
+    claim = {'challenge':challenge,'approval_token':approval_token}
+    waiting = native.post('/api/mobile/auth/admin/approval/status',json=claim)
+    assert waiting.status_code == 200 and waiting.json()['status']=='pending'
+    reqs = admin.get('/api/admin/login-approvals').json()['pending']
+    rid = reqs[0]['request_id']
+    decided = admin.post('/api/admin/login-approvals/'+rid+'/decision',
+        json={'approve':True,'admin_pin':'2345'})
+    assert decided.status_code == 200,decided.text
+    ready = native.post('/api/mobile/auth/admin/approval/status',json=claim)
+    assert ready.status_code == 200,ready.text
+    assert ready.json()['status']=='active'
+    bearer={'Authorization':'Bearer '+ready.json()['access_token']}
+    me = native.get('/api/me',headers=bearer)
+    assert me.status_code==200 and me.json()['user']['is_admin']
+    assert native.get('/api/admin/stats',headers=bearer).status_code==200
+    assert native.post('/api/mobile/auth/admin/approval/status',
+        json=claim).json()['status']=='expired'
+    assert native.post('/api/auth/logout',headers=bearer).status_code==200
+    assert native.get('/api/me',headers=bearer).json()['user'] is None
+
+
+def test_native_rejects_wrong_password():
+    logged_admin()
     client = TestClient(app)
-    assert client.post('/api/mobile/auth/password',
-        json={'username':'admin','password':'mtunz7'}).status_code == 401
     assert client.post('/api/mobile/auth/password',
         json={'username':'missing_user','password':'x'}).status_code == 401
 
