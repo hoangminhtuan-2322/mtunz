@@ -41,7 +41,7 @@ def install(core):
 
     @app.post('/api/mobile/auth/pin')
     async def mobile_pin(request: Request, body: NativePin):
-        core.throttle(request, 'native-pin', 12, 900, request.state.gid)
+        core.throttle(request, 'native-pin', 12, 900, core.digest(body.challenge))
         with core.db() as c:
             challenge = core.one(
                 c, '''SELECT l.*,u.pin_hash,u.pin_length,u.is_admin,u.sanction_kind,u.sanction_until
