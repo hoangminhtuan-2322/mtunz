@@ -6,8 +6,8 @@ const html=get('static/index.html'),
  ui=get('static/admin-v5.js'),reset=get('static/admin-v3.js'),
  style=get('static/admin-v5.css'),server=get('admin_security_v5.py'),guards=get('admin_hardening.py');
 
-assert(html.includes('/static/admin-v5.js?v=1.1'),'V5 security UI included');
-assert(html.includes('/static/admin-v5.css?v=1.0'),'V5 security theme included');
+assert(html.includes('/static/admin-v5.js?v=1.2'),'V5 security UI included');
+assert(html.includes('/static/admin-v5.css?v=1.1'),'V5 security theme included');
 assert(html.includes('/static/admin-v3.js?v=2.0'),'Reset dialog revision cache busted');
 assert(ui.includes('/api/admin/security/overview'),'Current, authenticated server-side risk status');
 assert(ui.includes('/api/admin/security/revoke-others'),'Dedicated security session revocation');

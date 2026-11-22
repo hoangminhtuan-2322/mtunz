@@ -102,3 +102,90 @@
  .admin-shell .v5-risk-list>div{align-items:flex-start;flex-direction:column;gap:5px}
 }
 @media(prefers-reduced-motion:reduce){.admin-shell .v5-status-dot{animation:none!important}}
+
+
+/* V16: Admin maintenance dialog only; no member or other modal changes. */
+#modal-root .premium-dialog:has(.v5-maintenance-form){
+ width:min(650px,calc(100vw - 24px));max-width:none;
+ max-height:min(90dvh,860px);display:flex;flex-direction:column;
+}
+#modal-root .premium-dialog:has(.v5-maintenance-form) .dialog-content{
+ min-height:0;overflow-y:auto;overscroll-behavior:contain;
+ padding-right:2px;scrollbar-gutter:stable;
+}
+#modal-root .premium-dialog:has(.v5-maintenance-form) .modal-actions{
+ flex:0 0 auto;position:sticky;bottom:0;z-index:2;
+ background:#18253b;border-top:1px solid #3e506e;
+ margin:10px -2px -2px;padding:15px 2px 1px;
+}
+.v5-maintenance-form{display:grid;gap:13px;font-size:13px;color:#e6edfa}
+.v5-maint-step{display:flex;align-items:flex-start;gap:10px}
+.v5-maint-step h3{font-size:14px;font-weight:780;color:#f4f6ff;margin:0 0 3px}
+.v5-maint-step p{font-size:11.5px;line-height:1.55;color:#b5c5df;margin:0}
+.v5-maint-step p b{color:#d5dcf3;font-weight:760}
+.v5-maint-number{flex:0 0 25px;width:25px;height:25px;
+ display:grid;place-items:center;border-radius:9px;
+ border:1px solid #7770bc;background:#34365e;color:#e5dbff;font-size:12px;font-weight:800}
+.v5-maint-dates{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.v5-maint-date-group{min-width:0;margin:0;padding:12px 13px 13px;
+ border:1px solid #485a78;border-radius:13px;background:#111d31}
+.v5-maint-date-group legend{padding:0 5px;color:#eaf0fb;font-size:12px;font-weight:780}
+.v5-maint-date-time{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:8px}
+.v5-maint-date-time label{display:flex;flex-direction:column;gap:6px;min-width:0;
+ font-size:11px;font-weight:680;color:#b9c8e0}
+.v5-maint-date-time input{min-width:0;width:100%;padding:10px 8px;
+ border-radius:9px;min-height:43px;font-size:13px;color-scheme:dark}
+.v5-maint-presets{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
+.v5-maint-presets>span{flex:0 0 100%;font-size:11px;font-weight:700;color:#b9c7e0}
+.v5-maint-preset{padding:7px 12px;min-height:35px;border:1px solid #4a5875;
+ border-radius:9px;background:#1d2b44;color:#dde6f7;font:inherit;font-size:12px;font-weight:670;
+ cursor:pointer;touch-action:manipulation}
+.v5-maint-preset:hover,.v5-maint-preset:focus-visible{border-color:#a49bfc}
+.v5-maint-preset.is-selected{border-color:#9c92fb;background:#423d79;color:#fff}
+.v5-maint-summary{display:grid;gap:4px;padding:12px 13px;border:1px solid #58789a;
+ border-radius:12px;background:#162d47}
+.v5-maint-summary>span,.v5-maint-sample>span{font-size:10px;font-weight:800;
+ letter-spacing:.04em;color:#a4c6e5;text-transform:uppercase}
+.v5-maint-summary strong{font-size:12.5px;line-height:1.55;font-weight:760;
+ color:#f0f7ff;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.v5-maint-summary small{font-size:11px;color:#b7dded}
+.v5-maint-error{font-size:11px;line-height:1.5;color:#ffd9ac;
+ margin:3px 0 0!important}
+.v5-maint-error[hidden]{display:none!important}
+.v5-maint-reason-label{font-size:11.5px;font-weight:740;color:#e1eafd}
+.v5-maintenance-form #v5-maint-reason{min-height:78px;max-height:155px;
+ resize:vertical;padding:11px 12px;font-size:13px;line-height:1.6}
+.v5-maint-reason-count{display:flex;align-items:flex-start;justify-content:space-between;
+ gap:12px;font-size:10.5px;color:#9badc9;margin-top:-6px}
+.v5-maint-reason-count span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+.v5-maint-sample{display:grid;gap:7px;border-left:3px solid #9d91ff;
+ padding:10px 13px;border-radius:0 10px 10px 0;background:#151f37}
+.v5-maint-sample p{margin:0;color:#e2e8f9;white-space:pre-wrap;
+ overflow-wrap:anywhere;font-size:12px;line-height:1.55}
+.v5-maint-effects{display:grid;gap:6px;border-top:1px solid #3a4a66;
+ padding:12px 0 1px}
+.v5-maint-effects strong{font-size:11.5px;font-weight:790;color:#e2ebff}
+.v5-maint-effects p{margin:0;color:#b0c3d8;font-size:11px;line-height:1.55}
+.v5-maint-proof{border-top:1px solid #3a4a66;padding-top:10px}
+.v5-maint-proof .admin-v3-proof{margin:0}
+.v5-maint-proof .admin-v3-proof .field{margin-bottom:0}
+.v5-maint-cancel{display:grid;gap:9px;border:1px solid #896a6d;
+ background:#342834;border-radius:12px;padding:15px;color:#f6e1e8}
+.v5-maint-cancel strong{font-size:14px}
+.v5-maint-cancel p{font-size:12px;line-height:1.5;margin:0}
+@media(max-width:650px){
+ #modal-root .premium-dialog:has(.v5-maintenance-form){max-height:92dvh}
+ #modal-root .premium-dialog:has(.v5-maintenance-form) .dialog-content{scrollbar-gutter:auto}
+ .v5-maint-dates{grid-template-columns:1fr;gap:10px}
+ .v5-maint-date-group{padding:10px 11px 12px}
+ .v5-maint-date-time{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+ .v5-maintenance-form{gap:11px}
+}
+@media(max-width:360px){
+ .v5-maint-date-time{grid-template-columns:1fr 1fr;gap:6px}
+ .v5-maint-date-time input{font-size:12px;padding:8px 6px}
+ .v5-maint-preset{padding:7px 9px}
+}
+@media(prefers-reduced-motion:reduce){
+ .v5-maintenance-form *{animation:none!important;transition:none!important}
+}

@@ -6,7 +6,7 @@ on:
   # Always evaluate every main commit; Render checksPass must never skip a
   # backend-only or policy-only change because it missed a path filter.
   push:
-    branches: [main]
+    branches: [main, ux/admin-maintenance-schedule-clarity-v16]
   workflow_dispatch:
 
 permissions:
@@ -77,7 +77,9 @@ jobs:
       - name: Verify Admin Clarity enhancements
         run: node tests/admin_upgrade.cjs
       - name: Verify Admin V5 security dashboard and reset safety boundaries
-        run: node tests/admin_security_v5_ui.cjs
+        run: |
+          node tests/admin_security_v5_ui.cjs
+          node tests/admin_maintenance_schedule_ui.cjs
       - name: Verify V6 smart conversation, community and Admin controls
         run: node tests/v6_ui.cjs
       - name: Verify V7 events, appeals, call stability and readiness
@@ -195,3 +197,4 @@ jobs:
           trap 'kill "$server_pid" || true' EXIT
           curl --retry 12 --retry-delay 1 --retry-connrefused -fsS http://127.0.0.1:8791/health
           node tests/mobile_live_chat.cjs
+          node tests/admin_maintenance_schedule_browser.cjs
