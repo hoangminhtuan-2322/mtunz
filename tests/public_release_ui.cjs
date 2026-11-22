@@ -29,7 +29,7 @@ assert(features.includes("column('users','terms_accepted_at'")&&features.include
 assert(app.includes("img-src 'self' data: blob:;"),'CSP must allow browser image previews');
 assert(!ui.includes('member-privacy-details'),'Do not recreate removed settings accordion');
 assert(!ui.includes('Quyền riêng tư và xử lý dữ liệu'),'Removed settings disclosure stays gone');
-assert(html.includes('app.js?v=20.6'));
+assert(html.includes('app.js?v=20.7'));
 assert(!/document\.cookie|localStorage/.test(terms+privacy),'Legal documents must not capture data');
 assert(legal.includes('prefers-reduced-motion')&&legal.includes('focus-visible'));
 console.log('Release legal and privacy UI OK: linked policies, accessible forms, consent enforcement, blob CSP, and no restored accordion.');

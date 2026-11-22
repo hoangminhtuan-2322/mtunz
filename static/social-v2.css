@@ -66,9 +66,6 @@
 .identity-setting-line strong{font-weight:800;overflow-wrap:anywhere;color:var(--text)}
 .identity-setting-line .hint{font-size:11px;line-height:1.5}
 .identity-setting-line button{flex:0 0 auto;min-height:39px}
-.identity-readonly-name{background:rgba(108,130,174,.09);border:1px solid var(--line);
- border-radius:11px;padding:12px;display:grid;gap:6px;overflow-wrap:anywhere}
-.identity-readonly-name small{font-size:11px;color:var(--muted);line-height:1.5}
 .social-private-control{background:rgba(115,105,224,.09);border-color:rgba(145,137,240,.42)!important}
 .identity-change-form{display:grid;gap:15px}
 .identity-change-form .field{margin:0}

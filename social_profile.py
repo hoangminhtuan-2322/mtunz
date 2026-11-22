@@ -5,6 +5,7 @@ seven-digit identifiers. Existing foreign-key references are never rewritten.
 """
 import re
 import secrets
+import sqlite3
 from typing import Literal
 
 from fastapi import HTTPException, Request
@@ -142,9 +143,6 @@ def install(core):
 
     # Distinct from onboarding: changing an established identity needs both
     # secrets and a durable, database-enforced rolling quota.
-    USERNAME_WINDOW = 60*86400
-    DISPLAY_WINDOW = 30*86400
-
     def identity_quota(c,uid,at):
         result={}
         for kind,days,limit in (('username',60,1),('display_name',30,2)):
@@ -203,7 +201,10 @@ def install(core):
                     raise HTTPException(409,'Tên đăng nhập đã được sử dụng hoặc đang được giữ chỗ.')
                 if value=='admin':
                     raise HTTPException(409,'Tên đăng nhập này không thể sử dụng.')
-                c.execute('UPDATE users SET username=? WHERE id=?',(value,u['id']))
+                try:
+                    c.execute('UPDATE users SET username=? WHERE id=?',(value,u['id']))
+                except sqlite3.IntegrityError as exc:
+                    raise HTTPException(409,'Tên đăng nhập đã được sử dụng.') from exc
             else:
                 value=core.validate_display_name(body.new_value,current['username'])
                 if value==current['display_name']:

@@ -3,28 +3,26 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const read=file=>fs.readFileSync(file,'utf8');
-const app=read('static/app.js'),extras=read('static/extras.js');
+const extras=read('static/extras.js'),profile=read('static/member-profile.js');
 const social=read('static/social-v2.js'),world=read('static/world-moderation.js');
 const voice=read('static/messenger-v4.js'),css=read('static/social-v2.css');
 const html=read('static/index.html'),api=read('features.py');
 const backend=read('social_profile.py');
-for(const [path,s] of [['app.js',app],['extras.js',extras],['social-v2.js',social],
+for(const [path,s] of [['member-profile.js',profile],['extras.js',extras],['social-v2.js',social],
                        ['world-moderation.js',world],['messenger-v4.js',voice]]){
  new vm.Script(s,{filename:path});
 }
-assert(html.includes('/static/app.js?v=20.6'));
-assert(html.includes('/static/extras.js?v=18.2'));
-assert(html.includes('/static/social-v2.js?v=1.1'));
-assert(html.includes('/static/social-v2.css?v=1.2'));
+assert(html.includes('/static/app.js?v=20.7'));
+assert(html.includes('/static/extras.js?v=18.3'));
+assert(html.includes('/static/social-v2.js?v=1.2'));
+assert(html.includes('/static/social-v2.css?v=1.3'));
 assert(html.includes('/static/messenger-v4.js?v=1.2'));
 assert(html.includes('/static/world-moderation.js?v=4.3'));
-assert(app.includes('identitySettingsPanel()'),'Identity controls appear inside member profile');
-assert(extras.includes("display_name:state.user.display_name||''"),
- 'Old profile editor cannot overwrite display name');
-assert(api.includes("name!=(current['display_name'] or '')"),
+assert(profile.includes('identitySettingsPanel()'),'Identity controls appear inside member profile');
+assert(!extras.includes('name="display_name"'),'Profile form has no unverified name editor');
+assert(api.includes("body.display_name!=current['display_name']"),
  'Legacy profile API refuses unverified display name edits');
-assert(api.includes("UPDATE users SET bio=?,show_online=?,show_receipts=?"),
- 'Legacy profile API cannot write the display_name column');
+assert(api.includes("exclude={'display_name'}"),'Legacy profile API cannot write the display_name column');
 assert(backend.includes("identity_change_events"),'Rolling quotas persisted in database');
 assert(backend.includes("FOR UPDATE"),'Verified identity mutations serialize on PostgreSQL');
 assert(backend.includes("BEGIN IMMEDIATE"),'Verified identity mutations serialize on SQLite');

@@ -10,7 +10,7 @@ const css=read('static/world-preview.css');
 new vm.Script(app,{filename:'static/app.js'});
 assert(html.includes('world-preview.css?v=1.0'),'Dedicated stylesheet must load');
 assert(html.indexOf('world-preview.css')>html.indexOf('social-upgrade.css'),'World styles should be applied after social UI');
-assert(html.includes('/static/app.js?v=20.6'),'Fresh markup must bypass stale browser cache');
+assert(html.includes('/static/app.js?v=20.7'),'Fresh markup must bypass stale browser cache');
 const from=app.indexOf('function worldComingSoon(){');
 const end=app.indexOf('\nfunction renderApp(){',from);
 assert(from>0&&end>from,'World page renderer must exist');

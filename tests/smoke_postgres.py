@@ -77,6 +77,16 @@ with TestClient(app, base_url="https://testserver") as admin:
         first_name = guest.post("/api/me/display-name",json={"display_name":"Minh thử nghiệm"})
         assert first_name.status_code == 200, first_name.text
 
+        rejected=guest.patch("/api/me/profile",json={"display_name":"Chưa xác minh"})
+        assert rejected.status_code==403,rejected.text
+        renamed=guest.post("/api/me/identity/display_name",json={
+            "new_value":"Minh đã xác minh","password":"RenderTestPassword123!","pin":"123456"})
+        assert renamed.status_code==200,renamed.text
+        assert renamed.json()["quota"]["display_name"]["remaining"]==1
+        saved=guest.patch("/api/me/profile",json={"bio":"Kiểm thử hồ sơ PostgreSQL"})
+        assert saved.status_code==200,saved.text
+        assert guest.get("/api/me").json()["user"]["display_name"]=="Minh đã xác minh"
+
         account=guest.get("/api/me").json()["user"]
         matches=admin.get("/api/admin/users",params={"q":"#"+str(account["public_id"])}).json()
         assert matches["total"]==1 and matches["users"][0]["id"]==account["id"]
@@ -123,6 +133,18 @@ with TestClient(app, base_url="https://testserver") as admin:
                 "display_name":"Hội viên phản ánh"}).status_code==200
             victim=peer.get("/api/me").json()["user"]
             original=guest.get("/api/me").json()["user"]
+            assert guest.post(f"/api/friends/request/{victim['id']}").status_code==200
+            assert peer.post(f"/api/friends/accept/{original['id']}").status_code==200
+            alias=guest.put(f"/api/chats/{victim['id']}/nickname",json={"nickname":"Bạn thử nghiệm"})
+            assert alias.status_code==200,alias.text
+            assert guest.get("/api/friends").json()["friends"][0]["nickname"]=="Bạn thử nghiệm"
+            direct=guest.post("/api/messages",json={"recipient_id":victim["id"],"body":"https://example.org/share"})
+            assert direct.status_code==200,direct.text
+            shared=f"/api/chats/dm/{original['id']}/shared"
+            assert peer.get(shared).json()["items"]==[]
+            links=peer.get(shared,params={"kind":"links"})
+            assert links.status_code==200,links.text
+            assert links.json()["items"][0]["links"][0]["host"]=="example.org"
             complaint=peer.post("/api/reports",json={
                 "target_id":original["id"],"scope":"world","message_id":message_id,
                 "reason":"spam","description":"Tin nhắn công cộng cần kiểm tra"})

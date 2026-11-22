@@ -4,13 +4,12 @@ state.messageRequests=[];
 function socialSettingsPanel(){
  const u=state.user||{};
  return `<section class="card social-settings-card" aria-label="Tùy chỉnh hồ sơ nâng cao">
-  <div class="social-section-heading"><h3>${icon('users',17)} Hồ sơ nâng cao</h3><span class="pill">Bạn kiểm soát thông tin</span></div>
-  <p class="hint">Ảnh và thông tin này chỉ hiển thị với những người được bạn cho phép. Ảnh được lưu trên hệ thống, không tải từ trang bên ngoài.</p>
+  <div class="social-section-heading"><h3>${icon('users',17)} Ảnh & quyền riêng tư</h3></div>
   <div class="social-photo-actions">
     <label class="social-photo-action">📷 Ảnh đại diện <input type="file" data-social-upload="avatar" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
     <label class="social-photo-action">🖼️ Ảnh bìa <input type="file" data-social-upload="cover" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
-    ${u.avatar_url?'<button class="btn ghost sm" type="button" data-social-clear="avatar">Gỡ ảnh đại diện</button>':''}
-    ${u.cover_url?'<button class="btn ghost sm" type="button" data-social-clear="cover">Gỡ ảnh bìa</button>':''}
+    <button class="btn ghost sm" type="button" data-social-clear="avatar" ${u.avatar_url?'':'hidden'}>Gỡ ảnh đại diện</button>
+    <button class="btn ghost sm" type="button" data-social-clear="cover" ${u.cover_url?'':'hidden'}>Gỡ ảnh bìa</button>
   </div>
   <form data-social-form="profile" class="social-profile-form">
    <div class="field"><label for="social-headline">Dòng giới thiệu ngắn</label>
@@ -38,14 +37,25 @@ function identitySettingsPanel(){
  return `<section class="card identity-settings-panel" aria-label="Đổi tên tài khoản">
   <div class="social-section-heading"><h3>${icon('shield',17)} Danh tính & đổi tên</h3><span class="pill">Mật khẩu + PIN</span></div>
   <p class="hint">Giới hạn được kiểm tra trên máy chủ. Đổi tên không làm mất bạn bè, tin nhắn hay ID tài khoản.</p>
-  <div class="identity-setting-line"><div><small>Tên đăng nhập</small><strong>@${esc(u.username||'')}</strong>
+  <div class="identity-setting-line"><div><small>Tên đăng nhập</small><strong data-identity-name="username">@${esc(u.username||'')}</strong>
     <span class="hint">Đổi 1 lần trong mỗi 60 ngày. Khi đăng nhập lại, sử dụng tên mới.</span></div>
    <button type="button" class="btn ghost sm" data-identity-kind="username">Đổi tên đăng nhập</button></div>
-  <div class="identity-setting-line"><div><small>Tên hiển thị</small><strong>${esc(u.display_name||'Chưa có tên')}</strong>
+  <div class="identity-setting-line"><div><small>Tên hiển thị</small><strong data-identity-name="display_name">${esc(u.display_name||'Chưa có tên')}</strong>
     <span class="hint">Được đổi 2 lần trong 30 ngày gần nhất.</span></div>
    <button type="button" class="btn ghost sm" data-identity-kind="display_name">Đổi tên hiển thị</button></div>
   <p class="hint">Mật khẩu và PIN chỉ dùng để xác minh khi lưu; không được ghi vào bộ nhớ trình duyệt.</p>
  </section>`;
+}
+function applyMemberIdentity(owner,identity){
+ if(state.user?.id!==owner)return false;
+ for(const kind of ['username','display_name']){
+  if(typeof identity[kind]!=='string')continue;
+  state.user[kind]=identity[kind];
+  const field=document.querySelector('[data-identity-name="'+kind+'"]');
+  if(field)field.textContent=(kind==='username'?'@':'')+identity[kind];
+ }
+ updateMemberProfileSummary();
+ return true;
 }
 function identityNextTime(stamp){
  return stamp?new Date(Number(stamp)*1000).toLocaleString('vi-VN',
@@ -87,11 +97,9 @@ async function openIdentityChange(kind){
    const val=id=>String(host.querySelector(id)?.value||'');
    const new_value=val('#identity-new').trim(),password=val('#identity-password'),pin=val('#identity-pin');
    if(!new_value||!password||!pin)throw Error('Nhập đầy đủ tên mới, mật khẩu và PIN.');
-   await post('/api/me/identity/'+kind,{new_value,password,pin});
-   if(state.user?.id!==who)return;
-   state.user=(await api('/api/me')).user;
-   renderApp();
-   toast('Đã đổi '+(kind==='username'?'tên đăng nhập':'tên hiển thị')+'.','ok');
+   const result=await post('/api/me/identity/'+kind,{new_value,password,pin});
+   if(applyMemberIdentity(who,{[kind]:result.value}))
+    toast('Đã đổi '+(kind==='username'?'tên đăng nhập':'tên hiển thị')+'.','ok');
   }});
 }
 document.addEventListener('click',async event=>{
@@ -123,6 +131,7 @@ document.addEventListener('change',async event=>{
   await api('/api/me/social',{method:'PATCH',data:{profile_visibility:desired}});
   if(state.user?.id!==viewer)return;
   state.user.profile_visibility=desired;
+  updateMemberProfileSummary();
   toast(desired==='everyone'?'Đã bật hồ sơ công khai.':
         desired==='only_me'?'Đã bật chế độ chỉ mình tôi.':
         'Đã bật tài khoản riêng tư: chỉ bạn bè xem được hồ sơ.','ok');
@@ -160,8 +169,24 @@ async function loadMessageRequests(redraw=false){
  state.messageRequests=r.requests||[];
  if(redraw&&state.tab==='friends')renderApp();
 }
+function applySocialProfile(owner,profile,photo){
+ if(state.user?.id!==owner)return false;
+ if(photo){
+  const field=photo+'_url';
+  state.user[field]=profile[field]?profile[field]+'?v='+Date.now():null;
+  const button=document.querySelector('[data-social-clear="'+photo+'"]');
+  if(button)button.hidden=!profile[field];
+ }else{
+  for(const field of ['headline','website','allow_message_requests','world_anonymous']){
+   state.user[field]=profile[field];
+  }
+ }
+ updateMemberProfileSummary();
+ return true;
+}
 async function uploadSocialImage(file,kind){
  if(!file)return;
+ const owner=state.user.id;
  if(!['image/jpeg','image/png','image/webp','image/gif'].includes(file.type))throw Error('Chỉ hỗ trợ JPG, PNG, WebP hoặc GIF.');
  let chosen=file;
  if(file.size>1_750_000){
@@ -183,10 +208,9 @@ async function uploadSocialImage(file,kind){
  const result=await response.json().catch(()=>({}));
  if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'Không tải được ảnh.');
  const field=kind==='avatar'?'avatar_attachment_id':'cover_attachment_id';
- await api('/api/me/social',{method:'PATCH',data:{[field]:result.attachment.id}});
- state.user=(await api('/api/me')).user;
- renderApp();
- toast('Đã cập nhật '+(kind==='avatar'?'ảnh đại diện':'ảnh bìa')+'.','ok');
+ if(state.user?.id!==owner)return;
+ const {profile}=await api('/api/me/social',{method:'PATCH',data:{[field]:result.attachment.id}});
+ if(applySocialProfile(owner,profile,kind))toast('Đã cập nhật '+(kind==='avatar'?'ảnh đại diện':'ảnh bìa')+'.','ok');
 }
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('[data-social-form="profile"]');
@@ -196,16 +220,13 @@ document.addEventListener('submit',async event=>{
  if(btn?.disabled)return;
  if(btn)btn.disabled=true;
  try{
-  const fd=new FormData(form);
-  await api('/api/me/social',{method:'PATCH',data:{
+  const fd=new FormData(form),owner=state.user.id;
+  const {profile}=await api('/api/me/social',{method:'PATCH',data:{
    headline:String(fd.get('headline')||'').trim(),website:String(fd.get('website')||'').trim(),
-   profile_visibility:String(fd.get('profile_visibility')||'everyone'),
    allow_message_requests:fd.has('allow_message_requests'),
    world_anonymous:fd.has('world_anonymous')
   }});
-  state.user=(await api('/api/me')).user;
-  await loadMessageRequests(false);
-  renderApp();toast('Đã lưu hồ sơ và quyền riêng tư.','ok');
+  if(applySocialProfile(owner,profile))toast('Đã lưu hồ sơ và quyền riêng tư.','ok');
  }catch(err){toast(err.message||'Không lưu được cài đặt.','error');}
  finally{if(btn?.isConnected)btn.disabled=false;}
 });
@@ -245,13 +266,13 @@ document.addEventListener('click',async event=>{
   return;
  }
  if(btn.hasAttribute('data-social-clear')){
-  const kind=btn.dataset.socialClear;
+  const kind=btn.dataset.socialClear,owner=state.user.id;
   btn.disabled=true;
   try{
-   await api('/api/me/social',{method:'PATCH',data:{[kind==='avatar'?'avatar_attachment_id':'cover_attachment_id']:0}});
-   state.user=(await api('/api/me')).user;renderApp();
-   toast('Đã gỡ ảnh.','ok');
-  }catch(err){toast(err.message||'Không gỡ được ảnh.','error');btn.disabled=false;}
+   const {profile}=await api('/api/me/social',{method:'PATCH',data:{[kind==='avatar'?'avatar_attachment_id':'cover_attachment_id']:0}});
+   if(applySocialProfile(owner,profile,kind))toast('Đã gỡ ảnh.','ok');
+  }catch(err){toast(err.message||'Không gỡ được ảnh.','error');}
+  finally{btn.disabled=false;}
   return;
  }
  if(btn.hasAttribute('data-social-decision')){

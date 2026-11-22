@@ -219,35 +219,38 @@ def install(core):
         c.execute('INSERT INTO notifications(user_id,body,created_at) VALUES(?,?,?)',(uid,body[:500],now()))
 
     class Profile(BaseModel):
-        display_name:str=Field(default='',max_length=50)
-        bio:str=Field(default='',max_length=220)
-        show_online:bool=True
-        show_receipts:bool=True
-        phone:str | None=Field(default=None,max_length=40)
-        email:str | None=Field(default=None,max_length=254)
+        display_name:str|None=Field(default=None,max_length=50)
+        bio:str|None=Field(default=None,max_length=220)
+        show_online:bool|None=None
+        show_receipts:bool|None=None
+        phone:str|None=Field(default=None,max_length=40)
+        email:str|None=Field(default=None,max_length=254)
 
     @app.patch('/api/me/profile')
     async def edit_profile(request:Request, body:Profile):
         u=current_user(request)
-        phone=core.normalize_phone(body.phone) if body.phone is not None else u['phone']
-        email=core.normalize_email(body.email) if body.email is not None else u['email']
-        # Legacy profile route is intentionally not an identity editor.
-        # Validate against a fresh DB record and never write display_name,
-        # even if another session updates identity concurrently.
+        updates=body.model_dump(exclude_none=True,exclude={'display_name'})
+        for field, transform in {
+            'bio':str.strip,'show_online':int,'show_receipts':int,
+            'phone':core.normalize_phone,'email':core.normalize_email,
+        }.items():
+            if field in updates:
+                updates[field]=transform(updates[field])
         with db() as c:
-            current=one(c,'SELECT username,display_name FROM users WHERE id=?',(u['id'],))
-            if not current:
-                raise HTTPException(401,'Tài khoản không tồn tại.')
-            name=core.validate_display_name(body.display_name,current['username'])
-            if name!=(current['display_name'] or ''):
-                raise HTTPException(403,'Để đổi tên hiển thị, hãy dùng mục Đổi tên trong Hồ sơ và xác nhận mật khẩu + PIN.')
+            # Old clients may send back the current name. Never include it in the update.
+            if body.display_name is not None:
+                current=one(c,'SELECT display_name FROM users WHERE id=?',(u['id'],))
+                if not current:
+                    raise HTTPException(401,'Tài khoản không tồn tại.')
+                if body.display_name!=current['display_name']:
+                    raise HTTPException(403,'Hãy dùng mục Đổi tên trong Hồ sơ và xác nhận mật khẩu + PIN.')
+            phone=updates.get('phone')
             if phone and one(c,'SELECT id FROM users WHERE phone=? AND id!=?',(phone,u['id'])):
                 raise HTTPException(409,'Số điện thoại này đang được sử dụng bởi tài khoản khác.')
-            c.execute('''UPDATE users SET bio=?,show_online=?,show_receipts=?,
-                          phone=?,email=? WHERE id=?''',
-                      (body.bio.strip(),int(body.show_online),
-                       int(body.show_receipts),phone,email,u['id']))
-        return {'ok':True}
+            if updates:
+                columns=','.join(field+'=?' for field in updates)
+                c.execute(f'UPDATE users SET {columns} WHERE id=?',(*updates.values(),u['id']))
+        return {'ok':True,'profile':updates}
 
     @app.get('/api/profile/{uid}')
     async def show_profile(request:Request,uid:int):
