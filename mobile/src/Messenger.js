@@ -626,10 +626,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
               {item.member_count} người · {item.last_message?.body||'Chưa có tin nhắn'}</Text>
               {item.unread>0&&<Text style={css.badge}>{item.unread}</Text>}</View></View>
         </Pressable>}/>}
-      {tab==='people'&&<ScrollView contentContainerStyle={{padding:12,gap:12}}>
-        <Text style={css.h2}>Tìm kiếm & kết bạn</Text>
-        <Field value={friendQuery} onChangeText={setFriendQuery} placeholder="Tên hiển thị hoặc ID"/>
-        <Btn onPress={browsePeople}>Tìm thành viên</Btn>
+      {tab==='people'&&<ScrollView showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" contentContainerStyle={css.sectionContent}>
+        <View style={css.screenIntro}>
+          <Text style={css.eyebrow}>KẾT NỐI MỚI</Text>
+          <Text style={css.h2}>Tìm bạn bè</Text>
+          <Text style={css.muted}>Tìm theo tên hiển thị hoặc mã tài khoản để bắt đầu một cuộc trò chuyện.</Text>
+        </View>
+        <View style={css.section}>
+          <Field value={friendQuery} onChangeText={setFriendQuery} placeholder="Tên hiển thị hoặc ID"/>
+          <Btn onPress={browsePeople}>⌕  Tìm thành viên</Btn>
+        </View>
         {results.map(p=><View key={'p'+p.id} style={css.rowCard}>
           <Pressable onPress={()=>openProfile(p.id)} style={{flex:1}}>
             <Text style={css.strong}>{p.display_name||p.username}</Text>
@@ -661,29 +668,60 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Text style={css.link}>Nhắn tin</Text>
         </Pressable>)}
       </ScrollView>}
-      {tab==='world'&&<ScrollView contentContainerStyle={{padding:12,gap:12}}>
-        <Text style={css.h2}>Chat thế giới</Text>
-        <Text style={css.muted}>Tôn trọng các giới hạn và quy định do quản trị viên đặt ra.</Text>
-        <Btn onPress={initWorld}>Kiểm tra trạng thái & vào phòng</Btn>
-        <Text style={css.muted}>Trạng thái: {worldStatus.open?'Đang mở':'Chưa mở hoặc bị tạm dừng'}</Text>
-        {worldRooms.map(w=><Btn key={w.id} quiet onPress={()=>openRoom({scope:'world',id:w.id})}>{w.title||'Phòng '+w.id}</Btn>)}
+      {tab==='world'&&<ScrollView showsVerticalScrollIndicator={false}
+        contentContainerStyle={css.sectionContent}>
+        <View style={css.worldHero}>
+          <Text style={css.eyebrow}>MTUNZ COMMUNITY</Text>
+          <Text style={css.h2}>Chat thế giới</Text>
+          <Text style={css.worldDesc}>Gặp gỡ những người mới, chia sẻ câu chuyện và kết nối trong các phòng trò chuyện.</Text>
+          <View style={css.worldStatus}><View style={[css.statusDot,!worldStatus.open&&css.statusOffline]}/>
+            <Text style={css.worldStatusText}>{worldStatus.open?'Đang mở':'Chưa mở hoặc tạm dừng'}</Text></View>
+        </View>
+        <View style={css.section}>
+          <Text style={css.muted}>Các phòng chỉ hoạt động khi được quản trị viên cho phép. Hãy tôn trọng quy định cộng đồng.</Text>
+          <Btn onPress={initWorld}>Kiểm tra trạng thái và vào phòng</Btn>
+        </View>
+        {worldRooms.map(w=><Pressable key={w.id} style={css.rowCard}
+          onPress={()=>openRoom({scope:'world',id:w.id})}>
+          <View style={css.worldRoomIcon}><Text style={css.worldRoomGlyph}>◎</Text></View>
+          <View style={{flex:1,gap:4}}><Text style={css.strong}>{w.title||'Phòng '+w.id}</Text>
+            <Text style={css.muted}>Nhấn để tham gia phòng</Text></View>
+          <Text style={css.link}>›</Text>
+        </Pressable>)}
       </ScrollView>}
-      {tab==='settings'&&<ScrollView contentContainerStyle={{padding:12,gap:12}}>
-        <Text style={css.h2}>Tài khoản và quyền riêng tư</Text>
-        <Text style={css.strong}>{user.display_name||user.username}</Text>
-        <Text style={css.muted}>ID {user.public_id} · @{user.username}</Text>
-        <Btn onPress={()=>{setDialog('settings');loadSettings();}}>Chỉnh sửa hồ sơ / quyền riêng tư</Btn>
-        <Btn quiet onPress={()=>{setDialog('notifications');refreshLists();}}>Thông báo ({noticesUnread})</Btn>
-        <Btn quiet onPress={async()=>{try{await registerMobileNotifications(token);setPushState('Đã bật');}
-            catch(e){alertError(e);}}}>Bật thông báo đẩy khi app đóng</Btn>
-        <Btn quiet onPress={async()=>{try{await unregisterMobileNotifications(token);setPushState('Đã tắt');}
-            catch(e){alertError(e);}}}>Tắt thông báo đẩy</Btn>
-        <Text style={css.muted}>Thông báo đẩy: {pushState}</Text>
-        <Btn quiet onPress={()=>setDialog('security')}>Quản lý các thiết bị đăng nhập</Btn>
-        <Btn quiet onPress={()=>{setDialog('support');}}>Hỗ trợ và báo cáo</Btn>
-        <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
-          {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
-      </ScrollView>}
+      {tab==='settings'&&<ScrollView keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false} contentContainerStyle={css.sectionContent}>
+        <View style={css.profileHero}>
+          <View style={css.profileAvatar}><Text style={css.profileInitial}>
+            {(user.display_name||user.username||'M').slice(0,1).toUpperCase()}</Text></View>
+          <View style={{flex:1,gap:5}}>
+            <Text style={css.eyebrow}>TRANG CÁ NHÂN</Text>
+            <Text style={css.profileName} numberOfLines={2}>{user.display_name||user.username}</Text>
+            <Text style={css.muted}>ID {user.public_id} · @{user.username}</Text>
+          </View>
+        </View>
+        <Section title="Hồ sơ & riêng tư">
+          <Text style={css.muted}>Quản lý tên, tiểu sử, quyền hiển thị và trạng thái trực tuyến.</Text>
+          <Btn onPress={()=>{setDialog('settings');loadSettings();}}>Chỉnh sửa hồ sơ và quyền riêng tư</Btn>
+        </Section>
+        <Section title="Thông báo">
+          <Btn quiet onPress={()=>{setDialog('notifications');refreshLists();}}>Thông báo mới ({noticesUnread})</Btn>
+          <Btn quiet onPress={async()=>{try{await registerMobileNotifications(token);setPushState('Đã bật');}
+              catch(e){alertError(e);}}}>Bật thông báo khi đóng ứng dụng</Btn>
+          <Btn quiet onPress={async()=>{try{await unregisterMobileNotifications(token);setPushState('Đã tắt');}
+              catch(e){alertError(e);}}}>Tắt thông báo</Btn>
+          <Text style={css.muted}>Trạng thái: {pushState}</Text>
+        </Section>
+        <Section title="Bảo mật tài khoản">
+          <Text style={css.muted}>Xem các thiết bị, kiểm soát phiên đăng nhập và quyền truy cập tài khoản.</Text>
+          <Btn quiet onPress={()=>setDialog('security')}>Quản lý thiết bị đăng nhập</Btn>
+        </Section>
+        <Section title="Hỗ trợ và thông tin">
+          <Btn quiet onPress={()=>setDialog('support')}>Liên hệ hỗ trợ / báo cáo</Btn>
+          <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
+            {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
+        </Section>
+      </ScrollView>
       <View style={css.tabs}>{tabs.map(([id,title,glyph])=><Pressable key={id}
         accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:tab===id}}
         onPress={()=>{setTab(id);setError('');if(id==='settings')loadSettings();}}
@@ -991,4 +1029,22 @@ const css=StyleSheet.create({
   overlay:{flex:1,justifyContent:'flex-end',backgroundColor:'#020914b3'},
   sheet:{maxHeight:'85%',backgroundColor:P.bg,borderTopLeftRadius:25,
     borderTopRightRadius:25,padding:18,gap:14,borderWidth:1,borderColor:P.border},
+  sectionContent:{paddingHorizontal:14,paddingTop:20,paddingBottom:55,gap:15},
+  screenIntro:{gap:7,paddingHorizontal:5,paddingBottom:3},
+  worldHero:{backgroundColor:'#193957',borderRadius:21,borderWidth:1,
+    borderColor:'#37648a',padding:21,gap:12},
+  worldDesc:{color:'#c4d8ed',fontSize:14,lineHeight:22},
+  worldStatus:{flexDirection:'row',alignItems:'center',gap:9,alignSelf:'flex-start',
+    paddingHorizontal:12,paddingVertical:8,borderRadius:20,backgroundColor:'#153047'},
+  worldStatusText:{fontSize:12,color:'#d9eaff',fontWeight:'700'},
+  worldRoomIcon:{height:42,width:42,borderRadius:13,backgroundColor:'#263f5b',
+    alignItems:'center',justifyContent:'center'},
+  worldRoomGlyph:{fontSize:25,color:P.accent},
+  profileHero:{flexDirection:'row',alignItems:'center',gap:16,padding:21,
+    borderRadius:22,backgroundColor:'#17324e',borderWidth:1,borderColor:'#35597c'},
+  profileAvatar:{height:66,width:66,borderRadius:20,backgroundColor:'#38658b',
+    justifyContent:'center',alignItems:'center'},
+  profileInitial:{fontSize:30,color:P.text,fontWeight:'900'},
+  profileName:{fontSize:20,fontWeight:'900',color:P.text,letterSpacing:-.4},
+
 });
