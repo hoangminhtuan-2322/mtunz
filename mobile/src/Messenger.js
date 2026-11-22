@@ -1,8 +1,9 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
+import * as Notifications from 'expo-notifications';
 import {ActivityIndicator,Alert,AppState,FlatList,Image,KeyboardAvoidingView,
   Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
-import {api,wsUrl} from './client';
+import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   registerMobileNotifications,saveSharedFile,unregisterMobileNotifications,uploadAttachment} from './media';
 
@@ -76,7 +77,7 @@ function Message({item,own,token,onSelect,onOpen}){
   </Pressable>;
 }
 
-export default function Messenger({token,user,onLogout,onExpired}){
+export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
     [groups,setGroups]=useState([]),[notices,setNotices]=useState([]),[requests,setRequests]=useState([]),
     [worldStatus,setWorldStatus]=useState({open:false}),[worldRooms,setWorldRooms]=useState([]),
@@ -96,7 +97,11 @@ export default function Messenger({token,user,onLogout,onExpired}){
     [secret,setSecret]=useState(''),[pin,setPin]=useState(''),[identityQuota,setIdentityQuota]=useState(null),
     [pushState,setPushState]=useState('Chưa bật'),[typing,setTyping]=useState(false),
     [noticesUnread,setNoticesUnread]=useState(0),[blocked,setBlocked]=useState([]),
-    [requestInbox,setRequestInbox]=useState([]);
+    [requestInbox,setRequestInbox]=useState([]),[viewer,setViewer]=useState(null),
+    [groupEditTitle,setGroupEditTitle]=useState(''),[groupEditDescription,setGroupEditDescription]=useState(''),
+    [addGroupMembers,setAddGroupMembers]=useState([]),
+    [reportReason,setReportReason]=useState('fraud'),[reportDescription,setReportDescription]=useState(''),
+    [reportTarget,setReportTarget]=useState(null);
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),timers=useRef({}),
     keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
@@ -244,7 +249,10 @@ export default function Messenger({token,user,onLogout,onExpired}){
       }
       if(data.type==='groups-updated'&&target?.scope==='group')schedule();
       if(data.type==='friends-updated'&&target?.scope==='dm')schedule();
-      if(data.type==='profile-updated'&&data.user_id===user.id)refreshSocial();
+      if(data.type==='identity-updated'||data.type==='profile-updated'){
+        onProfile?.();
+        refreshSocial();
+      }
       if(data.type==='message-requests-updated')loadInbox().catch(()=>{});
     };
     function connect(){
@@ -268,11 +276,26 @@ export default function Messenger({token,user,onLogout,onExpired}){
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
     return()=>{closed=true;clearTimeout(refreshTimer);clearTimeout(retryTimer);clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,alertError,onExpired]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,alertError,onExpired,onProfile]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
+  useEffect(()=>{
+    const onResponse=response=>{
+      const data=response?.notification?.request?.content?.data||{};
+      const scope=data.kind==='dm'?'dm':data.kind==='group'?'group':null;
+      const chatId=Number(data.chat_id);
+      if(scope&&Number.isSafeInteger(chatId)&&chatId>0)openRoom({scope,id:chatId});
+    };
+    const sub=Notifications.addNotificationResponseReceivedListener(onResponse);
+    Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
+    return()=>sub.remove();
+  },[openRoom]);
   const jumpBack=()=>{roomRef.current=null;setRoom(null);setSelection(null);setDialog('');setTyping(false);refreshLists().catch(()=>{});};
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
+  async function openAttachment(file){
+    if(file?.mime?.startsWith('image/')){setViewer(file);return;}
+    await saveSharedFile(file,token).catch(alertError);
+  }
   const roomTitle=room?.scope==='dm'?label(peer):room?.scope==='group'?(group?.title||'Nhóm'):worldRooms.find(r=>r.id===room?.id)?.title||'Chat thế giới';
 
   async function doSend(){
@@ -360,6 +383,8 @@ export default function Messenger({token,user,onLogout,onExpired}){
       if(room.scope==='dm')setNickname(peer?.nickname||'');
       if(room.scope==='group'){
         const detail=await invoke('/api/groups/'+room.id);setGroupDetail(detail);
+        setGroupEditTitle(detail.group?.title||group?.title||'');
+        setGroupEditDescription(detail.group?.description||'');setAddGroupMembers([]);
       }
     }catch(e){alertError(e);}
   }
@@ -420,7 +445,7 @@ export default function Messenger({token,user,onLogout,onExpired}){
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
         renderItem={({item})=><Message item={item} own={item.sender_id===user.id||item.is_mine}
           token={token} onSelect={room.scope==='world'?()=>{}:setSelection}
-          onOpen={file=>saveSharedFile(file,token).catch(alertError)}/>}
+          onOpen={openAttachment}/>}
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
         removeClippedSubviews={Platform.OS==='android'}
         contentContainerStyle={{padding:12}}
@@ -575,8 +600,29 @@ export default function Messenger({token,user,onLogout,onExpired}){
       </>}
       {room?.scope==='group'&&<>
         <Text style={css.muted}>{groupDetail?.members?.length||group?.member_count||0} thành viên</Text>
-        {(groupDetail?.members||[]).map(m=><Text key={m.user_id} style={css.muted}>
-          {m.username} · {m.role==='owner'?'Trưởng nhóm':'Thành viên'}</Text>)}
+        {(groupDetail?.members||[]).map(m=><View key={m.user_id} style={css.hrow}>
+          <Text style={css.muted}>{m.username} · {m.role==='owner'?'Trưởng nhóm':'Thành viên'}</Text>
+          {group?.role==='owner'&&m.user_id!==user.id&&<Btn danger small onPress={()=>Alert.alert('Xóa thành viên','Xóa người này khỏi nhóm?',[
+            {text:'Hủy'},{text:'Xóa',style:'destructive',onPress:()=>perform(
+              '/api/groups/'+room.id+'/members/'+m.user_id,'DELETE',undefined,
+              async()=>{setGroupDetail(await invoke('/api/groups/'+room.id));await refreshLists();})}])}>Xóa</Btn>}
+        </View>)}
+        {group?.role==='owner'&&<>
+          <Text style={css.h2}>Quản lý nhóm</Text>
+          <Field value={groupEditTitle} onChangeText={setGroupEditTitle} placeholder="Tên nhóm"/>
+          <Field value={groupEditDescription} onChangeText={setGroupEditDescription} placeholder="Mô tả nhóm"/>
+          <Btn onPress={()=>perform('/api/groups/'+room.id,'PATCH',{
+            title:groupEditTitle,description:groupEditDescription},
+            async()=>{setGroupDetail(await invoke('/api/groups/'+room.id));await refreshLists();})}>Lưu thông tin nhóm</Btn>
+          <Text style={css.h2}>Thêm bạn bè vào nhóm</Text>
+          {friends.filter(f=>f.state==='accepted'&&!(groupDetail?.members||[]).some(m=>m.user_id===f.other_id))
+            .map(f=><Pressable key={f.other_id} style={css.rowCard} onPress={()=>setAddGroupMembers(old=>
+              old.includes(f.other_id)?old.filter(x=>x!==f.other_id):[...old,f.other_id])}>
+              <Text style={css.strong}>{addGroupMembers.includes(f.other_id)?'☑':'□'} {label(f)}</Text></Pressable>)}
+          <Btn disabled={!addGroupMembers.length} onPress={()=>perform('/api/groups/'+room.id+'/members',
+            'POST',{member_ids:addGroupMembers},async()=>{setAddGroupMembers([]);
+              setGroupDetail(await invoke('/api/groups/'+room.id));await refreshLists();})}>Thêm {addGroupMembers.length} thành viên</Btn>
+        </>}
         <Btn danger onPress={()=>Alert.alert('Rời nhóm','Bạn muốn rời nhóm này?',[
           {text:'Hủy'},{text:'Rời nhóm',style:'destructive',onPress:()=>perform(
             '/api/groups/'+room.id+'/members/'+user.id,'DELETE',undefined,jumpBack)}])}>Rời nhóm</Btn>
@@ -620,7 +666,30 @@ export default function Messenger({token,user,onLogout,onExpired}){
         <Text style={css.muted}>{profile.private?'Tài khoản riêng tư':profile.headline}</Text>
         <Text style={css.muted}>{profile.bio}</Text>
         {!profile.private&&<Btn quiet onPress={()=>{setDialog('');openRoom({scope:'dm',id:profile.id});}}>Nhắn tin</Btn>}
+        {profile.id!==user.id&&<>
+          {friends.some(f=>f.other_id===profile.id&&f.state==='accepted')&&
+            <Btn danger onPress={()=>Alert.alert('Hủy kết bạn','Bạn có muốn hủy kết bạn?',[
+              {text:'Hủy'},{text:'Hủy kết bạn',style:'destructive',onPress:()=>perform(
+                '/api/friends/remove/'+profile.id,'POST',undefined,async()=>{setDialog('');await refreshLists();})}
+              ])}>Hủy kết bạn</Btn>}
+          <Btn danger onPress={()=>Alert.alert('Chặn tài khoản','Người này sẽ không thể nhắn tin với bạn.',[
+            {text:'Hủy'},{text:'Chặn',style:'destructive',onPress:()=>perform(
+              '/api/blocks/'+profile.id,'POST',undefined,async()=>{setDialog('');await loadInbox();await refreshLists();})}
+          ])}>Chặn người dùng</Btn>
+          <Btn quiet onPress={()=>{setReportTarget(profile.id);setDialog('report');}}>Báo cáo tài khoản</Btn>
+        </>}
       </>}
+    </ModalSheet>
+    <ModalSheet visible={dialog==='report'} onClose={()=>setDialog('')} title="Báo cáo vi phạm">
+      <Text style={css.muted}>Thông tin báo cáo chỉ gửi cho quản trị viên có quyền xử lý.</Text>
+      <View style={css.hrow}>{[['fraud','Lừa đảo'],['harassment','Quấy rối'],['spam','Spam'],['other','Khác']].map(([id,t])=>
+        <Btn key={id} small quiet={reportReason!==id} onPress={()=>setReportReason(id)}>{t}</Btn>)}</View>
+      <Field value={reportDescription} onChangeText={setReportDescription}
+        placeholder="Mô tả sự việc (tối thiểu 10 ký tự)" multiline/>
+      <Btn disabled={reportDescription.trim().length<10} onPress={()=>perform('/api/reports','POST',{
+        target_id:reportTarget,reason:reportReason,description:reportDescription.trim(),scope:'profile',
+      },()=>{setDialog('');setReportDescription('');Alert.alert('Đã gửi','Báo cáo đã được gửi đến quản trị viên.');})}>
+        Gửi báo cáo</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='settings'} onClose={()=>setDialog('')} title="Cài đặt hồ sơ">
       <Text style={css.h2}>Tiểu sử và giới thiệu</Text>
@@ -666,8 +735,19 @@ export default function Messenger({token,user,onLogout,onExpired}){
     </ModalSheet>
     <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Hỗ trợ">
       <Text style={css.muted}>Báo cáo lừa đảo, hành vi xấu hoặc đề nghị hỗ trợ qua website; đăng nhập bằng cùng tài khoản.</Text>
-      <Btn quiet onPress={()=>Linking.openURL('https://mtunz.onrender.com')}>Mở website mtunz</Btn>
+      <Btn quiet onPress={()=>Linking.openURL(API_ORIGIN)}>Mở website mtunz</Btn>
     </ModalSheet>
+    <Modal visible={!!viewer} transparent animationType="fade" onRequestClose={()=>setViewer(null)}>
+      <View style={{flex:1,backgroundColor:'#03070ef5',justifyContent:'center',gap:16,padding:8}}>
+        <View style={css.hrow}>
+          <Pressable onPress={()=>setViewer(null)}><Text style={css.link}>✕ Đóng ảnh</Text></Pressable>
+          <Pressable onPress={()=>saveSharedFile(viewer,token).catch(alertError)}>
+            <Text style={css.link}>Lưu / Chia sẻ</Text></Pressable>
+        </View>
+        {!!viewer&&<Image source={attachmentSource(viewer,token)}
+          style={{flex:1,width:'100%'}} resizeMode="contain"/>}
+      </View>
+    </Modal>
   </View>;
 }
 
