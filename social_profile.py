@@ -212,7 +212,13 @@ def install(core):
             c.execute('INSERT INTO identity_change_events(user_id,kind,changed_at) VALUES(?,?,?)',
                       (u['id'],kind,at))
             updated=identity_quota(c,u['id'],at)
+            peers=many(c,'''SELECT CASE WHEN u1=? THEN u2 ELSE u1 END AS peer
+                            FROM friendships WHERE (u1=? OR u2=?)
+                            AND state IN ('accepted','pending')''',
+                       (u['id'],u['id'],u['id']))
         await hub.user(u['id'],'identity-updated',kind=kind)
+        for friend in peers:
+            await hub.user(friend['peer'],'friends-updated')
         return {'ok':True,'kind':kind,'value':value,'quota':updated}
 
     @app.get('/api/profile/{uid}/{kind}')
