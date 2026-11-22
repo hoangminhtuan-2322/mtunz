@@ -6,14 +6,20 @@ import {api,API_ORIGIN,clearSession,readSession,saveSession,
 import Messenger from './src/Messenger';
 import AdminDashboard from './src/AdminDashboard';
 
-const C={bg:'#071222',card:'#15253b',text:'#f5f7ff',muted:'#a1b2cd',accent:'#69b4ff',border:'#293c58'};
-function Input({value,onChangeText,placeholder,secret=false,number=false}) {
-  return <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
-    placeholderTextColor={C.muted} secureTextEntry={secret} autoCapitalize="none"
-    autoCorrect={false} keyboardType={number?'number-pad':'default'} style={styles.input}/>;
+const C={bg:'#08111f',card:'#14243a',text:'#f4f8ff',muted:'#a5b6cf',
+  accent:'#67bcff',border:'#2c4160',subtle:'#1b304c',success:'#70dabb'};
+function Input({value,onChangeText,placeholder,secret=false,number=false,label}) {
+  return <View style={styles.field}>
+    {!!label&&<Text style={styles.fieldLabel}>{label}</Text>}
+    <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
+      placeholderTextColor={C.muted} secureTextEntry={secret} autoCapitalize="none"
+      autoCorrect={false} autoComplete={secret?'off':'off'}
+      keyboardType={number?'number-pad':'default'} style={styles.input}/>
+  </View>;
 }
 function Button({children,onPress,disabled=false,quiet=false}) {
-  return <Pressable onPress={onPress} disabled={disabled} style={[styles.button,quiet&&styles.quiet,disabled&&{opacity:.45}]}>
+  return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
+    style={({pressed})=>[styles.button,quiet&&styles.quiet,pressed&&!disabled&&styles.pressed,disabled&&{opacity:.45}]}>
     <Text style={[styles.buttonText,quiet&&{color:C.text}]}>{children}</Text></Pressable>;
 }
 export default function App() {
@@ -192,9 +198,20 @@ export default function App() {
   </SafeAreaView>;
   return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
     <KeyboardAvoidingView style={styles.center} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.centerInner}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.centerInner}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.intro}>
+          <View style={styles.brandRow}>
+            <View style={styles.brandMark}><Text style={styles.brandMarkText}>✦</Text></View>
+            <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
+          </View>
+          <Text style={styles.introTitle}>Kết nối mọi khoảnh khắc.</Text>
+          <Text style={styles.introSub}>Trò chuyện liền mạch giữa điện thoại và website.</Text>
+          <View style={styles.connected}><View style={styles.onlineDot}/>
+            <Text style={styles.connectedText}>Cùng tài khoản • Cùng cuộc trò chuyện</Text></View>
+        </View>
         <View style={styles.card}>
-          <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
+          <Text style={styles.eyebrow}>CHÀO MỪNG BẠN QUAY LẠI</Text>
           <Text style={styles.title}>{user?.onboarding_required?'Hoàn tất hồ sơ':mode==='register'?'Tạo tài khoản mtunz':adminApproval?'Duyệt thiết bị Admin':challenge?'Xác minh PIN':'Đăng nhập'}</Text>
           <Text style={styles.muted}>Một tài khoản cho cả website, Android và iOS.</Text>
           {user?.onboarding_required?<>
@@ -229,32 +246,68 @@ export default function App() {
             <Button onPress={checkAdminApproval} disabled={busy}>{busy?'Đang kiểm tra…':'Kiểm tra phê duyệt'}</Button>
             <Button quiet onPress={()=>{setAdminApproval(null);setChallenge(null);setPin('');setError('');}}>Hủy đăng nhập</Button>
           </>:challenge?<>
-            <Input value={pin} onChangeText={setPin} placeholder="Mã PIN" secret number/>
+            <Input value={pin} onChangeText={setPin} placeholder="Mã PIN" label="Mã PIN bảo mật" secret number/>
             <Button onPress={verifyPin} disabled={busy||!pin}>{busy?'Đang xác minh…':'Mở khóa'}</Button>
             <Button quiet onPress={()=>{setChallenge(null);setAdminApproval(null);setPin('');setError('');}}>Đăng nhập lại</Button>
           </>:<>
-            <Input value={username} onChangeText={setUsername} placeholder="Tên đăng nhập / số điện thoại"/>
-            <Input value={password} onChangeText={setPassword} placeholder="Mật khẩu" secret/>
+            <Input value={username} onChangeText={setUsername} label="Tài khoản"
+              placeholder="Tên đăng nhập hoặc số điện thoại"/>
+            <Input value={password} onChangeText={setPassword} label="Mật khẩu"
+              placeholder="Nhập mật khẩu của bạn" secret/>
             <Button onPress={signIn} disabled={busy}>{busy?'Đang kiểm tra…':'Đăng nhập'}</Button>
             <Button quiet onPress={()=>{setMode('register');setError('');}}>Đăng ký tài khoản mới</Button>
           </>}
-          {!!error&&<Text style={styles.error}>{error}</Text>}
-          <Text style={styles.muted}>Thành viên và Admin sử dụng cùng hệ thống mtunz. Các thao tác quản trị chuyên sâu vẫn được bảo vệ trên website.</Text>
-          <Text style={styles.server}>{API_ORIGIN||'Chưa có EXPO_PUBLIC_API_URL'}</Text>
+          {!!error&&<View style={styles.errorPanel}><Text style={styles.error}>{error}</Text></View>}
+          <View style={styles.infoRow}><Text style={styles.infoIcon}>⌁</Text>
+            <Text style={styles.muted}>Tài khoản được bảo vệ bằng mật khẩu và PIN. Admin cần phê duyệt thiết bị mới khi có phiên đang hoạt động.</Text></View>
+        </View>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>mtunz • Một không gian, nhiều kết nối</Text>
+          <Text style={styles.server}>{API_ORIGIN||'Chưa cấu hình địa chỉ máy chủ'}</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
 }
 const styles=StyleSheet.create({
-  root:{flex:1,backgroundColor:C.bg},center:{flex:1,justifyContent:'center',alignItems:'center'},
-  centerInner:{flexGrow:1,justifyContent:'center',padding:18,minWidth:'100%'},
-  card:{backgroundColor:C.card,borderRadius:23,padding:22,gap:14,maxWidth:460,width:'100%',alignSelf:'center'},
-  brand:{fontSize:36,fontWeight:'900',color:C.text},title:{fontSize:23,fontWeight:'800',color:C.text},
-  muted:{fontSize:12,color:C.muted},error:{color:'#ff9e9e',padding:8},
-  server:{color:C.muted,fontSize:10},link:{color:C.accent,fontSize:13,fontWeight:'700'},input:{borderColor:C.border,borderWidth:1,borderRadius:12,
-    paddingHorizontal:14,minHeight:49,color:C.text,backgroundColor:C.bg},
-  button:{backgroundColor:C.accent,borderRadius:12,alignItems:'center',
-    justifyContent:'center',padding:12,minHeight:45},quiet:{backgroundColor:C.border},
-  buttonText:{color:C.bg,fontWeight:'800'},
+  root:{flex:1,backgroundColor:C.bg},
+  center:{flex:1,justifyContent:'center',alignItems:'center'},
+  centerInner:{flexGrow:1,justifyContent:'center',paddingTop:28,paddingBottom:32,
+    paddingHorizontal:20,maxWidth:480,width:'100%',alignSelf:'center',gap:26},
+  intro:{gap:10,alignItems:'flex-start',paddingHorizontal:4},
+  brandRow:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:9},
+  brandMark:{height:39,width:39,borderRadius:13,backgroundColor:'#1a3858',
+    borderWidth:1,borderColor:'#426c96',alignItems:'center',justifyContent:'center'},
+  brandMarkText:{fontSize:24,color:C.accent,fontWeight:'800'},
+  brand:{fontSize:34,fontWeight:'900',color:C.text,letterSpacing:-1.1},
+  introTitle:{fontSize:26,lineHeight:34,fontWeight:'800',color:C.text,letterSpacing:-.5},
+  introSub:{fontSize:14,color:C.muted,lineHeight:21},
+  connected:{alignSelf:'flex-start',flexDirection:'row',alignItems:'center',gap:8,
+    backgroundColor:'#123449',borderWidth:1,borderColor:'#275567',
+    paddingHorizontal:12,paddingVertical:8,borderRadius:40,marginTop:5},
+  connectedText:{color:'#9ee2d4',fontSize:12,fontWeight:'700'},
+  onlineDot:{width:7,height:7,borderRadius:4,backgroundColor:C.success},
+  card:{backgroundColor:C.card,borderRadius:24,padding:22,gap:14,
+    borderWidth:1,borderColor:C.border,width:'100%'},
+  eyebrow:{fontSize:10,color:C.accent,letterSpacing:1.8,fontWeight:'900'},
+  title:{fontSize:25,lineHeight:31,fontWeight:'900',color:C.text,letterSpacing:-.5},
+  muted:{fontSize:13,color:C.muted,lineHeight:19},
+  field:{gap:7},
+  fieldLabel:{fontSize:13,fontWeight:'800',color:'#d9e6f8'},
+  input:{borderColor:'#375172',borderWidth:1,borderRadius:13,
+    paddingHorizontal:15,minHeight:51,fontSize:15,color:C.text,backgroundColor:'#0b1728'},
+  button:{backgroundColor:C.accent,borderRadius:14,alignItems:'center',
+    justifyContent:'center',paddingHorizontal:15,paddingVertical:13,minHeight:52},
+  quiet:{backgroundColor:C.subtle,borderWidth:1,borderColor:C.border},
+  pressed:{opacity:.82,transform:[{scale:.995}]},
+  buttonText:{color:'#091526',fontSize:15,fontWeight:'900',letterSpacing:.1},
+  errorPanel:{backgroundColor:'#3a2437',borderWidth:1,borderColor:'#7a4058',borderRadius:12,padding:12},
+  error:{color:'#ffb5bc',fontSize:13,lineHeight:19},
+  infoRow:{flexDirection:'row',alignItems:'flex-start',gap:11,
+    borderTopWidth:1,borderColor:C.border,paddingTop:15},
+  infoIcon:{fontSize:20,color:C.accent},
+  footer:{gap:6,alignItems:'center',paddingHorizontal:10},
+  footerText:{fontSize:12,color:C.muted,textAlign:'center'},
+  server:{color:'#6c829f',fontSize:11,textAlign:'center'},
+  link:{color:C.accent,fontSize:13,fontWeight:'700'},
 });

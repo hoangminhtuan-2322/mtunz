@@ -2,7 +2,7 @@ import React,{useCallback,useEffect,useState} from 'react';
 import {ActivityIndicator,AppState,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
 
-const P={bg:'#071222',surface:'#15253b',line:'#30425b',ink:'#f5f7ff',muted:'#adbeda',accent:'#69b4ff',danger:'#ff9393'};
+const P={bg:'#08111f',surface:'#14243a',line:'#2c4160',ink:'#f4f8ff',muted:'#a5b6cf',accent:'#67bcff',danger:'#ff9393'};
 
 function Action({label,onPress,disabled=false,subtle=false}){
  return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
@@ -75,9 +75,17 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên']];
  return <View style={{flex:1,backgroundColor:P.bg}}>
-  <View style={s.top}><Text style={s.brand}>mtunz<Text style={{color:P.accent}}>.</Text> Admin</Text>
-    <Action label="Đăng xuất" subtle onPress={onLogout}/></View>
-  <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.page}>
+  <View style={s.top}><View style={{gap:1}}>
+    <Text style={s.brand}>mtunz<Text style={{color:P.accent}}>.</Text> <Text style={s.adminBadge}>ADMIN</Text></Text>
+    <Text style={s.topMeta}>Trung tâm điều hành · Đồng bộ với web</Text></View>
+    <Action label="Thoát" subtle onPress={onLogout}/></View>
+  <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+    contentContainerStyle={s.page}>
+   <View style={s.hero}>
+    <Text style={s.heroEyebrow}>QUẢN TRỊ MTUNZ</Text>
+    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':'Quản lý thành viên'}</Text>
+    <Text style={s.heroSub}>Theo dõi hoạt động và xử lý công việc trực tiếp trên điện thoại.</Text>
+   </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:9,paddingBottom:12}}>
     {tabs.map(([id,label])=><Pressable key={id} onPress={()=>{setTab(id);setError('');setNotice('');}}
      style={[s.tab,tab===id&&s.active]}><Text style={{color:P.ink,fontWeight:tab===id?'800':'500'}}>{label}</Text></Pressable>)}
@@ -160,24 +168,38 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  </View>;
 }
 const s=StyleSheet.create({
- top:{padding:14,flexDirection:'row',justifyContent:'space-between',alignItems:'center',backgroundColor:P.surface},
- brand:{fontSize:21,fontWeight:'900',color:P.ink},
- page:{padding:14,gap:13,paddingBottom:55},
- tab:{paddingHorizontal:13,paddingVertical:12,borderRadius:12,backgroundColor:P.surface,borderWidth:1,borderColor:P.line},
- active:{backgroundColor:'#28517a',borderColor:P.accent},
- panel:{backgroundColor:P.surface,borderRadius:18,padding:16,gap:12},
- head:{fontSize:19,color:P.ink,fontWeight:'800'},
- label:{fontSize:14,color:P.ink,fontWeight:'700'},
- muted:{fontSize:12,color:P.muted},
- error:{color:P.danger,padding:12},
- success:{color:'#8de0c6',padding:12},
- actions:{flexDirection:'row',flexWrap:'wrap',gap:9},
- action:{borderRadius:11,paddingHorizontal:15,paddingVertical:11,backgroundColor:P.accent,justifyContent:'center',alignItems:'center'},
- subtle:{backgroundColor:P.line},
- actionText:{fontSize:13,fontWeight:'800',color:P.bg},
- input:{borderRadius:11,borderWidth:1,borderColor:P.line,backgroundColor:P.bg,color:P.ink,minHeight:48,paddingHorizontal:12},
- item:{borderTopWidth:1,borderColor:P.line,paddingTop:12,gap:7},
- tiles:{flexDirection:'row',flexWrap:'wrap',gap:9},
- tile:{width:'47%',padding:12,backgroundColor:P.bg,borderRadius:12,gap:2},
- value:{color:P.ink,fontSize:25,fontWeight:'900'},
+  top:{paddingHorizontal:17,paddingVertical:15,flexDirection:'row',justifyContent:'space-between',
+    alignItems:'center',backgroundColor:P.bg,borderBottomWidth:1,borderColor:P.line},
+  brand:{fontSize:23,fontWeight:'900',letterSpacing:-.5,color:P.ink},
+  adminBadge:{fontSize:10,letterSpacing:1,color:'#9ecfff',fontWeight:'900'},
+  topMeta:{fontSize:11,color:P.muted,marginTop:3},
+  page:{padding:16,gap:16,paddingBottom:60},
+  hero:{backgroundColor:'#17304d',borderWidth:1,borderColor:'#365876',borderRadius:22,
+    paddingHorizontal:19,paddingVertical:23,gap:7},
+  heroEyebrow:{fontSize:10,letterSpacing:1.5,color:'#86caff',fontWeight:'900'},
+  heroTitle:{fontSize:25,lineHeight:30,letterSpacing:-.6,color:P.ink,fontWeight:'900'},
+  heroSub:{fontSize:12,lineHeight:19,color:'#bdd0e9'},
+  tab:{paddingHorizontal:17,paddingVertical:12,borderRadius:24,backgroundColor:P.surface,
+    borderWidth:1,borderColor:P.line},
+  active:{backgroundColor:'#28517a',borderColor:P.accent},
+  panel:{backgroundColor:P.surface,borderWidth:1,borderColor:P.line,
+    borderRadius:20,padding:17,gap:14},
+  head:{fontSize:18,color:P.ink,fontWeight:'800',letterSpacing:-.2},
+  label:{fontSize:14,color:P.ink,fontWeight:'700',lineHeight:21},
+  muted:{fontSize:12,color:P.muted,lineHeight:18},
+  error:{color:P.danger,padding:12,backgroundColor:'#39283a',borderRadius:11},
+  success:{color:'#91e5cc',padding:12,backgroundColor:'#133b3d',borderRadius:11},
+  actions:{flexDirection:'row',flexWrap:'wrap',gap:9},
+  action:{borderRadius:12,paddingHorizontal:15,paddingVertical:12,
+    backgroundColor:P.accent,justifyContent:'center',alignItems:'center',minHeight:44},
+  subtle:{backgroundColor:'#263b58',borderWidth:1,borderColor:P.line},
+  actionText:{fontSize:13,fontWeight:'800',color:P.bg},
+  input:{borderRadius:12,borderWidth:1,borderColor:'#385572',backgroundColor:'#091829',
+    color:P.ink,minHeight:49,paddingHorizontal:13,fontSize:15},
+  item:{backgroundColor:'#102138',borderRadius:14,padding:14,gap:8,
+    borderWidth:1,borderColor:'#2c425e'},
+  tiles:{flexDirection:'row',flexWrap:'wrap',gap:10},
+  tile:{width:'47%',padding:15,backgroundColor:'#10263e',borderRadius:16,gap:7,
+    borderWidth:1,borderColor:'#2b4966'},
+  value:{color:P.ink,fontSize:28,fontWeight:'900',letterSpacing:-.7},
 });
