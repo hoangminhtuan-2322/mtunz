@@ -1644,12 +1644,20 @@ def lock_support_write(c):
         c.execute('BEGIN IMMEDIATE')
 
 
-def support_ticket(c,tid,*,guest_id=None,lock=False):
+def support_ticket(c,tid,*,guest_id=None,owner_id=None,lock=False):
     query="SELECT * FROM tickets WHERE id=? AND status<>'deleted'"
     values=(tid,)
-    if guest_id is not None:
+    # Authenticated owners can inspect the same ticket on web and native.
+    # Guests remain restricted to their secure cookie; owner_id is server-derived.
+    if guest_id is not None and owner_id is not None:
+        query+=' AND (guest_id=? OR owner_id=?)'
+        values+=(guest_id,owner_id)
+    elif guest_id is not None:
         query+=' AND guest_id=?'
         values+=(guest_id,)
+    elif owner_id is not None:
+        query+=' AND owner_id=?'
+        values+=(owner_id,)
     if POSTGRES_MODE and lock:query+=' FOR UPDATE'
     ticket=one(c,query,values)
     if not ticket:raise HTTPException(404,'Không tìm thấy cuộc trò chuyện hỗ trợ.')
@@ -1666,11 +1674,16 @@ async def create_ticket(request:Request,body:CreateTicket):
             raise HTTPException(503,{'code':'support_paused',
                 'message':'Trung tâm hỗ trợ đang tạm ngừng nhận phiếu mới.'})
         # Guest IDs are cookie-scoped, so apply a second, wider cap to the network peer.
-        support_limit(c,request,'ticket-create-guest-minute',request.state.gid,1,60)
-        support_limit(c,request,'ticket-create-guest-hour',request.state.gid,3,3600)
+        support_identity=f'member:{u["id"]}' if u else request.state.gid
+        support_limit(c,request,'ticket-create-guest-minute',support_identity,1,60)
+        support_limit(c,request,'ticket-create-guest-hour',support_identity,3,3600)
         support_limit(c,request,'ticket-create-peer-hour',support_peer(request),24,3600)
-        open_count=one(c,"SELECT COUNT(*) AS n FROM tickets WHERE guest_id=? AND status='open'",
-                       (request.state.gid,))['n']
+        if u:
+            open_count=one(c,"SELECT COUNT(*) AS n FROM tickets WHERE owner_id=? AND status='open'",
+                           (u['id'],))['n']
+        else:
+            open_count=one(c,"SELECT COUNT(*) AS n FROM tickets WHERE guest_id=? AND status='open'",
+                           (request.state.gid,))['n']
         if open_count>=2:
             raise HTTPException(429,'Bạn đã có 2 phiếu hỗ trợ đang mở. Vui lòng sử dụng phiếu hiện tại.',
                                 headers={'Retry-After':'300'})
@@ -1683,17 +1696,25 @@ async def create_ticket(request:Request,body:CreateTicket):
 
 @app.get('/api/support/tickets')
 async def list_my_tickets(request:Request):
+    u=current_user(request,False)
     with db() as c:
-        tickets=many(c,'''SELECT id,kind,claim,status,created_at FROM tickets
-                          WHERE guest_id=? AND status<>'deleted' ORDER BY id DESC LIMIT 30''',
-                     (request.state.gid,))
+        if u:
+            tickets=many(c,'''SELECT id,kind,claim,status,created_at FROM tickets
+                              WHERE (guest_id=? OR owner_id=?) AND status<>'deleted'
+                              ORDER BY id DESC LIMIT 30''',(request.state.gid,u['id']))
+        else:
+            tickets=many(c,'''SELECT id,kind,claim,status,created_at FROM tickets
+                              WHERE guest_id=? AND status<>'deleted' ORDER BY id DESC LIMIT 30''',
+                         (request.state.gid,))
         return {'tickets':tickets,'paused':support_paused(c)}
 
 
 @app.get('/api/support/tickets/{tid}/messages')
 async def my_ticket_messages(request:Request,tid:int):
+    u=current_user(request,False)
     with db() as c:
-        ticket=support_ticket(c,tid,guest_id=request.state.gid)
+        ticket=support_ticket(c,tid,guest_id=request.state.gid,
+                              owner_id=u['id'] if u else None)
         return {'status':ticket['status'],'messages':many(c,'SELECT * FROM ticket_messages WHERE ticket_id=? ORDER BY id',(tid,))}
 
 
@@ -1707,9 +1728,11 @@ async def send_ticket_message(request:Request,tid:int,body:SupportMessage):
     message=body.body.strip()
     if not message:
         raise HTTPException(422,'Tin nhắn không được để trống.')
+    u=current_user(request,False)
     with db() as c:
         lock_support_write(c)
-        r=support_ticket(c,tid,guest_id=request.state.gid,lock=True)
+        r=support_ticket(c,tid,guest_id=request.state.gid,
+                         owner_id=u['id'] if u else None,lock=True)
         if r['status']!='open':raise HTTPException(403,'Yêu cầu đã đóng.')
         current=now()
         last=one(c,'''SELECT body,created_at FROM ticket_messages
@@ -1722,8 +1745,9 @@ async def send_ticket_message(request:Request,tid:int,body:SupportMessage):
             raise HTTPException(429,'Tin nhắn trùng nội dung vừa gửi. Không cần gửi lại.',
                                 headers={'Retry-After':str(max(1,60-(current-last['created_at'])))})
         support_limit(c,request,'ticket-message-minute',str(tid),6,60)
-        support_limit(c,request,'ticket-message-guest-ten',request.state.gid,25,600)
-        support_limit(c,request,'ticket-message-guest-day',request.state.gid,100,86400)
+        support_identity=f'member:{u["id"]}' if u else request.state.gid
+        support_limit(c,request,'ticket-message-guest-ten',support_identity,25,600)
+        support_limit(c,request,'ticket-message-guest-day',support_identity,100,86400)
         support_limit(c,request,'ticket-message-peer-ten',support_peer(request),90,600)
         support_limit(c,request,'ticket-message-peer-day',support_peer(request),300,86400)
         cur=c.execute('INSERT INTO ticket_messages(ticket_id,from_admin,body,created_at) VALUES(?,0,?,?)',
@@ -2149,6 +2173,8 @@ async def admin_send_ticket(request:Request,tid:int,body:AdminSupportMessage):
         msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':1,'body':body.body.strip(),'created_at':now()}
         admin_log(c,admin['id'],'support_reply',str(tid))
     await hub.guest(t['guest_id'],'support-message',ticket_id=tid,message=msg)
+    if t['owner_id']:
+        await hub.user(t['owner_id'],'support-message',ticket_id=tid,message=msg)
     return {'message':msg}
 
 
@@ -2179,6 +2205,8 @@ async def admin_grant(request:Request,tid:int,body:RecoveryGrantIn):
         c.execute('INSERT INTO ticket_messages(ticket_id,from_admin,body,created_at) VALUES(?,1,?,?)',(tid,note,now()))
         admin_log(c,admin['id'],'issue_recovery',f'ticket={tid}, account={username}, type={t["kind"]}')
     await hub.guest(t['guest_id'],'support-updated',ticket_id=tid)
+    if t['owner_id']:
+        await hub.user(t['owner_id'],'support-updated',ticket_id=tid)
     return {'ok':True}
 
 
@@ -2197,6 +2225,8 @@ async def admin_ticket_status(request:Request,tid:int,body:TicketClose):
         c.execute('UPDATE tickets SET status=? WHERE id=?',(body.status,tid))
         admin_log(c,admin['id'],'support_mark_spam' if body.status=='spam' else 'ticket_status',f'{tid}: {body.status}')
     await hub.guest(t['guest_id'],'support-updated',ticket_id=tid)
+    if t['owner_id']:
+        await hub.user(t['owner_id'],'support-updated',ticket_id=tid)
     return {'ok':True}
 
 

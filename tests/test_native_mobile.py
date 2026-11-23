@@ -305,3 +305,35 @@ def test_native_admin_receives_background_registration_and_support(monkeypatch):
         assert native.post('/api/mobile/push/test',headers=headers).json()=={'accepted':True}
         [message]=sent.get(timeout=3)
         assert message['to']==endpoint and message['data']['kind']=='test'
+
+
+def test_native_support_owned_ticket_sync_and_authorization():
+    """One ticket across native bearer and web; other members see nothing."""
+    admin=logged_admin()
+    browser=register_user(admin,'native_support_owner')
+    stranger=register_user(admin,'native_support_other')
+    native,headers=native_login('native_support_owner')
+    created=native.post('/api/support/tickets',headers=headers,
+                        json={'kind':'other','claim':'Cần hỗ trợ tài khoản'})
+    assert created.status_code==200,created.text
+    ticket_id=created.json()['id']
+    fresh=TestClient(app)
+    listing=fresh.get('/api/support/tickets',headers=headers)
+    assert listing.status_code==200,listing.text
+    assert any(row['id']==ticket_id for row in listing.json()['tickets'])
+    assert any(row['id']==ticket_id for row in browser.get('/api/support/tickets').json()['tickets'])
+    assert stranger.get(f'/api/support/tickets/{ticket_id}/messages').status_code==404
+    assert stranger.post(f'/api/support/tickets/{ticket_id}/messages',
+                         json={'body':'Không phải chủ tài khoản'}).status_code==404
+    sent=fresh.post(f'/api/support/tickets/{ticket_id}/messages',headers=headers,
+                    json={'body':'Tôi gửi từ app Android'})
+    assert sent.status_code==200,sent.text
+    assert any(m['body']=='Tôi gửi từ app Android'
+               for m in browser.get(f'/api/support/tickets/{ticket_id}/messages').json()['messages'])
+    with fresh.websocket_connect('/ws',headers=headers) as ws:
+        reply=admin.post(f'/api/admin/tickets/{ticket_id}/messages',
+                         json={'body':'Hỗ trợ đã nhận','admin_pin':'2345'})
+        assert reply.status_code==200,reply.text
+        event=ws.receive_json()
+        assert event['type']=='support-message' and event['ticket_id']==ticket_id
+        assert event['message']['body']=='Hỗ trợ đã nhận'

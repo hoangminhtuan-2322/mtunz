@@ -75,7 +75,7 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
 
 Mở [Actions → Build mtunz TRUE Native Android APK](https://github.com/hoangminhtuan-2322/mtunz/actions/workflows/android-apk.yml), chọn `main`, nhấn `Run workflow`, bật **sign_release** rồi chạy. Đợi tất cả bước xanh, tải artifact **`mtunz-NATIVE-1.1.0-RELEASE-fixed-key`**, giải nén lấy `app-release.apk`. File này là ứng dụng **React Native**, không phải APK TWA.
 
-Workflow `push`/PR chỉ tạo artifact **`mtunz-NATIVE-PREVIEW-debug-signed`** để kiểm tra, không được dùng nó cập nhật bản 1.0.1 có chữ ký cố định. APK release được kiểm tra có JS bundle nội bộ, đúng package/version, chữ ký gốc mới, cài/mở trên giả lập, và tiến trình Android vẫn đang chạy.
+Workflow `push`/PR tạo artifact **`mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug`** cho ứng dụng **mtunz Preview**, package `com.mtunz.web.preview`, dùng khóa debug. Preview này cài **song song** với bản đang có (`com.mtunz.web`) mà không yêu cầu gỡ bản cũ. Preview không dùng Firebase production nên **không có thông báo nền**. Khi thử, đăng nhập cùng tài khoản với website. Bản này chỉ để kiểm thử, không thể cài đè bản chính thức. APK release được kiểm tra có JS bundle nội bộ, đúng package/version, chữ ký gốc mới, cài/mở trên giả lập, và tiến trình Android vẫn đang chạy.
 
 ### Những chức năng chưa thể cam kết khi chỉ có APK
 

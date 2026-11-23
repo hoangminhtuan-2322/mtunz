@@ -41,11 +41,17 @@ assert(workflow.includes('assets/index.android.bundle'),'Standalone JS bundle mu
 assert(workflow.includes('com.mtunz.web'),'Native APK must keep installed package');
 assert(workflow.includes('versionCode=\'3\''),'Must increment Android version code');
 assert(workflow.includes('mtunz-NATIVE-1.1.0-RELEASE-fixed-key'));
+assert(workflow.includes('configure_preview_package.cjs'));
+assert(workflow.includes('mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug'));
+assert(workflow.includes('EXPECTED_PACKAGE=com.mtunz.web.preview'));
+const preview=fs.readFileSync('mobile/tools/configure_preview_package.cjs','utf8');
+assert(preview.includes("applicationIdSuffix '.preview'"));
+assert(preview.includes('mtunz Preview'));
 assert(workflow.includes('github.event_name == \'workflow_dispatch\' && inputs.sign_release'),'Real signing must be explicit');
 assert(workflow.includes('verify_release_artifact.py'),'Require pinned permanent cert');
 assert(workflow.includes('REQUIRE_NATIVE_PUSH'),'Signed release must require native background push configuration');
 assert(sign.includes('signingConfig signingConfigs.mtunzFixedRelease'),'Generated Gradle release must use owner key');
-assert(smoke.includes('adb shell pidof com.mtunz.web'),'Must prove native process remains alive');
+assert(smoke.includes('adb shell pidof "$PACKAGE"'),'Must prove native process remains alive');
 assert(smoke.includes('adb logcat -d -b crash'),'Must check for crashes');
 assert(!workflow.includes('mtunz-web-android-RELEASE-new-fixed-key'),'Do not confuse TWA APK with native APK');
 console.log('mtunz TRUE native identity/logo, signed upgrade, realtime and no-browser release gates passed.');

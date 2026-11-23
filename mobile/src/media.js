@@ -47,16 +47,23 @@ export async function chooseFile() {
   return result.canceled ? null : selected(result.assets[0]);
 }
 
-export async function uploadAttachment(token,file) {
+export async function uploadAttachment(token,file,uploadKey) {
   if (!token || !file) throw new Error('Không có phiên đăng nhập hoặc tệp.');
   const data = new FormData();
   data.append('file',{uri:file.uri,name:file.name,type:file.type});
+  // The same ID as the chat send retry. A lost HTTP response must not upload
+  // duplicate media or consume the per-user attachment quota twice.
+  if(uploadKey)data.append('upload_key',uploadKey);
   let response;
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),60000);
   try {
     response = await fetch(API_ORIGIN+'/api/uploads',{
-      method:'POST',headers:{Authorization:'Bearer '+token},body:data,
+      method:'POST',headers:{Authorization:'Bearer '+token},body:data,signal:controller.signal,
     });
-  } catch { throw new ApiError('Không tải được tệp. Vui lòng kiểm tra kết nối.',0); }
+  } catch {
+    throw new ApiError('Không tải được tệp. Kiểm tra kết nối và thử lại, hệ thống sẽ chống tải trùng.',0);
+  } finally{clearTimeout(timer);}
   const body = await response.json().catch(()=>({}));
   if (!response.ok) throw new ApiError(typeof body.detail==='string'?body.detail:'Không thể gửi tệp.',response.status);
   return body.attachment;

@@ -69,7 +69,7 @@ function Message({item,own,token,onSelect,onOpen}){
   for(const r of reactions)reactionCounts.set(r.emoji,(reactionCounts.get(r.emoji)||0)+1);
   return <Pressable onLongPress={()=>onSelect(item)} delayLongPress={330}
     style={[css.bubble,own?css.bubbleMine:css.bubbleOther]}>
-    {!own&&item.username&&<Text style={css.sender}>{item.username}</Text>}
+    {!own&&(item.display_name||item.username)&&<Text style={css.sender}>{item.display_name||item.username}</Text>}
     {item.reply_to&&<Text style={css.reply}>↪ Trả lời tin #{item.reply_to}</Text>}
     {!!item.forwarded&&<Text style={css.reply}>↪ Đã chuyển tiếp</Text>}
     <Text style={[css.msg,deleted&&{color:P.soft,fontStyle:'italic'}]}>
@@ -94,6 +94,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
     [groups,setGroups]=useState([]),[notices,setNotices]=useState([]),[requests,setRequests]=useState([]),
     [worldStatus,setWorldStatus]=useState({open:false}),[worldRooms,setWorldRooms]=useState([]),
+    [worldAlias,setWorldAlias]=useState(''),
     [connection,setConnection]=useState('connecting'),[error,setError]=useState(''),
     [loading,setLoading]=useState(false),[sending,setSending]=useState(false),
     [messages,setMessages]=useState([]),[more,setMore]=useState(false),
@@ -114,18 +115,60 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [groupEditTitle,setGroupEditTitle]=useState(''),[groupEditDescription,setGroupEditDescription]=useState(''),
     [addGroupMembers,setAddGroupMembers]=useState([]),
     [reportReason,setReportReason]=useState('fraud'),[reportDescription,setReportDescription]=useState(''),
-    [reportTarget,setReportTarget]=useState(null);
-  const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),timers=useRef({}),
+    [reportTarget,setReportTarget]=useState(null),
+    [supportTickets,setSupportTickets]=useState([]),
+    [supportPaused,setSupportPaused]=useState(false),
+    [supportTicket,setSupportTicket]=useState(null),
+    [supportMessages,setSupportMessages]=useState([]),
+    [supportClaim,setSupportClaim]=useState(''),
+    [supportDraft,setSupportDraft]=useState(''),
+    [supportBusy,setSupportBusy]=useState(false);
+  const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
+    typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
+    remoteTypingRef=useRef(null),listRequestRef=useRef(0),
     keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    supportTicketRef=useRef(null),
     sendRef=useRef(false);
   roomRef.current=room;
+  supportTicketRef.current=supportTicket;
   // Voice notes use the phone microphone only when explicitly requested.
   const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordState=useAudioRecorderState(recorder,400);
   const [voiceBusy,setVoiceBusy]=useState(false);
   const voiceDeadlineRef=useRef(null);
 
+  // Emit native typing transitions and recover if the peer disconnects abruptly.
+  const transmitTyping=useCallback((target,on)=>{
+    const socket=wsRef.current;
+    if(!target||!['dm','group'].includes(target.scope)||socket?.readyState!==WebSocket.OPEN)return;
+    try{socket.send(JSON.stringify(target.scope==='dm'?
+      {type:'typing',to:target.id,on}:{type:'group-typing',group_id:target.id,on}));}catch{}
+  },[]);
+  const stopTyping=useCallback(()=>{
+    const state=typingRef.current;
+    if(state.timer)clearTimeout(state.timer);
+    if(state.active&&roomRef.current)transmitTyping(roomRef.current,false);
+    typingRef.current={active:false,lastSentAt:0,roomKey:'',timer:null};
+  },[transmitTyping]);
+  const sendTyping=useCallback(value=>{
+    const target=roomRef.current;
+    if(!target||!['dm','group'].includes(target.scope))return;
+    if(!value.trim()){stopTyping();return;}
+    const state=typingRef.current, key=target.scope+':'+target.id, at=Date.now();
+    if(!state.active||state.roomKey!==key||at-state.lastSentAt>3000){
+      transmitTyping(target,true);state.active=true;state.lastSentAt=at;state.roomKey=key;
+    }
+    if(state.timer)clearTimeout(state.timer);
+    state.timer=setTimeout(stopTyping,3500);
+  },[stopTyping,transmitTyping]);
+  const updateRemoteTyping=useCallback(on=>{
+    if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);
+    remoteTypingRef.current=null;setTyping(!!on);
+    if(on)remoteTypingRef.current=setTimeout(()=>{
+      setTyping(false);remoteTypingRef.current=null;
+    },5000);
+  },[]);
   const alertError=useCallback(e=>{
     if(e?.status===401){onExpired();return;}
     setError(e?.message||'Không thể hoàn tất thao tác.');
@@ -135,8 +178,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     catch(e){if(e.status===401)onExpired();throw e;}
   },[token,onExpired]);
   const refreshLists=useCallback(async()=>{
+    const requested=++listRequestRef.current;
     const tasks=await Promise.allSettled([
       invoke('/api/friends'),invoke('/api/groups'),invoke('/api/notifications')]);
+    if(requested!==listRequestRef.current)return;
     if(tasks[0].status==='fulfilled')setFriends(tasks[0].value.friends||[]);
     if(tasks[1].status==='fulfilled')setGroups(tasks[1].value.groups||[]);
     if(tasks[2].status==='fulfilled'){
@@ -221,11 +266,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     if(results[1].status==='fulfilled')setBlocked(results[1].value.users||[]);
   },[invoke]);
   const openRoom=useCallback(target=>{
+    stopTyping();updateRemoteTyping(false);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft('');setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     nonceRef.current=null;uploadRef.current=null;
     void loadWindow(target);
-  },[loadWindow]);
+  },[loadWindow,stopTyping,updateRemoteTyping]);
 
   // One WebSocket for the entire authenticated mobile session. Reconcile on resume.
   useEffect(()=>{
@@ -247,10 +293,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         onExpired();return;
       }
       if(data.type==='typing'&&target?.scope==='dm'&&data.from_id===target.id){
-        setTyping(!!data.on);return;
+        updateRemoteTyping(data.on);return;
       }
       if(data.type==='group-typing'&&target?.scope==='group'&&data.group_id===target.id){
-        setTyping(!!data.on);return;
+        updateRemoteTyping(data.on);return;
       }
       if(data.type==='message'&&target?.scope==='dm'){
         const m=data.message;
@@ -261,6 +307,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             invoke('/api/messages/read/'+target.id+'?up_to='+m.id,'POST').catch(()=>{});
           }
         }
+      }
+      if(data.type==='presence'&&Number.isSafeInteger(data.user_id)){
+        // Keep presence badges in sync with the web without waiting for polling.
+        setFriends(old=>old.map(friend=>friend.other_id===data.user_id?
+          {...friend,online:!!data.online,last_seen:data.last_seen}:friend));
       }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
         setMessages(old=>dedupe([...old,sanitize(data.message)]));
@@ -288,6 +339,24 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
       if(data.type==='world-message'&&target?.scope==='world'&&data.message?.room_id===target.id)
         setMessages(old=>dedupe([...old,sanitize(data.message)]));
+      if(data.type==='world-message-removed'&&target?.scope==='world')loadWindow(target);
+      if(data.type==='support-message'){
+        const ticket=supportTicketRef.current;
+        if(ticket&&data.ticket_id===ticket.id&&data.message)
+          setSupportMessages(old=>old.some(m=>m.id===data.message.id)?old:[...old,data.message]);
+        loadSupport().catch(()=>{});
+      }
+      if(data.type==='support-updated'||data.type==='support-deleted'){
+        loadSupport().catch(()=>{});
+        const ticket=supportTicketRef.current;
+        if(ticket&&data.ticket_id===ticket.id){
+          if(data.type==='support-deleted'){supportTicketRef.current=null;setSupportTicket(null);setSupportMessages([]);}
+          else openSupportTicket(ticket).catch(()=>{});
+        }
+      }
+      if(data.type==='world-status')setWorldStatus(old=>({...old,...data}));
+      if(data.type==='world-rooms-updated')
+        invoke('/api/world/rooms').then(value=>setWorldRooms(value.rooms||[])).catch(()=>{});
       if(['message','group-message','groups-updated','friends-updated','read','delivered',
           'message-updated','group-message-updated','message-reaction','group-message-reaction',
           'identity-updated','profile-updated','message-requests-updated','chat-alert-settings',
@@ -328,6 +397,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         if(wsRef.current!==current)return;
         stopHeartbeat();if(closed)return;
         setConnection('offline');
+        typingRef.current.active=false;
         if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}
       };
     }
@@ -335,14 +405,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const sub=AppState.addEventListener('change',state=>{
       activeRef.current=state==='active';
       reportPushVisibility(socket,activeRef.current);
-      if(!activeRef.current){stopHeartbeat();socket?.close();return;}
+      if(!activeRef.current){stopTyping();updateRemoteTyping(false);stopHeartbeat();socket?.close();return;}
       if(socket?.readyState!==WebSocket.OPEN&&socket?.readyState!==WebSocket.CONNECTING)connect();
       schedule(['lists','catchup']);
     });
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
-    return()=>{closed=true;refreshQueue.stop();clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
+    return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile,stopTyping,updateRemoteTyping]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{
@@ -356,7 +426,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
     return()=>sub.remove();
   },[openRoom]);
-  const jumpBack=()=>{roomRef.current=null;setRoom(null);setSelection(null);setDialog('');setTyping(false);refreshLists().catch(()=>{});};
+  const jumpBack=()=>{stopTyping();updateRemoteTyping(false);roomRef.current=null;setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
   async function openAttachment(file){
     if(file?.mime?.startsWith('image/')){setViewer(file);return;}
@@ -375,15 +445,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{
       let attachmentId=uploadRef.current?.key===key?uploadRef.current.id:null;
       if(picked&&!attachmentId){
-        const file=await uploadAttachment(token,picked);
+        const file=await uploadAttachment(token,picked,nonce);
         attachmentId=file.id;uploadRef.current={key,id:attachmentId};
       }
       const data={body:text,attachment_id:attachmentId||null};
       let endpoint='';
       if(scope==='dm'){endpoint='/api/messages';Object.assign(data,{recipient_id:room.id,reply_to:reply?.id||null,client_message_id:nonce});}
       if(scope==='group'){endpoint='/api/groups/'+room.id+'/messages';Object.assign(data,{reply_to:reply?.id||null,client_message_id:nonce});}
-      if(scope==='world'){endpoint='/api/world/messages';Object.assign(data,{room_id:room.id});}
+      if(scope==='world'){endpoint='/api/world/messages';Object.assign(data,{room_id:room.id,anonymous_name:social.world_anonymous?worldAlias.trim():''});}
       const result=await invoke(endpoint,'POST',data);
+      stopTyping();
       if(roomRef.current?.scope===scope&&roomRef.current?.id===room.id){
         if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
         if(scope==='world'&&!result.message)loadWindow(room);
@@ -518,6 +589,38 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(status.open)openRoom({scope:'world',id:rooms.rooms?.[0]?.id||1});
     }catch(e){alertError(e);}
   }
+  async function loadSupport(){
+    const data=await invoke('/api/support/tickets');
+    setSupportTickets(data.tickets||[]);setSupportPaused(!!data.paused);
+  }
+  async function openSupportTicket(item){
+    const data=await invoke('/api/support/tickets/'+item.id+'/messages');
+    setSupportTicket({...item,status:data.status||item.status});
+    setSupportMessages(data.messages||[]);
+  }
+  async function createSupportTicket(){
+    if(!supportClaim.trim()||supportBusy)return;
+    setSupportBusy(true);
+    try{
+      const created=await invoke('/api/support/tickets','POST',{
+        kind:'other',claim:supportClaim.trim(),
+      });
+      setSupportClaim('');
+      await loadSupport();
+      await openSupportTicket({id:created.id,kind:'other',claim:supportClaim.trim(),status:'open'});
+    }catch(e){alertError(e);}finally{setSupportBusy(false);}
+  }
+  async function sendSupportMessage(){
+    const ticket=supportTicketRef.current;
+    const body=supportDraft.trim();
+    if(!ticket||ticket.status!=='open'||!body||supportBusy)return;
+    setSupportBusy(true);
+    try{
+      const result=await invoke('/api/support/tickets/'+ticket.id+'/messages','POST',{body});
+      setSupportMessages(old=>old.some(m=>m.id===result.message.id)?old:[...old,result.message]);
+      setSupportDraft('');
+    }catch(e){alertError(e);}finally{setSupportBusy(false);}
+  }
   async function loadSettings(){
     await refreshSocial();
     try{setIdentityQuota((await invoke('/api/me/identity/status')).quota);}
@@ -572,6 +675,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
       {!!picked&&<View style={css.replyBar}><Text style={css.muted} numberOfLines={1}>📎 {picked.name}</Text>
         <Pressable onPress={()=>{setPicked(null);uploadRef.current=null;}}><Text style={css.link}>Bỏ</Text></Pressable></View>}
+      {room.scope==='world'&&<Pressable accessibilityRole="button"
+        accessibilityLabel="Chỉnh sửa tên ẩn danh" onPress={()=>{
+          jumpBack();setTab('world');refreshSocial();
+        }}><Text style={[css.muted,{paddingHorizontal:15,paddingVertical:4}]}>
+          {social.world_anonymous?'Ẩn danh: '+(worldAlias.trim()||'Ẩn danh')+' · Đổi tên':'Đang hiện tên · Chọn ẩn danh'}
+        </Text></Pressable>}
       <View style={css.compose}>
         <Pressable accessibilityLabel="Gửi ảnh hoặc video" accessibilityRole="button"
           style={css.toolButton} onPress={()=>pick('media')}><Text style={css.toolGlyph}>▧</Text></Pressable>
@@ -584,6 +693,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
+            sendTyping(value);
             if(value!==draft){nonceRef.current=null;if(value.trim()!==draft.trim())uploadRef.current=null;}
             setDraft(value);
           }}/>
@@ -702,6 +812,22 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Text style={css.muted}>Các phòng chỉ hoạt động khi được quản trị viên cho phép. Hãy tôn trọng quy định cộng đồng.</Text>
           <Btn onPress={initWorld}>Kiểm tra trạng thái và vào phòng</Btn>
         </View>
+        <View style={css.section}>
+          <Text style={css.h2}>Danh tính khi chat thế giới</Text>
+          <Text style={css.muted}>Chế độ ẩn danh đồng bộ với website; biệt danh áp dụng cho tin gửi mới.</Text>
+          <Btn quiet onPress={()=>perform('/api/me/social','PATCH',
+            {world_anonymous:!social.world_anonymous},async result=>{
+              setSocial(result.profile||{});await onProfile?.();
+            })}>
+            {social.world_anonymous?'✓ Đang ẩn danh · Hiện tên thật':'Sử dụng tên ẩn danh'}
+          </Btn>
+          {social.world_anonymous&&<Field value={worldAlias}
+            onChangeText={value=>setWorldAlias(value.slice(0,24))}
+            placeholder="Biệt danh ẩn danh (2–24 ký tự)"/>}
+          {social.world_anonymous&&<Text style={css.muted}>
+            {worldAlias.trim()?'Gửi tin với tên '+worldAlias.trim():'Để trống sẽ hiển thị Ẩn danh'}
+          </Text>}
+        </View>
         {worldRooms.map(w=><Pressable key={w.id} style={css.rowCard}
           onPress={()=>openRoom({scope:'world',id:w.id})}>
           <View style={css.worldRoomIcon}><Text style={css.worldRoomGlyph}>◎</Text></View>
@@ -734,14 +860,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Btn quiet onPress={()=>setDialog('security')}>Quản lý thiết bị đăng nhập</Btn>
         </Section>
         <Section title="Hỗ trợ và thông tin">
-          <Btn quiet onPress={()=>setDialog('support')}>Liên hệ hỗ trợ / báo cáo</Btn>
+          <Btn quiet onPress={()=>{setDialog('support');loadSupport().catch(alertError);}}>Liên hệ hỗ trợ / báo cáo</Btn>
           <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
             {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
         </Section>
       </ScrollView>}
       <View style={css.tabs}>{tabs.map(([id,title,glyph])=><Pressable key={id}
         accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:tab===id}}
-        onPress={()=>{setTab(id);setError('');if(id==='settings')loadSettings();}}
+        onPress={()=>{setTab(id);setError('');if(id==='settings')loadSettings();if(id==='world')refreshSocial();}}
         style={({pressed})=>[css.tab,tab===id&&css.tabActive,pressed&&{opacity:.8}]}>
         <Text style={[css.tabIcon,tab===id&&css.tabIconActive]}>{glyph}</Text>
         <Text numberOfLines={1} style={[css.tabText,tab===id&&css.tabTextActive]}>{title}</Text>
@@ -925,9 +1051,43 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         Alert.alert('Thiết bị',JSON.stringify(r.sessions?.map(x=>x.device_name||x.os_name)||[]).slice(0,700)))}>
         Xem thiết bị đăng nhập</Btn>
     </ModalSheet>
-    <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Hỗ trợ">
-      <Text style={css.muted}>Báo cáo lừa đảo, hành vi xấu hoặc đề nghị hỗ trợ qua website; đăng nhập bằng cùng tài khoản.</Text>
-      <Btn quiet onPress={()=>Linking.openURL(API_ORIGIN)}>Mở website mtunz</Btn>
+    <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Trung tâm hỗ trợ">
+      {supportTicket?<View style={css.section}>
+        <Btn quiet small onPress={()=>{setSupportTicket(null);setSupportMessages([]);loadSupport().catch(alertError);}}>‹ Danh sách phiếu</Btn>
+        <Text style={css.h2}>Phiếu #{supportTicket.id}</Text>
+        <Text style={css.muted}>{supportTicket.claim||'Yêu cầu hỗ trợ'} · {supportTicket.status}</Text>
+        {supportMessages.map((message,index)=><View key={message.id||index} style={css.rowCard}>
+          <View style={{flex:1,gap:5}}>
+            <Text style={css.strong}>{message.from_admin?'Quản trị viên':'Bạn'}</Text>
+            <Text style={css.muted}>{message.body}</Text>
+          </View>
+        </View>)}
+        {supportTicket.status==='open'?<>
+          <Field value={supportDraft} onChangeText={setSupportDraft}
+            placeholder="Nhập lời nhắn tới quản trị viên..." multiline/>
+          <Btn disabled={supportBusy||!supportDraft.trim()} onPress={sendSupportMessage}>
+            {supportBusy?'Đang gửi…':'Gửi hỗ trợ'}</Btn>
+        </>:<Text style={css.muted}>Phiếu đã đóng. Bạn vẫn có thể xem lịch sử hỗ trợ.</Text>}
+        <Btn quiet small onPress={()=>openSupportTicket(supportTicket).catch(alertError)}>Làm mới tin nhắn</Btn>
+      </View>:<>
+        <Text style={css.muted}>Yêu cầu hỗ trợ đồng bộ giữa ứng dụng và website khi đăng nhập cùng tài khoản.</Text>
+        <Btn quiet small onPress={()=>loadSupport().catch(alertError)}>Làm mới phiếu hỗ trợ</Btn>
+        <Text style={css.h2}>Các yêu cầu của bạn</Text>
+        {supportTickets.map(ticket=><Pressable key={ticket.id} style={css.rowCard}
+          onPress={()=>openSupportTicket(ticket).catch(alertError)}>
+          <View style={{flex:1,gap:4}}>
+            <Text style={css.strong}>#{ticket.id} · {ticket.claim||'Yêu cầu hỗ trợ'}</Text>
+            <Text style={css.muted}>{ticket.status} · Nhấn để xem hội thoại</Text>
+          </View>
+        </Pressable>)}
+        {!supportTickets.length&&<Text style={css.muted}>Bạn chưa có yêu cầu hỗ trợ nào.</Text>}
+        <Text style={css.h2}>Tạo yêu cầu mới</Text>
+        <Text style={css.muted}>{supportPaused?'Trung tâm hỗ trợ đang tạm ngừng nhận yêu cầu mới.':'Mô tả vấn đề để quản trị viên tiếp nhận và phản hồi.'}</Text>
+        <Field value={supportClaim} onChangeText={value=>setSupportClaim(value.slice(0,160))}
+          placeholder="Bạn đang cần hỗ trợ vấn đề gì?" multiline/>
+        <Btn disabled={supportPaused||supportBusy||!supportClaim.trim()} onPress={createSupportTicket}>
+          {supportBusy?'Đang gửi…':'Gửi yêu cầu hỗ trợ'}</Btn>
+      </>}
     </ModalSheet>
     <Modal visible={!!viewer} transparent animationType="fade" onRequestClose={()=>setViewer(null)}>
       <View style={{flex:1,backgroundColor:'#03070ef5',justifyContent:'center',gap:16,padding:8}}>
