@@ -1,0 +1,45 @@
+name: Verify Web and Android feature parity
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web-android-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13'
+      - name: Verify shared web/native API contracts and Android version metadata
+        run: node tests/web_android_parity_gate.cjs
+      - name: Check web feature changes have native parity and a release plan
+        if: github.event_name == 'pull_request'
+        env:
+          PARITY_BASE: ${{ github.event.pull_request.base.sha }}
+          PARITY_HEAD: ${{ github.event.pull_request.head.sha }}
+          PARITY_PR_BODY: ${{ github.event.pull_request.body }}
+        run: node tests/web_android_parity_gate.cjs --base "$PARITY_BASE" --head "$PARITY_HEAD"
+      - name: Verify native chat, group, world and support realtime parity
+        run: |
+          node tests/native_realtime_stability.cjs
+          node tests/native_world_typing_parity.cjs
+      - name: Verify native Admin, PIN, session and Android layout
+        run: |
+          node tests/native_admin_parity.cjs
+          node tests/native_session_recovery.cjs
+          node tests/native_auth_layout.cjs
+      - name: Verify production push requirements and Android signing contract
+        run: |
+          node tests/native_push_release.cjs
+          node tests/native_android_release.cjs
