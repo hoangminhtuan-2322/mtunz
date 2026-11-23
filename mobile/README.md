@@ -1,6 +1,6 @@
-# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 10 (React Native)
+# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 11 (React Native)
 
-Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **10**, versionName **1.0.0**, icon không thay đổi. **Đây là app React Native hiện hành, không phải APK TWA 1.0.0 gốc.** Màn Cá nhân được sắp xếp thành nhóm cài đặt gọn hơn; thông báo nền chỉ hiển thị trạng thái thật, không giả lập Firebase/Expo Push. Android cần versionCode 10 cao hơn 9 để cho phép cập nhật mà không gỡ cài đặt.
+Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **11**, versionName **1.1.0**, icon không thay đổi. **Đây là app React Native hiện hành, không phải APK TWA 1.0.0 gốc.** Màn Cá nhân được sắp xếp thành nhóm cài đặt gọn hơn; thông báo nền chỉ hiển thị trạng thái thật, không giả lập Firebase/Expo Push. Android cần versionCode 11 cao hơn 9 để cho phép cập nhật mà không gỡ cài đặt.
 
 ## Đã tích hợp trong mã nguồn
 
@@ -61,7 +61,7 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
 
 ### Giữ nguyên logo và cập nhật trực tiếp bản APK 1.0.1
 
-- Package: `com.mtunz.web`. Native 1.0.0 đặt versionCode **10** để cập nhật đè bản Native 1.0.0 trước đó (versionCode 9).
+- Package: `com.mtunz.web`. Native 1.1.0 đặt versionCode **11** để cập nhật đè bản Native 1.0.0 trước đó (versionCode 9).
 - Asset `mobile/assets/icon.png` có Git blob SHA **282a6971e38d51ce570b094e07d5624663bbedbb**, chính xác bằng file logo `android-web/app/src/main/res/drawable-nodpi/mtunz_icon.png` của APK trước.
 - Sử dụng **cùng 4 GitHub Actions secrets** của khóa ký cố định đã dùng cho APK 1.0.1:
   `MTUNZ_ANDROID_WEB_KEYSTORE_BASE64`,
@@ -69,11 +69,11 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
   `MTUNZ_ANDROID_WEB_KEY_ALIAS`, `MTUNZ_ANDROID_WEB_KEY_PASSWORD`.
 - Không tạo khóa mới, không đổi `applicationId`. Bản Native **phải được ký đúng cùng chứng chỉ** SHA-256
   `80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B`.
-- Android cho phép cài cập nhật từ 1.0.1 lên 1.0.0 khi **cùng package và chứng chỉ**, versionCode tăng. Không đảm bảo dữ liệu web cũ chuyển tự động vào SecureStore: vì kiến trúc TWA/Chrome khác native, người dùng **đăng nhập lại** bằng tài khoản web đã có; tin nhắn lưu trên backend vẫn dùng chung.
+- Android cho phép cài cập nhật từ 1.0.1 lên 1.1.0 khi **cùng package và chứng chỉ**, versionCode tăng. Không đảm bảo dữ liệu web cũ chuyển tự động vào SecureStore: vì kiến trúc TWA/Chrome khác native, người dùng **đăng nhập lại** bằng tài khoản web đã có; tin nhắn lưu trên backend vẫn dùng chung.
 
 ### Cách build APK Native bản đã ký trên GitHub
 
-Mở [Actions → Build mtunz TRUE Native Android APK](https://github.com/hoangminhtuan-2322/mtunz/actions/workflows/android-apk.yml), chọn `main`, nhấn `Run workflow`, bật **sign_release** rồi chạy. Đợi tất cả bước xanh, tải artifact **`mtunz-NATIVE-1.0.0-RELEASE-fixed-key`**, giải nén lấy `app-release.apk`. File này là ứng dụng **React Native**, không phải APK TWA.
+Mở [Actions → Build mtunz TRUE Native Android APK](https://github.com/hoangminhtuan-2322/mtunz/actions/workflows/android-apk.yml), chọn `main`, nhấn `Run workflow`, bật **sign_release** rồi chạy. Đợi tất cả bước xanh, tải artifact **`mtunz-NATIVE-1.1.0-RELEASE-fixed-key`**, giải nén lấy `app-release.apk`. File này là ứng dụng **React Native**, không phải APK TWA.
 
 Workflow `push`/PR tạo artifact **`mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug`** cho ứng dụng **mtunz Preview**, package `com.mtunz.web.preview`, dùng khóa debug. Preview này cài **song song** với bản đang có (`com.mtunz.web`) mà không yêu cầu gỡ bản cũ. Preview không dùng Firebase production nên **không có thông báo nền**. Khi thử, đăng nhập cùng tài khoản với website. Bản này chỉ để kiểm thử, không thể cài đè bản chính thức. APK release được kiểm tra có JS bundle nội bộ, đúng package/version, chữ ký gốc mới, cài/mở trên giả lập, và tiến trình Android vẫn đang chạy.
 
@@ -97,6 +97,6 @@ APK tải ngoài Google Play vẫn có thể kích hoạt thông báo Google Pla
 
 Không dùng Preview `com.mtunz.web.preview` để thử FCM production; Preview không có Firebase credentials. Chỉ khi đã xác minh push thực tế và chứng chỉ ký bản 1.0.1 mới phát hành rộng.
 
-### Nâng cấp chat Native versionCode 10
+### Nâng cấp chat Native versionCode 11
 
-Bản tên hiển thị **1.0.0**, mã cập nhật **10** sử dụng React Native + bộ điều khiển bàn phím native `react-native-keyboard-controller` cho Android edge-to-edge; thanh soạn tin nằm trên IME/Gboard. Tin nhắn mới nhất ở offset 0 của danh sách đảo, gửi tin/mở bàn phím quay về tin cuối, khi cuộn đọc tin cũ có nút nhảy đến tin mới. Ảnh chỉ hiển thị hình và thời gian, không lộ tên file/dung lượng trong bong bóng; tài liệu khác vẫn có tên để tải. Icon thống nhất qua Ionicons. CI kiểm tra `tests/native_chat_quality.cjs` và quy tắc web/native parity vẫn bắt buộc. Cần xác minh thêm trên thiết bị MIUI/Android thực trước khi tuyên bố lỗi bàn phím được khắc phục hoàn toàn.
+Bản tên hiển thị **1.1.0**, mã cập nhật **10** sử dụng React Native + bộ điều khiển bàn phím native `react-native-keyboard-controller` cho Android edge-to-edge; thanh soạn tin nằm trên IME/Gboard. Tin nhắn mới nhất ở offset 0 của danh sách đảo, gửi tin/mở bàn phím quay về tin cuối, khi cuộn đọc tin cũ có nút nhảy đến tin mới. Ảnh chỉ hiển thị hình và thời gian, không lộ tên file/dung lượng trong bong bóng; tài liệu khác vẫn có tên để tải. Icon thống nhất qua Ionicons. CI kiểm tra `tests/native_chat_quality.cjs` và quy tắc web/native parity vẫn bắt buộc. Cần xác minh thêm trên thiết bị MIUI/Android thực trước khi tuyên bố lỗi bàn phím được khắc phục hoàn toàn.
