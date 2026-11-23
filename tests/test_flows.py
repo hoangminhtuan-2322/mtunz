@@ -240,26 +240,32 @@ def test_admin_online_list_matches_stats_and_groups_sockets_by_account():
     assert admin.get(route).json()['total']==0
 
 
-def test_friend_presence_disconnect_sends_last_seen():
-    admin = logged_admin()
-    first = register_user(admin,'presence_check_first')
-    second = register_user(admin,'presence_check_second')
-    a = first.get('/api/me').json()['user']['id']
-    b = second.get('/api/me').json()['user']['id']
-    assert first.post(f'/api/friends/request/{b}').status_code == 200
-    assert second.post(f'/api/friends/accept/{a}').status_code == 200
-    with second.websocket_connect('/ws') as peer:
-        with first.websocket_connect('/ws'):
-            online = peer.receive_json()
-            assert online['type'] == 'presence'
-            assert online['online'] is True
-            assert online['user_id'] == a
-        offline = peer.receive_json()
-        assert offline['type'] == 'presence'
-        assert offline['online'] is False
-        assert offline['last_seen'] >= online['last_seen']
-        friend = second.get('/api/friends').json()['friends'][0]
-        assert friend['last_seen'] == offline['last_seen']
+def test_friend_presence_disconnect_sends_last_seen(monkeypatch):
+    """Real websocket connection/disconnect emits the latest server timestamp."""
+    import app as core
+    admin=logged_admin()
+    first=register_user(admin,'presence_check_first')
+    second=register_user(admin,'presence_check_second')
+    a=first.get('/api/me').json()['user']['id']
+    b=second.get('/api/me').json()['user']['id']
+    assert first.post(f'/api/friends/request/{b}').status_code==200
+    assert second.post(f'/api/friends/accept/{a}').status_code==200
+    events=[]
+    async def capture(target,event,**payload):
+        if event=='presence':
+            events.append((target,payload))
+    monkeypatch.setattr(core.hub,'user',capture)
+    with first.websocket_connect('/ws'):
+        assert len(events)==1
+        assert events[0][0]==b
+        assert events[0][1]['user_id']==a
+        assert events[0][1]['online'] is True
+    assert len(events)==2
+    assert events[1][0]==b
+    assert events[1][1]['online'] is False
+    assert events[1][1]['last_seen']>=events[0][1]['last_seen']
+    friend=second.get('/api/friends').json()['friends'][0]
+    assert friend['last_seen']==events[1][1]['last_seen']
 
 
 def test_admin_last_activity_online_first_and_rest_heartbeat():
