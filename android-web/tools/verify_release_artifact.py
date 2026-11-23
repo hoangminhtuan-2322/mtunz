@@ -40,12 +40,38 @@ def normalize(value):
     return re.sub(r"[^0-9A-F]", "", value.upper())
 
 
+def apk_certificate_digests(output):
+    """Parse apksigner output without relaxing actual cryptographic validation.
+
+    Some tool versions repeat signing-certificate diagnostics on stdout/stderr
+    and/or show multiple signature schemes. Identical copies do not represent
+    different signers. Every distinct digest must still match the pinned key.
+    """
+    digests = []
+    for line in output.splitlines():
+        match = re.search(
+            r"Signer\s*#\s*\d+\s+certificate\s+SHA-256\s+digest\s*:\s*"
+            r"([A-Fa-f0-9:]+)",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            value = normalize(match.group(1))
+            if len(value) == 64:
+                digests.append(value)
+    return sorted(set(digests))
+
+
 def check_apk(path):
     apksigner, aapt = find_tool("apksigner"), find_tool("aapt")
     result = run(apksigner, "verify", "--verbose", "--print-certs", str(path))
-    matches = re.findall(r"Signer #\d+ certificate SHA-256 digest:\s*([A-Fa-f0-9:]+)", result)
-    if len(matches) != 1 or normalize(matches[0]) != RELEASE_CERT:
-        raise SystemExit("ABORT: APK certificate is not the NEW pinned mtunz signing key.")
+    fingerprints = apk_certificate_digests(result)
+    if fingerprints != [RELEASE_CERT]:
+        found = ", ".join(fingerprints) if fingerprints else "(not reported by apksigner)"
+        raise SystemExit(
+            "ABORT: APK certificate is not the NEW pinned mtunz signing key. "
+            "Actual: " + found + "; Expected: " + RELEASE_CERT
+        )
     badging = run(aapt, "dump", "badging", str(path))
     m = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
     if not m or m.group(1) != PACKAGE or int(m.group(2)) <= 1:
