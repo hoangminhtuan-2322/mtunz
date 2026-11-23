@@ -1,6 +1,7 @@
 /* mtunz World Chat — public-room UI and admin moderation. No secrets persisted. */
 let worldRequestVersion=0,worldLastTick=0,worldPolling=false,worldClockOffset=0;
 let worldPendingAttachment=null,worldUploadBusy=false,worldOlderExhausted=false;
+let worldAnonymousName='';
 const worldReasonNames={
  spam:'Spam / quảng cáo',harassment:'Quấy rối / đe dọa',
  hate:'Nội dung thù ghét',fraud:'Lừa đảo',impersonation:'Giả mạo',
@@ -59,9 +60,9 @@ function worldPenaltyCard(){
 }
 function worldBubble(message){
  const own=!!message.is_mine||Number(message.sender_id)===Number(state.user?.id)||worldOwnIds.has(Number(message.id));
- const name=worldEscape(message.anonymous?'Ẩn danh':message.display_name||'Thành viên');
+ const name=worldEscape(message.display_name||'Thành viên');
  return '<article class="world-message '+(own?'mine':'')+'" data-world-message-id="'+Number(message.id)+'">'+
-  '<div class="world-message-avatar" aria-hidden="true">'+(message.anonymous?'?':worldEscape((message.display_name||'T').slice(0,1).toUpperCase()))+'</div>'+
+  '<div class="world-message-avatar" aria-hidden="true">'+(message.anonymous?'✦':worldEscape((message.display_name||'T').slice(0,1).toUpperCase()))+'</div>'+
   '<div class="world-message-body"><div class="world-message-meta"><b>'+name+'</b><span>· '+worldDate(message.created_at)+'</span></div>'+
   '<p class="world-message-text">'+(message.deleted?'<em>Tin nhắn đã được gỡ.</em>':worldEscape(message.body))+'</p>'+
   (!message.deleted&&message.attachment?(()=>{
@@ -80,7 +81,7 @@ function worldBubble(message){
 }
 function worldPage(){
  const data=state.worldData,s=data?.status;
- if(!s)return worldComingSoon();
+ if(!s)return '<div class="main-body world-live-page"><section class="world-live-shell"><div class="world-empty">Đang tải Chat thế giới...</div></section></div>';
  const closed=!s.open,until=Number(s.muted_until)||0,muted=until>worldClock(),blocked=closed||muted;
  const items=(data.messages||[]).map(worldBubble).join('')||
   '<div class="world-empty">Chưa có tin nhắn nào. Hãy bắt đầu một cuộc trò chuyện lịch sự!</div>';
@@ -93,7 +94,8 @@ function worldPage(){
   (s.announcement?'<div class="v6-world-announcement" role="note">📌 <strong>Thông báo Admin:</strong> '+worldEscape(s.announcement)+'</div>':'')+
   '<div class="world-live-toolbar"><span>'+icon('clock',14)+' '+worldEscape(worldTimeLabel(s))+
   (s.slow_seconds?' · Chế độ chậm '+Number(s.slow_seconds)+' giây/tin':'')+'</span>'+
-  '<label class="world-privacy-switch"><input type="checkbox" data-social-world-anon '+(state.user?.world_anonymous?'checked':'')+'> Ẩn danh khi gửi</label>'+ 
+  '<label class="world-privacy-switch"><input type="checkbox" data-social-world-anon '+(state.user?.world_anonymous?'checked':'')+'> Ẩn danh</label>'+ 
+  '<label class="world-alias-field" '+(state.user?.world_anonymous?'':'hidden')+'><span>Biệt danh</span><input class="input" id="world-anonymous-name" maxlength="24" autocomplete="off" spellcheck="false" placeholder="Đặt tên (2–24 ký tự)" aria-label="Biệt danh Chat thế giới" value="'+worldEscape(worldAnonymousName)+'"></label>'+
   '<button type="button" class="btn ghost sm" data-world-action="refresh">'+icon('refresh',14)+' Làm mới</button>'+
   (typeof communityPlusAppealsButton==='function'?communityPlusAppealsButton():'')+'</div>'+
   (s.open&&s.schedule_enabled&&s.next_change_at?
@@ -105,15 +107,15 @@ function worldPage(){
    (s.mute_reason?worldEscape(s.mute_reason):'')+'</span></div>':'')+
   ((data.messages||[]).length>=70&&!worldOlderExhausted?
      '<button type="button" class="btn ghost sm world-load-older" data-world-action="older">'+icon('clock',14)+' Xem tin nhắn cũ hơn</button>':'')+
-  '<div id="v7-community-events">'+(typeof communityPlusEvents==='function'?communityPlusEvents():'')+'</div>'+
-  '<div class="v6-community-polls" id="v6-polls-root">'+(typeof v6PollCards==='function'?v6PollCards():'')+'</div>'+
+  '<details class="world-community-tools"><summary>📅 Sự kiện & bình chọn</summary><div class="world-community-panel"><div id="v7-community-events">'+(typeof communityPlusEvents==='function'?communityPlusEvents():'')+'</div>'+
+  '<div class="v6-community-polls" id="v6-polls-root">'+(typeof v6PollCards==='function'?v6PollCards():'')+'</div></div></details>'+
   '<div class="world-feed" id="world-feed" role="log" aria-live="polite" aria-label="Tin nhắn cộng đồng">'+items+'</div>'+
   (closed?'<div class="world-readonly-note" role="status">'+icon('shield',16)+' Phòng hiện đóng. Bạn vẫn được xem toàn bộ lịch sử và phương tiện; chỉ mở lại tính năng gửi khi Admin cho phép.</div>':
   '<form data-world-form="send" class="world-compose">'+
    '<label class="world-file-pick" title="Đính kèm ảnh hoặc tệp" aria-label="Chọn tệp đính kèm">'+icon('file',17)+
    '<input id="world-upload-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,.pdf,.txt,.docx,.xlsx,.zip" hidden '+(blocked?'disabled':'')+'></label>'+
    '<label for="world-compose-text" class="sr-only">Tin nhắn Chat thế giới</label>'+
-   '<textarea id="world-compose-text" maxlength="1200" rows="2" class="input" placeholder="'+(blocked?'Đang hạn chế gửi tin...':'Viết điều tích cực đến mọi người...')+'" '+(blocked?'disabled':'')+'></textarea>'+
+   '<textarea id="world-compose-text" maxlength="1200" rows="1" class="input" placeholder="'+(blocked?'Đang hạn chế gửi tin...':'Viết điều tích cực đến mọi người...')+'" '+(blocked?'disabled':'')+'></textarea>'+
    '<button type="submit" class="btn primary" '+(blocked?'disabled':'')+'>'+icon('send',16)+' Gửi</button>'+
    '<span class="world-file-preview" id="world-file-preview">'+(worldPendingAttachment?'Tệp: '+worldEscape(worldPendingAttachment.name):'')+'</span></form>')+
   '<div class="world-rule-footer">'+icon('shield',14)+' 5 tin trong 3 giây = 1 cảnh cáo · Đủ 3 cảnh cáo sẽ bị khóa gửi. <strong>'+
@@ -123,7 +125,7 @@ function worldPage(){
 async function loadWorld(render=true){
  if(!state.user||state.user.is_admin)return;
  const seq=++worldRequestVersion,uid=state.user.id;
- if(worldOwnIdsUser!==uid){worldOwnIds.clear();worldOwnIdsUser=uid;}
+ if(worldOwnIdsUser!==uid){worldOwnIds.clear();worldOwnIdsUser=uid;worldAnonymousName='';}
  const room=Number(state.v6WorldRoom||1);
  const data=await api('/api/world/messages?room_id='+room);
  if(seq!==worldRequestVersion||state.user?.id!==uid||Number(state.v6WorldRoom||1)!==room)return;
@@ -152,6 +154,7 @@ async function loadWorld(render=true){
  const field=document.getElementById('world-compose-text');
  const draft=field?.value||'';
  const hadFocus=document.activeElement===field;
+ const hadAliasFocus=document.activeElement?.id==='world-anonymous-name';
  const oldScroll=feed?.scrollTop||0;
  const nearEnd=!feed||feed.scrollHeight-feed.scrollTop-feed.clientHeight<130;
  renderApp();
@@ -165,6 +168,7 @@ async function loadWorld(render=true){
    nextField.value=draft;
    if(hadFocus)nextField.focus({preventScroll:true});
  }
+ if(hadAliasFocus)document.getElementById('world-anonymous-name')?.focus({preventScroll:true});
 }
 async function loadWorldStatus(){
  if(!state.user||state.user.is_admin)return;
@@ -187,13 +191,17 @@ function worldWarnPopup(detail){
 }
 async function worldSend(text,button){
  if(button?.disabled)return;
+ if(state.user?.world_anonymous&&worldAnonymousName.trim()&&worldAnonymousName.trim().length<2){
+  toast('Biệt danh cần tối thiểu 2 ký tự. Để trống nếu muốn dùng tên Ẩn danh.','error');return;
+ }
  if(button)button.disabled=true;
  try{
   const response=await fetch('/api/world/messages',{
    method:'POST',credentials:'same-origin',
    headers:{'Content-Type':'application/json'},
    body:JSON.stringify({body:text,attachment_id:worldPendingAttachment?.id||null,
-                        room_id:Number(state.v6WorldRoom||1)})
+                        room_id:Number(state.v6WorldRoom||1),
+                        anonymous_name:state.user?.world_anonymous?worldAnonymousName.trim():''})
   });
   const result=await response.json();
   if(!response.ok){
@@ -416,6 +424,14 @@ document.addEventListener('click',async event=>{
    return;
   }
  }catch(err){toast(err.message||'Không thực hiện được thao tác.','error');}
+});
+document.addEventListener('input',event=>{
+ if(event.target?.id==='world-anonymous-name')worldAnonymousName=event.target.value;
+});
+document.addEventListener('keydown',event=>{
+ if(event.target?.id!=='world-compose-text'||event.key!=='Enter'||event.shiftKey||event.isComposing)return;
+ if(window.matchMedia?.('(pointer:coarse)').matches)return;
+ event.preventDefault();event.target.closest('[data-world-form="send"]')?.requestSubmit();
 });
 document.addEventListener('submit',async event=>{
  const form=event.target.closest('[data-world-form]');if(!form)return;
