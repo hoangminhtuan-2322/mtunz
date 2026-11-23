@@ -1,0 +1,45 @@
+# Readiness-only diagnostic; never prints or exports any secret values.
+name: Verify mtunz permanent Android signing credentials
+on:
+  push:
+    branches: ['release/native-v1.1.0']
+    paths: ['.github/workflows/verify-native-signing.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-fixed-signing:
+    if: ${{ github.repository == 'hoangminhtuan-2322/mtunz' && github.ref == 'refs/heads/release/native-v1.1.0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify original fixed signing certificate without exposing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          failures=0
+          for k in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!k}" ]]; then
+              echo "::error::Signing secret $k is not configured."
+              failures=1
+            fi
+          done
+          if [[ "$failures" != "0" ]]; then exit 1; fi
+          umask 077
+          filename="$RUNNER_TEMP/mtunz-fixed-key-check.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$filename"
+          if ! keytool -list -v -keystore "$filename" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >"$RUNNER_TEMP/keytool-output" 2>&1; then
+            echo "::error::Permanent signing keystore or alias/password is invalid."
+            exit 1
+          fi
+          if ! grep -F 'SHA256: 80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B' "$RUNNER_TEMP/keytool-output" >/dev/null; then
+            echo "::error::Signing certificate does not match the fixed 1.0.1 release certificate."
+            exit 1
+          fi
+          echo 'Original Android 1.0.1 signing certificate is present and matches the pinned SHA256.'
