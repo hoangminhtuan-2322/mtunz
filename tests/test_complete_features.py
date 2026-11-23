@@ -239,8 +239,8 @@ def test_shared_media_hub_filters_are_authorized_and_paginated():
     admin, alice, bob, aid, bid = setup_pair()
     stranger = register_user(admin,'shared_hub_stranger')
     payloads = [
-        ('photo.png', b'\\x89PNG\\r\\n\\x1a\\n' + b'0'*80, 'image/png'),
-        ('movie.mp4', b'\\x00\\x00\\x00\\x18ftypisom' + b'0'*80, 'video/mp4'),
+        ('photo.png', b'\x89PNG\r\n\x1a\n' + b'0'*80, 'image/png'),
+        ('movie.mp4', b'\x00\x00\x00\x18ftypisom' + b'0'*80, 'video/mp4'),
         ('document.txt', b'Confidential chat document.', 'text/plain'),
     ]
     ids={}
