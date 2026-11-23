@@ -52,6 +52,8 @@ jobs:
         run: node ../tests/native_auth_layout.cjs
       - name: Keep composer visible above Android keyboard
         run: node ../tests/native_keyboard_composer.cjs
+      - name: Guard polished chat, images, send and icon regressions
+        run: node ../tests/native_chat_quality.cjs
       - name: Check SDK compatibility
         run: npx expo-doctor
       - name: Export Android application bundle

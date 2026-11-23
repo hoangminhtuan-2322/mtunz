@@ -4,6 +4,7 @@ import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {adminPresence} from './presence';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 const P={bg:'#071320',surface:'#11253a',line:'#294661',ink:'#f4f8ff',muted:'#a8bfd6',accent:'#6dbaff',danger:'#ff9393',green:'#73e0bd'};
 
@@ -224,7 +225,9 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  },[tab,call,userSort,query,users.length]);
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
- const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên'],['worldAdmin','Thế giới']];
+ const tabs=[['home','Tổng quan','grid-outline'],['registrations','Duyệt','checkmark-done-outline'],
+  ['support','Hỗ trợ','headset-outline'],['approvals','Thiết bị','phone-portrait-outline'],
+  ['users','Thành viên','people-outline'],['worldAdmin','Thế giới','earth-outline']];
  return <View style={{flex:1,backgroundColor:P.bg}}>
   <View style={s.top}><View style={s.adminBrandRow}>
     <Image source={require('../assets/brand-logo.png')} style={s.adminLogo} resizeMode="contain"/>
@@ -241,8 +244,13 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     <Text style={s.heroSub}>Theo dõi hoạt động và xử lý công việc trực tiếp trên điện thoại.</Text>
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:9,paddingBottom:12}}>
-    {tabs.map(([id,label])=><Pressable key={id} onPress={()=>{setTab(id);setError('');setNotice('');if(id==='worldAdmin')void loadWorldAdmin();}}
-     style={[s.tab,tab===id&&s.active]}><Text style={{color:P.ink,fontWeight:tab===id?'800':'500'}}>{label}</Text></Pressable>)}
+    {tabs.map(([id,label,iconName])=><Pressable key={id} accessibilityRole="tab"
+      accessibilityState={{selected:tab===id}}
+      onPress={()=>{setTab(id);setError('');setNotice('');if(id==='worldAdmin')void loadWorldAdmin();}}
+      style={[s.tab,tab===id&&s.active]}>
+      <Ionicons name={iconName} size={17} color={tab===id?P.accent:P.muted}/>
+      <Text style={{color:P.ink,fontWeight:tab===id?'800':'600',fontSize:12}}>{label}</Text>
+    </Pressable>)}
    </ScrollView>
    {error?<Text style={s.error}>{error}</Text>:null}
    {notice?<Text style={s.success}>{notice}</Text>:null}
@@ -426,8 +434,8 @@ const s=StyleSheet.create({
   heroEyebrow:{fontSize:10,letterSpacing:1.5,color:'#86caff',fontWeight:'900'},
   heroTitle:{fontSize:24,lineHeight:30,letterSpacing:-.5,color:P.ink,fontWeight:'900'},
   heroSub:{fontSize:12,lineHeight:19,color:'#bdd0e9'},
-  tab:{paddingHorizontal:15,paddingVertical:11,borderRadius:22,
-  backgroundColor:'#152c44',borderWidth:1,borderColor:P.line},
+  tab:{flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:12,paddingVertical:10,
+  borderRadius:18,backgroundColor:'#152c44',borderWidth:1,borderColor:P.line},
   active:{backgroundColor:'#28517a',borderColor:P.accent},
   panel:{backgroundColor:P.surface,borderWidth:1,borderColor:'#294a68',
   borderRadius:21,padding:17,gap:13},
