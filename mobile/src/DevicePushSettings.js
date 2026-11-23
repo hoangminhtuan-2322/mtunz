@@ -39,12 +39,14 @@ async function enablePush(session){
   return api('/api/mobile/push',{token:session,method:'POST',data:{token:data}});
 }
 
-export default function DevicePushSettings({token}){
+export default function DevicePushSettings({token,compact=false}){
   const readyForPush=isPushConfigured();
   const [enabled,setEnabled]=useState(null);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
+  const [expanded,setExpanded]=useState(false);
   useEffect(()=>{
+    if(!readyForPush)return;
     let active=true,lastAttempt=0;
     const sync=async()=>{
       lastAttempt=Date.now();
@@ -90,9 +92,23 @@ export default function DevicePushSettings({token}){
   }
   const actions=!readyForPush?[]:enabled?[['test','Gửi thử thông báo'],['disable','Tắt thông báo nền']]:
     [['enable','Bật thông báo khi đóng app']];
-  return <View style={styles.root}>
+  return <View style={[styles.root,compact&&styles.compactRoot]}>
+    {compact&&<Pressable accessibilityRole="button"
+      accessibilityState={{expanded}} accessibilityLabel="Trạng thái thông báo nền"
+      onPress={()=>setExpanded(value=>!value)} style={({pressed})=>[styles.compactRow,pressed&&{opacity:.76}]}>
+      <View style={styles.symbol}><Text style={styles.symbolText}>♧</Text></View>
+      <View style={styles.compactCopy}>
+        <Text style={styles.compactTitle}>Thông báo khi đóng ứng dụng</Text>
+        <Text numberOfLines={2} style={readyForPush?styles.status:styles.compactWarning}>
+          {!readyForPush?'Chưa khả dụng trên APK này':enabled?'Đã đăng ký thiết bị · Có thể gửi thử':
+            enabled===false?'Chưa bật trên thiết bị':'Đang kiểm tra trạng thái'}
+        </Text>
+      </View>
+      <Text style={styles.arrow}>{expanded?'⌃':'›'}</Text>
+    </Pressable>}
+    {(!compact||expanded)&&<View style={styles.expanded}>
     {!readyForPush?<Text accessibilityLiveRegion="polite" style={styles.warning}>
-      Phiên bản này chưa kết nối Firebase/Expo Push. Thông báo khi đóng ứng dụng chưa hoạt động. Hãy cập nhật APK chính thức có FCM.
+      APK này chưa kết nối Firebase/Expo Push nên không thể nhận thông báo khi đóng ứng dụng. Thông báo trong ứng dụng vẫn có thể xem ở mục phía trên.
     </Text>:<Text style={styles.status}>{enabled?'Đã lưu thiết bị trên máy chủ; hãy gửi thử để kiểm tra thông báo thực tế.':
       enabled===false?'Thông báo nền chưa bật trên thiết bị này.':'Kiểm tra trạng thái thông báo…'}</Text>}
     <View style={styles.actions}>
@@ -102,11 +118,24 @@ export default function DevicePushSettings({token}){
       </Pressable>)}
     </View>
     {message?<Text accessibilityLiveRegion="polite" style={styles.status}>{message}</Text>:null}
+    </View>}
   </View>;
 }
 
 const styles=StyleSheet.create({
   root:{gap:8,paddingVertical:6},
+  compactRoot:{gap:0,paddingVertical:0},
+  compactRow:{flexDirection:'row',minHeight:70,alignItems:'center',gap:12,
+    paddingHorizontal:12,paddingVertical:12},
+  symbol:{width:40,height:40,borderRadius:13,backgroundColor:'#3c3d52',
+    alignItems:'center',justifyContent:'center'},
+  symbolText:{fontSize:20,color:'#ffd29b',fontWeight:'900'},
+  compactCopy:{flex:1,minWidth:0,gap:4},
+  compactTitle:{color:'#f4f8ff',fontSize:14,fontWeight:'800'},
+  compactWarning:{color:'#e3bd92',fontSize:11,lineHeight:16,flexShrink:1},
+  arrow:{color:'#829eb9',fontSize:23},
+  expanded:{paddingHorizontal:14,paddingBottom:14,gap:10},
+
   actions:{flexDirection:'row',flexWrap:'wrap',gap:8},
   button:{borderColor:'#42658d',borderWidth:1,borderRadius:11,paddingHorizontal:12,minHeight:42,justifyContent:'center'},
   busy:{opacity:.5},
