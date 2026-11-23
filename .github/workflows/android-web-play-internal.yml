@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   release-internal:
-    if: \${{ inputs.manual_qa_passed && inputs.authorize_internal_testing }}
+    if: ${{ inputs.manual_qa_passed && inputs.authorize_internal_testing }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -40,10 +40,10 @@ jobs:
       - name: Require passed real-device tests and correct Play APP SIGNING identity
         shell: bash
         env:
-          GH_TOKEN: \${{ github.token }}
-          BUILD_RUN: \${{ inputs.source_run_id }}
-          DEVICE_RUN: \${{ inputs.physical_test_run_id }}
-          PLAY_FINGERPRINT: \${{ inputs.play_app_signing_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.source_run_id }}
+          DEVICE_RUN: ${{ inputs.physical_test_run_id }}
+          PLAY_FINGERPRINT: ${{ inputs.play_app_signing_sha256 }}
         run: |
           set -euo pipefail
           [[ "$BUILD_RUN" =~ ^[0-9]+$ && "$DEVICE_RUN" =~ ^[0-9]+$ ]] ||
@@ -67,15 +67,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mtunz-web-android-PLAY-RELEASE-aab
-          run-id: \${{ inputs.source_run_id }}
-          repository: \${{ github.repository }}
-          github-token: \${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
           path: release
       - name: Verify original mtunz upload signing certificate
         run: python android-web/tools/verify_release_artifact.py --aab release/mtunz-web-play.aab
       - name: Confirm Google Play credentials were configured
         env:
-          PLAY_SERVICE_ACCOUNT: \${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
+          PLAY_SERVICE_ACCOUNT: ${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
         shell: bash
         run: |
           if [[ -z "$PLAY_SERVICE_ACCOUNT" ]]; then
@@ -85,7 +85,7 @@ jobs:
       - name: Upload to Google Play internal testing track ONLY
         uses: r0adkll/upload-google-play@v1
         with:
-          serviceAccountJsonPlainText: \${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
+          serviceAccountJsonPlainText: ${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.mtunz.web
           releaseFiles: release/mtunz-web-play.aab
           track: internal
