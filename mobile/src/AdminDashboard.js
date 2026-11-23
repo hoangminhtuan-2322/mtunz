@@ -20,6 +20,7 @@ function Box({children}){return <View style={s.panel}>{children}</View>;}
 function Tile({title,value}){return <View style={s.tile}><Text style={s.value}>{value??'—'}</Text><Text style={s.muted}>{title}</Text></View>;}
 
 export default function AdminDashboard({token,onLogout,onExpired}){
+ const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
  const [tab,setTab]=useState('home'),[stats,setStats]=useState({}),[registration,setRegistration]=useState([]),
   [tickets,setTickets]=useState([]),[users,setUsers]=useState([]),[approvals,setApprovals]=useState([]),
   [query,setQuery]=useState(''),[pin,setPin]=useState(''),[draft,setDraft]=useState(''),
@@ -104,6 +105,21 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   try{const r=await call('/api/admin/tickets/'+item.id+'/messages');setThread(r.messages||[]);}
   catch(e){setError(e.message);}
  }
+ async function loadOnline(){
+  setError('');setLoading(true);
+  try{
+   const result=await call('/api/admin/online-users');
+   setOnlineUsers(result.users);
+   setStats(previous=>({...previous,online:result.total}));
+  }catch(error){setError(error.message);}
+  finally{setLoading(false);}
+ }
+ async function showOnlineProfile(id){
+  setError('');setLoading(true);
+  try{setOnlineProfile((await call('/api/admin/users/'+id+'/details')).user);}
+  catch(error){setError(error.message);}
+  finally{setLoading(false);}
+ }
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên']];
@@ -119,7 +135,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     contentContainerStyle={s.page}>
    <View style={s.hero}>
     <Text style={s.heroEyebrow}>QUẢN TRỊ MTUNZ</Text>
-    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':'Quản lý thành viên'}</Text>
+    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':'Quản lý thành viên'}</Text>
     <Text style={s.heroSub}>Theo dõi hoạt động và xử lý công việc trực tiếp trên điện thoại.</Text>
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:9,paddingBottom:12}}>
@@ -130,7 +146,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
     <Text style={s.muted}>{lastRefresh?'Đồng bộ với máy chủ mtunz':'Đang kết nối…'}</Text>
-    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
+    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box>
     <Text style={s.head}>Thông báo quản trị</Text>
@@ -141,7 +157,11 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     <Text style={s.head}>Trạng thái hệ thống</Text>
     <View style={s.tiles}>
      <Tile title="Thành viên" value={stats.total_users}/>
-     <Tile title="Đang trực tuyến" value={stats.online}/>
+     <Pressable style={s.tile} accessibilityRole="button" accessibilityLabel="Xem người dùng đang online"
+      onPress={()=>{setTab('online');setOnlineProfile(null);void loadOnline();}}>
+       <Text style={s.value}>{stats.online??'—'}</Text>
+       <Text style={s.muted}>Đang trực tuyến · Xem chi tiết</Text>
+     </Pressable>
      <Tile title="Chờ duyệt" value={stats.pending}/>
      <Tile title="Yêu cầu hỗ trợ" value={stats.tickets}/>
      <Tile title="Tin nhắn" value={stats.messages}/>
@@ -149,6 +169,25 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     </View>
     <Text style={s.muted}>Dữ liệu đọc trực tiếp từ cùng backend và cơ sở dữ liệu với website.</Text>
     <Action label="Mở quản trị nâng cao trên website" subtle onPress={()=>Linking.openURL(API_ORIGIN)}/>
+   </Box>}
+   {tab==='online'&&<Box>
+    <Action label={onlineProfile?'Về danh sách online':'Về tổng quan'} subtle
+     onPress={()=>{if(onlineProfile)setOnlineProfile(null);else setTab('home');}}/>
+    {onlineProfile?<View style={s.item}>
+      <Text style={s.head}>{onlineProfile.display_name||onlineProfile.username}</Text>
+      <Text style={s.label}>@{onlineProfile.username}</Text>
+      <Text style={s.muted}>SĐT {onlineProfile.phone||'—'} · Email {onlineProfile.email||'—'}</Text>
+      <Text style={s.muted}>{onlineProfile.friend_count} bạn bè · {onlineProfile.group_count} nhóm · {onlineProfile.session_count} phiên đăng nhập</Text>
+    </View>:<>
+     <Text style={s.head}>{onlineUsers.length} người đang kết nối realtime</Text>
+     {!loading&&onlineUsers.length===0?<Text style={s.muted}>Hiện không có người dùng online.</Text>:null}
+     {onlineUsers.map(user=><Pressable key={user.id} style={s.item} accessibilityRole="button" disabled={loading}
+      onPress={()=>showOnlineProfile(user.id)}>
+       <Text style={s.label}>{user.display_name||user.username} · @{user.username}</Text>
+       <Text style={s.muted}>{user.sessions} phiên · {user.connections} kết nối · Xem hồ sơ</Text>
+       {user.last_seen>0?<Text style={s.muted}>Ghi nhận gần nhất {new Date(user.last_seen*1000).toLocaleString('vi-VN')}</Text>:null}
+     </Pressable>)}
+    </>}
    </Box>}
    {tab==='registrations'&&<>
     <Box><Text style={s.head}>Yêu cầu đăng ký ({pending.length})</Text>

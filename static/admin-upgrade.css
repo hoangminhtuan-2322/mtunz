@@ -58,3 +58,9 @@
 @media(max-width:950px){.admin-shell{grid-template-columns:1fr!important}.admin-shell .admin-nav{width:min(290px,86vw)}.admin-shell .admin-page{padding:16px 16px 36px}.admin-shell .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:630px){.admin-shell .admin-page{padding:12px 12px 30px}.admin-shell .admin-priority-strip{padding:13px}.admin-shell .admin-priority-items{grid-template-columns:1fr}.admin-shell .admin-priority-card{min-height:63px}.admin-shell .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-shell .stat{padding:13px}.admin-shell .stat .stat-value{font-size:24px}.admin-shell .admin-workspace-top{padding:9px}.admin-shell .admin-priority-summary{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.admin-shell .admin-priority-card{transition:none}}
+.admin-shell .admin-online-card{display:grid;min-width:0;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.admin-shell .admin-online-card:is(:hover,:focus-visible){border-color:var(--accent,#a994ff)}
+.admin-online-card .stat-foot{display:flex;align-items:center;gap:6px}
+.admin-online-person .grow{min-width:0;overflow-wrap:anywhere}
+.admin-online-person button{flex-shrink:0}
+#admin-online-list{max-height:55vh;overflow:auto;overscroll-behavior:contain;margin-bottom:12px}
