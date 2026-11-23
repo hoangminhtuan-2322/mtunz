@@ -46,11 +46,14 @@ function AccountGroup({title,children}){
   <View style={css.accountGroupBody}>{children}</View>
  </View>;
 }
+const ACCOUNT_ICON={'◉':'person-outline','♢':'shield-checkmark-outline',
+  '▣':'notifications-outline','?':'help-circle-outline','↪':'log-out-outline'};
 function AccountRow({symbol,title,subtitle,detail,onPress,danger=false}){
  return <Pressable accessibilityRole="button" accessibilityLabel={title}
    onPress={onPress} style={({pressed})=>[css.accountRow,pressed&&{opacity:.76}]}>
    <View style={[css.accountSymbol,danger&&css.accountSymbolDanger]}>
-     <Text style={[css.accountSymbolText,danger&&css.accountDangerText]}>{symbol}</Text>
+     <Ionicons name={ACCOUNT_ICON[symbol]||'ellipse-outline'} size={21}
+       color={danger?'#ffb3ba':P.accent}/>
    </View>
    <View style={css.accountText}>
      <Text style={[css.accountTitle,danger&&css.accountDangerText]} numberOfLines={1}>{title}</Text>
@@ -769,7 +772,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return()=>shown.remove();
   },[room?.scope,room?.id]);
 
-  const tabs=[['dm','Tin nhắn','▣'],['groups','Nhóm','▦'],['people','Bạn bè','♧'],['world','Thế giới','◎'],['settings','Cá nhân','⚙']];
+  const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
+    ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
   const acceptedFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted);
   const activeFriends=connection==='online'?acceptedFriends.filter(f=>f.online===true):[];
@@ -786,7 +790,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <Pressable accessibilityRole="button" accessibilityLabel={room?'Trở lại danh sách':'Về tin nhắn'}
         style={css.headerMark}
         onPress={room?jumpBack:()=>{setTab('dm');refreshLists().catch(()=>{});}}>
-        {room?<Text style={css.backGlyph}>‹</Text>:
+        {room?<Ionicons name="arrow-back" size={25} color={P.text}/>:
           <Image source={require('../assets/brand-logo.png')} style={css.webIcon} resizeMode="contain"/>}
       </Pressable>
       {!!room&&room.scope==='dm'&&<View style={css.headerPeerAvatar}>
@@ -813,10 +817,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </View>
       </View>
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
-        <Text style={css.headerActionText}>Chi tiết</Text></Pressable>}
+        <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
       {!room&&<Pressable accessibilityRole="button" accessibilityLabel="Làm mới"
         style={css.headerAction} onPress={()=>refreshLists().catch(alertError)}>
-        <Text style={css.refreshGlyph}>↻</Text></Pressable>}
+        <Ionicons name="refresh-outline" color={P.accent} size={23}/></Pressable>}
     </View>
     {!!error&&<Pressable onPress={()=>setError('')} style={css.errorBar}>
       <Text style={{color:P.bad}}>{error}  ×</Text>
@@ -870,13 +874,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </Text></Pressable>}
       <View style={css.compose}>
         <Pressable accessibilityLabel="Gửi ảnh hoặc video" accessibilityRole="button"
-          style={css.toolButton} onPress={()=>pick('media')}><Text style={css.toolGlyph}>▧</Text></Pressable>
+          style={css.toolButton} onPress={()=>pick('media')}><Ionicons name="images-outline" size={21} color={P.accent}/></Pressable>
         <Pressable accessibilityLabel="Đính kèm tệp" accessibilityRole="button"
-          style={css.toolButton} onPress={()=>pick('file')}><Text style={css.toolGlyph}>＋</Text></Pressable>
+          style={css.toolButton} onPress={()=>pick('file')}><Ionicons name="attach-outline" size={23} color={P.accent}/></Pressable>
         <Pressable accessibilityLabel={recordState.isRecording?'Dừng ghi âm':'Ghi âm'}
           accessibilityRole="button" style={css.toolButton}
-          onPress={toggleVoice} disabled={voiceBusy||sending}><Text style={css.toolGlyph}>
-            {recordState.isRecording?'■':'●'}</Text></Pressable>
+          onPress={toggleVoice} disabled={voiceBusy||sending}><Ionicons name={recordState.isRecording?'stop-circle':'mic-outline'} size={21}
+              color={recordState.isRecording?P.bad:P.accent}/></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
           onFocus={()=>scrollToLatest(true)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
@@ -885,8 +889,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             if(value!==draft){nonceRef.current=null;if(value.trim()!==draft.trim())uploadRef.current=null;}
             setDraft(value);
           }}/>
-        <Btn small disabled={sending||(!draft.trim()&&!picked)}
-          onPress={reply?.edit_id?sendEdit:doSend}>{sending?'…':'Gửi'}</Btn>
+        <Pressable accessibilityRole="button" accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}
+          disabled={sending||(!draft.trim()&&!picked)} onPress={reply?.edit_id?sendEdit:doSend}
+          style={[css.sendIconButton,(sending||(!draft.trim()&&!picked))&&css.disabled]}>
+          {sending?<ActivityIndicator size="small" color={P.bg}/>:
+            <Ionicons name="send" size={20} color={P.bg}/>}
+        </Pressable>
       </View>
     </KeyboardAvoidingView>:<>
       {tab==='dm'&&<FlatList data={matchingFriends}
@@ -1106,7 +1114,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:tab===id}}
         onPress={()=>{setTab(id);setError('');if(id==='settings')loadSettings();if(id==='world')refreshSocial();}}
         style={({pressed})=>[css.tab,tab===id&&css.tabActive,pressed&&{opacity:.8}]}>
-        <Text style={[css.tabIcon,tab===id&&css.tabIconActive]}>{glyph}</Text>
+        <Ionicons name={tab===id?glyph:glyph+'-outline'} size={22}
+          color={tab===id?P.accent:P.soft}/>
         <Text numberOfLines={1} style={[css.tabText,tab===id&&css.tabTextActive]}>{title}</Text>
       </Pressable>)}</View>
     </>}
@@ -1502,10 +1511,10 @@ const css=StyleSheet.create({
   emptyTitle:{fontSize:17,color:P.text,fontWeight:'800'},
   emptySubtitle:{fontSize:13,color:P.soft,lineHeight:20,textAlign:'center',maxWidth:260},
   tabs:{flexDirection:'row',borderTopWidth:1,borderTopColor:P.border,
-    paddingHorizontal:5,paddingTop:5,paddingBottom:6,backgroundColor:'#0e1c2f'},
-  tab:{flex:1,alignItems:'center',justifyContent:'center',gap:2,minHeight:54,
-    borderRadius:14,paddingHorizontal:1},
-  tabActive:{backgroundColor:'#1b3654'},tabIcon:{fontSize:20,color:P.soft,fontWeight:'700'},
+    paddingHorizontal:7,paddingTop:7,paddingBottom:7,backgroundColor:'#0d2235'},
+  tab:{flex:1,alignItems:'center',justifyContent:'center',gap:4,minHeight:55,
+    borderRadius:16,paddingHorizontal:1},
+  tabActive:{backgroundColor:'#1c3d5d'},tabIcon:{fontSize:20,color:P.soft,fontWeight:'700'},
   tabIconActive:{color:P.accent},tabText:{fontSize:10,color:P.soft,fontWeight:'800'},
   tabTextActive:{color:'#b8dfff'},
   messageList:{paddingHorizontal:12,paddingVertical:17,flexGrow:1},
@@ -1517,7 +1526,21 @@ const css=StyleSheet.create({
   reply:{color:P.soft,fontSize:11},
   msg:{color:P.text,fontSize:15,lineHeight:22},
   time:{fontSize:10,color:'#c9d9ed'},
-  attachment:{padding:8,borderWidth:1,borderColor:'#3d5a79',borderRadius:12,gap:6},
+  photoBubble:{padding:5,gap:4},
+  photoAttachment:{borderRadius:17,overflow:'hidden',backgroundColor:'#13243b'},
+  photoThumb:{width:248,height:228,maxWidth:'100%',borderRadius:15},
+  attachmentDetail:{fontSize:11,color:P.soft},
+  pendingPhoto:{width:46,height:46,borderRadius:10,backgroundColor:'#112438'},
+  jumpLatest:{alignSelf:'center',flexDirection:'row',alignItems:'center',gap:7,
+    paddingVertical:9,paddingHorizontal:14,borderRadius:22,backgroundColor:'#25629b',
+    borderWidth:1,borderColor:'#72b7ed',marginBottom:6},
+  jumpLatestText:{fontSize:12,color:'#f7fbff',fontWeight:'900'},
+  sendIconButton:{width:44,height:44,borderRadius:16,alignItems:'center',
+    justifyContent:'center',backgroundColor:P.accent},
+  viewerAction:{width:44,height:44,borderRadius:14,backgroundColor:'#1c3656',
+    alignItems:'center',justifyContent:'center'},
+  attachment:{padding:12,borderWidth:1,borderColor:'#3d5a79',borderRadius:14,
+    gap:10,flexDirection:'row',alignItems:'center',minWidth:180},
   thumb:{width:220,height:164,maxWidth:'100%',backgroundColor:P.bg,borderRadius:9},
   attachmentText:{color:P.text,fontSize:12,fontWeight:'700'},
   reactionText:{color:P.text,fontSize:13},
