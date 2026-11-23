@@ -105,11 +105,9 @@ jobs:
             sleep 12
             adb shell dumpsys activity activities | tail -80 || true
             adb logcat -d -b crash > /tmp/mtunz-crash.txt || true
-            if grep -Eq 'Process: com[.]mtunz[.]web,|Unable to start activity ComponentInfo[{]com[.]mtunz[.]web/' /tmp/mtunz-crash.txt; then
-              echo '::error::mtunz Android crashed during launch; release is blocked.'
-              cat /tmp/mtunz-crash.txt
-              exit 1
-            fi
+            # android-emulator-runner executes each script line in its own shell.
+            # Keep the conditional ON ONE LINE so 'fi' reaches the same shell.
+            if grep -Eq 'Process: com[.]mtunz[.]web,|Unable to start activity ComponentInfo[{]com[.]mtunz[.]web/' /tmp/mtunz-crash.txt; then echo '::error::mtunz Android crashed during launch; release is blocked.'; cat /tmp/mtunz-crash.txt; exit 1; fi
             echo 'No mtunz launcher crash recorded after 12 seconds.'
       - name: Check production signing secrets
         id: signing
