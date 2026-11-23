@@ -1,0 +1,113 @@
+# Private, fixed-key Android release CANDIDATE while Expo/Firebase is not configured.
+# It is NOT a production-push release; does not bypass android-apk.yml release gate.
+name: Build mtunz fixed-key Android 1.1.3 keyboard RC (NO FCM)
+on:
+  push:
+    branches: ['release/native-v1.1.3-keyboard-fix']
+    paths: ['.github/workflows/build-native-rc-fixed-key.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build-fixed-key-rc:
+    if: ${{ github.repository == 'hoangminhtuan-2322/mtunz' && github.ref == 'refs/heads/release/native-v1.1.3-keyboard-fix' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      CI: '1'
+      EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refuse any changes to application code compared with verified main commit
+        run: |
+          EXPECTED_MAIN=b19c7ec74dfd11c869048fc464126df7d519974d
+          git -C .. rev-parse "$EXPECTED_MAIN"
+          git -C .. diff --quiet "$EXPECTED_MAIN" HEAD -- mobile android-web tests app.py mobile_api.py mobile_push.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Verify native application package, release version and original logo
+        run: |
+          test "$(git hash-object assets/icon.png)" = '282a6971e38d51ce570b094e07d5624663bbedbb'
+          node - <<'NODE'
+          const f=require('./app.json').expo;
+          if(f.android.package!=='com.mtunz.web' || f.android.versionCode!==6 || f.version!=='1.1.3' || f.icon!=='./assets/icon.png')
+            throw Error('Expected mtunz native 1.1.3 with original package, version and logo');
+          NODE
+          if grep -R -nE 'react-native-webview|androidbrowserhelper|TrustedWebActivity|CustomTabs' App.js src; then
+            echo '::error::Browser/TWA wrappers are not allowed in the native release candidate.'
+            exit 1
+          fi
+      - name: Install native app dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate native realtime, Admin, push and session code
+        run: |
+          node ../tests/native_realtime_stability.cjs
+          node ../tests/native_world_typing_parity.cjs
+          node ../tests/native_shared_gallery.cjs
+          node ../tests/native_keyboard_composer.cjs
+          node ../tests/native_auth_layout.cjs
+          node ../tests/native_admin_parity.cjs
+          node ../tests/native_session_recovery.cjs
+          node ../tests/native_push_release.cjs
+      - name: Record background-push limitation explicitly
+        run: |
+          echo '::warning::This fixed-key PRIVATE release candidate omits Firebase/Expo push configuration. Background notifications will NOT work. Do not publicly distribute.'
+      - name: Generate native Android project and bundled JavaScript
+        run: npx expo prebuild --platform android --non-interactive
+      - name: Load original permanent signing key securely
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mtunz-fixed-release.jks"
+          test -s "$RUNNER_TEMP/mtunz-fixed-release.jks"
+          echo "MTUNZ_NATIVE_KEYSTORE_PATH=$RUNNER_TEMP/mtunz-fixed-release.jks" >> "$GITHUB_ENV"
+      - name: Set fixed-key release signing
+        env:
+          MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: node tools/configure_fixed_release_signing.cjs --release
+      - name: Build signed native Android release candidate
+        env:
+          MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
+      - name: Validate APK bundle, package identity and permanent certificate
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          test -s "$APK"
+          unzip -Z1 "$APK" | grep -Fx 'assets/index.android.bundle'
+          python ../android-web/tools/verify_release_artifact.py --apk "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.mtunz.web' versionCode='6' versionName='1.1.3'"
+      - name: Upload signed Android 1.1.3 private RC (NO background push)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtunz-NATIVE-1.1.3-RC-fixed-key-NO-PUSH
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
