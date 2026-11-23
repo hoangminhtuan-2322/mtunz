@@ -1,56 +1,58 @@
 'use strict';
-// Guard the Android 15+/edge-to-edge IME bug: adjustResize alone is NOT enough.
-// In a chat room the composer must remain inside a keyboard-avoiding column,
-// while the inverted FlatList occupies the remaining flex space.
+// Regression for Expo 58 Android edge-to-edge + Gboard/IME.
+// This static test guards the intended native solution; physical phone testing remains necessary.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const root=path.resolve(__dirname,'..');
-const messenger=fs.readFileSync(path.join(root,'mobile/src/Messenger.js'),'utf8');
-const cfg=require('../mobile/app.json').expo;
+const chat=fs.readFileSync(path.join(root,'mobile/src/Messenger.js'),'utf8');
 const app=fs.readFileSync(path.join(root,'mobile/App.js'),'utf8');
 const pkg=require('../mobile/package.json');
-assert.equal(cfg.android.softwareKeyboardLayoutMode,'resize',
-  'Do not use Android adjustPan together with padding: that pushes composer up twice');
+const cfg=require('../mobile/app.json').expo;
+assert.equal(cfg.android.softwareKeyboardLayoutMode,'resize');
 assert.equal(cfg.android.package,'com.mtunz.web');
-assert(pkg.dependencies['react-native-safe-area-context']==='~5.11.1',
-  'Expo SDK 58 needs safe area insets for Android edge-to-edge screens');
-assert(app.includes('SafeAreaProvider initialMetrics={initialWindowMetrics}'),
-  'Root SafeAreaProvider must cover Messenger, Admin and authentication');
-assert(app.includes("import {SafeAreaProvider,SafeAreaView,initialWindowMetrics} from 'react-native-safe-area-context'"),
-  'Use Android/iOS safe-area view instead of React Native iOS-only SafeAreaView');
-assert(messenger.includes("import {SafeAreaView} from 'react-native-safe-area-context'"),
-  'Conversation details modal must respect Android status/navigation bars');
 assert.equal(cfg.version,'1.0.0');
-assert.equal(cfg.android.versionCode,9);
-assert(/\bImage,Keyboard,KeyboardAvoidingView\b/.test(messenger),'Need Keyboard lifecycle events');
-assert(messenger.includes('behavior="padding" keyboardVerticalOffset={0}'),
-  'Set keyboard avoidance behavior for Android and iOS, not undefined on Android');
-assert(messenger.includes('style={css.chatKeyboardArea}'),
-  'Chat keyboard avoidance should have its own flex-constrained container');
-assert(messenger.includes('chatKeyboardArea:{flex:1,minHeight:0}'),
-  'Room should shrink without clipping the input');
-assert(messenger.includes("Keyboard.addListener(Platform.OS==='ios'?'keyboardWillShow':'keyboardDidShow'"),
-  'Expose the latest messages after the keyboard appears');
-assert(messenger.includes('return()=>shown.remove()'),
-  'Remove keyboard listeners on room change');
-assert(messenger.includes('onFocus={()=>requestAnimationFrame('),
-  'Text input focus should expose newest messages');
-assert(messenger.includes('keyboardShouldPersistTaps="handled"'),
-  'Tapping a chat control with IME open must work on first tap');
-assert(messenger.includes("keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'}"),
-  'Dragging messages should dismiss keyboard');
-assert(messenger.includes('const jumpBack=()=>{Keyboard.dismiss();'),
-  'Leaving a conversation should close the keyboard');
-const room=messenger.substring(messenger.indexOf('{room?<KeyboardAvoidingView'),
-  messenger.indexOf('</KeyboardAvoidingView>:'));
+assert.equal(cfg.android.versionCode,10);
+assert.equal(pkg.dependencies['react-native-keyboard-controller'],'1.22.7');
+assert.equal(pkg.dependencies['react-native-reanimated'],'4.7.1');
+assert.equal(pkg.dependencies['react-native-worklets'],'0.13.0');
+assert(app.includes("import {KeyboardProvider,KeyboardAvoidingView} from 'react-native-keyboard-controller'"),
+  'Root and login must use native keyboard controller');
+assert(app.includes('<KeyboardProvider statusBarTranslucent navigationBarTranslucent>'),
+  'Keyboard provider must handle edge-to-edge system insets');
+assert(app.includes('SafeAreaProvider initialMetrics={initialWindowMetrics}'),
+  'Keep exactly one safe-area provider under keyboard root');
+assert(app.includes("behavior={Platform.OS==='android'?'height':'padding'} automaticOffset keyboardVerticalOffset={0}"),
+  'Auth should remain visible above IME on Android');
+assert(chat.includes("import {KeyboardAvoidingView} from 'react-native-keyboard-controller'"),
+  'Do not use legacy React Native KeyboardAvoidingView for chat');
+assert(chat.includes("behavior={Platform.OS==='android'?'height':'padding'}")&&
+  chat.includes('automaticOffset keyboardVerticalOffset={0}'),
+  'Native keyboard controller should shrink chat column on Android and pad iOS');
+assert(chat.includes('chatKeyboardArea:{flex:1,minHeight:0}'),
+  'Chat column must be shrinkable');
+assert(chat.includes('scrollEventThrottle={16}')&&
+  chat.includes('onScroll={event=>'),'Read whether user is near the bottom of the inverted list');
+assert(chat.includes("onFocus={()=>scrollToLatest(true)}"),
+  'Focus should always scroll to newest message');
+assert(chat.includes('listRef.current?.scrollToOffset({offset:0,animated})'),
+  'Inverted list latest message is offset zero');
+assert(chat.includes('if(isAtLatestRef.current)scrollToLatest(true)'),
+  'Follow live updates only when user is already reading latest');
+assert(chat.includes('else setNewerMessages(true)'),
+  'While reading history, show a new-message jump control instead of forcing a scroll');
+assert(chat.includes("onPress={()=>scrollToLatest()}"),
+  'Jump-to-latest action must work');
+assert(chat.includes("const jumpBack=()=>{Keyboard.dismiss();"),
+  'Leaving chat should hide keyboard');
+assert(chat.includes('keyboardShouldPersistTaps="handled"'),
+  'Send and attachment buttons should respond with keyboard up');
+const room=chat.slice(chat.indexOf('{room?<KeyboardAvoidingView'),
+  chat.indexOf('</KeyboardAvoidingView>:'));
 assert(room.includes('<FlatList')&&room.includes('<View style={css.compose}>')&&
   room.indexOf('<FlatList')<room.indexOf('<View style={css.compose}>'),
-  'Keep message list and composer in same keyboard-avoiding column');
-assert(room.includes('<TextInput style={css.composeInput} multiline')&&
-  room.includes('<Btn small disabled={sending'),
-  'Keep multiline composer and send button inside IME-safe area');
-assert(!/position:\s*'absolute'/.test(messenger.slice(
-  messenger.indexOf('compose:{'),messenger.indexOf('composeInput:{'))),
-  'Do not absolutely position composer underneath the keyboard');
-console.log('Android IME-safe native composer, latest-message focus, scroll/dismiss and release checks passed.');
+  'List and composer belong to one IME-aware column');
+assert(room.includes('accessibilityLabel="Gửi tin nhắn"')||
+  room.includes("accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}"),
+  'Send action must remain accessible above keyboard');
+console.log('Native keyboard controller, latest-message scroll and IME-safe composer contracts: PASS');
