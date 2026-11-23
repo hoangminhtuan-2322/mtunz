@@ -104,10 +104,10 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   return()=>{active=false;sub.remove();};
  },[]);
  async function act(path,method,body,success){
-  if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return;}
+  if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return false;}
   setBusy(true);setError('');setNotice('');
-  try{await call(path,method,{...body,admin_pin:pin});setPin('');setNotice(success||'Đã cập nhật.');await refresh();}
-  catch(e){setError(e.message);}
+  try{await call(path,method,{...body,admin_pin:pin});setPin('');setNotice(success||'Đã cập nhật.');await refresh();return true;}
+  catch(e){setError(e.message);return false;}
   finally{setBusy(false);}
  }
  async function loadUsers(){
@@ -234,7 +234,9 @@ export default function AdminDashboard({token,onLogout,onExpired}){
       </View>)}
       <Field placeholder="Trả lời hỗ trợ" value={draft} onChangeText={setDraft}/>
       <Action label="Gửi phản hồi" disabled={busy||!draft.trim()} onPress={async()=>{
-       if(!draft.trim())return;await act('/api/admin/tickets/'+ticket.id+'/messages','POST',{body:draft.trim()},'Đã gửi phản hồi.');
+       if(!draft.trim())return;
+       const ok=await act('/api/admin/tickets/'+ticket.id+'/messages','POST',{body:draft.trim()},'Đã gửi phản hồi.');
+       if(!ok)return; // Never erase a failed support reply.
        try{const x=await call('/api/admin/tickets/'+ticket.id+'/messages');setThread(x.messages||[]);setDraft('');}catch(e){setError(e.message);}
       }}/>
       <Action label="Đóng yêu cầu" subtle disabled={busy} onPress={()=>act('/api/admin/tickets/'+ticket.id+'/status','POST',{status:'closed'},'Đã đóng yêu cầu.')}/>
