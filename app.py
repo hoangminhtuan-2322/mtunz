@@ -544,6 +544,11 @@ async def cookies_and_origin(request: Request, call_next):
     return result
 
 
+@app.get('/.well-known/assetlinks.json', include_in_schema=False)
+def android_asset_links():
+    return FileResponse(ROOT / 'static' / 'android-assetlinks.json', media_type='application/json')
+
+
 @app.get('/health')
 async def health():
     """Readiness: report 200 only when essential Neon/SQLite tables are reachable.
