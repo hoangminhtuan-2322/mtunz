@@ -14,8 +14,18 @@ for(const needle of [
   "data.type==='world-message-removed'",
   "data.type==='world-status'",
   "data.type==='world-rooms-updated'",
-  "if(requested!==listRequestRef.current)return"
+  "if(requested!==listRequestRef.current)return",
+  "data.type==='presence'",
+  "uploadAttachment(token,picked,nonce)"
 ])assert(chat.includes(needle),'Missing native parity: '+needle);
 assert(server.includes("anonymous_name:str=Field(default='',max_length=24)"));
 assert(profile.includes("world_anonymous: bool|None=None"));
 console.log('native world alias, event refresh and typing lifecycle assertions passed');
+
+const media=fs.readFileSync('mobile/src/media.js','utf8');
+const network=fs.readFileSync('mobile/src/client.js','utf8');
+const push=fs.readFileSync('mobile/src/DevicePushSettings.js','utf8');
+assert(media.includes("data.append('upload_key',uploadKey)"));
+assert(network.includes("signal: controller.signal"));
+assert(push.includes("Notifications.getPermissionsAsync()"));
+console.log('native uploads, request timeout, presence and push refresh assertions passed');

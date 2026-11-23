@@ -299,6 +299,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           }
         }
       }
+      if(data.type==='presence'&&Number.isSafeInteger(data.user_id)){
+        // Keep presence badges in sync with the web without waiting for polling.
+        setFriends(old=>old.map(friend=>friend.other_id===data.user_id?
+          {...friend,online:!!data.online,last_seen:data.last_seen}:friend));
+      }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
         setMessages(old=>dedupe([...old,sanitize(data.message)]));
         if(activeRef.current&&data.message.sender_id!==user.id)
@@ -417,7 +422,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{
       let attachmentId=uploadRef.current?.key===key?uploadRef.current.id:null;
       if(picked&&!attachmentId){
-        const file=await uploadAttachment(token,picked);
+        const file=await uploadAttachment(token,picked,nonce);
         attachmentId=file.id;uploadRef.current={key,id:attachmentId};
       }
       const data={body:text,attachment_id:attachmentId||null};

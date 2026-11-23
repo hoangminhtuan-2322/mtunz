@@ -106,7 +106,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  async function act(path,method,body,success){
   if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return false;}
   setBusy(true);setError('');setNotice('');
-  try{await call(path,method,{...body,admin_pin:pin});setPin('');setNotice(success||'Đã cập nhật.');await refresh();return true;}
+  try{await call(path,method,{...body,admin_pin:pin});setPin('');setNotice(success||'Đã cập nhật.');await refresh().catch(e=>setError(e.message));return true;}
   catch(e){setError(e.message);return false;}
   finally{setBusy(false);}
  }

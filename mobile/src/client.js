@@ -11,20 +11,32 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { token = null, method = 'GET', data, signal } = {}) {
+export async function api(path, { token = null, method = 'GET', data, signal, timeoutMs = 30000 } = {}) {
   if (!/^https:\/\/[^/]+$/.test(API_ORIGIN) && !(__DEV__ && /^http:\/\/[^/]+$/.test(API_ORIGIN))) {
     throw new ApiError('Chưa cấu hình EXPO_PUBLIC_API_URL hợp lệ (HTTPS).', 0);
   }
   const headers = { Accept: 'application/json' };
   if (data !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = 'Bearer ' + token;
+  const controller=new AbortController();
+  let timedOut=false;
+  const timer=setTimeout(()=>{timedOut=true;controller.abort();},timeoutMs);
+  const abort=()=>controller.abort();
+  if(signal?.aborted)abort();
+  else signal?.addEventListener?.('abort',abort,{once:true});
   let res;
   try {
     res = await fetch(API_ORIGIN + path, {
-      method, headers, body: data === undefined ? undefined : JSON.stringify(data), signal,
+      method, headers, body: data === undefined ? undefined : JSON.stringify(data),
+      signal: controller.signal,
     });
   } catch {
+    if(timedOut)throw new ApiError('Máy chủ phản hồi quá chậm. Kiểm tra mạng rồi thử lại.',0);
+    if(signal?.aborted)throw new ApiError('Yêu cầu đã được hủy.',0);
     throw new ApiError('Không thể kết nối máy chủ. Hãy kiểm tra mạng và thử lại.', 0);
+  } finally{
+    clearTimeout(timer);
+    signal?.removeEventListener?.('abort',abort);
   }
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {

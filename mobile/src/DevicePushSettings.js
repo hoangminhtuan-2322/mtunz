@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {AppState,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import {api} from './client';
@@ -36,11 +36,32 @@ export default function DevicePushSettings({token}){
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
   useEffect(()=>{
-    let active=true;
-    api('/api/mobile/push',{token}).then(result=>{
-      if(active)setEnabled(result.enabled);
-    }).catch(error=>{if(active)setMessage(error.message);});
-    return()=>{active=false;};
+    let active=true,lastAttempt=0;
+    const sync=async()=>{
+      lastAttempt=Date.now();
+      try{
+        const result=await api('/api/mobile/push',{token});
+        if(!active)return;
+        setEnabled(result.enabled);
+        if(result.enabled){
+          // Do not show an OS prompt on resume. Refresh the token only when
+          // permission is already granted and this user opted in previously.
+          const permission=await Notifications.getPermissionsAsync();
+          if(!active)return;
+          if(!permission.granted){
+            setMessage('Android đã tắt quyền thông báo. Hãy bật lại trong cài đặt ứng dụng.');
+          }else{
+            await enablePush(token);
+            if(active)setMessage('');
+          }
+        }
+      }catch(error){if(active)setMessage(error.message);}
+    };
+    sync();
+    const sub=AppState.addEventListener('change',state=>{
+      if(state==='active'&&Date.now()-lastAttempt>10*60*1000)sync();
+    });
+    return()=>{active=false;sub.remove();};
   },[token]);
   async function run(action){
     setBusy(true);setMessage('');
@@ -61,7 +82,7 @@ export default function DevicePushSettings({token}){
   const actions=enabled?[['test','Gửi thử thông báo'],['disable','Tắt thông báo nền']]:
     [['enable','Bật thông báo khi đóng app']];
   return <View style={styles.root}>
-    <Text style={styles.status}>{enabled?'Thông báo nền đang bật.':
+    <Text style={styles.status}>{enabled?'Thiết bị đã đăng ký nhận thông báo nền; hãy gửi thử để xác nhận.':
       enabled===false?'Thông báo nền chưa bật.':'Kiểm tra trạng thái thông báo…'}</Text>
     <View style={styles.actions}>
       {actions.map(([action,label])=><Pressable key={action} accessibilityRole="button"
