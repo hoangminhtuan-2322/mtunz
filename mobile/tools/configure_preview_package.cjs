@@ -6,7 +6,7 @@ const stringsFile=path.join(__dirname,'..','android','app','src','main','res','v
 let gradle=fs.readFileSync(file,'utf8');
 const buildTypes=gradle.indexOf('buildTypes {');
 const release=gradle.indexOf('release {',buildTypes);
-if(buildTypes<0||release<0||!gradle.includes('applicationId "com.mtunz.web"'))
+if(buildTypes<0||release<0||!(/applicationId\s+['"]com\.mtunz\.web['"]/.test(gradle)))
   throw Error('Unexpected Expo build.gradle. Refusing to alter package.');
 const closing=gradle.indexOf('\n    }',release);
 if(closing<0)throw Error('Unexpected Android buildType block.');
