@@ -2,8 +2,10 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
-import {ActivityIndicator,Alert,AppState,FlatList,Image,Keyboard,KeyboardAvoidingView,
+import {ActivityIndicator,Alert,AppState,FlatList,Image,Keyboard,
   Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {KeyboardAvoidingView} from 'react-native-keyboard-controller';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
@@ -100,13 +102,23 @@ function ConversationInfoSheet({title,avatar,onClose,children}){
 }
 function Attachment({file,token,onOpen}){
   if(!file)return null;
-  const image=file.mime?.startsWith('image/');
-  return <Pressable onPress={()=>onOpen(file)} style={css.attachment}>
-    {image&&<Image source={attachmentSource(file,token)} style={css.thumb} resizeMode="contain"/>}
-    <Text numberOfLines={2} style={css.attachmentText}>
-      {image?'🖼️':file.mime?.startsWith('video/')?'🎬':file.mime?.startsWith('audio/')?'🎙️':'📎'} {file.name||'Đính kèm'} · {Math.ceil((file.size||0)/1024)} KB
-    </Text>
-    <Text style={css.muted}>Nhấn để mở / lưu vào máy</Text>
+  if(file.mime?.startsWith('image/')){
+    return <Pressable accessibilityRole="button" accessibilityLabel="Xem ảnh trong cuộc trò chuyện"
+      onPress={()=>onOpen(file)} style={css.photoAttachment}>
+      <Image source={attachmentSource(file,token)} style={css.photoThumb}
+        resizeMode="cover" accessibilityLabel="Ảnh đã chia sẻ"/>
+    </Pressable>;
+  }
+  const isVideo=file.mime?.startsWith('video/');
+  const isAudio=file.mime?.startsWith('audio/');
+  return <Pressable accessibilityRole="button" accessibilityLabel={'Mở '+(file.name||'tệp đính kèm')}
+    onPress={()=>onOpen(file)} style={css.attachment}>
+    <Ionicons name={isVideo?'videocam-outline':isAudio?'musical-notes-outline':'document-attach-outline'}
+      size={21} color={P.accent}/>
+    <View style={{flex:1,minWidth:0,gap:4}}>
+      <Text numberOfLines={1} style={css.attachmentText}>{file.name||'Tệp đính kèm'}</Text>
+      <Text style={css.attachmentDetail}>{Math.ceil((file.size||0)/1024)} KB · Chạm để mở</Text>
+    </View>
   </Pressable>;
 }
 function Message({item,own,token,onSelect,onOpen}){
@@ -115,13 +127,14 @@ function Message({item,own,token,onSelect,onOpen}){
   const reactionCounts=new Map();
   for(const r of reactions)reactionCounts.set(r.emoji,(reactionCounts.get(r.emoji)||0)+1);
   return <Pressable onLongPress={()=>onSelect(item)} delayLongPress={330}
-    style={[css.bubble,own?css.bubbleMine:css.bubbleOther]}>
+    style={[css.bubble,own?css.bubbleMine:css.bubbleOther,
+      item.attachment?.mime?.startsWith('image/')&&!item.body?.trim()&&!deleted&&css.photoBubble]}>
     {!own&&(item.display_name||item.username)&&<Text style={css.sender}>{item.display_name||item.username}</Text>}
     {item.reply_to&&<Text style={css.reply}>↪ Trả lời tin #{item.reply_to}</Text>}
     {!!item.forwarded&&<Text style={css.reply}>↪ Đã chuyển tiếp</Text>}
-    <Text style={[css.msg,deleted&&{color:P.soft,fontStyle:'italic'}]}>
-      {deleted?'Tin nhắn đã thu hồi':item.body||''}
-    </Text>
+    {(deleted||!!item.body?.trim())&&<Text style={[css.msg,deleted&&{color:P.soft,fontStyle:'italic'}]}>
+      {deleted?'Tin nhắn đã thu hồi':item.body}
+    </Text>}
     {!deleted&&<Attachment file={item.attachment} token={token} onOpen={onOpen}/>}
     {!!reactionCounts.size&&<Text style={css.reactionText}>
       {[...reactionCounts].map(([emoji,n])=>emoji+(n>1?' '+n:'')).join('  ')}
@@ -147,6 +160,7 @@ function FriendPresenceBadge({friend,connected,clock}){
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
   const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
+  const [newerMessages,setNewerMessages]=useState(false);
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
     [groups,setGroups]=useState([]),[notices,setNotices]=useState([]),[requests,setRequests]=useState([]),
     [worldStatus,setWorldStatus]=useState({open:false}),[worldRooms,setWorldRooms]=useState([]),
@@ -187,6 +201,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
     keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    isAtLatestRef=useRef(true),lastNewestIdRef=useRef(null),
     presenceVersionRef=useRef(0),presenceEventsRef=useRef(new Map()),
     supportTicketRef=useRef(null),
     sendRef=useRef(false);
@@ -331,7 +346,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     if(results[1].status==='fulfilled')setBlocked(results[1].value.users||[]);
   },[invoke]);
   const openRoom=useCallback(target=>{
-    stopTyping();updateRemoteTyping(false);
+    stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
+    isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft('');setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     nonceRef.current=null;uploadRef.current=null;
@@ -507,7 +523,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
     return()=>sub.remove();
   },[openRoom]);
-  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);roomRef.current=null;setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
+  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);
+    roomRef.current=null;isAtLatestRef.current=true;lastNewestIdRef.current=null;
+    setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
     const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
     const interval=setInterval(tick,30000);
@@ -547,7 +565,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
         if(scope==='world'&&!result.message)loadWindow(room);
         setDraft('');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
-        listRef.current?.scrollToOffset({offset:0,animated:true});
+        scrollToLatest();
       }
       refreshLists().catch(()=>{});
     }catch(e){
@@ -722,14 +740,31 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{setIdentityQuota((await invoke('/api/me/identity/status')).quota);}
     catch(e){alertError(e);}
   }
-  // On Expo SDK 58 Android is edge-to-edge: windowSoftInputMode=adjustResize
-  // alone does not keep the composer above the IME. The active room must
-  // explicitly avoid the keyboard, and the inverted list should expose newest
-  // messages after focus instead of leaving them behind the IME.
+  // Inverted FlatList: visual bottom/newest is offset zero. Keep the user's
+  // position while older history is loaded; follow live messages only if already
+  // near the bottom, and always jump after a local send or input focus.
+  function scrollToLatest(animated=true){
+    isAtLatestRef.current=true;setNewerMessages(false);
+    requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated}));
+  }
+  useEffect(()=>{
+    if(!room)return;
+    const newest=messages[messages.length-1];
+    if(!newest)return;
+    const id=Number(newest.id);
+    if(!Number.isFinite(id))return;
+    const previous=lastNewestIdRef.current;
+    lastNewestIdRef.current=id;
+    if(previous===null){scrollToLatest(false);return;}
+    if(id>previous){
+      if(isAtLatestRef.current)scrollToLatest(true);
+      else setNewerMessages(true);
+    }
+  },[messages,room?.scope,room?.id]);
   useEffect(()=>{
     if(!room)return;
     const shown=Keyboard.addListener(Platform.OS==='ios'?'keyboardWillShow':'keyboardDidShow',()=>{
-      requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated:true}));
+      scrollToLatest(true);
     });
     return()=>shown.remove();
   },[room?.scope,room?.id]);
@@ -787,11 +822,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <Text style={{color:P.bad}}>{error}  ×</Text>
     </Pressable>}
     {room?<KeyboardAvoidingView style={css.chatKeyboardArea}
-      behavior="padding" keyboardVerticalOffset={0}>
+      behavior={Platform.OS==='android'?'height':'padding'}
+      automaticOffset keyboardVerticalOffset={0}>
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'}
+        onScroll={event=>{
+          const closeToLatest=event.nativeEvent.contentOffset.y<=100;
+          isAtLatestRef.current=closeToLatest;
+          if(closeToLatest&&newerMessages)setNewerMessages(false);
+        }}
+        scrollEventThrottle={16}
         renderItem={({item})=><Message item={item} own={item.sender_id===user.id||item.is_mine}
           token={token} onSelect={room.scope==='world'?()=>{}:setSelection}
           onOpen={openAttachment}/>}
@@ -801,12 +843,25 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         ListEmptyComponent={!loading?<EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/>:null}
         onEndReached={loadOlder} onEndReachedThreshold={0.25}
         maintainVisibleContentPosition={{minIndexForVisible:0}}/>
+      {newerMessages&&<Pressable accessibilityRole="button" accessibilityLabel="Chuyển tới tin nhắn mới nhất"
+        onPress={()=>scrollToLatest()} style={css.jumpLatest}>
+        <Ionicons name="arrow-down" size={17} color="#f7fbff"/>
+        <Text style={css.jumpLatestText}>Tin nhắn mới</Text>
+      </Pressable>}
       {!!reply&&<View style={css.replyBar}>
         <Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời #'+reply.id}</Text>
         <Pressable onPress={()=>{setReply(null);setDraft('');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
-      {!!picked&&<View style={css.replyBar}><Text style={css.muted} numberOfLines={1}>📎 {picked.name}</Text>
-        <Pressable onPress={()=>{setPicked(null);uploadRef.current=null;}}><Text style={css.link}>Bỏ</Text></Pressable></View>}
+      {!!picked&&<View style={css.replyBar}>
+        {picked.type?.startsWith('image/')?
+          <><Image source={{uri:picked.uri}} style={css.pendingPhoto}/>
+            <Text style={css.muted}>Ảnh đã chọn</Text></>:
+          <><Ionicons name="attach-outline" size={19} color={P.accent}/>
+            <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.name}</Text></>}
+        <Pressable accessibilityRole="button" accessibilityLabel="Bỏ tệp đính kèm"
+          onPress={()=>{setPicked(null);uploadRef.current=null;}}>
+          <Ionicons name="close-circle" size={22} color={P.accent}/></Pressable>
+      </View>}
       {room.scope==='world'&&<Pressable accessibilityRole="button"
         accessibilityLabel="Chỉnh sửa tên ẩn danh" onPress={()=>{
           jumpBack();setTab('world');refreshSocial();
@@ -823,7 +878,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onPress={toggleVoice} disabled={voiceBusy||sending}><Text style={css.toolGlyph}>
             {recordState.isRecording?'■':'●'}</Text></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
-          onFocus={()=>requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated:true}))}
+          onFocus={()=>scrollToLatest(true)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
             sendTyping(value);
