@@ -43,6 +43,7 @@ assert(workflow.includes('versionCode=\'3\''),'Must increment Android version co
 assert(workflow.includes('mtunz-NATIVE-1.1.0-RELEASE-fixed-key'));
 assert(workflow.includes('github.event_name == \'workflow_dispatch\' && inputs.sign_release'),'Real signing must be explicit');
 assert(workflow.includes('verify_release_artifact.py'),'Require pinned permanent cert');
+assert(workflow.includes('REQUIRE_NATIVE_PUSH'),'Signed release must require native background push configuration');
 assert(sign.includes('signingConfig signingConfigs.mtunzFixedRelease'),'Generated Gradle release must use owner key');
 assert(smoke.includes('adb shell pidof com.mtunz.web'),'Must prove native process remains alive');
 assert(smoke.includes('adb logcat -d -b crash'),'Must check for crashes');

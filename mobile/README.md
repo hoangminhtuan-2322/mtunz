@@ -79,7 +79,7 @@ Workflow `push`/PR chỉ tạo artifact **`mtunz-NATIVE-PREVIEW-debug-signed`** 
 
 ### Những chức năng chưa thể cam kết khi chỉ có APK
 
-- **Thông báo khi đóng app:** Expo Push cần Expo EAS projectId và Firebase FCM v1 cho **`com.mtunz.web`**; cần `MTUNZ_ANDROID_GOOGLE_SERVICES` chứa `google-services.json` cho package này cùng biến `EXPO_PROJECT_ID`, và credential FCM v1 trong EAS. Nếu chưa cấu hình, chức năng thông báo nền chưa sẵn sàng.
+- **Thông báo khi đóng app:** Expo Push cần Expo EAS projectId và Firebase FCM v1 cho **`com.mtunz.web`**; cần `MTUNZ_ANDROID_GOOGLE_SERVICES` chứa `google-services.json` cho package này cùng biến `EXPO_PROJECT_ID`, và credential FCM v1 trong EAS. Nếu chưa cấu hình, chức năng thông báo nền chưa sẵn sàng. Từ bản nâng cấp này, workflow **từ chối ký bản RELEASE chính thức** khi thiếu cả hai thông tin cấu hình để tránh phân phối APK có nút bật thông báo nhưng không thể nhận thông báo lúc đóng app. Preview debug vẫn có thể build và ghi cảnh báo rõ ràng. Dù CI kiểm tra hai thông tin cấu hình, vẫn phải gửi thông báo thử trên điện thoại thật để xác nhận FCM v1 hoạt động.
 - Một số màn quản trị nâng cao, cuộc gọi thoại/video và một số chức năng chat thế giới chưa có mức tương đương 100% website. Không giả vờ là đã đạt full tính năng.
 - Realtime WebSocket được duy trì khi ứng dụng đang mở/foreground. Khi hệ điều hành đóng/treo ứng dụng, chỉ push đã cấu hình mới có thể thông báo, không thể hứa kết nối WebSocket mãi.
 - Chưa kiểm thử toàn diện trên **điện thoại thật**. Trước khi đưa bản native cho nhiều người cài, cần thử xác thực + PIN, chat 2 thiết bị, gửi và lưu tệp, realtime, thông báo khi app nền, quyền Admin và kết nối yếu.
