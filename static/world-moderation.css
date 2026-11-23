@@ -82,3 +82,103 @@
 @media(max-width:980px){.world-admin-grid{grid-template-columns:1fr}.world-live-page{padding:12px}}
 @media(max-width:650px){.world-live-page{padding:0;height:calc(100dvh - 116px)}.world-live-shell{border-radius:0;border-left:0;border-right:0}.world-live-head{padding:17px 16px 13px}.world-live-head h1{font-size:21px}.world-live-toolbar,.world-compose{padding:10px 13px}.world-feed{padding:11px 12px;gap:7px}.world-message{padding:9px;gap:8px}.world-message-avatar{width:29px;height:29px;font-size:12px}.world-report-mini{font-size:10px}.world-rule-footer{padding:9px 12px;font-size:10px}.world-time-grid{grid-template-columns:1fr}.world-report-card{padding:12px}.world-live-head p{font-size:11px}}
 @media(prefers-reduced-motion:reduce){.rail-profile-button,.world-report-mini{transition:none}}
+
+
+/* Chat thế giới fills the messaging canvas. Only the navigation rail remains. */
+.shell:not(.admin-shell).world-mode{grid-template-columns:172px minmax(0,1fr)}
+.shell:not(.admin-shell).world-mode>.side{display:none}
+.shell:not(.admin-shell).world-mode>.main{grid-column:2;min-width:0;min-height:0;overflow:hidden}
+.shell:not(.admin-shell) .main-body.world-live-page{
+ flex:1 1 auto;min-width:0;min-height:0;width:100%;max-width:none;height:100%;
+ padding:0;overflow:hidden;box-sizing:border-box
+}
+.shell:not(.admin-shell) .world-live-shell{
+ width:100%;height:100%;min-height:0;border:0;border-radius:0;box-shadow:none;
+ background:#0d1729;display:flex;flex-direction:column;overflow:hidden
+}
+.world-live-shell .world-live-head{
+ min-height:68px;flex:none;padding:12px clamp(14px,2.5vw,30px);
+ border-bottom:1px solid #33445f;background:#111d30;gap:12px
+}
+.world-live-shell .world-live-head .eyebrow{display:none}
+.world-live-shell .world-live-head h1{font-size:clamp(18px,2.2vw,24px);margin:0 0 3px}
+.world-live-shell .world-live-head p{margin:0;font-size:11px}
+.world-live-shell .v6-community-rooms{flex:none;margin:0;padding:3px clamp(12px,2vw,26px);border-bottom:1px solid #33445f}
+.world-live-shell .v6-room-list{padding:5px 0}
+.world-live-shell .world-live-toolbar{
+ flex:none;justify-content:flex-start;flex-wrap:wrap;gap:9px 15px;
+ padding:8px clamp(12px,2vw,26px);background:#121f34;min-height:44px;
+ border-top:0
+}
+.world-live-toolbar .world-room-hours{margin-right:auto}
+.world-privacy-switch{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;font-size:12px;color:#dbe6ff}
+.world-privacy-switch input{width:17px;height:17px;accent-color:#9187f6}
+.world-alias-field{display:inline-flex;align-items:center;gap:7px;min-width:0;color:#e0e9fb;font-size:11px}
+.world-alias-field[hidden]{display:none!important}
+.world-alias-field .input{width:clamp(155px,19vw,245px);max-width:100%;min-height:35px;padding:7px 10px;border-radius:9px;background:#1c2b44}
+.world-community-tools{flex:none;border-bottom:1px solid #33445f;background:#101d31;font-size:11px;color:#bbcbea}
+.world-community-tools summary{display:list-item;cursor:pointer;list-style:revert;padding:9px clamp(20px,3vw,36px);font-weight:650}
+.world-community-tools summary:hover{background:#1e3048}
+.world-community-panel{padding:0 clamp(12px,2vw,26px) 11px;max-height:min(42dvh,360px);overflow-y:auto;overscroll-behavior:contain}
+.world-community-panel .v7-event-wrap{margin:7px 0;padding:11px}
+.world-community-panel .v6-community-polls{margin:8px 0}
+.world-live-shell .world-feed{
+ flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+ padding:18px clamp(12px,3vw,44px);gap:12px;scrollbar-gutter:stable;
+ background:radial-gradient(ellipse at 45% 7%,#1d2c4522,transparent 60%),#0d1729
+}
+.world-feed .world-message{
+ align-self:flex-start;width:fit-content;max-width:min(74%,680px);min-width:0;
+ padding:9px 12px;gap:9px;border-radius:16px 16px 16px 5px;
+ background:#1d2d46;border:1px solid #3d5272
+}
+.world-feed .world-message.mine{
+ align-self:flex-end;flex-direction:row-reverse;margin-left:auto;
+ background:#2b3157;border-color:#716ec4;border-radius:16px 16px 5px 16px
+}
+.world-message .world-message-avatar{width:30px;height:30px;border-radius:50%;font-size:12px}
+.world-message .world-message-text{font-size:13px;line-height:1.55;margin-top:3px}
+.world-message .world-message-body{min-width:0;flex:1}
+.world-message .world-message-meta{gap:6px}
+.world-live-shell .world-empty{margin:auto;font-size:13px;padding:24px}
+.world-live-shell .world-compose{
+ flex:none;flex-wrap:wrap;gap:9px;align-items:center;
+ padding:10px clamp(12px,2vw,26px) calc(10px + env(safe-area-inset-bottom,0px));
+ border-top:1px solid #33445f;background:#111d30
+}
+.world-live-shell .world-compose .input{
+ flex:1;min-height:44px;max-height:108px;resize:vertical;line-height:1.45;
+ padding:11px 14px;font-size:14px;border-radius:13px
+}
+.world-live-shell .world-compose .btn{min-height:44px;align-self:center}
+.world-live-shell .world-file-preview:empty{display:none}
+.world-live-shell .world-file-preview:not(:empty){width:100%}
+.world-live-shell .world-rule-footer{flex:none;min-height:24px;padding:5px 20px 7px;font-size:10px;background:#111d30}
+.world-live-shell .world-readonly-note{border-radius:0;flex:none}
+.world-live-shell .world-closing-clock{flex:none;margin:0;border-radius:0}
+@media(min-width:941px) and (max-width:1279px){.shell:not(.admin-shell).world-mode{grid-template-columns:158px minmax(0,1fr)}}
+@media(min-width:801px) and (max-width:940px){.shell:not(.admin-shell).world-mode{grid-template-columns:150px minmax(0,1fr)}}
+@media(max-width:800px){
+ .shell:not(.admin-shell).world-mode{grid-template-columns:minmax(0,1fr)}
+ .shell:not(.admin-shell).world-mode>.main{grid-column:1;grid-row:1;display:flex;height:100%}
+ .shell:not(.admin-shell) .main-body.world-live-page{height:100%;max-height:100%;padding:0}
+ .world-live-shell .world-live-head{min-height:58px;padding:10px 13px}
+ .world-live-shell .world-live-head h1{font-size:19px}
+ .world-live-shell .world-live-head p{font-size:10px}
+ .world-live-shell .world-live-toolbar{gap:7px;padding:7px 10px}
+ .world-live-toolbar .world-room-hours{display:none}
+ .world-alias-field{flex:1 1 175px}
+ .world-alias-field .input{width:100%;font-size:16px}
+ .world-live-shell .world-feed{padding:12px 10px;gap:10px}
+ .world-feed .world-message{max-width:min(91%,540px);padding:8px 9px}
+ .world-message .world-message-avatar{height:27px;width:27px}
+ .world-live-shell .world-compose{gap:7px;padding:8px 10px 9px}
+ .world-live-shell .world-compose .input{min-width:0;min-height:42px;font-size:16px}
+ .world-live-shell .world-rule-footer{padding:5px 10px;font-size:9px}
+ .world-community-tools summary{padding:8px 22px}
+}
+@media(max-width:390px){
+ .world-live-shell .world-live-head p{display:none}
+ .world-alias-field{flex-basis:100%}
+ .world-live-toolbar .btn{padding:7px 9px}
+}
