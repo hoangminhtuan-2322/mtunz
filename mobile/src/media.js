@@ -80,6 +80,18 @@ export function avatarSource(path,token) {
   return {uri:API_ORIGIN+path,headers:{Authorization:'Bearer '+token}};
 }
 
+
+// Private files are fetched with the same revocable bearer token as chat.
+// Media players receive only a local cache URI, never a public attachment URL.
+export async function downloadSharedAttachment(attachment,token) {
+  const id=Number(attachment?.id);
+  if(!Number.isSafeInteger(id)||id<=0||!token)throw new Error('Tệp hoặc phiên đăng nhập không hợp lệ.');
+  const safe=cleanFileName(attachment.name||('file-'+id));
+  const destination=new File(Paths.cache,'mtunz-preview-'+id+'-'+safe);
+  return File.downloadFileAsync(API_ORIGIN+'/api/attachments/'+id,
+    destination,{headers:{Authorization:'Bearer '+token},idempotent:true});
+}
+
 export async function saveSharedFile(attachment,token) {
   if (!attachment?.id) throw new Error('Tệp không tồn tại.');
   const safe=cleanFileName(attachment.name || ('file-'+attachment.id));

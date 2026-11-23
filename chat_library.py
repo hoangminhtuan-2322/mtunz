@@ -113,7 +113,7 @@ def install(core):
 
     @app.get('/api/chats/{scope}/{chat_id}/shared')
     async def shared_content(request: Request, scope: Literal['dm', 'group'], chat_id: int,
-                             kind: Literal['media', 'files', 'links'] = 'media',
+                             kind: Literal['media', 'images', 'videos', 'files', 'links'] = 'media',
                              sender_id: int = Query(0,ge=0,le=9223372036854775807),
                              since: int = Query(0,ge=0,le=9223372036854775807),
                              until: int = Query(0,ge=0,le=9223372036854775807),
@@ -141,9 +141,16 @@ def install(core):
                 columns += ',a.id AS attachment_id,a.original_name AS name,a.mime,a.size'
                 joins += ' JOIN attachments a ON a.id=m.attachment_id'
                 media = "(a.mime LIKE ? OR a.mime LIKE ?)"
-                filters = media if kind == 'media' else f"NOT {media}"
-                params += ('image/%', 'video/%')
-            limit = 12 if kind == 'media' else 24
+                if kind == 'images':
+                    filters = 'a.mime LIKE ?'
+                    params += ('image/%',)
+                elif kind == 'videos':
+                    filters = 'a.mime LIKE ?'
+                    params += ('video/%',)
+                else:
+                    filters = media if kind == 'media' else f"NOT {media}"
+                    params += ('image/%', 'video/%')
+            limit = 12 if kind in ('media', 'images', 'videos') else 24
             rows = many(c, f'''SELECT {columns} FROM {table} m {joins}
                                WHERE {where} AND {filters} AND m.deleted_at IS NULL AND m.id<?
                                ORDER BY m.id DESC LIMIT ?''', (*params, before, limit + 1))

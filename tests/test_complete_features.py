@@ -232,3 +232,53 @@ def test_forwarding_images_preserves_attachment_permissions():
     assert forwarded.json()['message']['attachment']['id'] == file_id
     assert charlie.get(f'/api/attachments/{file_id}').status_code == 200
     assert stranger.get(f'/api/attachments/{file_id}').status_code == 403
+
+
+def test_shared_media_hub_filters_are_authorized_and_paginated():
+    """The native gallery uses the same permission-checked API as the web."""
+    admin, alice, bob, aid, bid = setup_pair()
+    stranger = register_user(admin,'shared_hub_stranger')
+    payloads = [
+        ('photo.png', b'\x89PNG\r\n\x1a\n' + b'0'*80, 'image/png'),
+        ('movie.mp4', b'\x00\x00\x00\x18ftypisom' + b'0'*80, 'video/mp4'),
+        ('document.txt', b'Confidential chat document.', 'text/plain'),
+    ]
+    ids={}
+    for name, raw, mime in payloads:
+        uploaded=alice.post('/api/uploads',files={'file':(name,raw,mime)})
+        assert uploaded.status_code==200,uploaded.text
+        ids[mime]=uploaded.json()['attachment']['id']
+        sent=alice.post('/api/messages',json={'recipient_id':bid,'body':'',
+            'attachment_id':ids[mime]})
+        assert sent.status_code==200,sent.text
+    link=alice.post('/api/messages',json={'recipient_id':bid,
+        'body':'Xem https://mtunz.onrender.com/terms'})
+    assert link.status_code==200,link.text
+    shared=f'/api/chats/dm/{aid}/shared'
+    for kind,mime in [('images','image/png'),('videos','video/mp4'),
+                       ('files','text/plain')]:
+        resp=bob.get(shared+'?kind='+kind)
+        assert resp.status_code==200,resp.text
+        items=resp.json()['items']
+        assert len(items)==1
+        assert items[0]['mime']==mime
+        assert items[0]['attachment_id']==ids[mime]
+        assert items[0]['name']=={'image/png':'photo.png',
+           'video/mp4':'movie.mp4','text/plain':'document.txt'}[mime]
+        assert bob.get('/api/attachments/'+str(ids[mime])).status_code==200
+        assert stranger.get('/api/attachments/'+str(ids[mime])).status_code==403
+        assert stranger.get(shared+'?kind='+kind).status_code in (403,404)
+    media=bob.get(shared+'?kind=media').json()['items']
+    assert {x['mime'] for x in media}=={'image/png','video/mp4'}
+    links=bob.get(shared+'?kind=links').json()['items']
+    assert len(links)==1
+    assert links[0]['links'][0]['host']=='mtunz.onrender.com'
+    assert bob.get(shared+'?kind=images&before=1').json()['items']==[]
+    assert bob.get(shared+'?kind=unknown').status_code==422
+    group=alice.post('/api/groups',json={'title':'Kho media','member_ids':[bid]})
+    assert group.status_code==200,group.text
+    gid=group.json()['id']
+    group_media=alice.post(f'/api/groups/{gid}/messages',json={
+       'body':'', 'attachment_id':None})
+    assert group_media.status_code==422
+    assert stranger.get(f'/api/chats/group/{gid}/shared?kind=images').status_code==403
