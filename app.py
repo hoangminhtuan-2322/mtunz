@@ -658,6 +658,7 @@ def current_user(request: Request, require=True, *, allow_deletion=False):
             if require:
                 raise HTTPException(401, 'Phiên đăng nhập đã hết hạn.')
             return None
+        session_activity_at=row['session_activity_at']
         if not row['is_admin']:
             schedule=parse_maintenance_schedule(row['maintenance_schedule'])
             if row['maintenance_mode']=='1' or schedule and schedule['starts_at']<=now()<schedule['ends_at']:
@@ -680,7 +681,7 @@ def current_user(request: Request, require=True, *, allow_deletion=False):
             raise HTTPException(403,'Bạn cần đặt tên hiển thị trước khi sử dụng mtunz.')
         # Native clients may use REST without a WebSocket. Limit DB writes to
         # once per two minutes for each authenticated, usable member session.
-        if not row['is_admin'] and now()-(row['session_activity_at'] or 0)>=120:
+        if not row['is_admin'] and now()-(session_activity_at or 0)>=120:
             timestamp=now()
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND last_seen<?',
                       (timestamp,digest(t),timestamp-119))
