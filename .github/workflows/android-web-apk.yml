@@ -13,6 +13,12 @@ on:
       - 'static/android-assetlinks.json'
       - '.github/workflows/android-web-apk.yml'
   workflow_dispatch:
+    inputs:
+      sign_release:
+        description: "Sign mtunz APK with permanently pinned NEW key (requires 4 secrets)"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -57,8 +63,8 @@ jobs:
           ), 'Missing mtunz web TWA digital asset link'
           print('Digital Asset Links format is valid.')
           PY
-      - name: Build installable preview, unsigned APK, and unsigned Play bundle
-        run: gradle -p android-web :app:assembleDebug :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace --max-workers=2
+      - name: Build installable preview and unsigned release APK
+        run: gradle -p android-web :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --max-workers=2
       - name: Verify preview APK and launcher
         run: |
           set -euo pipefail
@@ -101,7 +107,7 @@ jobs:
             adb logcat -d -b crash | grep -C 6 -F 'com.mtunz.web' || true
       - name: Check production signing secrets
         id: signing
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.sign_release
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
@@ -116,7 +122,7 @@ jobs:
             if [[ -n "$value" ]]; then count=$((count + 1)); fi
           done
           if [[ "$count" == 0 ]]; then
-            echo '::error::Signing requires the ORIGINAL mtunz Android 1.0.0 private keystore. Configure all four MTUNZ_ANDROID_WEB_* secrets; a downloaded APK cannot recreate this key.'
+            echo '::error::Signing requires the NEW fixed mtunz release keystore from the private owner backup. Configure all four MTUNZ_ANDROID_WEB_* secrets first.'
             exit 1
           fi
           if [[ "$count" != 4 ]]; then
@@ -128,7 +134,7 @@ jobs:
           test -s "$RUNNER_TEMP/mtunz-web-release.jks"
           echo "MTUNZ_WEB_KEYSTORE=$RUNNER_TEMP/mtunz-web-release.jks" >> "$GITHUB_ENV"
           echo 'enabled=true' >> "$GITHUB_OUTPUT"
-      - name: Validate production certificate and sign release APK
+      - name: Validate NEW fixed certificate and sign release APK
         if: steps.signing.outputs.enabled == 'true'
         shell: bash
         env:
@@ -144,16 +150,17 @@ jobs:
           digest=sys.argv[1].upper()
           assert len(digest)==64, 'Invalid certificate SHA-256'
           fingerprint=':'.join(digest[i:i+2] for i in range(0,64,2))
-          # Preserve upgrade signing compatibility with supplied APK 1.0.0.
-          original_fingerprint=(
-              '5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:'
-              '5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C'
+          # Owner-approved NEW fixed signing key; v1.0.0 cannot be updated in place.
+          new_fingerprint=(
+              '80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:'
+              '59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B'
           )
-          if fingerprint != original_fingerprint:
-              raise SystemExit(
-                  'Release keystore is not the original mtunz 1.0.0 signing key. '
-                  'Refusing to publish an incompatible update: '+fingerprint
-              )
+          if fingerprint != new_fingerprint:
+              raise SystemExit('Keystore does not match pinned NEW mtunz release key: '+fingerprint)
+          signing=json.loads(Path('android-web/release-signing.json').read_text())
+          if signing.get('release_cert_sha256') != new_fingerprint:
+              raise SystemExit('Pinned certificate configuration changed unexpectedly.')
+
           statements=json.loads(Path('static/android-assetlinks.json').read_text())
           authorized=any(
               entry.get('target',{}).get('package_name')=='com.mtunz.web'
@@ -179,32 +186,13 @@ jobs:
             "$RUNNER_TEMP/mtunz-web-aligned.apk"
           "$tools/apksigner" verify --verbose --print-certs \
             android-web/app/build/outputs/apk/release/mtunz-web-release.apk
-          test -s android-web/app/build/outputs/bundle/release/app-release.aab
-          jarsigner \
-            -keystore "$MTUNZ_WEB_KEYSTORE" \
-            -storepass:env STORE_PASSWORD \
-            -keypass:env KEY_PASSWORD \
-            -signedjar android-web/app/build/outputs/bundle/release/mtunz-web-play.aab \
-            android-web/app/build/outputs/bundle/release/app-release.aab \
-            "$KEY_ALIAS"
-          jarsigner -verify -strict \
-            android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
           python android-web/tools/verify_release_artifact.py \
-            --apk android-web/app/build/outputs/apk/release/mtunz-web-release.apk \
-            --aab android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
+            --apk android-web/app/build/outputs/apk/release/mtunz-web-release.apk
       - name: Upload signed release APK
         if: steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: mtunz-web-android-RELEASE-stable-signing
+          name: mtunz-web-android-RELEASE-new-fixed-key
           path: android-web/app/build/outputs/apk/release/mtunz-web-release.apk
-          if-no-files-found: error
-          retention-days: 30
-      - name: Upload signed Android App Bundle for Google Play
-        if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mtunz-web-android-PLAY-RELEASE-aab
-          path: android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
           if-no-files-found: error
           retention-days: 30

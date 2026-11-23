@@ -10,3 +10,10 @@ __pycache__/
 .pytest_cache/
 *.pyc
 *.zip
+
+# mtunz Android release signing secrets: NEVER commit or push.
+*.jks
+*.keystore
+*.p12
+**/mtunz-release-credentials-KEEP-PRIVATE.json
+**/mtunz-signing-kit/

@@ -32,7 +32,10 @@ permissions:
 
 jobs:
   release-internal:
-    if: ${{ inputs.manual_qa_passed && inputs.authorize_internal_testing }}
+    # User requested APK-only. Do not permit Google Play submissions from this
+    # old-key/AAB workflow until Play App Signing and upload key are migrated
+    # to the NEW fixed-key release identity in a separate reviewed change.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

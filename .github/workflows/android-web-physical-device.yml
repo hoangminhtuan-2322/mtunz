@@ -46,7 +46,7 @@ jobs:
       - name: Download the real-key signed release APK
         uses: actions/download-artifact@v4
         with:
-          name: mtunz-web-android-RELEASE-stable-signing
+          name: mtunz-web-android-RELEASE-new-fixed-key
           run-id: ${{ inputs.source_run_id }}
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
