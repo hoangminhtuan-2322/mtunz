@@ -1,4 +1,4 @@
-# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 11 (React Native)
+# mtunz Android NATIVE — tên hiển thị 1.1.0, mã cập nhật 11 (React Native)
 
 Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **11**, versionName **1.1.0**, icon không thay đổi. **Đây là app React Native hiện hành, không phải APK TWA 1.0.0 gốc.** Màn Cá nhân được sắp xếp thành nhóm cài đặt gọn hơn; thông báo nền chỉ hiển thị trạng thái thật, không giả lập Firebase/Expo Push. Android cần versionCode 11 cao hơn 9 để cho phép cập nhật mà không gỡ cài đặt.
 
