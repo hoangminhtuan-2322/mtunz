@@ -40,7 +40,7 @@ assert(workflow.includes('npx expo prebuild --platform android'),'Android native
 assert(workflow.includes('assets/index.android.bundle'),'Standalone JS bundle must be in APK');
 assert(workflow.includes('com.mtunz.web'),'Native APK must keep installed package');
 assert(workflow.includes('versionCode=\'4\''),'Must increment Android version code');
-assert(workflow.includes('mtunz-NATIVE-1.1.0-RELEASE-fixed-key'));
+assert(workflow.includes('mtunz-NATIVE-1.1.1-RELEASE-fixed-key'));
 assert(workflow.includes('configure_preview_package.cjs'));
 assert(workflow.includes('mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug'));
 assert(workflow.includes('EXPECTED_PACKAGE=com.mtunz.web.preview'));
