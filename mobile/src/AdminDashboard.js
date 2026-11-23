@@ -42,9 +42,11 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   setLastRefresh(Date.now());
  },[call]);
  useEffect(()=>{
-  let alive=true,ws=null;
+  let alive=true,ws=null,heartbeatTimer=null;
+  const stopHeartbeat=()=>{clearInterval(heartbeatTimer);heartbeatTimer=null;};
   const fetchNow=()=>refresh().catch(e=>{if(alive)setError(e.message);});
   const stop=()=>{
+   stopHeartbeat();
    if(!ws)return;
    reportPushVisibility(ws,false);
    ws.close();ws=null;
@@ -55,7 +57,20 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    try{
     const socket=new WebSocket(wsUrl(),[],{headers:{Authorization:'Bearer '+token}});
     ws=socket;
-    socket.onopen=()=>{if(ws===socket)reportPushVisibility(socket,AppState.currentState==='active');};
+    socket.onopen=()=>{
+     if(ws!==socket)return;
+     if(AppState.currentState!=='active'){stop();return;}
+     reportPushVisibility(socket,true);
+     const beat=()=>{
+      if(alive&&ws===socket&&AppState.currentState==='active'&&socket.readyState===WebSocket.OPEN)
+       socket.send(JSON.stringify({type:'presence-heartbeat'}));
+     };
+     stopHeartbeat();beat();
+     heartbeatTimer=setInterval(beat,6000);
+    };
+    socket.onclose=()=>{
+     if(ws===socket){stopHeartbeat();ws=null;}
+    };
     socket.onmessage=e=>{
      if(ws!==socket)return;
      let data;try{data=JSON.parse(e.data);}catch{return;}
