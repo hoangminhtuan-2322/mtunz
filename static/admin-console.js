@@ -107,7 +107,9 @@
   if(tab==='tickets')all('.ticket-list .ticket-item',host).forEach(item=>{
    item.tabIndex=0;item.setAttribute('role','button');item.setAttribute('aria-label','Mở phiếu hỗ trợ '+item.textContent.trim().slice(0,80));
   });
-  if(['users','registrations','deletions','groups'].includes(tab)){
+  // User sorting is server-side across ALL pages; do not apply misleading
+  // lexical sorting to only the currently loaded page.
+  if(['registrations','deletions','groups'].includes(tab)){
    all('thead th',anchor).forEach((th,index)=>{
     th.setAttribute('title','Nhấn để sắp xếp theo cột');
     th.style.cursor='pointer';th.tabIndex=0;th.dataset.sortIndex=String(index);
@@ -246,6 +248,7 @@
   const th=e.target.closest('.admin-shell th[data-sort-index]');if(!th)return;
   const tab=activeTab(),index=Number(th.dataset.sortIndex),table=th.closest('table');
   const body=table?.querySelector('tbody');if(!body)return;
+  if(tab==='users')return;
   if(sortState.tab!==tab||sortState.index!==index)sortState={tab,index,reverse:false};else sortState.reverse=!sortState.reverse;
   const rows=all('tr',body);
   rows.sort((a,b)=>{
