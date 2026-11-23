@@ -209,6 +209,19 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   const timer=setInterval(poll,15000);
   return()=>{disposed=true;clearInterval(timer);};
  },[tab,call]);
+ useEffect(()=>{
+  if(tab!=='users'||!users.length)return;
+  let cancelled=false;
+  const poll=()=>{
+   if(AppState.currentState!=='active')return;
+   call('/api/admin/users?q='+encodeURIComponent(query.trim())+
+     '&sort='+encodeURIComponent(userSort)+'&limit=50').then(result=>{
+      if(!cancelled)setUsers(result.users||[]);
+   }).catch(()=>{});
+  };
+  const timer=setInterval(poll,30000);
+  return()=>{cancelled=true;clearInterval(timer);};
+ },[tab,call,userSort,query,users.length]);
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên'],['worldAdmin','Thế giới']];
@@ -399,24 +412,25 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  </View>;
 }
 const s=StyleSheet.create({
-  top:{paddingHorizontal:17,paddingVertical:15,flexDirection:'row',justifyContent:'space-between',
-    alignItems:'center',backgroundColor:P.bg,borderBottomWidth:1,borderColor:P.line},
+  top:{paddingHorizontal:15,paddingVertical:13,flexDirection:'row',
+  justifyContent:'space-between',alignItems:'center',backgroundColor:'#0e2337',
+  borderBottomWidth:1,borderColor:'#2b4967'},
   brand:{fontSize:23,fontWeight:'900',letterSpacing:-.5,color:P.ink},
   adminBrandRow:{flexDirection:'row',alignItems:'center',gap:7,flexShrink:1},
   adminLogo:{width:39,height:39},
   adminBadge:{fontSize:10,letterSpacing:1,color:'#9ecfff',fontWeight:'900'},
   topMeta:{fontSize:11,color:P.muted,marginTop:3},
-  page:{padding:16,gap:16,paddingBottom:60},
-  hero:{backgroundColor:'#17304d',borderWidth:1,borderColor:'#365876',borderRadius:22,
-    paddingHorizontal:19,paddingVertical:23,gap:7},
+  page:{padding:15,gap:14,paddingBottom:60},
+  hero:{backgroundColor:'#163451',borderWidth:1,borderColor:'#3a6384',
+  borderRadius:24,paddingHorizontal:21,paddingVertical:25,gap:8},
   heroEyebrow:{fontSize:10,letterSpacing:1.5,color:'#86caff',fontWeight:'900'},
-  heroTitle:{fontSize:25,lineHeight:30,letterSpacing:-.6,color:P.ink,fontWeight:'900'},
+  heroTitle:{fontSize:24,lineHeight:30,letterSpacing:-.5,color:P.ink,fontWeight:'900'},
   heroSub:{fontSize:12,lineHeight:19,color:'#bdd0e9'},
-  tab:{paddingHorizontal:17,paddingVertical:12,borderRadius:24,backgroundColor:P.surface,
-    borderWidth:1,borderColor:P.line},
+  tab:{paddingHorizontal:15,paddingVertical:11,borderRadius:22,
+  backgroundColor:'#152c44',borderWidth:1,borderColor:P.line},
   active:{backgroundColor:'#28517a',borderColor:P.accent},
-  panel:{backgroundColor:P.surface,borderWidth:1,borderColor:P.line,
-    borderRadius:20,padding:17,gap:14},
+  panel:{backgroundColor:P.surface,borderWidth:1,borderColor:'#294a68',
+  borderRadius:21,padding:17,gap:13},
   head:{fontSize:18,color:P.ink,fontWeight:'800',letterSpacing:-.2},
   label:{fontSize:14,color:P.ink,fontWeight:'700',lineHeight:21},
   muted:{fontSize:12,color:P.muted,lineHeight:18},
@@ -429,10 +443,22 @@ const s=StyleSheet.create({
   actionText:{fontSize:13,fontWeight:'800',color:P.bg},
   input:{borderRadius:12,borderWidth:1,borderColor:'#385572',backgroundColor:'#091829',
     color:P.ink,minHeight:49,paddingHorizontal:13,fontSize:15},
-  item:{backgroundColor:'#102138',borderRadius:14,padding:14,gap:8,
-    borderWidth:1,borderColor:'#2c425e'},
+  item:{backgroundColor:'#142b43',borderRadius:16,padding:14,gap:9,
+  borderWidth:1,borderColor:'#315371'},
   tiles:{flexDirection:'row',flexWrap:'wrap',gap:10},
-  tile:{width:'47%',padding:15,backgroundColor:'#10263e',borderRadius:16,gap:7,
-    borderWidth:1,borderColor:'#2b4966'},
+  tile:{width:'47%',padding:16,backgroundColor:'#15324c',
+  borderRadius:18,gap:7,borderWidth:1,borderColor:'#335777'},
+  onlineLabel:{color:'#79e4c6',fontSize:11,fontWeight:'900',flexShrink:1},
+  offlineLabel:{color:'#a4b9cc',fontSize:11,fontWeight:'700',flexShrink:1},
+  adminOnlineRow:{flexDirection:'row',alignItems:'center',gap:8,minWidth:0},
+  onlinePulse:{width:9,height:9,borderRadius:5,backgroundColor:P.green},
+  offlinePulse:{backgroundColor:'#8198b2'},
+  activityExact:{fontSize:11,lineHeight:17,color:'#a8c5df'},
+  sortRow:{flexDirection:'row',flexWrap:'wrap',gap:7},
+  sortChip:{paddingHorizontal:11,paddingVertical:10,borderRadius:19,
+    backgroundColor:'#18344f',borderWidth:1,borderColor:'#315571'},
+  sortActive:{backgroundColor:'#285681',borderColor:P.accent},
+  sortText:{color:'#aac6dd',fontSize:12,fontWeight:'800'},
+  sortTextActive:{color:'#fff'},
   value:{color:P.ink,fontSize:28,fontWeight:'900',letterSpacing:-.7},
 });
