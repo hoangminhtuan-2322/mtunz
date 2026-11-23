@@ -24,15 +24,25 @@ def run(*args):
 
 
 def find_tool(name):
-    path = shutil.which(name)
-    if path:
-        return path
+    """Prefer the SAME pinned SDK tool used by the successful signing step.
+
+    Ubuntu runners may also include distro apksigner on PATH; its output may
+    differ from Android SDK 36. A release verifier must use the SDK 36 binary
+    rather than silently selecting another tool version.
+    """
     import os
     home = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
+    if home and name in ("apksigner", "aapt"):
+        pinned = Path(home) / "build-tools" / "36.0.0" / name
+        if pinned.is_file():
+            return str(pinned)
     if home:
         candidates = sorted((Path(home) / "build-tools").glob(f"*/{name}"))
         if candidates:
             return str(candidates[-1])
+    path = shutil.which(name)
+    if path:
+        return path
     raise SystemExit(f"Required tool missing: {name}. Install Android SDK build-tools.")
 
 
@@ -68,9 +78,16 @@ def check_apk(path):
     fingerprints = apk_certificate_digests(result)
     if fingerprints != [RELEASE_CERT]:
         found = ", ".join(fingerprints) if fingerprints else "(not reported by apksigner)"
+        # Never print secrets. The signer digest lines and tool path are public
+        # release metadata needed to debug differing SDK/distro tool output.
+        lines = [line.strip() for line in result.splitlines()
+                 if any(marker in line.lower() for marker in
+                        ("sha-256", "signer", "certificate", "number of signers"))]
         raise SystemExit(
             "ABORT: APK certificate is not the NEW pinned mtunz signing key. "
             "Actual: " + found + "; Expected: " + RELEASE_CERT
+            + "; verifier: " + str(apksigner)
+            + "; apksigner output: " + " | ".join(lines[:20])
         )
     badging = run(aapt, "dump", "badging", str(path))
     m = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
