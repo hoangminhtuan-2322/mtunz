@@ -647,7 +647,7 @@ def request_session_token(request):
 def current_user(request: Request, require=True, *, allow_deletion=False):
     t = request_session_token(request)
     with db() as c:
-        row = one(c, '''SELECT u.*,s.expires_at,
+        row = one(c, '''SELECT u.*,s.expires_at,s.last_seen AS session_activity_at,
                        (SELECT purge_at FROM account_deletion_requests WHERE user_id=u.id) AS deletion_purge_at,
                        (SELECT value FROM settings WHERE key='maintenance_mode') AS maintenance_mode,
                        (SELECT value FROM settings WHERE key='maintenance_schedule') AS maintenance_schedule
@@ -678,6 +678,12 @@ def current_user(request: Request, require=True, *, allow_deletion=False):
         if (not row['is_admin'] and row['needs_display_name'] and
                 request.url.path not in ('/api/me', '/api/me/display-name')):
             raise HTTPException(403,'Bạn cần đặt tên hiển thị trước khi sử dụng mtunz.')
+        # Native clients may use REST without a WebSocket. Limit DB writes to
+        # once per two minutes for each authenticated, usable member session.
+        if not row['is_admin'] and now()-(row['session_activity_at'] or 0)>=120:
+            timestamp=now()
+            c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND last_seen<?',
+                      (timestamp,digest(t),timestamp-119))
         return dict(row)
 
 
@@ -1864,7 +1870,7 @@ async def set_capacity(request:Request,body:Capacity):
 @app.get('/api/admin/users')
 async def admin_users(request:Request,q:str=Query('',max_length=120),
                       status:Literal['all','active','locked','banned','pending_deletion']='all',
-                      sort:Literal['newest','oldest','name','activity']='newest',
+                      sort:Literal['newest','oldest','name','activity']='activity',
                       limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0,le=100000)):
     require_admin(request)
     query=q.strip()
@@ -1892,19 +1898,35 @@ async def admin_users(request:Request,q:str=Query('',max_length=120),
         args.append(now())
     elif status=='pending_deletion':
         conditions.append('d.purge_at IS NOT NULL')
-    order={'newest':'u.created_at DESC,u.id DESC','oldest':'u.created_at,u.id',
-           'name':"LOWER(COALESCE(NULLIF(u.display_name,''),u.username)),u.id",
-           'activity':'COALESCE(u.last_seen,0) DESC,u.id DESC'}[sort]
-    source=' FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id WHERE '+' AND '.join(conditions)
+    source=' FROM users u LEFT JOIN account_deletion_requests d ON d.user_id=u.id'
+    predicate=' WHERE '+' AND '.join(conditions)
+    # Join live session activity as well as the disconnect-time user timestamp.
+    active_sessions=''' LEFT JOIN (
+        SELECT user_id, MAX(last_seen) AS last_seen
+        FROM sessions WHERE expires_at>? GROUP BY user_id
+    ) recent ON recent.user_id=u.id'''
+    last_active='''CASE WHEN COALESCE(u.last_seen,0)>=COALESCE(recent.last_seen,0)
+                   THEN u.last_seen ELSE recent.last_seen END'''
     with db() as c:
-        total=one(c,'SELECT COUNT(*) n'+source,args)['n']
+        total=one(c,'SELECT COUNT(*) n'+source+predicate,args)['n']
+        # Only validated connected WebSockets count as online, not old logins.
+        online_ids={int(user['id']) for user in admin_online_members(c)}
+        online_rank=('CASE WHEN u.id IN ('+','.join(str(uid) for uid in sorted(online_ids))
+                     +') THEN 0 ELSE 1 END,' if online_ids else '')
+        order={'newest':'u.created_at DESC,u.id DESC','oldest':'u.created_at,u.id',
+               'name':"LOWER(COALESCE(NULLIF(u.display_name,''),u.username)),u.id",
+               'activity':online_rank+'last_active_at DESC NULLS LAST,u.id DESC'}[sort]
         rows=many(c,"""SELECT u.id,u.public_id,u.username,u.display_name,u.phone,u.email,
                             u.created_at,u.last_seen,u.pin_length,u.sanction_kind,u.sanction_until,u.sanction_reason,
                             d.requested_at AS deletion_requested_at,d.purge_at AS deletion_purge_at,
+                            """+last_active+""" AS last_active_at,
                             (SELECT COUNT(*) FROM messages m WHERE m.sender_id=u.id OR m.recipient_id=u.id) AS message_count,
                             (SELECT COUNT(*) FROM friendships f WHERE f.state='accepted' AND (f.u1=u.id OR f.u2=u.id)) AS friend_count"""
-                  +source+' ORDER BY '+order+' LIMIT ? OFFSET ?',(*args,limit,offset))
-    return {'users':rows,'total':total,'offset':offset,'limit':limit}
+                  +source+active_sessions+predicate+' ORDER BY '+order+' LIMIT ? OFFSET ?',
+                  (now(),*args,limit,offset))
+        for user in rows:
+            user['online']=user['id'] in online_ids
+    return {'users':rows,'total':total,'offset':offset,'limit':limit,'checked_at':now()}
 
 
 class Sanction(BaseModel):
