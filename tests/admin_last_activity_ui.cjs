@@ -20,7 +20,7 @@ assert(css.includes('.admin-users-table tbody tr[hidden]{display:none!important}
 assert(css.includes('.admin-last-activity.is-online'),'Connection state is visually distinct');
 assert(css.includes('td:nth-child(4)'),'Mobile hides secondary table columns');
 assert(consoleJs.includes("if(tab==='users')return;"),'Client-only header sorting does not scramble server pagination');
-assert(html.includes('app.js?v=21.3'),'New JS bypasses browser cache');
+assert(html.includes('app.js?v=21.4'),'New JS bypasses browser cache');
 assert(html.includes('admin-upgrade.css?v=1.2'),'New responsive CSS bypasses browser cache');
 
 const start=app.indexOf('function adminLastActivityRelative(');
