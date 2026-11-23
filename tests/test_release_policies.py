@@ -55,5 +55,10 @@ def test_android_app_link_contains_only_the_published_package_and_certificate():
     assert statement['relation'] == ['delegate_permission/common.handle_all_urls']
     assert statement['target']['namespace'] == 'android_app'
     assert statement['target']['package_name'] == 'com.mtunz.web'
-    [fingerprint] = statement['target']['sha256_cert_fingerprints']
-    assert re.fullmatch(r'(?:[0-9A-F]{2}:){31}[0-9A-F]{2}', fingerprint)
+    fingerprints = statement['target']['sha256_cert_fingerprints']
+    assert set(fingerprints) == {
+        '5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C',
+        '80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B',
+    }
+    assert all(re.fullmatch(r'(?:[0-9A-F]{2}:){31}[0-9A-F]{2}', value)
+               for value in fingerprints)
