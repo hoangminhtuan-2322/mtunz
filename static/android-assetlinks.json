@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mtunz.web",
+      "sha256_cert_fingerprints": [
+        "5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C"
+      ]
+    }
+  }
+]

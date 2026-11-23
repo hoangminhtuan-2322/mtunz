@@ -42,3 +42,18 @@ def test_home_removes_only_chatgpt_referral_query():
         assert response.status_code == 302
         assert response.headers['location'] == '/?label=a%20b&utm_source=other&tag=1&tag=2'
         assert client.get('/?utm_source=other', follow_redirects=False).status_code == 200
+
+
+def test_android_app_link_contains_only_the_published_package_and_certificate():
+    import re
+
+    with TestClient(app) as client:
+        response = client.get('/.well-known/assetlinks.json')
+    assert response.status_code == 200
+    assert response.headers['content-type'].startswith('application/json')
+    [statement] = response.json()
+    assert statement['relation'] == ['delegate_permission/common.handle_all_urls']
+    assert statement['target']['namespace'] == 'android_app'
+    assert statement['target']['package_name'] == 'com.mtunz.web'
+    [fingerprint] = statement['target']['sha256_cert_fingerprints']
+    assert re.fullmatch(r'(?:[0-9A-F]{2}:){31}[0-9A-F]{2}', fingerprint)
