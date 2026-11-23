@@ -68,6 +68,10 @@ jobs:
           EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
           REQUIRE_NATIVE_PUSH: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: |
+          if [[ "$REQUIRE_NATIVE_PUSH" != "true" ]]; then
+            echo '::warning::Native side-by-side preview does not bundle production Firebase. Push is disabled in preview.'
+            exit 0
+          fi
           if [[ -z "$GOOGLE_SERVICES_JSON" && -z "$EXPO_PROJECT_ID" ]]; then
             if [[ "$REQUIRE_NATIVE_PUSH" == "true" ]]; then
               echo '::error::Cannot publish a signed native APK with background notifications disabled. Configure EXPO_PROJECT_ID and MTUNZ_ANDROID_GOOGLE_SERVICES first.'
@@ -134,6 +138,9 @@ jobs:
           chmod +x android/gradlew
           cd android
           ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
+      - name: Give debug preview an independent Android identity
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
+        run: node tools/configure_preview_package.cjs
       - name: Build standalone NATIVE preview with debug signing only
         if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         run: |
@@ -141,13 +148,17 @@ jobs:
           cd android
           ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
       - name: Verify native JS bundle and APK signature
+        env:
+          SIGNED_NATIVE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
           unzip -Z1 "$APK" | grep -Fx 'assets/index.android.bundle'
           SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           "$SIGNER" verify --verbose --print-certs "$APK"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.mtunz.web' versionCode='3' versionName='1.1.0'"
+          EXPECTED_PACKAGE=com.mtunz.web.preview
+          if [[ "$SIGNED_NATIVE_RELEASE" == "true" ]]; then EXPECTED_PACKAGE=com.mtunz.web; fi
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='$EXPECTED_PACKAGE' versionCode='3' versionName='1.1.0'"
       - name: Enforce fixed release certificate, NOT debug signer
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
@@ -180,7 +191,7 @@ jobs:
         if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@v4
         with:
-          name: mtunz-NATIVE-PREVIEW-debug-signed
+          name: mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14

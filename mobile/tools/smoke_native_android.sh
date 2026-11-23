@@ -1,28 +1,33 @@
 #!/usr/bin/env bash
-# Validate a standalone React Native app, not an Android Browser Helper wrapper.
 set -euo pipefail
 APK="android/app/build/outputs/apk/release/app-release.apk"
 test -s "$APK"
+AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+test -x "$AAPT"
+PACKAGE="$("$AAPT" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")"
+if [[ "$PACKAGE" != "com.mtunz.web" && "$PACKAGE" != "com.mtunz.web.preview" ]]; then
+  echo "::error::Unexpected Android application package: $PACKAGE"
+  exit 1
+fi
 adb install -r "$APK"
-adb shell pm path com.mtunz.web | grep -F 'package:'
+adb shell pm path "$PACKAGE" | grep -F 'package:'
 adb logcat -c -b crash || true
-adb shell am start -W -n com.mtunz.web/.MainActivity | tee /tmp/mtunz-native-launch.txt
+adb shell am start -W -a android.intent.action.MAIN \
+  -c android.intent.category.LAUNCHER -p "$PACKAGE" | tee /tmp/mtunz-native-launch.txt
 grep -Eq '^Status: ok$' /tmp/mtunz-native-launch.txt
 sleep 12
-# In contrast to a TWA, the actual mtunz process must remain alive: the
-# launcher must not immediately disappear into com.android.chrome.
-pid="$(adb shell pidof com.mtunz.web | tr -d '\r')"
+pid="$(adb shell pidof "$PACKAGE" | tr -d '\r')"
 if [[ -z "$pid" ]]; then
-  echo '::error::Native mtunz process is not running after launch.'
+  echo "::error::Native mtunz $PACKAGE process disappeared after launch."
   adb logcat -d -b crash || true
   exit 1
 fi
-echo "mtunz React Native process is running with PID $pid"
-adb shell dumpsys activity activities | grep -F 'com.mtunz.web' | head -12 || true
+echo "mtunz React Native process running with PID $pid"
 adb logcat -d -b crash > /tmp/mtunz-native-crash.txt || true
-if grep -Eq 'Process: com[.]mtunz[.]web,|Unable to start activity ComponentInfo[{]com[.]mtunz[.]web/' /tmp/mtunz-native-crash.txt; then
-  echo '::error::Native mtunz crashed after launch.'
+if grep -Fq "Process: $PACKAGE," /tmp/mtunz-native-crash.txt ||
+   grep -Fq "Unable to start activity ComponentInfo{$PACKAGE/" /tmp/mtunz-native-crash.txt; then
+  echo "::error::Native mtunz crashed after launch."
   cat /tmp/mtunz-native-crash.txt
   exit 1
 fi
-echo 'PASS: standalone native mtunz Android launches without Chrome or crash.'
+echo "PASS: standalone native mtunz ($PACKAGE) launches without Chrome."
