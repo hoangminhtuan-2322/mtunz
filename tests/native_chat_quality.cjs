@@ -45,6 +45,12 @@ assert(chat.includes("if(id>previous)")&&
   'Only truly newer messages should trigger auto-scroll or jump control');
 assert(app.includes('KeyboardProvider')&&chat.includes('automaticOffset'),
   'Keyboard-safe input required in login and chat');
+assert(chat.includes('onContentSizeChange')&&chat.includes('if(isAtLatestRef.current)'),
+  'Async message and photo layout changes must keep latest message visible');
+assert(chat.includes("keyboardDismissMode={Platform.OS==='ios'?'interactive':'none'}"),
+  'Android scrolling must not dismiss the keyboard and hide the composer');
+assert(chat.includes('removeClippedSubviews={false}'),
+  'Android should not clip or blank out photo/video bubbles');
 assert(gallery.includes('attachmentSource'),
   'Keep full-screen saved image access and shared-gallery parity');
 const gate=read('tests/web_android_parity_gate.cjs');
