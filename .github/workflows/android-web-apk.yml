@@ -40,6 +40,8 @@ jobs:
           sdkmanager_bin="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
           test -x "$sdkmanager_bin"
           "$sdkmanager_bin" --install 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Protect user-supplied APK identity and original app logo
+        run: python android-web/tools/verify_app_identity.py
       - name: Verify website association configuration
         run: |
           python - <<'PY'
