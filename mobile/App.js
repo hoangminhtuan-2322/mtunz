@@ -1,8 +1,8 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,
+import {ActivityIndicator,AppState,Linking,Platform,Pressable,
   ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image,useWindowDimensions} from 'react-native';
 import {SafeAreaProvider,SafeAreaView,initialWindowMetrics} from 'react-native-safe-area-context';
-import {KeyboardProvider} from 'react-native-keyboard-controller';
+import {KeyboardProvider,KeyboardAvoidingView} from 'react-native-keyboard-controller';
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
@@ -264,7 +264,8 @@ function AppContent() {
       onProfile={refreshProfile}/>
   </SafeAreaView>;
   return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
-    <KeyboardAvoidingView style={styles.authShell} behavior={Platform.OS==='ios'?'padding':undefined}>
+    <KeyboardAvoidingView style={styles.authShell}
+      behavior={Platform.OS==='android'?'height':'padding'} automaticOffset keyboardVerticalOffset={0}>
       <ScrollView style={styles.authScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
         contentContainerStyle={[styles.centerInner,compactAuth&&styles.centerInnerCompact,shortAuth&&styles.centerInnerShort]}
         showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never">
