@@ -85,3 +85,14 @@ Workflow `push`/PR tạo artifact **`mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug`** ch
 - Chưa kiểm thử toàn diện trên **điện thoại thật**. Trước khi đưa bản native cho nhiều người cài, cần thử xác thực + PIN, chat 2 thiết bị, gửi và lưu tệp, realtime, thông báo khi app nền, quyền Admin và kết nối yếu.
 
 APK tải ngoài Google Play vẫn có thể kích hoạt thông báo Google Play Protect. Điều này **không thể khắc phục bằng thay logo hay đổi WebView thành native**; cần phân phối qua Google Play hoặc cho người dùng quét ứng dụng theo thông báo hệ thống.
+
+### Firebase + Expo Push bắt buộc trước bản phát hành ký chính thức
+
+1. Kết nối đúng dự án Firebase của chủ sở hữu, tạo/kiểm tra Android app `com.mtunz.web` và lấy **google-services.json**.
+2. Kết nối hoặc tạo Expo EAS project cùng ứng dụng, lấy UUID `EXPO_PROJECT_ID`; trong Expo → Project settings → Credentials → Android → `com.mtunz.web` → **FCM v1 service account key**, tải khóa dịch vụ Firebase riêng lên Expo. KHÔNG commit khóa dịch vụ lên repo.
+3. Trong GitHub Actions đặt **secret** `MTUNZ_ANDROID_GOOGLE_SERVICES` = nội dung `google-services.json` và **variable** `EXPO_PROJECT_ID` = UUID Expo EAS. Sau khi xác nhận FCM v1 đã liên kết chính xác, đặt **variable** `EXPO_FCM_V1_READY=true`. Biến này không thay thế việc upload khóa FCM.
+4. Trên Render, chỉ cấu hình `EXPO_ACCESS_TOKEN` nếu đã bật bảo mật tăng cường cho Expo Push trên expo.dev; tuyệt đối không lưu khóa FCM v1 private vào mã nguồn hay biến client.
+5. Chạy `Build mtunz TRUE Native Android APK` → branch `main` → `sign_release=true`; workflow kiểm tra Project ID, Firebase project number/app ID/API key, package và xác nhận FCM v1 trước khi ký cố định.
+6. Cài release lên điện thoại Android thật, đăng nhập và bật thông báo trong app, gửi thử; kiểm tra **tin nhắn DM/nhóm, phản hồi hỗ trợ, đăng ký/hỗ trợ admin** khi ứng dụng đóng. HTTP 200 của Expo chỉ là chấp nhận yêu cầu, không khẳng định thông báo đã đến.
+
+Không dùng Preview `com.mtunz.web.preview` để thử FCM production; Preview không có Firebase credentials. Chỉ khi đã xác minh push thực tế và chứng chỉ ký bản 1.0.1 mới phát hành rộng.

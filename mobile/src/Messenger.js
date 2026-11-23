@@ -420,7 +420,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       const data=response?.notification?.request?.content?.data||{};
       const scope=data.kind==='dm'?'dm':data.kind==='group'?'group':null;
       const chatId=Number(data.chat_id);
-      if(scope&&Number.isSafeInteger(chatId)&&chatId>0)openRoom({scope,id:chatId});
+      if(!Number.isSafeInteger(chatId)||chatId<=0)return;
+      if(scope){openRoom({scope,id:chatId});return;}
+      if(data.kind==='support_reply'){
+        setRoom(null);
+        setDialog('support');
+        invoke('/api/support/tickets').then(result=>{
+          setSupportTickets(result.tickets||[]);
+          setSupportPaused(!!result.paused);
+          const item=(result.tickets||[]).find(ticket=>ticket.id===chatId);
+          if(item)openSupportTicket(item).catch(alertError);
+        }).catch(alertError);
+      }
     };
     const sub=Notifications.addNotificationResponseReceivedListener(onResponse);
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});

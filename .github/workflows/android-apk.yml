@@ -96,6 +96,13 @@ jobs:
         run: node ../tests/native_admin_parity.cjs
       - name: Verify safe restoration of Android sessions after network outages
         run: node ../tests/native_session_recovery.cjs
+      - name: Verify push release credentials and support reply routing
+        run: node ../tests/native_push_release.cjs
+      - name: Verify Firebase/Expo push release prerequisites
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        env:
+          EXPO_FCM_V1_READY: ${{ vars.EXPO_FCM_V1_READY }}
+        run: node tools/verify_push_release.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
       - name: Check generated native manifest and launch package

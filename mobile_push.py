@@ -20,6 +20,7 @@ PUSH_BODY = {
     'registration':'Có tài khoản mới chờ duyệt.',
     'support':'Có yêu cầu hỗ trợ hoặc tin nhắn hỗ trợ mới.',
     'test':'Đây là thông báo thử từ mtunz.',
+    'support_reply':'Quản trị viên đã trả lời yêu cầu hỗ trợ của bạn.',
 }
 
 
@@ -98,6 +99,9 @@ def install(core):
                     return False
             if kind in ('registration','support') and not one(c,'SELECT 1 FROM users WHERE id=? AND is_admin=1',(uid,)):
                 return False
+            if kind=='support_reply' and not one(c,
+                "SELECT 1 FROM tickets WHERE id=? AND owner_id=? AND status<>'deleted'",(chat_id,uid)):
+                return False
             if one(c,'SELECT 1 FROM account_deletion_requests WHERE user_id=?',(uid,)):
                 return False
             if one(c,"""SELECT 1 FROM users WHERE id=? AND sanction_kind IS NOT NULL
@@ -128,9 +132,11 @@ def install(core):
                 receipts=[receipts]
             accepted=False
             for item,recipient in zip(receipts,recipients):
+                if not isinstance(item,dict):
+                    continue
                 if item.get('status')=='ok':
                     accepted=True
-                elif item.get('details',{}).get('error')=='DeviceNotRegistered':
+                elif (item.get('details') or {}).get('error')=='DeviceNotRegistered':
                     with db() as c:
                         c.execute('DELETE FROM mobile_push_tokens WHERE token=? AND session_hash=? AND updated_at=?',
                                   (recipient['token'],recipient['session_hash'],recipient['updated_at']))
@@ -177,6 +183,13 @@ def install(core):
         admin_kind=admin_alert_kind(event,data)
         if admin_kind:
             queue.put_nowait((uid,admin_kind,data.get('ticket_id',0),'',foreground))
+            return
+        # Admin replies also notify the ticket's account owner on Android.
+        # The payload contains only a generic message and a ticket ID.
+        if event=='support-message' and data.get('message',{}).get('from_admin'):
+            ticket_id=data.get('ticket_id')
+            if isinstance(ticket_id,int) and ticket_id>0:
+                queue.put_nowait((uid,'support_reply',ticket_id,'',foreground))
             return
         msg=data.get('message') if event in ('message','group-message') else None
         if not msg or msg.get('sender_id')==uid:
