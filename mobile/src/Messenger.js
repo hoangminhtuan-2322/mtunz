@@ -177,7 +177,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [supportMessages,setSupportMessages]=useState([]),
     [supportClaim,setSupportClaim]=useState(''),
     [supportDraft,setSupportDraft]=useState(''),
-    [supportBusy,setSupportBusy]=useState(false);
+    [supportBusy,setSupportBusy]=useState(false),
+    [deviceSessions,setDeviceSessions]=useState([]),
+    [rememberedDevices,setRememberedDevices]=useState([]),
+    [sessionsLoading,setSessionsLoading]=useState(false),
+    [sessionMessage,setSessionMessage]=useState('');
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
@@ -696,6 +700,23 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       setSupportDraft('');
     }catch(e){alertError(e);}finally{setSupportBusy(false);}
   }
+  async function loadDevices(){
+    setSessionsLoading(true);setSessionMessage('');
+    try{
+      const result=await invoke('/api/me/sessions');
+      setDeviceSessions(result.sessions||[]);
+      setRememberedDevices(result.remembered_devices||[]);
+    }catch(error){setSessionMessage(error.message||'Không lấy được danh sách thiết bị.');}
+    finally{setSessionsLoading(false);}
+  }
+  async function revokeDevice(kind,item){
+    if(item.current&&kind==='session')return;
+    Alert.alert('Thu hồi thiết bị','Phiên đăng nhập này sẽ bị đăng xuất ngay. Bạn muốn tiếp tục?',[
+      {text:'Hủy',style:'cancel'},
+      {text:'Thu hồi',style:'destructive',onPress:()=>perform(
+        '/api/me/sessions/'+kind+'/'+encodeURIComponent(item.id),'DELETE',undefined,loadDevices)},
+    ]);
+  }
   async function loadSettings(){
     await refreshSocial();
     try{setIdentityQuota((await invoke('/api/me/identity/status')).quota);}
@@ -1006,7 +1027,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             onPress={()=>{setDialog('settings');loadSettings();}}/>
           <AccountRow symbol="♢" title="Bảo mật và thiết bị"
             subtitle="Phiên đăng nhập và quyền truy cập"
-            onPress={()=>setDialog('security')}/>
+            onPress={()=>{setDialog('security');loadDevices();}}/>
         </AccountGroup>
         <AccountGroup title="Thông báo">
           <AccountRow symbol="▣" title="Thông báo trong ứng dụng"
@@ -1214,13 +1235,36 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       </View>)}
     </ModalSheet>
     <ModalSheet visible={dialog==='security'} onClose={()=>setDialog('')} title="Bảo mật & thiết bị">
-      <Text style={css.muted}>Phiên đăng nhập điện thoại được quản lý cùng tài khoản web. Thu hồi sẽ ngắt WebSocket ngay.</Text>
+      <Text style={css.muted}>Xem và thu hồi thiết bị ngay tại đây. Phiên bị thu hồi sẽ ngắt kết nối trên web và app.</Text>
+      <View style={css.notificationHeader}>
+        <Text style={css.accountGroupTitle}>Phiên đăng nhập · {deviceSessions.length}</Text>
+        <Btn quiet small disabled={sessionsLoading} onPress={loadDevices}>
+          {sessionsLoading?'Đang tải…':'Làm mới'}</Btn>
+      </View>
+      {!!sessionMessage&&<Text style={css.accountSubtitle}>{sessionMessage}</Text>}
+      {!sessionsLoading&&deviceSessions.length===0&&
+        <Text style={css.accountSubtitle}>Chưa có phiên đăng nhập nào được ghi nhận.</Text>}
+      {deviceSessions.map(item=><View key={'s'+item.id} style={css.deviceCard}>
+        <View style={css.deviceTitleRow}>
+          <Text style={css.accountTitle} numberOfLines={1}>{item.label||item.device_name||'Thiết bị'}</Text>
+          {item.current&&<Text style={css.deviceCurrent}>Thiết bị này</Text>}
+        </View>
+        <Text style={css.accountSubtitle}>{[item.os_name,item.browser].filter(Boolean).join(' · ')}</Text>
+        {!!item.last_seen&&<Text style={css.accountSubtitle}>
+          Hoạt động: {new Date(item.last_seen*1000).toLocaleString('vi-VN')}</Text>}
+        {!item.current&&<Btn small quiet onPress={()=>revokeDevice('session',item)}>Thu hồi phiên</Btn>}
+      </View>)}
+      {!!rememberedDevices.length&&<Text style={css.accountGroupTitle}>Thiết bị đã ghi nhớ · {rememberedDevices.length}</Text>}
+      {rememberedDevices.map(item=><View key={'r'+item.id} style={css.deviceCard}>
+        <Text style={css.accountTitle}>{item.label||item.device_name||'Thiết bị ghi nhớ'}</Text>
+        <Text style={css.accountSubtitle}>{[item.os_name,item.browser].filter(Boolean).join(' · ')}</Text>
+        <Btn small quiet onPress={()=>revokeDevice('remembered',item)}>Thu hồi quyền ghi nhớ</Btn>
+      </View>)}
       <Btn danger onPress={()=>Alert.alert('Thu hồi thiết bị','Đăng xuất tất cả thiết bị khác?',[
-        {text:'Hủy'},{text:'Thu hồi',style:'destructive',onPress:()=>perform('/api/me/sessions/revoke-others','POST') }])}>
-        Thu hồi các phiên khác</Btn>
-      <Btn quiet onPress={()=>perform('/api/me/sessions','GET',undefined,r=>
-        Alert.alert('Thiết bị',JSON.stringify(r.sessions?.map(x=>x.device_name||x.os_name)||[]).slice(0,700)))}>
-        Xem thiết bị đăng nhập</Btn>
+        {text:'Hủy',style:'cancel'},
+        {text:'Thu hồi',style:'destructive',
+          onPress:()=>perform('/api/me/sessions/revoke-others','POST',{},loadDevices)}])}>
+        Đăng xuất khỏi các thiết bị khác</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Trung tâm hỗ trợ">
       {supportTicket?<View style={css.section}>
@@ -1481,6 +1525,10 @@ const css=StyleSheet.create({
     paddingHorizontal:7,paddingVertical:4,alignItems:'center'},
   accountCountText:{color:'#fff',fontSize:11,fontWeight:'900'},
   accountFooter:{fontSize:11,textAlign:'center',color:'#819eb7',paddingTop:2},
+  deviceCard:{backgroundColor:'#19314a',borderRadius:13,borderWidth:1,
+    borderColor:'#355571',padding:12,gap:8},
+  deviceTitleRow:{flexDirection:'row',alignItems:'center',gap:8,justifyContent:'space-between'},
+  deviceCurrent:{fontSize:10,color:'#76e3bf',fontWeight:'900',flexShrink:1},
   notificationHeader:{flexDirection:'row',justifyContent:'space-between',
     alignItems:'center',gap:10,flexWrap:'wrap'},
   notificationItem:{flexDirection:'row',gap:10,padding:12,borderRadius:13,
