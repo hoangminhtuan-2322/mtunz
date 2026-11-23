@@ -278,9 +278,10 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        disabled={busy} onPress={()=>Alert.alert('Tiếp nhận hỗ trợ',
          supportPaused?'Tiếp tục nhận yêu cầu mới?':'Tạm dừng các yêu cầu hỗ trợ mới?',
          [{text:'Hủy',style:'cancel'},{text:'Xác nhận',onPress:async()=>{
-           const ok=await act('/api/admin/support/intake','PATCH',{paused:!supportPaused},
+           const paused=!supportPaused;
+           const ok=await act('/api/admin/support/intake','PATCH',{paused},
              'Đã cập nhật tiếp nhận hỗ trợ.');
-           if(ok)setSupportPaused(x=>!x);
+           if(ok)setSupportPaused(paused);
          }}])}/>
     {ticket?<><Text style={s.label}>Yêu cầu #{ticket.id}</Text>
       <Text style={s.muted}>{ticket.kind} • {ticket.status}</Text>
