@@ -86,6 +86,8 @@ jobs:
           echo "EXPO_PROJECT_ID=$EXPO_PROJECT_ID" >> "$GITHUB_ENV"
       - name: Regress native realtime catch-up and window merges
         run: node ../tests/native_realtime_stability.cjs
+      - name: Verify native parity and upload retries
+        run: node ../tests/native_world_typing_parity.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
       - name: Check generated native manifest and launch package
