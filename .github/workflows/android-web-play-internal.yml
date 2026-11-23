@@ -118,6 +118,27 @@ jobs:
             echo "::error::Set MTUNZ_PLAY_SERVICE_ACCOUNT_JSON in repository Actions secrets. Grant that account Play Console access to com.mtunz.web."
             exit 1
           fi
+      - name: Verify live mtunz website and Trusted Web Activity association
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 \
+            --max-time 30 'https://mtunz.onrender.com/.well-known/assetlinks.json' \
+            -o "$RUNNER_TEMP/mtunz-live-assetlinks.json"
+          python - "$RUNNER_TEMP/mtunz-live-assetlinks.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          expected='5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C'
+          statements=json.loads(Path(sys.argv[1]).read_text())
+          ok=any(
+              e.get('target',{}).get('package_name')=='com.mtunz.web'
+              and expected in e.get('target',{}).get('sha256_cert_fingerprints',[])
+              and 'delegate_permission/common.handle_all_urls' in e.get('relation',[])
+              for e in statements)
+          if not ok:
+              raise SystemExit('Live website does not authorize ORIGINAL mtunz signing key. Cannot release trusted Android wrapper.')
+          print('Production domain association verified.')
+          PY
       - name: Upload to Google Play internal testing track ONLY
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # pinned v1 release
         with:
