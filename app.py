@@ -2430,14 +2430,17 @@ async def websocket_events(ws:WebSocket):
         last_session_activity = now()
         heartbeat_enabled = False
         while True:
-            # New browser clients opt in to a heartbeat. A sleeping, killed or
-            # network-disconnected tab cannot keep a phantom online presence.
-            # Legacy/native clients keep their existing connection behavior.
+            # Heartbeat-aware browser/native clients should not remain online
+            # after a network drop or an OS-killed app. Legacy clients still
+            # rely on WebSocket protocol keepalive for compatibility.
             try:
                 raw_message = await asyncio.wait_for(
-                    ws.receive_text(), timeout=75 if heartbeat_enabled else None)
+                    ws.receive_text(), timeout=20 if heartbeat_enabled else None)
             except asyncio.TimeoutError:
-                await ws.close(code=1001)
+                try:
+                    await asyncio.wait_for(ws.close(code=1001), timeout=1)
+                except (RuntimeError, OSError, asyncio.TimeoutError):
+                    pass
                 break
             if uid is not None and now() - last_session_activity >= 120:
                 with db() as c:
