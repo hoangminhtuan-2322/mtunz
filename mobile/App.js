@@ -38,7 +38,7 @@ export default function App() {
 
   const clear=useCallback(async()=>{
     ++recoveryRunRef.current;
-    setRecoverToken(null);
+    setRecoverToken(null);setRecoverBusy(false);
     await clearSession().catch(()=>{});
     setToken(null);setUser(null);setChallenge(null);setAdminApproval(null);setPassword('');setPin('');
   },[]);
