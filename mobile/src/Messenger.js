@@ -52,11 +52,15 @@ function ModalSheet({visible,onClose,title,children}){
     </View></View>
   </Modal>;
 }
-function ConversationInfoSheet({title,onClose,children}){
+function ConversationInfoSheet({title,avatar,onClose,children}){
   return <Modal visible animationType="slide" onRequestClose={onClose}>
     <SafeAreaView style={css.detailsScreen}>
       <View style={css.detailsHeader}>
-        <View style={{flex:1,minWidth:0,gap:4}}>
+        <View style={css.detailsAvatar}>
+          {avatar?<Image source={avatar} style={css.detailsAvatarImage}/>:
+            <Text style={css.detailsAvatarLetter}>{String(title||'?').slice(0,1).toUpperCase()}</Text>}
+        </View>
+        <View style={{flex:1,minWidth:0,gap:4}}> 
           <Text style={css.detailsEyebrow}>CHI TIẾT HỘI THOẠI</Text>
           <Text style={css.detailsTitle} numberOfLines={2}>{title}</Text>
           <Text style={css.detailsSubtitle}>Nội dung đã chia sẻ và tùy chọn trò chuyện</Text>
@@ -917,7 +921,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           target_scope:t.scope,target_id:t.id,
         },async()=>{setDialog('');setSelection(null);await refreshLists();})}>{t.name}</Btn>)}
     </ModalSheet>
-    {dialog==='info'&&<ConversationInfoSheet title={roomTitle} onClose={()=>setDialog('')}>
+    {dialog==='info'&&<ConversationInfoSheet title={roomTitle}
+      avatar={room?.scope==='dm'?avatarSource(peer?.avatar_url,token):null}
+      onClose={()=>setDialog('')}>
       {room?.scope==='dm'&&<>
         <View style={css.detailsCard}>
           <Text style={css.detailsSectionTitle}>Biệt danh</Text>
@@ -1150,6 +1156,10 @@ const css=StyleSheet.create({
   detailsHeader:{paddingHorizontal:19,paddingTop:17,paddingBottom:15,
     flexDirection:'row',alignItems:'center',gap:12,backgroundColor:'#102139',
     borderBottomWidth:1,borderBottomColor:'#31506f'},
+  detailsAvatar:{width:48,height:48,borderRadius:17,backgroundColor:'#29486a',
+    alignItems:'center',justifyContent:'center',overflow:'hidden'},
+  detailsAvatarImage:{width:48,height:48},
+  detailsAvatarLetter:{fontSize:24,fontWeight:'900',color:P.text},
   detailsEyebrow:{color:'#7abaff',letterSpacing:1.8,fontSize:10,fontWeight:'900'},
   detailsTitle:{color:P.text,fontSize:24,fontWeight:'900',letterSpacing:-.5,flexShrink:1},
   detailsSubtitle:{fontSize:12,color:P.soft},
