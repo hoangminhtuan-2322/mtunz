@@ -101,7 +101,7 @@ jobs:
             adb logcat -d -b crash | grep -C 6 -F 'com.mtunz.web' || true
       - name: Check production signing secrets
         id: signing
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
@@ -116,9 +116,8 @@ jobs:
             if [[ -n "$value" ]]; then count=$((count + 1)); fi
           done
           if [[ "$count" == 0 ]]; then
-            echo 'enabled=false' >> "$GITHUB_OUTPUT"
-            echo 'No production signing secrets configured; preview only.'
-            exit 0
+            echo '::error::Signing requires the ORIGINAL mtunz Android 1.0.0 private keystore. Configure all four MTUNZ_ANDROID_WEB_* secrets; a downloaded APK cannot recreate this key.'
+            exit 1
           fi
           if [[ "$count" != 4 ]]; then
             echo '::error::Provide all four MTUNZ_ANDROID_WEB_* signing secrets.'
@@ -190,6 +189,9 @@ jobs:
             "$KEY_ALIAS"
           jarsigner -verify -strict \
             android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
+          python android-web/tools/verify_release_artifact.py \
+            --apk android-web/app/build/outputs/apk/release/mtunz-web-release.apk \
+            --aab android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
       - name: Upload signed release APK
         if: steps.signing.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
