@@ -16,7 +16,7 @@ const checks=[
   ['security text wraps inside flex row',/infoText:\{[^}]*flex:1,minWidth:0,flexShrink:1/.test(code)],
   ['connection pill wraps instead of clipping',/connectedText:\{[^}]*flexShrink:1/.test(code)&&/connected:\{[^}]*maxWidth:'100%',minWidth:0/.test(code)],
   ['button label fits accessibility text sizes',/buttonText:\{[^}]*flexShrink:1,textAlign:'center'/.test(code)],
-  ['Android version upgrade',app.version==='1.1.3'&&app.android.versionCode===6&&app.android.package==='com.mtunz.web'],
+  ['Android version upgrade',app.version==='1.1.4'&&app.android.versionCode===7&&app.android.package==='com.mtunz.web'],
 ];
 for(const [name,ok] of checks)assert(ok,'Android auth responsive regression: '+name);
 console.log('Android auth viewport, text wrapping, keyboard and version regressions passed.');
