@@ -72,6 +72,12 @@ jobs:
           path: android-web/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Enable Android emulator hardware acceleration
+        shell: bash
+        run: |
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod a+rw /dev/kvm
+          fi
       - name: Smoke-test installation and launch on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
