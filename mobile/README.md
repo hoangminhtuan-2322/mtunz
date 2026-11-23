@@ -1,6 +1,6 @@
-# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 8 (React Native)
+# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 9 (React Native)
 
-Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **8**, versionName **1.0.0**, icon không thay đổi. **Đây là bản React Native 1.1.4 giữ nguyên chức năng, chỉ đổi tên hiển thị thành 1.0.0; KHÔNG PHẢI APK TWA 1.0.0 gốc.** Android vẫn cần versionCode 8 cao hơn 7 để cho phép cập nhật mà không gỡ cài đặt.
+Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **9**, versionName **1.0.0**, icon không thay đổi. **Đây là app React Native hiện hành, không phải APK TWA 1.0.0 gốc.** Màn Cá nhân được sắp xếp thành nhóm cài đặt gọn hơn; thông báo nền chỉ hiển thị trạng thái thật, không giả lập Firebase/Expo Push. Android cần versionCode 9 cao hơn 8 để cho phép cập nhật mà không gỡ cài đặt.
 
 ## Đã tích hợp trong mã nguồn
 
@@ -61,7 +61,7 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
 
 ### Giữ nguyên logo và cập nhật trực tiếp bản APK 1.0.1
 
-- Package: `com.mtunz.web`. Native 1.0.0 đặt versionCode **8** để cập nhật đè bản 1.1.4 (versionCode 7).
+- Package: `com.mtunz.web`. Native 1.0.0 đặt versionCode **9** để cập nhật đè bản Native 1.0.0 trước đó (versionCode 8).
 - Asset `mobile/assets/icon.png` có Git blob SHA **282a6971e38d51ce570b094e07d5624663bbedbb**, chính xác bằng file logo `android-web/app/src/main/res/drawable-nodpi/mtunz_icon.png` của APK trước.
 - Sử dụng **cùng 4 GitHub Actions secrets** của khóa ký cố định đã dùng cho APK 1.0.1:
   `MTUNZ_ANDROID_WEB_KEYSTORE_BASE64`,

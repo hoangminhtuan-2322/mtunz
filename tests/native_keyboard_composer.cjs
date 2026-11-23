@@ -22,7 +22,7 @@ assert(app.includes("import {SafeAreaProvider,SafeAreaView,initialWindowMetrics}
 assert(messenger.includes("import {SafeAreaView} from 'react-native-safe-area-context'"),
   'Conversation details modal must respect Android status/navigation bars');
 assert.equal(cfg.version,'1.0.0');
-assert.equal(cfg.android.versionCode,8);
+assert.equal(cfg.android.versionCode,9);
 assert(/\bImage,Keyboard,KeyboardAvoidingView\b/.test(messenger),'Need Keyboard lifecycle events');
 assert(messenger.includes('behavior="padding" keyboardVerticalOffset={0}'),
   'Set keyboard avoidance behavior for Android and iOS, not undefined on Android');

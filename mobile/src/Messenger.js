@@ -38,6 +38,26 @@ function Field({value,onChangeText,placeholder,secureTextEntry=false,multiline=f
     keyboardType={keyboardType} style={[css.input,multiline&&{minHeight:72,textAlignVertical:'top'}]}/>;
 }
 function Section({title,children}){return <View style={css.section}><Text style={css.h2}>{title}</Text>{children}</View>;}
+function AccountGroup({title,children}){
+ return <View style={css.accountGroup}>
+  <Text style={css.accountGroupTitle}>{title}</Text>
+  <View style={css.accountGroupBody}>{children}</View>
+ </View>;
+}
+function AccountRow({symbol,title,subtitle,detail,onPress,danger=false}){
+ return <Pressable accessibilityRole="button" accessibilityLabel={title}
+   onPress={onPress} style={({pressed})=>[css.accountRow,pressed&&{opacity:.76}]}>
+   <View style={[css.accountSymbol,danger&&css.accountSymbolDanger]}>
+     <Text style={[css.accountSymbolText,danger&&css.accountDangerText]}>{symbol}</Text>
+   </View>
+   <View style={css.accountText}>
+     <Text style={[css.accountTitle,danger&&css.accountDangerText]} numberOfLines={1}>{title}</Text>
+     {!!subtitle&&<Text style={css.accountSubtitle} numberOfLines={2}>{subtitle}</Text>}
+   </View>
+   {!!detail&&<View style={css.accountCount}><Text style={css.accountCountText}>{detail}</Text></View>}
+   <Text style={css.accountChevron}>›</Text>
+ </Pressable>;
+}
 function EmptyState({symbol,title,subtitle}) {
   return <View style={css.emptyPanel}>
     <View style={css.emptySymbol}><Text style={css.emptySymbolText}>{symbol}</Text></View>
@@ -157,7 +177,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [supportMessages,setSupportMessages]=useState([]),
     [supportClaim,setSupportClaim]=useState(''),
     [supportDraft,setSupportDraft]=useState(''),
-    [supportBusy,setSupportBusy]=useState(false);
+    [supportBusy,setSupportBusy]=useState(false),
+    [deviceSessions,setDeviceSessions]=useState([]),
+    [rememberedDevices,setRememberedDevices]=useState([]),
+    [sessionsLoading,setSessionsLoading]=useState(false),
+    [sessionMessage,setSessionMessage]=useState('');
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
@@ -676,6 +700,23 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       setSupportDraft('');
     }catch(e){alertError(e);}finally{setSupportBusy(false);}
   }
+  async function loadDevices(){
+    setSessionsLoading(true);setSessionMessage('');
+    try{
+      const result=await invoke('/api/me/sessions');
+      setDeviceSessions(result.sessions||[]);
+      setRememberedDevices(result.remembered_devices||[]);
+    }catch(error){setSessionMessage(error.message||'Không lấy được danh sách thiết bị.');}
+    finally{setSessionsLoading(false);}
+  }
+  async function revokeDevice(kind,item){
+    if(item.current&&kind==='session')return;
+    Alert.alert('Thu hồi thiết bị','Phiên đăng nhập này sẽ bị đăng xuất ngay. Bạn muốn tiếp tục?',[
+      {text:'Hủy',style:'cancel'},
+      {text:'Thu hồi',style:'destructive',onPress:()=>perform(
+        '/api/me/sessions/'+kind+'/'+encodeURIComponent(item.id),'DELETE',undefined,loadDevices)},
+    ]);
+  }
   async function loadSettings(){
     await refreshSocial();
     try{setIdentityQuota((await invoke('/api/me/identity/status')).quota);}
@@ -963,33 +1004,48 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </Pressable>)}
       </ScrollView>}
       {tab==='settings'&&<ScrollView keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false} contentContainerStyle={css.sectionContent}>
-        <View style={css.profileHero}>
-          <View style={css.profileAvatar}><Text style={css.profileInitial}>
-            {(user.display_name||user.username||'M').slice(0,1).toUpperCase()}</Text></View>
-          <View style={{flex:1,gap:5}}>
-            <Text style={css.eyebrow}>TRANG CÁ NHÂN</Text>
-            <Text style={css.profileName} numberOfLines={2}>{user.display_name||user.username}</Text>
-            <Text style={css.muted}>ID {user.public_id} · @{user.username}</Text>
+        showsVerticalScrollIndicator={false} contentContainerStyle={css.accountPage}>
+        <View style={css.accountHero}>
+          <View style={css.accountHeroAvatar}>
+            {user.avatar_url?<Image source={avatarSource(user.avatar_url,token)} style={css.accountHeroImage}/>:
+              <Text style={css.accountHeroInitial}>
+                {(user.display_name||user.username||'M').slice(0,1).toUpperCase()}</Text>}
           </View>
+          <View style={css.accountHeroCopy}>
+            <Text style={css.accountHeroEyebrow}>TÀI KHOẢN MTUNZ</Text>
+            <Text style={css.accountHeroName} numberOfLines={1}>{user.display_name||user.username}</Text>
+            <Text style={css.accountHeroSecondary} numberOfLines={1}>@{user.username}</Text>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Chỉnh sửa hồ sơ"
+            onPress={()=>{setDialog('settings');loadSettings();}} style={css.accountHeroEdit}>
+            <Text style={css.accountHeroEditText}>Sửa</Text>
+          </Pressable>
         </View>
-        <Section title="Hồ sơ & riêng tư">
-          <Text style={css.muted}>Quản lý tên, tiểu sử, quyền hiển thị và trạng thái trực tuyến.</Text>
-          <Btn onPress={()=>{setDialog('settings');loadSettings();}}>Chỉnh sửa hồ sơ và quyền riêng tư</Btn>
-        </Section>
-        <Section title="Thông báo">
-          <Btn quiet onPress={()=>{setDialog('notifications');refreshLists();}}>Thông báo mới ({noticesUnread})</Btn>
-          <DevicePushSettings token={token}/>
-        </Section>
-        <Section title="Bảo mật tài khoản">
-          <Text style={css.muted}>Xem các thiết bị, kiểm soát phiên đăng nhập và quyền truy cập tài khoản.</Text>
-          <Btn quiet onPress={()=>setDialog('security')}>Quản lý thiết bị đăng nhập</Btn>
-        </Section>
-        <Section title="Hỗ trợ và thông tin">
-          <Btn quiet onPress={()=>{setDialog('support');loadSupport().catch(alertError);}}>Liên hệ hỗ trợ / báo cáo</Btn>
-          <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
-            {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
-        </Section>
+        <AccountGroup title="Tài khoản và riêng tư">
+          <AccountRow symbol="◉" title="Hồ sơ và quyền riêng tư"
+            subtitle="Tên, giới thiệu và trạng thái hoạt động"
+            onPress={()=>{setDialog('settings');loadSettings();}}/>
+          <AccountRow symbol="♢" title="Bảo mật và thiết bị"
+            subtitle="Phiên đăng nhập và quyền truy cập"
+            onPress={()=>{setDialog('security');loadDevices();}}/>
+        </AccountGroup>
+        <AccountGroup title="Thông báo">
+          <AccountRow symbol="▣" title="Thông báo trong ứng dụng"
+            subtitle={noticesUnread?'Có '+noticesUnread+' thông báo chưa đọc':'Tin nhắn, lời mời và cập nhật'}
+            detail={noticesUnread?String(noticesUnread>99?'99+':noticesUnread):null}
+            onPress={()=>{setDialog('notifications');refreshLists();}}/>
+          <DevicePushSettings token={token} compact/>
+        </AccountGroup>
+        <AccountGroup title="Hỗ trợ">
+          <AccountRow symbol="?" title="Trung tâm hỗ trợ"
+            subtitle="Liên hệ quản trị viên hoặc gửi báo cáo"
+            onPress={()=>{setDialog('support');loadSupport().catch(alertError);}}/>
+          <AccountRow symbol="↪" title="Đăng xuất"
+            subtitle="Thoát khỏi tài khoản trên thiết bị này" danger
+            onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
+              {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}/>
+        </AccountGroup>
+        <Text style={css.accountFooter}>mtunz · Cùng tài khoản, cùng dữ liệu trên web và ứng dụng</Text>
       </ScrollView>}
       <View style={css.tabs}>{tabs.map(([id,title,glyph])=><Pressable key={id}
         accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{selected:tab===id}}
@@ -1163,18 +1219,52 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         Đổi tên (mật khẩu + PIN)</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='notifications'} onClose={()=>setDialog('')} title="Thông báo">
-      <Btn small onPress={()=>perform('/api/notifications/read','POST',{},refreshLists)}>Đánh dấu đã đọc</Btn>
-      {notices.map((n,i)=><View key={n.id||i} style={css.section}>
-        <Text style={css.muted}>{n.body}</Text></View>)}
+      <View style={css.notificationHeader}>
+        <Text style={css.muted}>{noticesUnread?noticesUnread+' chưa đọc':'Bạn đã xem hết thông báo'}</Text>
+        {noticesUnread>0&&<Btn small quiet onPress={()=>perform('/api/notifications/read','POST',{},refreshLists)}>
+          Đánh dấu đã đọc</Btn>}
+      </View>
+      {notices.length===0&&<Text style={css.accountSubtitle}>Chưa có thông báo nào.</Text>}
+      {notices.map((n,i)=><View key={n.id||i} style={[css.notificationItem,!n.read_at&&css.notificationUnread]}>
+        {!n.read_at&&<View style={css.notificationDot}/>}
+        <View style={{flex:1,minWidth:0,gap:5}}>
+          <Text style={css.notificationBody}>{n.body||'Thông báo mới'}</Text>
+          {!!n.created_at&&<Text style={css.accountSubtitle}>
+            {new Date(n.created_at*1000).toLocaleString('vi-VN')}</Text>}
+        </View>
+      </View>)}
     </ModalSheet>
     <ModalSheet visible={dialog==='security'} onClose={()=>setDialog('')} title="Bảo mật & thiết bị">
-      <Text style={css.muted}>Phiên đăng nhập điện thoại được quản lý cùng tài khoản web. Thu hồi sẽ ngắt WebSocket ngay.</Text>
+      <Text style={css.muted}>Xem và thu hồi thiết bị ngay tại đây. Phiên bị thu hồi sẽ ngắt kết nối trên web và app.</Text>
+      <View style={css.notificationHeader}>
+        <Text style={css.accountGroupTitle}>Phiên đăng nhập · {deviceSessions.length}</Text>
+        <Btn quiet small disabled={sessionsLoading} onPress={loadDevices}>
+          {sessionsLoading?'Đang tải…':'Làm mới'}</Btn>
+      </View>
+      {!!sessionMessage&&<Text style={css.accountSubtitle}>{sessionMessage}</Text>}
+      {!sessionsLoading&&deviceSessions.length===0&&
+        <Text style={css.accountSubtitle}>Chưa có phiên đăng nhập nào được ghi nhận.</Text>}
+      {deviceSessions.map(item=><View key={'s'+item.id} style={css.deviceCard}>
+        <View style={css.deviceTitleRow}>
+          <Text style={css.accountTitle} numberOfLines={1}>{item.label||item.device_name||'Thiết bị'}</Text>
+          {item.current&&<Text style={css.deviceCurrent}>Thiết bị này</Text>}
+        </View>
+        <Text style={css.accountSubtitle}>{[item.os_name,item.browser].filter(Boolean).join(' · ')}</Text>
+        {!!item.last_seen&&<Text style={css.accountSubtitle}>
+          Hoạt động: {new Date(item.last_seen*1000).toLocaleString('vi-VN')}</Text>}
+        {!item.current&&<Btn small quiet onPress={()=>revokeDevice('session',item)}>Thu hồi phiên</Btn>}
+      </View>)}
+      {!!rememberedDevices.length&&<Text style={css.accountGroupTitle}>Thiết bị đã ghi nhớ · {rememberedDevices.length}</Text>}
+      {rememberedDevices.map(item=><View key={'r'+item.id} style={css.deviceCard}>
+        <Text style={css.accountTitle}>{item.label||item.device_name||'Thiết bị ghi nhớ'}</Text>
+        <Text style={css.accountSubtitle}>{[item.os_name,item.browser].filter(Boolean).join(' · ')}</Text>
+        <Btn small quiet onPress={()=>revokeDevice('remembered',item)}>Thu hồi quyền ghi nhớ</Btn>
+      </View>)}
       <Btn danger onPress={()=>Alert.alert('Thu hồi thiết bị','Đăng xuất tất cả thiết bị khác?',[
-        {text:'Hủy'},{text:'Thu hồi',style:'destructive',onPress:()=>perform('/api/me/sessions/revoke-others','POST') }])}>
-        Thu hồi các phiên khác</Btn>
-      <Btn quiet onPress={()=>perform('/api/me/sessions','GET',undefined,r=>
-        Alert.alert('Thiết bị',JSON.stringify(r.sessions?.map(x=>x.device_name||x.os_name)||[]).slice(0,700)))}>
-        Xem thiết bị đăng nhập</Btn>
+        {text:'Hủy',style:'cancel'},
+        {text:'Thu hồi',style:'destructive',
+          onPress:()=>perform('/api/me/sessions/revoke-others','POST',{},loadDevices)}])}>
+        Đăng xuất khỏi các thiết bị khác</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Trung tâm hỗ trợ">
       {supportTicket?<View style={css.section}>
@@ -1402,6 +1492,50 @@ const css=StyleSheet.create({
   worldRoomIcon:{height:42,width:42,borderRadius:13,backgroundColor:'#263f5b',
     alignItems:'center',justifyContent:'center'},
   worldRoomGlyph:{fontSize:25,color:P.accent},
+  accountPage:{paddingHorizontal:15,paddingTop:16,paddingBottom:35,gap:19},
+  accountHero:{flexDirection:'row',alignItems:'center',gap:12,padding:14,
+    borderRadius:20,backgroundColor:'#153048',borderWidth:1,borderColor:'#315672'},
+  accountHeroAvatar:{width:56,height:56,borderRadius:18,backgroundColor:'#335d83',
+    alignItems:'center',justifyContent:'center',overflow:'hidden'},
+  accountHeroImage:{width:56,height:56},
+  accountHeroInitial:{fontSize:23,fontWeight:'900',color:P.text},
+  accountHeroCopy:{flex:1,minWidth:0,gap:3},
+  accountHeroEyebrow:{fontSize:10,letterSpacing:1.2,fontWeight:'900',color:'#8cc9f7'},
+  accountHeroName:{fontSize:18,fontWeight:'900',color:P.text},
+  accountHeroSecondary:{fontSize:12,color:P.soft},
+  accountHeroEdit:{borderRadius:12,borderWidth:1,borderColor:'#3b6587',
+    backgroundColor:'#244763',paddingHorizontal:13,paddingVertical:9},
+  accountHeroEditText:{color:'#c1e2fc',fontSize:12,fontWeight:'800'},
+  accountGroup:{gap:9},
+  accountGroupTitle:{fontSize:13,fontWeight:'900',color:'#a8cce9',paddingLeft:5},
+  accountGroupBody:{backgroundColor:'#12263c',borderRadius:18,overflow:'hidden',
+    borderWidth:1,borderColor:'#2a4966'},
+  accountRow:{flexDirection:'row',alignItems:'center',minHeight:70,paddingHorizontal:12,
+    paddingVertical:12,gap:12,borderBottomWidth:1,borderColor:'#29415a'},
+  accountSymbol:{width:40,height:40,borderRadius:13,alignItems:'center',
+    justifyContent:'center',backgroundColor:'#244765'},
+  accountSymbolText:{fontSize:20,fontWeight:'800',color:'#8fcfff'},
+  accountSymbolDanger:{backgroundColor:'#442c3b'},
+  accountDangerText:{color:'#ffb3ba'},
+  accountText:{flex:1,minWidth:0,gap:4},
+  accountTitle:{fontSize:14,fontWeight:'800',color:P.text},
+  accountSubtitle:{fontSize:11,lineHeight:16,color:P.soft,flexShrink:1},
+  accountChevron:{color:'#829eb9',fontSize:23,marginLeft:1},
+  accountCount:{borderRadius:13,backgroundColor:'#285b87',minWidth:25,
+    paddingHorizontal:7,paddingVertical:4,alignItems:'center'},
+  accountCountText:{color:'#fff',fontSize:11,fontWeight:'900'},
+  accountFooter:{fontSize:11,textAlign:'center',color:'#819eb7',paddingTop:2},
+  deviceCard:{backgroundColor:'#19314a',borderRadius:13,borderWidth:1,
+    borderColor:'#355571',padding:12,gap:8},
+  deviceTitleRow:{flexDirection:'row',alignItems:'center',gap:8,justifyContent:'space-between'},
+  deviceCurrent:{fontSize:10,color:'#76e3bf',fontWeight:'900',flexShrink:1},
+  notificationHeader:{flexDirection:'row',justifyContent:'space-between',
+    alignItems:'center',gap:10,flexWrap:'wrap'},
+  notificationItem:{flexDirection:'row',gap:10,padding:12,borderRadius:13,
+    borderWidth:1,borderColor:'#2c4968',backgroundColor:'#10243a'},
+  notificationUnread:{backgroundColor:'#19344f',borderColor:'#41678a'},
+  notificationDot:{width:8,height:8,borderRadius:4,backgroundColor:P.accent,marginTop:5},
+  notificationBody:{color:P.text,fontSize:13,lineHeight:19},
   profileHero:{flexDirection:'row',alignItems:'center',gap:16,padding:21,
     borderRadius:22,backgroundColor:'#17324e',borderWidth:1,borderColor:'#35597c'},
   profileAvatar:{height:66,width:66,borderRadius:20,backgroundColor:'#38658b',
