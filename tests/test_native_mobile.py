@@ -362,9 +362,12 @@ def test_android_support_reply_push_to_owner_without_private_body(monkeypatch):
         response._content=b'{"data":[{"status":"ok","id":"accepted"}]}'
         return response
     monkeypatch.setattr(mobile_push.requests,'post',expo_request)
-    with TestClient(app):
-        sent=admin.post(f'/api/admin/tickets/{tid}/messages',
-                        json={'body':'Thông tin tài khoản riêng tư','admin_pin':'2345'})
+    with TestClient(app) as running:
+        # Use the SAME event loop as the push worker: separate TestClients
+        # cannot reliably wake a cross-loop asyncio.Queue.
+        running.cookies.update(admin.cookies)
+        sent=running.post(f'/api/admin/tickets/{tid}/messages',
+                          json={'body':'Thông tin tài khoản riêng tư','admin_pin':'2345'})
         assert sent.status_code==200,sent.text
         [message]=received.get(timeout=4)
         assert message['to']==token
