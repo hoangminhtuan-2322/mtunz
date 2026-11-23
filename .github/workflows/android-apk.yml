@@ -113,7 +113,18 @@ jobs:
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
           MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
         run: node tools/configure_fixed_release_signing.cjs --release
-      - name: Build standalone React Native APK (embedded JavaScript, NO WebView)
+      - name: Build standalone native RELEASE with the permanent mtunz signing key
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        env:
+          MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
+      - name: Build standalone NATIVE preview with debug signing only
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         run: |
           chmod +x android/gradlew
           cd android
