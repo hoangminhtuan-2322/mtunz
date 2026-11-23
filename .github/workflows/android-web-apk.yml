@@ -55,8 +55,8 @@ jobs:
           ), 'Missing mtunz web TWA digital asset link'
           print('Digital Asset Links format is valid.')
           PY
-      - name: Build installable preview and unsigned release
-        run: gradle -p android-web :app:assembleDebug :app:assembleRelease --no-daemon --stacktrace --max-workers=2
+      - name: Build installable preview, unsigned APK, and unsigned Play bundle
+        run: gradle -p android-web :app:assembleDebug :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace --max-workers=2
       - name: Verify preview APK and launcher
         run: |
           set -euo pipefail
@@ -150,6 +150,16 @@ jobs:
             "$RUNNER_TEMP/mtunz-web-aligned.apk"
           "$tools/apksigner" verify --verbose --print-certs \
             android-web/app/build/outputs/apk/release/mtunz-web-release.apk
+          test -s android-web/app/build/outputs/bundle/release/app-release.aab
+          jarsigner \
+            -keystore "$MTUNZ_WEB_KEYSTORE" \
+            -storepass:env STORE_PASSWORD \
+            -keypass:env KEY_PASSWORD \
+            -signedjar android-web/app/build/outputs/bundle/release/mtunz-web-play.aab \
+            android-web/app/build/outputs/bundle/release/app-release.aab \
+            "$KEY_ALIAS"
+          jarsigner -verify -strict \
+            android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
       - name: Upload test APK (debug-signed; not for distribution)
         uses: actions/upload-artifact@v4
         with:
@@ -163,5 +173,13 @@ jobs:
         with:
           name: mtunz-web-android-RELEASE-stable-signing
           path: android-web/app/build/outputs/apk/release/mtunz-web-release.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload signed Android App Bundle for Google Play
+        if: steps.signing.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtunz-web-android-PLAY-RELEASE-aab
+          path: android-web/app/build/outputs/bundle/release/mtunz-web-play.aab
           if-no-files-found: error
           retention-days: 30
