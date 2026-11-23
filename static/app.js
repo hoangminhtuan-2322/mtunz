@@ -375,8 +375,10 @@ function reportAlertVisibility(socket=state.ws,visible=!document.hidden){
  }
 }
 
+let presenceHeartbeatTimer=0,pageIsUnloading=false;
 function connectSocket(retry=false){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
+ clearInterval(presenceHeartbeatTimer);presenceHeartbeatTimer=0;
  if(state.ws){state.ws.onclose=null;state.ws.close();}
  const socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`);
  state.ws=socket;
@@ -390,6 +392,13 @@ function connectSocket(retry=false){
   socketRetryDelay=2500;
   v9ConnectionBanner(true);
   reportAlertVisibility(socket);
+  // Foreground activity heartbeat: sleeping app tabs expire on the server.
+  const beat=()=>{
+   if(state.ws===socket&&socket.readyState===WebSocket.OPEN&&!document.hidden)
+    socket.send(JSON.stringify({type:'presence-heartbeat'}));
+  };
+  beat();
+  presenceHeartbeatTimer=setInterval(beat,25000);
   if(!retry)return;
   if(state.user?.is_admin)v9ScheduleAdminRefresh(350);
   if(state.user&&!state.user.is_admin){
@@ -512,7 +521,19 @@ function connectSocket(retry=false){
      }
    }
    if(t==='typing' && state.selected===data.from_id){const el=$('#typing-text');if(el){el.textContent=data.on?'Đang nhập tin nhắn…':'';}}
-   if(t==='presence' && state.user && !state.user.is_admin){const friend=state.friends.find(x=>x.other_id===data.user_id);if(friend){friend.online=data.online;renderSideItems();updateChatHeader();}}
+   if(t==='presence' && state.user && !state.user.is_admin){
+     const friend=state.friends.find(x=>x.other_id===Number(data.user_id));
+     if(friend){
+       friend.online=!!data.online;
+       if(Number.isFinite(Number(data.last_seen))&&Number(data.last_seen)>0)
+         friend.last_seen=Number(data.last_seen);
+       renderSideItems();
+       updateChatHeader();
+       if(state.tab==='friends')renderApp();
+     }
+     // Also reconcile events missed during connection loss.
+     scheduleFriendsRefresh(700);
+   }
    if(t==='announcement'){toast('📢 '+data.body,'info');notifyBrowser('Thông báo admin: '+data.body);}
    if(state.user&&!state.user.is_admin)await extraSocket(data);
    if(t==='support-deleted'&&!state.user?.is_admin){
@@ -539,7 +560,11 @@ function connectSocket(retry=false){
  socket.onclose=()=>{
   clearTimeout(handshakeTimeout);
   if(state.ws!==socket)return;
+  clearInterval(presenceHeartbeatTimer);presenceHeartbeatTimer=0;
+  if(pageIsUnloading||!state.user)return;
   v9ConnectionBanner(false);
+  // Reconnect only while visible; foreground event resumes background tabs.
+  if(document.hidden)return;
   const delay=navigator.onLine===false?Math.max(10000,socketRetryDelay):socketRetryDelay;
   socketRetry=setTimeout(()=>connectSocket(true),delay);
   socketRetryDelay=Math.min(30000,socketRetryDelay*2);
@@ -1160,9 +1185,19 @@ function memberHeader(title,subtitle,actions=''){
 function welcomeEmpty(){return `<div class="hero-empty"><div><div class="illustration">✦</div><h1>Đã kết nối, sẵn sàng trò chuyện.</h1>
  <p>Chọn một người bạn ở bên trái hoặc gửi lời mời kết bạn để bắt đầu cuộc trò chuyện đầu tiên.</p>
  <button class="btn primary" data-act="app-tab" data-tab="friends">${icon('add')} Tìm bạn bè</button></div></div>`;}
+function friendLastActiveText(seconds,clock=Date.now()){
+ const stamp=Number(seconds);
+ if(!Number.isFinite(stamp)||stamp<=0)return '';
+ const elapsed=Math.max(0,Math.floor(clock/1000-stamp));
+ const exact=date(stamp);
+ if(elapsed<60)return 'Vừa hoạt động · '+exact;
+ if(elapsed<3600)return 'Hoạt động '+Math.floor(elapsed/60)+' phút trước · '+exact;
+ if(elapsed<86400)return 'Hoạt động '+Math.floor(elapsed/3600)+' giờ trước · '+exact;
+ return 'Hoạt động gần nhất: '+exact;
+}
 function convoHeader(f){if(!f)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Quay lại danh sách">${icon('back')}</button>
- ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(chatContactName(f))}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':f.last_seen?`Hoạt động gần nhất: ${date(f.last_seen)}`: ''}</div></div>
+ ${avatar(f.username,f.online,'sm',f.avatar_url)}<div class="grow"><h3>${esc(chatContactName(f))}</h3><div class="small muted">${f.online?'<span class="dot"></span>Đang hoạt động':f.last_seen?`<span class="friend-last-active" data-last-seen="${Number(f.last_seen)}">${esc(friendLastActiveText(f.last_seen))}</span>`: ''}</div></div>
  <button type="button" class="btn ghost sm" data-chat-library aria-label="Nội dung đã chia sẻ" title="Nội dung đã chia sẻ">${icon('file',16)}</button>
  <button type="button" class="btn ghost sm" data-chat-nickname="${f.other_id}" title="Đặt biệt danh">${icon('edit',15)} <span class="button-word">Biệt danh</span></button>
  <button class="btn ghost sm" data-act="profile-view" data-id="${f.other_id}" title="Xem hồ sơ">${icon('users',15)}</button>
@@ -1177,6 +1212,13 @@ function convoHeader(f){if(!f)return '';
  <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}" title="${f.archived?'Bỏ lưu trữ':'Lưu trữ'} hội thoại">${icon('archive',15)}</button>
  <button class="btn ghost sm" data-act="chat-restrict" data-id="${f.other_id}" title="Hạn chế / bỏ hạn chế">${icon('shield',15)} <span class="button-word">${f.restricted?'Bỏ hạn chế':'Hạn chế'}</span></button>
  <button class="btn danger sm" data-act="chat-block" data-id="${f.other_id}" title="Chặn tài khoản">${icon('ban',15)} <span class="button-word">Chặn</span></button></header>`;}
+function refreshFriendLastActiveLabel(){
+ const node=document.querySelector('#chat-header .friend-last-active');
+ if(!node||document.hidden)return;
+ const label=friendLastActiveText(Number(node.dataset.lastSeen));
+ if(label&&node.textContent!==label)node.textContent=label;
+}
+setInterval(refreshFriendLastActiveLabel,30000);
 function updateChatHeader(){
  const f=state.friends.find(x=>x.other_id===state.selected);
  const chat=$('#chat-header');
@@ -3061,8 +3103,17 @@ document.addEventListener('submit',async event=>{
   }
 });
 document.addEventListener('visibilitychange',()=>reportAlertVisibility());
-window.addEventListener('pagehide',()=>reportAlertVisibility(state.ws,false));
-window.addEventListener('pageshow',()=>reportAlertVisibility());
+window.addEventListener('pagehide',()=>{
+ pageIsUnloading=true;
+ reportAlertVisibility(state.ws,false);
+ if(state.ws?.readyState===WebSocket.OPEN)state.ws.close(1000,'Page closed');
+});
+window.addEventListener('pageshow',()=>{
+ pageIsUnloading=false;
+ reportAlertVisibility();
+ if(state.user&&state.ws?.readyState!==WebSocket.OPEN&&state.ws?.readyState!==WebSocket.CONNECTING)
+  connectSocket(true);
+});
 document.addEventListener('DOMContentLoaded', setup);
 
 

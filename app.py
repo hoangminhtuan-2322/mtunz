@@ -2351,14 +2351,17 @@ async def admin_revoke_user_sessions(request:Request,uid:int,body:AdminSessionRe
 
 
 # --- Presence and event bus ---
-async def notify_presence(uid,online):
+async def notify_presence(uid,online,last_seen=None):
+    # Deliver the precise server-side transition timestamp. Previously peers
+    # received only online=False and kept displaying a stale cached last_seen.
     with db() as c:
-        config=one(c,'SELECT show_online FROM users WHERE id=?',(uid,))
+        config=one(c,'SELECT show_online,last_seen FROM users WHERE id=?',(uid,))
         if not config or not config['show_online']:return
+        stamp=int(last_seen if last_seen is not None else config['last_seen'] or 0)
         rows=many(c,"SELECT CASE WHEN u1=? THEN u2 ELSE u1 END other_id FROM friendships WHERE state='accepted' AND (u1=? OR u2=?)",(uid,uid,uid))
         targets=[r['other_id'] for r in rows if not is_restricted(c,uid,r['other_id'])]
     for other in targets:
-        await hub.user(other,'presence',user_id=uid,online=online)
+        await hub.user(other,'presence',user_id=uid,online=bool(online),last_seen=stamp)
 
 
 @app.websocket('/ws')
@@ -2416,7 +2419,7 @@ async def websocket_events(ws:WebSocket):
                       (timestamp,digest(sid),uid))
             c.execute('UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)',
                       (timestamp,uid,timestamp))
-        if not was_online:await notify_presence(uid,True)
+        if not was_online:await notify_presence(uid,True,last_seen=timestamp)
     elif gid:
         hub.guests[gid].add(ws)
     else:
@@ -2425,8 +2428,17 @@ async def websocket_events(ws:WebSocket):
     try:
         activity = []
         last_session_activity = now()
+        heartbeat_enabled = False
         while True:
-            raw_message = await ws.receive_text()
+            # New browser clients opt in to a heartbeat. A sleeping, killed or
+            # network-disconnected tab cannot keep a phantom online presence.
+            # Legacy/native clients keep their existing connection behavior.
+            try:
+                raw_message = await asyncio.wait_for(
+                    ws.receive_text(), timeout=75 if heartbeat_enabled else None)
+            except asyncio.TimeoutError:
+                await ws.close(code=1001)
+                break
             if uid is not None and now() - last_session_activity >= 120:
                 with db() as c:
                     timestamp=now()
@@ -2451,6 +2463,9 @@ async def websocket_events(ws:WebSocket):
                 await ws.close(code=1003)
                 break
             if not isinstance(msg,dict):
+                continue
+            if uid is not None and msg.get('type')=='presence-heartbeat':
+                heartbeat_enabled = True
                 continue
             if ws in hub.session_hashes and msg.get('type')=='alert-visibility':
                 if msg.get('visible') is True:hub.foreground.add(ws)
@@ -2496,8 +2511,11 @@ async def websocket_events(ws:WebSocket):
             hub.users[uid].discard(ws)
             hub.detach_session(ws)
             if not hub.users[uid]:
-                with db() as c:c.execute('UPDATE users SET last_seen=? WHERE id=?',(now(),uid))
-                await notify_presence(uid,False)
+                timestamp=now()
+                with db() as c:
+                    c.execute('UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)',
+                              (timestamp,uid,timestamp))
+                await notify_presence(uid,False,last_seen=timestamp)
         elif gid:
             hub.guests[gid].discard(ws)
 

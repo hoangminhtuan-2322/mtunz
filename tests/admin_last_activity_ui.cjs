@@ -35,4 +35,14 @@ assert.equal(relative(sec(clock-2*60000),false,clock),'2 phút trước');
 assert.equal(relative(sec(clock-3*3600000),false,clock),'3 giờ trước');
 assert.equal(relative(sec(clock-300000),true,clock),'Đang trực tuyến');
 assert.match(relative(sec(clock-86400000),false,clock),/Hôm qua/);
+const startFriend=app.indexOf('function friendLastActiveText(');
+const endFriend=app.indexOf('function convoHeader(',startFriend);
+assert(startFriend>0&&endFriend>startFriend);
+const friendLabel=vm.runInNewContext(
+  'const date = t => "12:47 23-11";'+app.slice(startFriend,endFriend)+';friendLastActiveText;');
+assert.match(friendLabel(sec(clock-30000),clock),/Vừa hoạt động/);
+assert.match(friendLabel(sec(clock-120000),clock),/2 phút trước/);
+assert(app.includes('friend.last_seen=Number(data.last_seen)'));
+assert(app.includes("type:'presence-heartbeat'"));
+assert(app.includes('refreshFriendLastActiveLabel'));
 console.log('Admin last activity layout, relative dates, and sorting checks passed.');
