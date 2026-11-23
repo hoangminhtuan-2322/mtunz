@@ -59,6 +59,6 @@ assert(push.includes('chưa kết nối Firebase/Expo Push'),
 assert(push.includes("Thông báo trong ứng dụng vẫn có thể xem ở mục phía trên"),
   'Distinguish in-app notices from unavailable background push');
 assert.equal(cfg.version,'1.0.0');
-assert.equal(cfg.android.versionCode,9);
+assert.equal(cfg.android.versionCode,10);
 assert.equal(cfg.android.package,'com.mtunz.web');
-console.log('Compact account page, secure device management, true push readiness and versionCode 9: PASS');
+console.log('Compact account page, secure device management, true push readiness and versionCode 10: PASS');
