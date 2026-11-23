@@ -337,3 +337,40 @@ def test_native_support_owned_ticket_sync_and_authorization():
         event=ws.receive_json()
         assert event['type']=='support-message' and event['ticket_id']==ticket_id
         assert event['message']['body']=='Hỗ trợ đã nhận'
+
+
+def test_android_support_reply_push_to_owner_without_private_body(monkeypatch):
+    """A real Android bearer session gets an admin support reply push, not private content."""
+    from queue import Queue
+    from requests import Response
+    import mobile_push
+    admin=logged_admin()
+    register_user(admin,'native_support_push_user')
+    client,headers=native_login('native_support_push_user')
+    token='ExpoPushToken['+('R'*32)+']'
+    assert client.post('/api/mobile/push',headers=headers,json={'token':token}).status_code==200
+    ticket=client.post('/api/support/tickets',headers=headers,
+                       json={'kind':'other','claim':'Bí mật hỗ trợ'})
+    assert ticket.status_code==200,ticket.text
+    tid=ticket.json()['id']
+    received=Queue()
+    def expo_request(url,**kwargs):
+        assert url==mobile_push.EXPO_GATEWAY
+        received.put(kwargs['json'])
+        response=Response()
+        response.status_code=200
+        response._content=b'{"data":[{"status":"ok","id":"accepted"}]}'
+        return response
+    monkeypatch.setattr(mobile_push.requests,'post',expo_request)
+    with TestClient(app) as running:
+        # Use the SAME event loop as the push worker: separate TestClients
+        # cannot reliably wake a cross-loop asyncio.Queue.
+        running.cookies.update(admin.cookies)
+        sent=running.post(f'/api/admin/tickets/{tid}/messages',
+                          json={'body':'Thông tin tài khoản riêng tư','admin_pin':'2345'})
+        assert sent.status_code==200,sent.text
+        [message]=received.get(timeout=4)
+        assert message['to']==token
+        assert message['data']=={'kind':'support_reply','chat_id':tid}
+        assert 'Thông tin tài khoản riêng tư' not in message['body']
+        assert message['channelId']=='messages'
