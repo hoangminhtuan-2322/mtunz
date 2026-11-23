@@ -44,5 +44,5 @@ assert(backend.includes("Literal['media', 'images', 'videos', 'files', 'links']"
 assert(backend.includes("filters = 'a.mime LIKE ?'"),'Filter video/image on backend, not only page UI');
 assert(download.includes("headers:{Authorization:'Bearer '+token}"));
 assert(pkg.dependencies['expo-video']&&pkg.dependencies['expo-image']);
-assert(app.version==='1.0.0'&&app.android.versionCode===8&&app.android.package==='com.mtunz.web');
+assert(app.version==='1.0.0'&&app.android.versionCode===9&&app.android.package==='com.mtunz.web');
 console.log('Native full-screen chat media gallery, real authenticated previews, pagination and version tests passed.');
