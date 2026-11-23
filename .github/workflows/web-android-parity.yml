@@ -39,6 +39,7 @@ jobs:
         run: |
           node tests/native_admin_parity.cjs
           node tests/native_smart_presence.cjs
+          node tests/native_account_settings.cjs
           node tests/native_session_recovery.cjs
           node tests/native_auth_layout.cjs
           node tests/native_keyboard_composer.cjs
