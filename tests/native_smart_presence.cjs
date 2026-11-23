@@ -74,7 +74,7 @@ for(const required of [
   "if not show_activity:",
   "r['last_seen']=None",
   "await hub.user(other,'presence',user_id=uid,online=bool(online),last_seen=stamp)",
-  "'last_active_at'",
+  'AS last_active_at',
 ])assert(backend.includes(required),'Backend must govern privacy and live state: '+required);
 assert.equal(app.android.package,'com.mtunz.web');
 assert.equal(app.version,'1.1.4');
