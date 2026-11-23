@@ -12,8 +12,10 @@ assert(app.includes('Lần cuối hoạt động</th>'),'Admin members table inc
 assert(app.includes('class="data-table admin-users-table"'),'Admin member table has responsive scope');
 assert(app.includes('data-label="Lần cuối hoạt động"'),'Mobile cards have accessible activity label');
 assert(app.includes('colspan="7"'),'Empty row spans the additional column');
-assert(app.includes("state.adminUserSort='activity'"),'Reset restores activity-first sort');
-assert(app.includes("sort:state.adminUserSort||'activity'"),'Admin fetch uses server sorting');
+assert(app.includes("state.adminUserSort='oldest'"),'Reset restores oldest-created-first sort');
+assert(app.includes("sort:state.adminUserSort||'oldest'"),'Admin fetch uses chronological sorting');
+assert(app.includes("['oldest','Ngày tạo: cũ nhất → mới nhất']"),'Chronological order is explicit in the filter');
+assert(app.includes("?'ascending':state.adminUserSort==='newest'?'descending'"),'Date-created header announces sort direction');
 assert(app.includes('adminRefreshLastActivityLabels'),'Relative timestamps refresh without reloading the table');
 assert(app.includes('adminLastActivityCell(u)'),'The activity data is actually rendered');
 assert(css.includes('.admin-users-table tbody tr[hidden]{display:none!important}'),'Filtering can hide mobile cards');

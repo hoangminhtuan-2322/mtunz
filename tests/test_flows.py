@@ -309,8 +309,13 @@ def test_admin_last_activity_online_first_and_rest_heartbeat():
     assert page.json()['users'][0]['online'] is False
     page2=admin.get('/api/admin/users',params={'sort':'activity','limit':1,'offset':1})
     assert page2.json()['users'][0]['id']==first_id
+    # Default is account creation time, oldest first, across all pages.
     default=admin.get('/api/admin/users',params={'limit':1})
-    assert default.json()['users'][0]['id']==second_id
+    assert default.json()['users'][0]['id']==first_id
+    next_page=admin.get('/api/admin/users',params={'limit':1,'offset':1})
+    assert next_page.json()['users'][0]['id']==second_id
+    reversed_order=admin.get('/api/admin/users',params={'sort':'newest','limit':1})
+    assert reversed_order.json()['users'][0]['id']==second_id
 
     # Being logged in is not the same as having a connected WebSocket.
     with first.websocket_connect('/ws'):
