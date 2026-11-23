@@ -254,13 +254,13 @@ def test_admin_last_activity_online_first_and_rest_heartbeat():
         c.execute('UPDATE users SET last_seen=? WHERE id=?',(base-600,first_id))
         c.execute('UPDATE users SET last_seen=? WHERE id=?',(base-900,second_id))
         c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-500,first_id))
-        c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-120,second_id))
+        c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-60,second_id))
 
     assert second.get('/api/admin/users').status_code==403
     page=admin.get('/api/admin/users',params={'sort':'activity','limit':1})
     assert page.status_code==200,page.text
     assert page.json()['users'][0]['id']==second_id
-    assert page.json()['users'][0]['last_active_at']==base-120
+    assert page.json()['users'][0]['last_active_at']==base-60
     assert page.json()['users'][0]['online'] is False
     page2=admin.get('/api/admin/users',params={'sort':'activity','limit':1,'offset':1})
     assert page2.json()['users'][0]['id']==first_id
@@ -279,6 +279,8 @@ def test_admin_last_activity_online_first_and_rest_heartbeat():
     assert second.get('/api/me').status_code==200
     with db() as c:
         seen=c.execute('SELECT MAX(last_seen) n FROM sessions WHERE user_id=?',(second_id,)).fetchone()['n']
+        remembered=c.execute('SELECT last_seen FROM users WHERE id=?',(second_id,)).fetchone()['last_seen']
     assert seen>=base
+    assert remembered>=base  # persists after the session is later removed
     item=admin.get('/api/admin/users',params={'q':str(second_id)}).json()['users'][0]
     assert item['last_active_at']>=base
