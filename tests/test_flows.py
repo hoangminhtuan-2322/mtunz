@@ -238,3 +238,47 @@ def test_admin_online_list_matches_stats_and_groups_sockets_by_account():
                 c.execute('UPDATE sessions SET expires_at=0 WHERE user_id=?',(member_id,))
             assert admin.get(route).json()['total']==0
     assert admin.get(route).json()['total']==0
+
+
+def test_admin_last_activity_online_first_and_rest_heartbeat():
+    """Admin sees actual activity from active sessions; pagination sorts globally."""
+    from app import now
+
+    admin=logged_admin()
+    first=register_user(admin,'activity_first')
+    second=register_user(admin,'activity_second')
+    first_id=first.get('/api/me').json()['user']['id']
+    second_id=second.get('/api/me').json()['user']['id']
+    base=now()
+    with db() as c:
+        c.execute('UPDATE users SET last_seen=? WHERE id=?',(base-600,first_id))
+        c.execute('UPDATE users SET last_seen=? WHERE id=?',(base-900,second_id))
+        c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-500,first_id))
+        c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-120,second_id))
+
+    assert second.get('/api/admin/users').status_code==403
+    page=admin.get('/api/admin/users',params={'sort':'activity','limit':1})
+    assert page.status_code==200,page.text
+    assert page.json()['users'][0]['id']==second_id
+    assert page.json()['users'][0]['last_active_at']==base-120
+    assert page.json()['users'][0]['online'] is False
+    page2=admin.get('/api/admin/users',params={'sort':'activity','limit':1,'offset':1})
+    assert page2.json()['users'][0]['id']==first_id
+    default=admin.get('/api/admin/users',params={'limit':1})
+    assert default.json()['users'][0]['id']==second_id
+
+    # Being logged in is not the same as having a connected WebSocket.
+    with first.websocket_connect('/ws'):
+        online=admin.get('/api/admin/users',params={'sort':'activity','limit':1}).json()['users'][0]
+        assert online['id']==first_id
+        assert online['online'] is True
+
+    # REST-only native traffic must refresh the session occasionally.
+    with db() as c:
+        c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-1500,second_id))
+    assert second.get('/api/me').status_code==200
+    with db() as c:
+        seen=c.execute('SELECT MAX(last_seen) n FROM sessions WHERE user_id=?',(second_id,)).fetchone()['n']
+    assert seen>=base
+    item=admin.get('/api/admin/users',params={'q':str(second_id)}).json()['users'][0]
+    assert item['last_active_at']>=base
