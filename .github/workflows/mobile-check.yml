@@ -46,6 +46,8 @@ jobs:
         run: node ../tests/native_session_recovery.cjs
       - name: Check responsive Android login on narrow screens
         run: node ../tests/native_auth_layout.cjs
+      - name: Keep composer visible above Android keyboard
+        run: node ../tests/native_keyboard_composer.cjs
       - name: Check SDK compatibility
         run: npx expo-doctor
       - name: Export Android application bundle

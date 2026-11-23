@@ -40,6 +40,7 @@ jobs:
           node tests/native_admin_parity.cjs
           node tests/native_session_recovery.cjs
           node tests/native_auth_layout.cjs
+          node tests/native_keyboard_composer.cjs
       - name: Verify production push requirements and Android signing contract
         run: |
           node tests/native_push_release.cjs
