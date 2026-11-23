@@ -77,3 +77,34 @@ jobs:
             --app release/mtunz-web-release.apk \
             --device "model=$MODEL,version=$OS_VERSION,locale=vi,orientation=portrait" \
             --timeout 5m
+
+      - name: Record verified physical-device test provenance
+        shell: bash
+        env:
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+          DEVICE_MODEL: ${{ inputs.device_model }}
+          DEVICE_VERSION: ${{ inputs.android_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p physical-test
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          apk=Path('release/mtunz-web-release.apk')
+          record={
+              'source_run_id':int(os.environ['SOURCE_RUN']),
+              'apk_sha256':hashlib.sha256(apk.read_bytes()).hexdigest(),
+              'device_model':os.environ['DEVICE_MODEL'],
+              'android_version':os.environ['DEVICE_VERSION'],
+              'test_type':'firebase-physical-robo',
+              'claims':'launch/navigation smoke only; manual functional tests still required',
+          }
+          Path('physical-test/attestation.json').write_text(json.dumps(record,indent=2))
+          PY
+      - name: Upload physical-device attestation (no credentials or user data)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtunz-physical-device-qa
+          path: physical-test/attestation.json
+          if-no-files-found: error
+          retention-days: 30
