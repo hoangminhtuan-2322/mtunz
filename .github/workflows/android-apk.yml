@@ -149,6 +149,27 @@ jobs:
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
           MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
         run: node tools/configure_fixed_release_signing.cjs --release
+      - name: Install and verify Android native CMake toolchain with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          for attempt in 1 2 3; do
+            echo "Installing Android CMake 3.22.1 (attempt $attempt/3)"
+            rm -rf "$ANDROID_HOME/cmake/3.22.1" "$ANDROID_HOME/.temp"/*cmake* || true
+            if "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "cmake;3.22.1" </dev/null; then
+              if [[ -x "$ANDROID_HOME/cmake/3.22.1/bin/cmake" ]]; then
+                "$ANDROID_HOME/cmake/3.22.1/bin/cmake" --version
+                break
+              fi
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo '::error::Android SDK CMake archive was unavailable or corrupt after three attempts.'
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
       - name: Build standalone native RELEASE with the permanent mtunz signing key
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         env:
