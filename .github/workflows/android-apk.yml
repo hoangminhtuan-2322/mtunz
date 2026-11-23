@@ -88,6 +88,8 @@ jobs:
         run: node ../tests/native_realtime_stability.cjs
       - name: Verify native parity and upload retries
         run: node ../tests/native_world_typing_parity.cjs
+      - name: Verify native Admin operations and PIN protections
+        run: node ../tests/native_admin_parity.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
       - name: Check generated native manifest and launch package

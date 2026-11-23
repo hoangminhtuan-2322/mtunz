@@ -1,5 +1,5 @@
 import React,{useCallback,useEffect,useState} from 'react';
-import {ActivityIndicator,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
@@ -26,7 +26,11 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   [query,setQuery]=useState(''),[pin,setPin]=useState(''),[draft,setDraft]=useState(''),
   [ticket,setTicket]=useState(null),[thread,setThread]=useState([]),
   [busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),
-  [notice,setNotice]=useState(''),[lastRefresh,setLastRefresh]=useState(null);
+  [notice,setNotice]=useState(''),[lastRefresh,setLastRefresh]=useState(null),
+  [supportPaused,setSupportPaused]=useState(false),
+  [worldConfig,setWorldConfig]=useState(null),
+  [selectedUser,setSelectedUser]=useState(null),
+  [sanctionReason,setSanctionReason]=useState(''),[sanctionMinutes,setSanctionMinutes]=useState('60');
  const call=useCallback(async(path,method='GET',data)=>{
    try{return await api(path,{token,method,data});}
    catch(e){if(e.status===401)onExpired();throw e;}
@@ -36,7 +40,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   const tasks=await Promise.allSettled(paths.map(path=>call(path)));
   if(tasks[0].status==='fulfilled')setStats(tasks[0].value);
   if(tasks[1].status==='fulfilled')setRegistration(tasks[1].value.registrations||[]);
-  if(tasks[2].status==='fulfilled')setTickets(tasks[2].value.tickets||[]);
+  if(tasks[2].status==='fulfilled'){setTickets(tasks[2].value.tickets||[]);setSupportPaused(!!tasks[2].value.paused);}
   if(tasks[3].status==='fulfilled')setApprovals(tasks[3].value.pending||[]);
   if(tasks.every(x=>x.status==='rejected'))throw tasks[0].reason;
   setLastRefresh(Date.now());
@@ -115,6 +119,48 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   try{const r=await call('/api/admin/users?q='+encodeURIComponent(query.trim())+'&limit=50');setUsers(r.users||[]);}
   catch(e){setError(e.message);}finally{setLoading(false);}
  }
+ async function viewUser(item){
+  setError('');
+  try{setSelectedUser((await call('/api/admin/users/'+item.id+'/details')).user);}
+  catch(e){setError(e.message);}
+ }
+ async function loadWorldAdmin(){
+  try{setWorldConfig((await call('/api/admin/world')).config);}
+  catch(e){setError(e.message);}
+ }
+ function changeWorldAvailability(){
+  if(!worldConfig)return;
+  const enabled=!worldConfig.enabled;
+  Alert.alert('Chat thế giới',
+    enabled?'Cho phép thành viên tiếp tục chat thế giới?':'Tạm dừng chat thế giới cho tất cả thành viên?',
+    [{text:'Hủy',style:'cancel'},{text:enabled?'Mở':'Tạm dừng',onPress:async()=>{
+      const ok=await act('/api/admin/world/config','POST',{
+        enabled,schedule_enabled:!!worldConfig.schedule_enabled,
+        open_minute:worldConfig.open_minute??0,close_minute:worldConfig.close_minute??0,
+      },'Đã cập nhật trạng thái chat thế giới.');
+      if(ok)await loadWorldAdmin();
+    }}]);
+ }
+ function sanctionUser(kind){
+  const user=selectedUser;
+  if(!user)return;
+  const reason=sanctionReason.trim();
+  const minutes=Number(sanctionMinutes);
+  if(kind!=='unban'&&reason.length<5){setError('Lý do cần ít nhất 5 ký tự.');return;}
+  if(kind==='lock'&&(!Number.isInteger(minutes)||minutes<1||minutes>5256000)){
+    setError('Thời hạn khóa phải là số phút hợp lệ (1–5.256.000).');return;
+  }
+  Alert.alert('Xác nhận bảo mật',
+    (kind==='unban'?'Gỡ hạn chế':kind==='lock'?'Khóa tạm':'Cấm tài khoản')+
+    ' của @'+user.username+'? Thao tác được ghi vào nhật ký quản trị.',
+    [{text:'Hủy',style:'cancel'},{text:'Xác nhận',style:'destructive',onPress:async()=>{
+      const ok=await act('/api/admin/users/'+user.id+'/sanction','POST',{
+        kind,reason:kind==='unban'?'':reason,
+        minutes:kind==='lock'?minutes:null,
+      },'Đã cập nhật hạn chế tài khoản.');
+      if(ok){await viewUser(user);await loadUsers();setSanctionReason('');}
+    }}]);
+ }
  async function viewTicket(item){
   setTicket(item);setThread([]);setDraft('');setError('');
   try{const r=await call('/api/admin/tickets/'+item.id+'/messages');setThread(r.messages||[]);}
@@ -137,7 +183,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  }
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
- const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên']];
+ const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên'],['worldAdmin','Thế giới']];
  return <View style={{flex:1,backgroundColor:P.bg}}>
   <View style={s.top}><View style={s.adminBrandRow}>
     <Image source={require('../assets/brand-logo.png')} style={s.adminLogo} resizeMode="contain"/>
@@ -150,18 +196,18 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     contentContainerStyle={s.page}>
    <View style={s.hero}>
     <Text style={s.heroEyebrow}>QUẢN TRỊ MTUNZ</Text>
-    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':'Quản lý thành viên'}</Text>
+    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':tab==='worldAdmin'?'Điều hành chat thế giới':'Quản lý thành viên'}</Text>
     <Text style={s.heroSub}>Theo dõi hoạt động và xử lý công việc trực tiếp trên điện thoại.</Text>
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:9,paddingBottom:12}}>
-    {tabs.map(([id,label])=><Pressable key={id} onPress={()=>{setTab(id);setError('');setNotice('');}}
+    {tabs.map(([id,label])=><Pressable key={id} onPress={()=>{setTab(id);setError('');setNotice('');if(id==='worldAdmin')void loadWorldAdmin();}}
      style={[s.tab,tab===id&&s.active]}><Text style={{color:P.ink,fontWeight:tab===id?'800':'500'}}>{label}</Text></Pressable>)}
    </ScrollView>
    {error?<Text style={s.error}>{error}</Text>:null}
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
     <Text style={s.muted}>{lastRefresh?'Đồng bộ với máy chủ mtunz':'Đang kết nối…'}</Text>
-    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
+    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box>
     <Text style={s.head}>Thông báo quản trị</Text>
@@ -227,6 +273,15 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     </View>)}
    </Box>}
    {tab==='support'&&<Box><Text style={s.head}>Hỗ trợ ({liveTickets.length} đang mở)</Text>
+     <Text style={s.muted}>{supportPaused?'Đã tạm ngừng nhận yêu cầu hỗ trợ mới.':'Đang nhận các yêu cầu hỗ trợ mới.'}</Text>
+     <Action label={supportPaused?'Mở nhận hỗ trợ':'Tạm không nhận hỗ trợ'} subtle
+       disabled={busy} onPress={()=>Alert.alert('Tiếp nhận hỗ trợ',
+         supportPaused?'Tiếp tục nhận yêu cầu mới?':'Tạm dừng các yêu cầu hỗ trợ mới?',
+         [{text:'Hủy',style:'cancel'},{text:'Xác nhận',onPress:async()=>{
+           const ok=await act('/api/admin/support/intake','PATCH',{paused:!supportPaused},
+             'Đã cập nhật tiếp nhận hỗ trợ.');
+           if(ok)setSupportPaused(x=>!x);
+         }}])}/>
     {ticket?<><Text style={s.label}>Yêu cầu #{ticket.id}</Text>
       <Text style={s.muted}>{ticket.kind} • {ticket.status}</Text>
       {thread.map((msg,i)=><View key={msg.id||i} style={s.item}>
@@ -240,6 +295,13 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        try{const x=await call('/api/admin/tickets/'+ticket.id+'/messages');setThread(x.messages||[]);setDraft('');}catch(e){setError(e.message);}
       }}/>
       <Action label="Đóng yêu cầu" subtle disabled={busy} onPress={()=>act('/api/admin/tickets/'+ticket.id+'/status','POST',{status:'closed'},'Đã đóng yêu cầu.')}/>
+      {(ticket.status==='closed'||ticket.status==='spam')&&<Action
+        label="Xóa cuộc trò chuyện hỗ trợ đã đóng" subtle disabled={busy}
+        onPress={()=>Alert.alert('Xóa cuộc trò chuyện','Xóa vĩnh viễn tin nhắn của phiếu hỗ trợ này?',
+          [{text:'Hủy',style:'cancel'},{text:'Xóa',style:'destructive',onPress:async()=>{
+            const ok=await act('/api/admin/tickets/'+ticket.id,'DELETE',{},'Đã xóa cuộc trò chuyện.');
+            if(ok){setTicket(null);setThread([]);}
+          }}])}/>}
       <Action label="Quay lại danh sách" subtle onPress={()=>{setTicket(null);setThread([]);}}/>
      </>:tickets.slice(0,60).map(item=><Pressable key={item.id} style={s.item} onPress={()=>viewTicket(item)}>
        <Text style={s.label}>#{item.id} • {item.kind||'Hỗ trợ'}</Text>
@@ -250,13 +312,36 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {tab==='users'&&<Box><Text style={s.head}>Tìm thành viên</Text>
     <Field placeholder="Tên đăng nhập, ID hoặc tên hiển thị" value={query} onChangeText={setQuery}/>
     <Action label="Tìm kiếm" disabled={loading} onPress={loadUsers}/>
-    {users.map(item=><View key={item.id} style={s.item}>
+    {users.map(item=><Pressable key={item.id} style={s.item} onPress={()=>viewUser(item)}>
       <Text style={s.label}>{item.display_name||item.username} (@{item.username})</Text>
-      <Text style={s.muted}>ID {item.id} • {item.sanction_kind||'Đang hoạt động'}</Text>
-    </View>)}
-    <Text style={s.muted}>Các thao tác kiểm tra bảo mật và xử lý tài khoản chuyên sâu dùng bảng quản trị web.</Text>
+      <Text style={s.muted}>ID {item.id} • {item.sanction_kind||'Đang hoạt động'} · Xem chi tiết</Text>
+    </Pressable>)}
+    {selectedUser&&<View style={s.item}>
+      <Text style={s.head}>Hồ sơ @{selectedUser.username}</Text>
+      <Text style={s.muted}>ID {selectedUser.id} • {selectedUser.sanction_kind||'Không hạn chế'}</Text>
+      <Text style={s.muted}>{selectedUser.friend_count} bạn bè · {selectedUser.group_count} nhóm · {selectedUser.message_count} tin nhắn</Text>
+      <Text style={s.muted}>{selectedUser.session_count} phiên còn hiệu lực · {selectedUser.file_count} tệp</Text>
+      <Text style={s.muted}>Tạo: {new Date(selectedUser.created_at*1000).toLocaleString('vi-VN')}</Text>
+      <Text style={s.muted}>Thao tác có thể thu hồi phiên đăng nhập của thành viên và bắt buộc PIN Admin.</Text>
+      <Field placeholder="Lý do xử lý (ít nhất 5 ký tự)" value={sanctionReason} onChangeText={setSanctionReason}/>
+      <Field placeholder="Khóa trong bao nhiêu phút?" value={sanctionMinutes} onChangeText={setSanctionMinutes}/>
+      <View style={s.actions}>
+        <Action label="Khóa tạm thời" disabled={busy} onPress={()=>sanctionUser('lock')}/>
+        <Action label="Cấm tài khoản" subtle disabled={busy} onPress={()=>sanctionUser('ban')}/>
+        <Action label="Gỡ hạn chế" subtle disabled={busy} onPress={()=>sanctionUser('unban')}/>
+      </View>
+    </View>}
     </Box>}
-   {(tab==='registrations'||tab==='approvals'||tab==='support')&&<Box>
+   {tab==='worldAdmin'&&<Box>
+     <Text style={s.head}>Quản lý chat thế giới</Text>
+     <Text style={s.muted}>Thay đổi trên điện thoại sẽ gửi sự kiện realtime đến thành viên trên web và app.</Text>
+     {worldConfig?<><Text style={s.label}>Trạng thái: {worldConfig.open?'Đang hoạt động':'Đang đóng'}</Text>
+       <Text style={s.muted}>Bật hệ thống: {worldConfig.enabled?'Có':'Không'} · Lịch: {worldConfig.schedule_enabled?'Đang bật':'Tắt'}</Text>
+       <Action label={worldConfig.enabled?'Tạm dừng chat thế giới':'Mở chat thế giới'} disabled={busy}
+         onPress={changeWorldAvailability}/>
+     </>:<Action label="Tải trạng thái chat thế giới" onPress={loadWorldAdmin}/>}
+   </Box>}
+   {(tab==='registrations'||tab==='approvals'||tab==='support'||tab==='users'||tab==='worldAdmin')&&<Box>
      <Text style={s.head}>Xác nhận bảo mật</Text>
      <Text style={s.muted}>Mọi thao tác thay đổi đều cần PIN Admin; không lưu PIN trong ứng dụng.</Text>
      <Field value={pin} onChangeText={setPin} placeholder="Mã PIN Admin" secret/>

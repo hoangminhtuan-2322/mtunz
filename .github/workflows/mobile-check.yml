@@ -38,6 +38,8 @@ jobs:
         run: node ../tests/native_realtime_stability.cjs
       - name: Verify native typing and anonymous world parity
         run: node ../tests/native_world_typing_parity.cjs
+      - name: Verify native Admin operations and PIN protections
+        run: node ../tests/native_admin_parity.cjs
       - name: Check SDK compatibility
         run: npx expo-doctor
       - name: Export Android application bundle
