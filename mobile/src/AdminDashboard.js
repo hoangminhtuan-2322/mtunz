@@ -3,8 +3,9 @@ import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,Styl
 import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
+import {adminPresence} from './presence';
 
-const P={bg:'#08111f',surface:'#14243a',line:'#2c4160',ink:'#f4f8ff',muted:'#a5b6cf',accent:'#67bcff',danger:'#ff9393'};
+const P={bg:'#071320',surface:'#11253a',line:'#294661',ink:'#f4f8ff',muted:'#a8bfd6',accent:'#6dbaff',danger:'#ff9393',green:'#73e0bd'};
 
 function Action({label,onPress,disabled=false,subtle=false}){
  return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
@@ -21,6 +22,7 @@ function Tile({title,value}){return <View style={s.tile}><Text style={s.value}>{
 
 export default function AdminDashboard({token,onLogout,onExpired}){
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
+ const [userSort,setUserSort]=useState('oldest'),[presenceClock,setPresenceClock]=useState(Date.now());
  const [tab,setTab]=useState('home'),[stats,setStats]=useState({}),[registration,setRegistration]=useState([]),
   [tickets,setTickets]=useState([]),[users,setUsers]=useState([]),[approvals,setApprovals]=useState([]),
   [query,setQuery]=useState(''),[pin,setPin]=useState(''),[draft,setDraft]=useState(''),
@@ -114,10 +116,14 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   catch(e){setError(e.message);return false;}
   finally{setBusy(false);}
  }
- async function loadUsers(){
+ async function loadUsers(sort=userSort){
+  const order=typeof sort==='string'&&['oldest','newest','activity'].includes(sort)?sort:userSort;
   setLoading(true);setError('');
-  try{const r=await call('/api/admin/users?q='+encodeURIComponent(query.trim())+'&limit=50');setUsers(r.users||[]);}
-  catch(e){setError(e.message);}finally{setLoading(false);}
+  try{
+    const r=await call('/api/admin/users?q='+encodeURIComponent(query.trim())+
+      '&sort='+encodeURIComponent(order)+'&limit=50');
+    setUsers(r.users||[]);
+  }catch(e){setError(e.message);}finally{setLoading(false);}
  }
  async function viewUser(item){
   setError('');
@@ -181,6 +187,41 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   catch(error){setError(error.message);}
   finally{setLoading(false);}
  }
+ // Relative timestamps refresh without inventing online activity.
+ useEffect(()=>{
+  const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
+  const interval=setInterval(tick,30000);
+  const subscription=AppState.addEventListener('change',tick);
+  return()=>{clearInterval(interval);subscription.remove();};
+ },[]);
+ // While the online panel is visible, check actual live socket membership.
+ useEffect(()=>{
+  if(tab!=='online')return;
+  let disposed=false;
+  const poll=async()=>{
+   if(AppState.currentState!=='active')return;
+   try{
+    const result=await call('/api/admin/online-users');
+    if(!disposed){setOnlineUsers(result.users||[]);setStats(old=>({...old,online:result.total}));}
+   }catch{}
+  };
+  poll();
+  const timer=setInterval(poll,15000);
+  return()=>{disposed=true;clearInterval(timer);};
+ },[tab,call]);
+ useEffect(()=>{
+  if(tab!=='users'||!users.length)return;
+  let cancelled=false;
+  const poll=()=>{
+   if(AppState.currentState!=='active')return;
+   call('/api/admin/users?q='+encodeURIComponent(query.trim())+
+     '&sort='+encodeURIComponent(userSort)+'&limit=50').then(result=>{
+      if(!cancelled)setUsers(result.users||[]);
+   }).catch(()=>{});
+  };
+  const timer=setInterval(poll,30000);
+  return()=>{cancelled=true;clearInterval(timer);};
+ },[tab,call,userSort,query,users.length]);
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên'],['worldAdmin','Thế giới']];
@@ -206,7 +247,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {error?<Text style={s.error}>{error}</Text>:null}
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
-    <Text style={s.muted}>{lastRefresh?'Đồng bộ với máy chủ mtunz':'Đang kết nối…'}</Text>
+    <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
     <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box>
@@ -237,17 +278,22 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     {onlineProfile?<View style={s.item}>
       <Text style={s.head}>{onlineProfile.display_name||onlineProfile.username}</Text>
       <Text style={s.label}>@{onlineProfile.username}</Text>
+       <Text style={s.onlineLabel}>{onlineUsers.some(u=>u.id===onlineProfile.id)?'● Đang trực tuyến':'Đã ngoại tuyến'}</Text>
       <Text style={s.muted}>SĐT {onlineProfile.phone||'—'} · Email {onlineProfile.email||'—'}</Text>
       <Text style={s.muted}>{onlineProfile.friend_count} bạn bè · {onlineProfile.group_count} nhóm · {onlineProfile.session_count} phiên đăng nhập</Text>
     </View>:<>
      <Text style={s.head}>{onlineUsers.length} người đang kết nối realtime</Text>
      {!loading&&onlineUsers.length===0?<Text style={s.muted}>Hiện không có người dùng online.</Text>:null}
-     {onlineUsers.map(user=><Pressable key={user.id} style={s.item} accessibilityRole="button" disabled={loading}
-      onPress={()=>showOnlineProfile(user.id)}>
-       <Text style={s.label}>{user.display_name||user.username} · @{user.username}</Text>
-       <Text style={s.muted}>{user.sessions} phiên · {user.connections} kết nối · Xem hồ sơ</Text>
-       {user.last_seen>0?<Text style={s.muted}>Ghi nhận gần nhất {new Date(user.last_seen*1000).toLocaleString('vi-VN')}</Text>:null}
-     </Pressable>)}
+     {onlineUsers.map(user=><Pressable key={user.id} style={s.item} accessibilityRole="button"
+      disabled={loading} onPress={()=>showOnlineProfile(user.id)}>
+      <View style={s.adminOnlineRow}><View style={s.onlinePulse}/>
+        <Text numberOfLines={1} style={[s.label,{flex:1}]}>{user.display_name||user.username}</Text>
+        <Text style={s.onlineLabel}>Trực tuyến</Text>
+      </View>
+      <Text style={s.muted}>@{user.username} · {user.sessions} phiên · {user.connections} kết nối</Text>
+      {user.last_seen>0?<Text style={s.activityExact}>
+        Ghi nhận {new Date(user.last_seen*1000).toLocaleString('vi-VN')}</Text>:null}
+    </Pressable>)}
     </>}
    </Box>}
    {tab==='registrations'&&<>
@@ -310,16 +356,31 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        <Text style={s.muted}>Trạng thái: {item.status}</Text>
      </Pressable>)}
    </Box>}
-   {tab==='users'&&<Box><Text style={s.head}>Tìm thành viên</Text>
+   {tab==='users'&&<Box><Text style={s.head}>Thành viên & hoạt động</Text>
+    <Text style={s.muted}>Trực tuyến dựa vào kết nối máy chủ, không phải trạng thái tài khoản.</Text>
     <Field placeholder="Tên đăng nhập, ID hoặc tên hiển thị" value={query} onChangeText={setQuery}/>
-    <Action label="Tìm kiếm" disabled={loading} onPress={loadUsers}/>
+    <View style={s.sortRow}>{[
+      ['oldest','Cũ nhất'],['newest','Mới nhất'],['activity','Hoạt động gần đây']
+    ].map(([order,title])=><Pressable key={order} accessibilityRole="button"
+      accessibilityState={{selected:userSort===order}} onPress={()=>{setUserSort(order);loadUsers(order);}}
+      style={[s.sortChip,userSort===order&&s.sortActive]}>
+      <Text style={[s.sortText,userSort===order&&s.sortTextActive]}>{title}</Text>
+    </Pressable>)}</View>
+    <Action label="Tìm kiếm" disabled={loading} onPress={()=>loadUsers(userSort)}/>
     {users.map(item=><Pressable key={item.id} style={s.item} onPress={()=>viewUser(item)}>
-      <Text style={s.label}>{item.display_name||item.username} (@{item.username})</Text>
-      <Text style={s.muted}>ID {item.id} • {item.sanction_kind||'Đang hoạt động'} · Xem chi tiết</Text>
+      <View style={s.adminOnlineRow}>
+        <View style={[s.onlinePulse,!item.online&&s.offlinePulse]}/>
+        <Text style={[s.label,{flex:1,minWidth:0}]} numberOfLines={1}>{item.display_name||item.username}</Text>
+        <Text style={item.online?s.onlineLabel:s.offlineLabel}>{adminPresence(item,presenceClock).short}</Text>
+      </View>
+      <Text style={s.muted}>@{item.username} · ID {item.id} · {item.sanction_kind?'Có hạn chế':'Tài khoản hợp lệ'}</Text>
+      {!!adminPresence(item,presenceClock).exact&&
+        <Text style={s.activityExact}>Ghi nhận: {adminPresence(item,presenceClock).exact}</Text>}
     </Pressable>)}
     {selectedUser&&<View style={s.item}>
       <Text style={s.head}>Hồ sơ @{selectedUser.username}</Text>
       <Text style={s.muted}>ID {selectedUser.id} • {selectedUser.sanction_kind||'Không hạn chế'}</Text>
+       <Text style={s.activityExact}>Hoạt động gần nhất: {adminPresence(selectedUser,presenceClock).exact||'Chưa ghi nhận'}</Text>
       <Text style={s.muted}>{selectedUser.friend_count} bạn bè · {selectedUser.group_count} nhóm · {selectedUser.message_count} tin nhắn</Text>
       <Text style={s.muted}>{selectedUser.session_count} phiên còn hiệu lực · {selectedUser.file_count} tệp</Text>
       <Text style={s.muted}>Tạo: {new Date(selectedUser.created_at*1000).toLocaleString('vi-VN')}</Text>
@@ -351,24 +412,25 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  </View>;
 }
 const s=StyleSheet.create({
-  top:{paddingHorizontal:17,paddingVertical:15,flexDirection:'row',justifyContent:'space-between',
-    alignItems:'center',backgroundColor:P.bg,borderBottomWidth:1,borderColor:P.line},
+  top:{paddingHorizontal:15,paddingVertical:13,flexDirection:'row',
+  justifyContent:'space-between',alignItems:'center',backgroundColor:'#0e2337',
+  borderBottomWidth:1,borderColor:'#2b4967'},
   brand:{fontSize:23,fontWeight:'900',letterSpacing:-.5,color:P.ink},
   adminBrandRow:{flexDirection:'row',alignItems:'center',gap:7,flexShrink:1},
   adminLogo:{width:39,height:39},
   adminBadge:{fontSize:10,letterSpacing:1,color:'#9ecfff',fontWeight:'900'},
   topMeta:{fontSize:11,color:P.muted,marginTop:3},
-  page:{padding:16,gap:16,paddingBottom:60},
-  hero:{backgroundColor:'#17304d',borderWidth:1,borderColor:'#365876',borderRadius:22,
-    paddingHorizontal:19,paddingVertical:23,gap:7},
+  page:{padding:15,gap:14,paddingBottom:60},
+  hero:{backgroundColor:'#163451',borderWidth:1,borderColor:'#3a6384',
+  borderRadius:24,paddingHorizontal:21,paddingVertical:25,gap:8},
   heroEyebrow:{fontSize:10,letterSpacing:1.5,color:'#86caff',fontWeight:'900'},
-  heroTitle:{fontSize:25,lineHeight:30,letterSpacing:-.6,color:P.ink,fontWeight:'900'},
+  heroTitle:{fontSize:24,lineHeight:30,letterSpacing:-.5,color:P.ink,fontWeight:'900'},
   heroSub:{fontSize:12,lineHeight:19,color:'#bdd0e9'},
-  tab:{paddingHorizontal:17,paddingVertical:12,borderRadius:24,backgroundColor:P.surface,
-    borderWidth:1,borderColor:P.line},
+  tab:{paddingHorizontal:15,paddingVertical:11,borderRadius:22,
+  backgroundColor:'#152c44',borderWidth:1,borderColor:P.line},
   active:{backgroundColor:'#28517a',borderColor:P.accent},
-  panel:{backgroundColor:P.surface,borderWidth:1,borderColor:P.line,
-    borderRadius:20,padding:17,gap:14},
+  panel:{backgroundColor:P.surface,borderWidth:1,borderColor:'#294a68',
+  borderRadius:21,padding:17,gap:13},
   head:{fontSize:18,color:P.ink,fontWeight:'800',letterSpacing:-.2},
   label:{fontSize:14,color:P.ink,fontWeight:'700',lineHeight:21},
   muted:{fontSize:12,color:P.muted,lineHeight:18},
@@ -381,10 +443,22 @@ const s=StyleSheet.create({
   actionText:{fontSize:13,fontWeight:'800',color:P.bg},
   input:{borderRadius:12,borderWidth:1,borderColor:'#385572',backgroundColor:'#091829',
     color:P.ink,minHeight:49,paddingHorizontal:13,fontSize:15},
-  item:{backgroundColor:'#102138',borderRadius:14,padding:14,gap:8,
-    borderWidth:1,borderColor:'#2c425e'},
+  item:{backgroundColor:'#142b43',borderRadius:16,padding:14,gap:9,
+  borderWidth:1,borderColor:'#315371'},
   tiles:{flexDirection:'row',flexWrap:'wrap',gap:10},
-  tile:{width:'47%',padding:15,backgroundColor:'#10263e',borderRadius:16,gap:7,
-    borderWidth:1,borderColor:'#2b4966'},
+  tile:{width:'47%',padding:16,backgroundColor:'#15324c',
+  borderRadius:18,gap:7,borderWidth:1,borderColor:'#335777'},
+  onlineLabel:{color:'#79e4c6',fontSize:11,fontWeight:'900',flexShrink:1},
+  offlineLabel:{color:'#a4b9cc',fontSize:11,fontWeight:'700',flexShrink:1},
+  adminOnlineRow:{flexDirection:'row',alignItems:'center',gap:8,minWidth:0},
+  onlinePulse:{width:9,height:9,borderRadius:5,backgroundColor:P.green},
+  offlinePulse:{backgroundColor:'#8198b2'},
+  activityExact:{fontSize:11,lineHeight:17,color:'#a8c5df'},
+  sortRow:{flexDirection:'row',flexWrap:'wrap',gap:7},
+  sortChip:{paddingHorizontal:11,paddingVertical:10,borderRadius:19,
+    backgroundColor:'#18344f',borderWidth:1,borderColor:'#315571'},
+  sortActive:{backgroundColor:'#285681',borderColor:P.accent},
+  sortText:{color:'#aac6dd',fontSize:12,fontWeight:'800'},
+  sortTextActive:{color:'#fff'},
   value:{color:P.ink,fontSize:28,fontWeight:'900',letterSpacing:-.7},
 });

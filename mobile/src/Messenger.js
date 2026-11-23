@@ -12,8 +12,9 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import SharedConversationGallery from './SharedConversationGallery';
+import {friendPresence} from './presence';
 
-const P={bg:'#08111f',card:'#14243a',border:'#2c4160',text:'#f4f8ff',soft:'#a5b6cf',accent:'#67bcff',mine:'#245395',bad:'#ff9eac',green:'#79dfbe'};
+const P={bg:'#071320',card:'#11253a',border:'#294661',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',mine:'#2760a6',bad:'#ff9eac',green:'#73e0bd'};
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
 const dedupe=rows=>order([...new Map(rows.map(m=>[m.id,m])).values()]);
 const label=f=>f?.nickname||f?.display_name||f?.username||f?.title||'Thành viên';
@@ -115,8 +116,17 @@ function Message({item,own,token,onSelect,onOpen}){
   </Pressable>;
 }
 
+function FriendPresenceBadge({friend,connected,clock}){
+  const presence=friendPresence(friend,connected,clock);
+  if(!presence.short)return null;
+  return <View style={css.chatPresenceRow}>
+    <View style={[css.chatPresenceDot,presence.online?css.chatPresenceOnline:css.chatPresenceAway]}/>
+    <Text numberOfLines={1} style={css.chatPresenceText}>{presence.short}</Text>
+  </View>;
+}
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
+  const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
     [groups,setGroups]=useState([]),[notices,setNotices]=useState([]),[requests,setRequests]=useState([]),
     [worldStatus,setWorldStatus]=useState({open:false}),[worldRooms,setWorldRooms]=useState([]),
@@ -153,6 +163,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
     keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    presenceVersionRef=useRef(0),presenceEventsRef=useRef(new Map()),
     supportTicketRef=useRef(null),
     sendRef=useRef(false);
   roomRef.current=room;
@@ -204,10 +215,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   },[token,onExpired]);
   const refreshLists=useCallback(async()=>{
     const requested=++listRequestRef.current;
+    const presenceBefore=presenceVersionRef.current;
     const tasks=await Promise.allSettled([
       invoke('/api/friends'),invoke('/api/groups'),invoke('/api/notifications')]);
     if(requested!==listRequestRef.current)return;
-    if(tasks[0].status==='fulfilled')setFriends(tasks[0].value.friends||[]);
+    if(tasks[0].status==='fulfilled')setFriends((tasks[0].value.friends||[]).map(friend=>{
+      const event=presenceEventsRef.current.get(friend.other_id);
+      if(!event||event.version<=presenceBefore)return friend;
+      return {...friend,online:event.online,last_seen:event.last_seen||friend.last_seen};
+    }));
     if(tasks[1].status==='fulfilled')setGroups(tasks[1].value.groups||[]);
     if(tasks[2].status==='fulfilled'){
       const n=tasks[2].value.notifications||[];
@@ -334,9 +350,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         }
       }
       if(data.type==='presence'&&Number.isSafeInteger(data.user_id)){
-        // Keep presence badges in sync with the web without waiting for polling.
+        const stamp=Number(data.last_seen);
+        const event={online:data.online===true,
+          last_seen:Number.isFinite(stamp)&&stamp>0?stamp:null,
+          version:++presenceVersionRef.current};
+        presenceEventsRef.current.set(data.user_id,event);
         setFriends(old=>old.map(friend=>friend.other_id===data.user_id?
-          {...friend,online:!!data.online,last_seen:data.last_seen}:friend));
+          {...friend,online:event.online,last_seen:event.last_seen||friend.last_seen}:friend));
+        setPresenceClock(Date.now());
       }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
         setMessages(old=>dedupe([...old,sanitize(data.message)]));
@@ -463,7 +484,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return()=>sub.remove();
   },[openRoom]);
   const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);roomRef.current=null;setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
+  useEffect(()=>{
+    const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
+    const interval=setInterval(tick,30000);
+    const sub=AppState.addEventListener('change',tick);
+    return()=>{clearInterval(interval);sub.remove();};
+  },[]);
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
+  const peerStatus=friendPresence(peer,connection==='online',presenceClock);
   async function openAttachment(file){
     if(file?.mime?.startsWith('image/')){setViewer(file);return;}
     await saveSharedFile(file,token).catch(alertError);
@@ -667,8 +695,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   const tabs=[['dm','Tin nhắn','▣'],['groups','Nhóm','▦'],['people','Bạn bè','♧'],['world','Thế giới','◎'],['settings','Cá nhân','⚙']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
-  const matchingFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&
-    label(f).toLocaleLowerCase('vi-VN').includes(inboxQuery.trim().toLocaleLowerCase('vi-VN')));
+  const acceptedFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted);
+  const activeFriends=connection==='online'?acceptedFriends.filter(f=>f.online===true):[];
+  const unreadTotal=acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0);
+  const matchingFriends=acceptedFriends.filter(f=>
+    label(f).toLocaleLowerCase('vi-VN').includes(inboxQuery.trim().toLocaleLowerCase('vi-VN'))&&
+    (inboxFilter==='all'||inboxFilter==='unread'&&Number(f.unread||0)>0||
+      inboxFilter==='online'&&connection==='online'&&f.online===true));
   const matchingGroups=groups.filter(g=>(g.title||'').toLocaleLowerCase('vi-VN')
     .includes(groupQuery.trim().toLocaleLowerCase('vi-VN')));
 
@@ -680,12 +713,28 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {room?<Text style={css.backGlyph}>‹</Text>:
           <Image source={require('../assets/brand-logo.png')} style={css.webIcon} resizeMode="contain"/>}
       </Pressable>
-      <View style={{flex:1,gap:3}}>
-        {!room&&<Text style={css.eyebrow}>MTUNZ MESSENGER</Text>}
+      {!!room&&room.scope==='dm'&&<View style={css.headerPeerAvatar}>
+        {peer?.avatar_url?<Image source={avatarSource(peer.avatar_url,token)} style={css.headerPeerImage}/>:
+          <Text style={css.headerPeerInitial}>{roomTitle.slice(0,1).toUpperCase()}</Text>}
+        {peerStatus.online&&<View style={css.headerPeerOnline}/>}
+      </View>}
+      <View style={{flex:1,minWidth:0,gap:4}}>
+        {!room&&<Text style={css.eyebrow}>MTUNZ · KẾT NỐI REALTIME</Text>}
         <Text style={css.title} numberOfLines={1}>{room?roomTitle:currentTab}</Text>
-        <View style={css.statusRow}><View style={[css.statusDot,connection!=='online'&&css.statusOffline]}/>
-          <Text style={css.statusText}>{typing?'Đang nhập tin nhắn…':
-             connection==='online'?'Đã kết nối · Đồng bộ trực tiếp':'Đang kết nối lại…'}</Text></View>
+        <View style={css.statusRow}>
+          {(room?.scope!=='dm'||peerStatus.kind!=='hidden')&&<View
+            style={[css.statusDot,room?.scope==='dm'?
+              (peerStatus.online?null:peerStatus.kind==='syncing'?css.statusOffline:css.statusIdle):
+              connection!=='online'?css.statusOffline:null]}/>}
+          <Text numberOfLines={2} style={css.statusText}>
+            {room?.scope==='dm'?(typing?'Đang nhập tin nhắn…':
+              peerStatus.short||'Không chia sẻ trạng thái hoạt động'):
+              room?.scope==='group'?(typing?'Đang nhập tin nhắn…':
+                (group?.member_count||'Nhóm')+' thành viên · '+(connection==='online'?'Đã đồng bộ':'Đang kết nối')):
+              room?.scope==='world'?(typing?'Đang nhập tin nhắn…':connection==='online'?'Chat thế giới · Trực tuyến':'Đang kết nối lại…'):
+              connection==='online'?'Đã kết nối · Đồng bộ trực tiếp':'Đang kết nối lại…'}
+          </Text>
+        </View>
       </View>
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Text style={css.headerActionText}>Chi tiết</Text></Pressable>}
@@ -756,24 +805,58 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <TextInput value={inboxQuery} onChangeText={setInboxQuery}
               placeholder="Tìm cuộc trò chuyện..." placeholderTextColor={P.soft}
               style={css.searchInput}/></View>
+          <View style={css.filterRow}>{[
+            ['all','Tất cả'],['unread','Chưa đọc'+(unreadTotal?' · '+unreadTotal:'')],
+            ['online','Hoạt động'+(activeFriends.length?' · '+activeFriends.length:'')]
+          ].map(([value,title])=><Pressable key={value} accessibilityRole="button"
+            accessibilityState={{selected:inboxFilter===value}} onPress={()=>setInboxFilter(value)}
+            style={[css.filterChip,inboxFilter===value&&css.filterChipActive]}>
+            <Text style={[css.filterText,inboxFilter===value&&css.filterTextActive]}>{title}</Text>
+          </Pressable>)}</View>
+          {connection==='online'&&activeFriends.length>0&&inboxFilter==='all'&&
+            <View style={css.activeFriendsSection}>
+              <View style={css.activeHeading}><Text style={css.activeLabel}>ĐANG HOẠT ĐỘNG</Text>
+                <Text style={css.activeCount}>{activeFriends.length} bạn bè</Text></View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={css.activeList}>{activeFriends.slice(0,12).map(friend=>
+                <Pressable key={friend.other_id} accessibilityRole="button"
+                  accessibilityLabel={'Nhắn tin với '+label(friend)+', đang hoạt động'}
+                  onPress={()=>openRoom({scope:'dm',id:friend.other_id})} style={css.activePerson}>
+                  <View style={css.activeAvatarWrap}><View style={css.activeAvatar}>
+                    {friend.avatar_url?<Image source={avatarSource(friend.avatar_url,token)} style={css.activeAvatarImage}/>:
+                      <Text style={css.activeInitial}>{label(friend).slice(0,1).toUpperCase()}</Text>}
+                  </View><View style={css.activeDot}/></View>
+                  <Text numberOfLines={1} style={css.activeName}>{label(friend)}</Text>
+                </Pressable>)}</ScrollView>
+            </View>}
         </View>}
-        ListEmptyComponent={<EmptyState symbol="✉" title={inboxQuery?'Không tìm thấy hội thoại':'Bắt đầu kết nối'}
-          subtitle={inboxQuery?'Thử nhập tên khác hoặc mở tab Bạn bè.':'Kết bạn để gửi những tin nhắn đầu tiên.'}/>}
+        ListEmptyComponent={<EmptyState symbol="✉"
+          title={inboxFilter==='online'?'Chưa có bạn bè trực tuyến':
+            inboxFilter==='unread'?'Không có tin nhắn chưa đọc':
+            inboxQuery?'Không tìm thấy hội thoại':'Bắt đầu kết nối'}
+          subtitle={inboxFilter==='online'?(connection==='online'?
+            'Danh sách tự cập nhật khi bạn bè trực tuyến.':'Đang kết nối lại để lấy trạng thái chính xác.'):
+            inboxFilter==='unread'?'Tất cả tin nhắn đã được đọc.':
+            inboxQuery?'Thử nhập tên khác hoặc mở tab Bạn bè.':
+            'Kết bạn để gửi những tin nhắn đầu tiên.'}/>}
         renderItem={({item})=><Pressable accessibilityRole="button" style={css.chatRow}
           onPress={()=>openRoom({scope:'dm',id:item.other_id})}>
           <View style={css.avatarWrap}>
             <View style={css.avatar}>{item.avatar_url?<Image source={avatarSource(item.avatar_url,token)} style={css.avatarImage}/>:
               <Text style={css.avatarText}>{label(item).slice(0,1).toUpperCase()}</Text>}</View>
-            {!!item.online&&<View style={css.onlineBadge}/>}
+            {connection==='online'&&item.online===true&&<View style={css.onlineBadge}/>}
           </View>
           <View style={css.chatCopy}>
             <View style={css.chatTopLine}><Text style={css.chatName} numberOfLines={1}>{label(item)}</Text>
+              {!!item.pinned&&<Text style={css.chatFlag}>⌁</Text>}
+              {!!item.muted&&<Text style={css.chatFlag}>◌</Text>}
               {!!item.last_message?.created_at&&<Text style={css.chatTime}>
                 {readableTime(item.last_message.created_at)}</Text>}</View>
             <View style={css.chatBottomLine}><Text numberOfLines={1}
               style={[css.previewText,item.unread>0&&css.previewUnread]}>
-              {item.last_message?.body||'Nhấn để bắt đầu trò chuyện'}</Text>
+              {item.last_message?.body||(connection==='online'&&item.online?'Đang hoạt động · Bắt đầu trò chuyện':'Nhấn để bắt đầu trò chuyện')}</Text>
               {item.unread>0&&<Text style={css.badge}>{item.unread>99?'99+':item.unread}</Text>}</View>
+            <FriendPresenceBadge friend={item} connected={connection==='online'} clock={presenceClock}/>
           </View>
         </Pressable>}/>}
       {tab==='groups'&&<FlatList data={matchingGroups} keyExtractor={g=>String(g.id)}
@@ -1055,9 +1138,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         onPress={()=>perform('/api/me/social','PATCH',{profile_visibility:x},refreshSocial)}>
         {social.profile_visibility===x?'✓ ':''}{x==='everyone'?'Công khai':x==='friends'?'Chỉ bạn bè':'Riêng tư'}
       </Btn>)}
-      <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',{show_online:!user.show_online})}>
-        {user.show_online?'Ẩn':'Hiện'} trạng thái online</Btn>
-      <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',{show_receipts:!user.show_receipts})}>
+      <View style={css.privacyStatusPanel}>
+        <View style={css.statusRow}><View style={[css.statusDot,!user.show_online&&css.statusIdle]}/>
+          <Text style={css.privacyHeadline}>Trạng thái hoạt động: {user.show_online?'Đang hiển thị':'Đang ẩn'}</Text></View>
+        <Text style={css.muted}>Cài đặt này đồng bộ với website. Khi ẩn, người khác không xem được trạng thái online hoặc lần hoạt động gần nhất của bạn.</Text>
+        <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',
+          {show_online:!user.show_online},async()=>{await onProfile?.();await refreshLists();})}>
+          {user.show_online?'Ẩn trạng thái hoạt động':'Hiện trạng thái hoạt động'}</Btn>
+      </View>
+      <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',
+        {show_receipts:!user.show_receipts},async()=>{await onProfile?.();await refreshLists();})}>
         {user.show_receipts?'Tắt':'Bật'} xác nhận đã đọc</Btn>
       <Text style={css.h2}>Đổi tên có xác minh</Text>
       <Text style={css.muted}>Tên đăng nhập: 1 lần / 60 ngày · tên hiển thị: 2 lần / 30 ngày</Text>
@@ -1152,8 +1242,8 @@ const css=StyleSheet.create({
   strong:{fontSize:14,fontWeight:'700',color:P.text},
   muted:{fontSize:12,lineHeight:18,color:P.soft},
   link:{color:P.accent,fontSize:14,fontWeight:'800'},
-  top:{minHeight:76,borderBottomWidth:1,borderColor:'#243750',flexDirection:'row',
-    alignItems:'center',gap:12,paddingHorizontal:15,backgroundColor:'#101e32'},
+  top:{minHeight:74,borderBottomWidth:1,borderColor:'#253e58',flexDirection:'row',
+    alignItems:'center',gap:10,paddingHorizontal:13,paddingVertical:9,backgroundColor:'#0d2236'},
   headerMark:{height:44,width:44,borderRadius:14,backgroundColor:'#233f5f',borderWidth:1,
     borderColor:'#3b5d7f',alignItems:'center',justifyContent:'center'},
   backGlyph:{fontSize:34,color:P.text,fontWeight:'500',lineHeight:40},
@@ -1166,7 +1256,14 @@ const css=StyleSheet.create({
   statusRow:{flexDirection:'row',alignItems:'center',gap:6},
   statusDot:{height:7,width:7,borderRadius:4,backgroundColor:P.green},
   statusOffline:{backgroundColor:'#f0c583'},
-  statusText:{fontSize:11,color:P.soft},
+  statusText:{fontSize:11,color:P.soft,flexShrink:1,lineHeight:16},
+  statusIdle:{backgroundColor:'#8ea6bf'},
+  headerPeerAvatar:{height:43,width:43,borderRadius:15,backgroundColor:'#2c5175',
+    justifyContent:'center',alignItems:'center',position:'relative'},
+  headerPeerImage:{height:43,width:43,borderRadius:15},
+  headerPeerInitial:{color:P.text,fontWeight:'900',fontSize:20},
+  headerPeerOnline:{width:11,height:11,borderRadius:6,backgroundColor:P.green,
+    borderWidth:2,borderColor:'#0d2236',position:'absolute',bottom:-1,right:-1},
   errorBar:{backgroundColor:'#40243a',borderBottomWidth:1,borderColor:'#704157',padding:11},
   hrow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:9,flexWrap:'wrap'},
   detailsScreen:{flex:1,backgroundColor:P.bg},
@@ -1184,6 +1281,9 @@ const css=StyleSheet.create({
     alignItems:'center',justifyContent:'center',borderColor:'#3b5776',borderWidth:1},
   detailsCloseText:{color:P.accent,fontSize:20,fontWeight:'800'},
   detailsContent:{padding:16,paddingBottom:40,gap:15},
+  privacyStatusPanel:{padding:14,borderRadius:16,backgroundColor:'#153149',
+    borderWidth:1,borderColor:'#315879',gap:10},
+  privacyHeadline:{color:'#dff3ff',fontSize:13,fontWeight:'900',flexShrink:1},
   detailsCard:{padding:16,borderWidth:1,borderColor:'#355472',borderRadius:20,
     backgroundColor:'#16283f',gap:11},
   detailsSectionTitle:{fontSize:18,color:P.text,fontWeight:'900'},
@@ -1195,8 +1295,8 @@ const css=StyleSheet.create({
   rowCard:{flexDirection:'row',alignItems:'center',gap:12,padding:14,
     backgroundColor:P.card,borderRadius:15,marginVertical:4,
     borderWidth:1,borderColor:P.border},
-  inboxContent:{paddingHorizontal:14,paddingBottom:20,flexGrow:1},
-  listHeader:{gap:16,paddingTop:22,paddingBottom:15},
+  inboxContent:{paddingHorizontal:14,paddingBottom:30,flexGrow:1},
+  listHeader:{gap:13,paddingTop:20,paddingBottom:15},
   headerTitleRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
   countPill:{color:'#a8d7ff',fontSize:11,fontWeight:'800',paddingVertical:7,
     paddingHorizontal:11,borderRadius:16,backgroundColor:'#203c59',overflow:'hidden'},
@@ -1204,18 +1304,46 @@ const css=StyleSheet.create({
     backgroundColor:'#15283e',borderRadius:14,paddingHorizontal:13,minHeight:49,gap:10},
   searchGlyph:{fontSize:24,color:P.soft,fontWeight:'600'},
   searchInput:{flex:1,color:P.text,fontSize:14,minHeight:46,padding:0},
-  chatRow:{flexDirection:'row',alignItems:'center',gap:13,minHeight:77,
-    paddingHorizontal:11,paddingVertical:13,borderBottomWidth:1,borderColor:'#22354e'},
+  filterRow:{flexDirection:'row',flexWrap:'wrap',gap:7},
+  filterChip:{paddingHorizontal:12,paddingVertical:9,borderRadius:24,
+    borderWidth:1,borderColor:'#304d6b',backgroundColor:'#162a40'},
+  filterChipActive:{backgroundColor:'#24527b',borderColor:'#76bbf3'},
+  filterText:{color:'#a7c2de',fontSize:12,fontWeight:'800'},
+  filterTextActive:{color:'#fff'},
+  activeFriendsSection:{backgroundColor:'#10283e',borderWidth:1,borderColor:'#294a68',
+    borderRadius:19,padding:12,gap:12},
+  activeHeading:{flexDirection:'row',justifyContent:'space-between',alignItems:'center'},
+  activeLabel:{fontSize:10,letterSpacing:1.4,fontWeight:'900',color:'#a7d7ff'},
+  activeCount:{fontSize:11,color:'#a1bcd5'},
+  activeList:{gap:13,paddingBottom:2},
+  activePerson:{width:66,alignItems:'center',gap:5},
+  activeAvatarWrap:{width:52,height:52,position:'relative'},
+  activeAvatar:{width:52,height:52,borderRadius:19,backgroundColor:'#285076',
+    alignItems:'center',justifyContent:'center',overflow:'hidden'},
+  activeAvatarImage:{width:52,height:52},
+  activeInitial:{fontSize:21,fontWeight:'900',color:P.text},
+  activeDot:{position:'absolute',width:13,height:13,borderRadius:7,
+    backgroundColor:P.green,borderColor:'#10283e',borderWidth:2,right:-1,bottom:-1},
+  activeName:{fontSize:11,color:'#d9eaf8',fontWeight:'700',textAlign:'center'},
+  chatRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:86,
+    paddingHorizontal:12,paddingVertical:13,marginBottom:9,backgroundColor:'#11263d',
+    borderWidth:1,borderColor:'#284660',borderRadius:19},
   avatarWrap:{width:52,height:52,position:'relative'},
   avatar:{width:52,height:52,borderRadius:18,backgroundColor:'#31567c',
     alignItems:'center',justifyContent:'center',overflow:'hidden'},
   avatarImage:{width:52,height:52},avatarText:{color:P.text,fontWeight:'900',fontSize:21},
   onlineBadge:{position:'absolute',right:-1,bottom:-1,width:13,height:13,borderRadius:7,
     backgroundColor:P.green,borderWidth:2,borderColor:P.bg},
-  chatCopy:{flex:1,gap:7},
+  chatCopy:{flex:1,minWidth:0,gap:6},
   chatTopLine:{flexDirection:'row',alignItems:'center',gap:8},
   chatName:{flex:1,color:P.text,fontSize:15,fontWeight:'800',letterSpacing:-.2},
   chatTime:{color:P.soft,fontSize:10},
+  chatFlag:{color:'#8abde9',fontSize:16,fontWeight:'800'},
+  chatPresenceRow:{flexDirection:'row',gap:6,alignItems:'center'},
+  chatPresenceDot:{height:6,width:6,borderRadius:3},
+  chatPresenceOnline:{backgroundColor:P.green},
+  chatPresenceAway:{backgroundColor:'#879db6'},
+  chatPresenceText:{fontSize:11,color:'#9db6ce',flexShrink:1},
   chatBottomLine:{flexDirection:'row',alignItems:'center',gap:8},
   previewText:{flex:1,color:P.soft,fontSize:12,lineHeight:17},
   previewUnread:{fontWeight:'800',color:'#dfecff'},
@@ -1236,10 +1364,10 @@ const css=StyleSheet.create({
   tabIconActive:{color:P.accent},tabText:{fontSize:10,color:P.soft,fontWeight:'800'},
   tabTextActive:{color:'#b8dfff'},
   messageList:{paddingHorizontal:12,paddingVertical:17,flexGrow:1},
-  bubble:{paddingVertical:11,paddingHorizontal:13,borderRadius:19,maxWidth:'83%',
-    minWidth:86,marginVertical:4,gap:7},
-  bubbleMine:{backgroundColor:P.mine,alignSelf:'flex-end',borderBottomRightRadius:5},
-  bubbleOther:{backgroundColor:'#1a2c45',alignSelf:'flex-start',borderBottomLeftRadius:5},
+  bubble:{paddingVertical:11,paddingHorizontal:14,borderRadius:21,maxWidth:'84%',
+    minWidth:86,marginVertical:4,gap:7,borderWidth:.5,borderColor:'#365675'},
+  bubbleMine:{backgroundColor:P.mine,alignSelf:'flex-end',borderBottomRightRadius:7},
+  bubbleOther:{backgroundColor:'#1c334d',alignSelf:'flex-start',borderBottomLeftRadius:7},
   sender:{color:P.accent,fontSize:11,fontWeight:'800'},
   reply:{color:P.soft,fontSize:11},
   msg:{color:P.text,fontSize:15,lineHeight:22},
@@ -1249,17 +1377,15 @@ const css=StyleSheet.create({
   attachmentText:{color:P.text,fontSize:12,fontWeight:'700'},
   reactionText:{color:P.text,fontSize:13},
   chatKeyboardArea:{flex:1,minHeight:0},
-  compose:{flexDirection:'row',gap:6,paddingHorizontal:8,paddingTop:10,paddingBottom:9,
-    width:'100%',minWidth:0,
-    alignItems:'flex-end',borderTopColor:P.border,borderTopWidth:1,
-    backgroundColor:'#101e32'},
-  toolButton:{width:35,height:44,borderRadius:11,alignItems:'center',justifyContent:'center',
-    backgroundColor:'#1e3854'},
+  compose:{flexDirection:'row',gap:6,paddingHorizontal:10,paddingTop:11,paddingBottom:10,
+    width:'100%',minWidth:0,alignItems:'flex-end',borderTopColor:'#2d4a64',
+    borderTopWidth:1,backgroundColor:'#10253a'},
+  toolButton:{width:36,height:44,borderRadius:14,alignItems:'center',
+    justifyContent:'center',backgroundColor:'#23405d'},
   toolGlyph:{color:P.accent,fontSize:20,fontWeight:'800'},
-  composeInput:{flex:1,minWidth:40,minHeight:44,maxHeight:115,borderRadius:14,
-    borderWidth:1,borderColor:'#315071',backgroundColor:'#1a2d46',
-    color:P.text,paddingHorizontal:11,paddingVertical:10,textAlignVertical:'top',
-    fontSize:14},
+  composeInput:{flex:1,minWidth:40,minHeight:44,maxHeight:118,borderRadius:20,
+    borderWidth:1,borderColor:'#406182',backgroundColor:'#1b334f',
+    color:P.text,paddingHorizontal:14,paddingVertical:10,textAlignVertical:'top',fontSize:15},
   replyBar:{paddingVertical:10,paddingHorizontal:13,borderTopColor:P.border,borderTopWidth:1,
     flexDirection:'row',justifyContent:'space-between',gap:8,backgroundColor:'#11243b'},
   overlay:{flex:1,justifyContent:'flex-end',backgroundColor:'#020914b3'},
