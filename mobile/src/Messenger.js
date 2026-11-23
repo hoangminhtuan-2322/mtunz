@@ -116,6 +116,14 @@ function Message({item,own,token,onSelect,onOpen}){
   </Pressable>;
 }
 
+function FriendPresenceBadge({friend,connected,clock}){
+  const presence=friendPresence(friend,connected,clock);
+  if(!presence.short)return null;
+  return <View style={css.chatPresenceRow}>
+    <View style={[css.chatPresenceDot,presence.online?css.chatPresenceOnline:css.chatPresenceAway]}/>
+    <Text numberOfLines={1} style={css.chatPresenceText}>{presence.short}</Text>
+  </View>;
+}
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
   const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
@@ -797,24 +805,58 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <TextInput value={inboxQuery} onChangeText={setInboxQuery}
               placeholder="Tìm cuộc trò chuyện..." placeholderTextColor={P.soft}
               style={css.searchInput}/></View>
+          <View style={css.filterRow}>{[
+            ['all','Tất cả'],['unread','Chưa đọc'+(unreadTotal?' · '+unreadTotal:'')],
+            ['online','Hoạt động'+(activeFriends.length?' · '+activeFriends.length:'')]
+          ].map(([value,title])=><Pressable key={value} accessibilityRole="button"
+            accessibilityState={{selected:inboxFilter===value}} onPress={()=>setInboxFilter(value)}
+            style={[css.filterChip,inboxFilter===value&&css.filterChipActive]}>
+            <Text style={[css.filterText,inboxFilter===value&&css.filterTextActive]}>{title}</Text>
+          </Pressable>)}</View>
+          {connection==='online'&&activeFriends.length>0&&inboxFilter==='all'&&
+            <View style={css.activeFriendsSection}>
+              <View style={css.activeHeading}><Text style={css.activeLabel}>ĐANG HOẠT ĐỘNG</Text>
+                <Text style={css.activeCount}>{activeFriends.length} bạn bè</Text></View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={css.activeList}>{activeFriends.slice(0,12).map(friend=>
+                <Pressable key={friend.other_id} accessibilityRole="button"
+                  accessibilityLabel={'Nhắn tin với '+label(friend)+', đang hoạt động'}
+                  onPress={()=>openRoom({scope:'dm',id:friend.other_id})} style={css.activePerson}>
+                  <View style={css.activeAvatarWrap}><View style={css.activeAvatar}>
+                    {friend.avatar_url?<Image source={avatarSource(friend.avatar_url,token)} style={css.activeAvatarImage}/>:
+                      <Text style={css.activeInitial}>{label(friend).slice(0,1).toUpperCase()}</Text>}
+                  </View><View style={css.activeDot}/></View>
+                  <Text numberOfLines={1} style={css.activeName}>{label(friend)}</Text>
+                </Pressable>)}</ScrollView>
+            </View>}
         </View>}
-        ListEmptyComponent={<EmptyState symbol="✉" title={inboxQuery?'Không tìm thấy hội thoại':'Bắt đầu kết nối'}
-          subtitle={inboxQuery?'Thử nhập tên khác hoặc mở tab Bạn bè.':'Kết bạn để gửi những tin nhắn đầu tiên.'}/>}
+        ListEmptyComponent={<EmptyState symbol="✉"
+          title={inboxFilter==='online'?'Chưa có bạn bè trực tuyến':
+            inboxFilter==='unread'?'Không có tin nhắn chưa đọc':
+            inboxQuery?'Không tìm thấy hội thoại':'Bắt đầu kết nối'}
+          subtitle={inboxFilter==='online'?(connection==='online'?
+            'Danh sách tự cập nhật khi bạn bè trực tuyến.':'Đang kết nối lại để lấy trạng thái chính xác.'):
+            inboxFilter==='unread'?'Tất cả tin nhắn đã được đọc.':
+            inboxQuery?'Thử nhập tên khác hoặc mở tab Bạn bè.':
+            'Kết bạn để gửi những tin nhắn đầu tiên.'}/>}
         renderItem={({item})=><Pressable accessibilityRole="button" style={css.chatRow}
           onPress={()=>openRoom({scope:'dm',id:item.other_id})}>
           <View style={css.avatarWrap}>
             <View style={css.avatar}>{item.avatar_url?<Image source={avatarSource(item.avatar_url,token)} style={css.avatarImage}/>:
               <Text style={css.avatarText}>{label(item).slice(0,1).toUpperCase()}</Text>}</View>
-            {!!item.online&&<View style={css.onlineBadge}/>}
+            {connection==='online'&&item.online===true&&<View style={css.onlineBadge}/>}
           </View>
           <View style={css.chatCopy}>
             <View style={css.chatTopLine}><Text style={css.chatName} numberOfLines={1}>{label(item)}</Text>
+              {!!item.pinned&&<Text style={css.chatFlag}>⌁</Text>}
+              {!!item.muted&&<Text style={css.chatFlag}>◌</Text>}
               {!!item.last_message?.created_at&&<Text style={css.chatTime}>
                 {readableTime(item.last_message.created_at)}</Text>}</View>
             <View style={css.chatBottomLine}><Text numberOfLines={1}
               style={[css.previewText,item.unread>0&&css.previewUnread]}>
-              {item.last_message?.body||'Nhấn để bắt đầu trò chuyện'}</Text>
+              {item.last_message?.body||(connection==='online'&&item.online?'Đang hoạt động · Bắt đầu trò chuyện':'Nhấn để bắt đầu trò chuyện')}</Text>
               {item.unread>0&&<Text style={css.badge}>{item.unread>99?'99+':item.unread}</Text>}</View>
+            <FriendPresenceBadge friend={item} connected={connection==='online'} clock={presenceClock}/>
           </View>
         </Pressable>}/>}
       {tab==='groups'&&<FlatList data={matchingGroups} keyExtractor={g=>String(g.id)}
