@@ -38,6 +38,8 @@ jobs:
         run: node ../tests/native_realtime_stability.cjs
       - name: Verify native typing and anonymous world parity
         run: node ../tests/native_world_typing_parity.cjs
+      - name: Verify real Android shared content/gallery media integration
+        run: node ../tests/native_shared_gallery.cjs
       - name: Verify native Admin operations and PIN protections
         run: node ../tests/native_admin_parity.cjs
       - name: Verify safe restoration of Android sessions after network outages
