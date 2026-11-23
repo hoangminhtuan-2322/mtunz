@@ -144,6 +144,18 @@ jobs:
           digest=sys.argv[1].upper()
           assert len(digest)==64, 'Invalid certificate SHA-256'
           fingerprint=':'.join(digest[i:i+2] for i in range(0,64,2))
+          # The existing installed APK 1.0.0 has this exact certificate.
+          # Accepting another certificate from assetlinks would produce an APK
+          # that cannot install as an update over the user's original app.
+          original_fingerprint=(
+              '5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:'
+              '5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C'
+          )
+          if fingerprint != original_fingerprint:
+              raise SystemExit(
+                  'Release keystore is NOT the original mtunz 1.0.0 signing key. '
+                  'Refusing to publish an incompatible update: '+fingerprint
+              )
           statements=json.loads(Path('static/android-assetlinks.json').read_text())
           authorized=any(
               entry.get('target',{}).get('package_name')=='com.mtunz.web'
