@@ -66,9 +66,14 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
           EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+          REQUIRE_NATIVE_PUSH: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: |
           if [[ -z "$GOOGLE_SERVICES_JSON" && -z "$EXPO_PROJECT_ID" ]]; then
-            echo 'Native build without push credentials: background push requires Firebase and Expo setup.'
+            if [[ "$REQUIRE_NATIVE_PUSH" == "true" ]]; then
+              echo '::error::Cannot publish a signed native APK with background notifications disabled. Configure EXPO_PROJECT_ID and MTUNZ_ANDROID_GOOGLE_SERVICES first.'
+              exit 1
+            fi
+            echo '::warning::Native preview has no push credentials; background notifications will not work.'
             exit 0
           fi
           if [[ -z "$GOOGLE_SERVICES_JSON" || -z "$EXPO_PROJECT_ID" ]]; then
@@ -79,6 +84,8 @@ jobs:
           printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
           echo "GOOGLE_SERVICES_FILE=./google-services.json" >> "$GITHUB_ENV"
           echo "EXPO_PROJECT_ID=$EXPO_PROJECT_ID" >> "$GITHUB_ENV"
+      - name: Regress native realtime catch-up and window merges
+        run: node ../tests/native_realtime_stability.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
       - name: Check generated native manifest and launch package
