@@ -41,6 +41,28 @@ jobs:
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
           test -d "$ANDROID_HOME"
+      - name: Ensure required Android NDK is healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk_version='27.1.12297006'
+          sdkmanager_bin="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$sdkmanager_bin"
+          if [[ -s "$ANDROID_HOME/ndk/$ndk_version/source.properties" ]]; then
+            echo "NDK $ndk_version already available."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            echo "Installing NDK $ndk_version (attempt $attempt/3)..."
+            rm -rf "$ANDROID_HOME/ndk/$ndk_version"
+            if "$sdkmanager_bin" --install "ndk;$ndk_version"; then
+              test -s "$ANDROID_HOME/ndk/$ndk_version/source.properties"
+              exit 0
+            fi
+            sleep 8
+          done
+          echo "::error::Android NDK download failed after three attempts."
+          exit 1
       - name: Install JavaScript dependencies
         run: npm install --no-audit --no-fund
       - name: Prepare Android push configuration when configured
