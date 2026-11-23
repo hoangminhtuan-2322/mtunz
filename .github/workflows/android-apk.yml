@@ -52,7 +52,7 @@ jobs:
           test "$(git hash-object assets/icon.png)" = '282a6971e38d51ce570b094e07d5624663bbedbb'
           node - <<'NODE'
           const f=require('./app.json').expo;
-          if(f.android.package!=='com.mtunz.web'||f.android.versionCode!==8||f.version!=='1.0.0')
+          if(f.android.package!=='com.mtunz.web'||f.android.versionCode!==9||f.version!=='1.0.0')
             throw Error('Native package/version must update mtunz 1.0.1 without changing package');
           if(f.icon!=='./assets/icon.png')throw Error('Original logo was replaced');
           NODE
@@ -175,7 +175,7 @@ jobs:
           "$SIGNER" verify --verbose --print-certs "$APK"
           EXPECTED_PACKAGE=com.mtunz.web.preview
           if [[ "$SIGNED_NATIVE_RELEASE" == "true" ]]; then EXPECTED_PACKAGE=com.mtunz.web; fi
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='$EXPECTED_PACKAGE' versionCode='8' versionName='1.0.0'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='$EXPECTED_PACKAGE' versionCode='9' versionName='1.0.0'"
       - name: Enforce fixed release certificate, NOT debug signer
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
