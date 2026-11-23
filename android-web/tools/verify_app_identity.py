@@ -70,10 +70,25 @@ def main():
     app = manifest.find("application")
     require(app is not None and app.get(android_attr + "icon") == "@drawable/mtunz_icon",
             "App launcher icon is no longer the original mtunz logo.")
-    activity = app.find("activity")
-    require(activity is not None
-            and activity.get(android_attr + "name") == ".MainActivity",
+    activities = {
+        element.get(android_attr + "name"): element
+        for element in app.findall("activity")
+    }
+    activity = activities.get(".MainActivity")
+    require(activity is not None and activity.get(android_attr + "exported") == "true",
             "Trusted Web Activity entry point changed.")
+    for name in (
+        "com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity",
+        "com.google.androidbrowserhelper.trusted.FocusActivity",
+    ):
+        dep = activities.get(name)
+        require(dep is not None and dep.get(android_attr + "exported") == "false",
+                "Required Android Browser Helper activity missing or exposed: " + name)
+    require(
+        app.get(android_attr + "manageSpaceActivity") ==
+        "com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity",
+        "Android Browser Helper site settings must be declared or launch may crash."
+    )
     urls = [
         el.get(android_attr + "value")
         for el in activity.findall("meta-data")
