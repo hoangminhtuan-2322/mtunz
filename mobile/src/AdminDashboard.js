@@ -265,17 +265,22 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     {onlineProfile?<View style={s.item}>
       <Text style={s.head}>{onlineProfile.display_name||onlineProfile.username}</Text>
       <Text style={s.label}>@{onlineProfile.username}</Text>
+       <Text style={s.onlineLabel}>{onlineUsers.some(u=>u.id===onlineProfile.id)?'● Đang trực tuyến':'Đã ngoại tuyến'}</Text>
       <Text style={s.muted}>SĐT {onlineProfile.phone||'—'} · Email {onlineProfile.email||'—'}</Text>
       <Text style={s.muted}>{onlineProfile.friend_count} bạn bè · {onlineProfile.group_count} nhóm · {onlineProfile.session_count} phiên đăng nhập</Text>
     </View>:<>
      <Text style={s.head}>{onlineUsers.length} người đang kết nối realtime</Text>
      {!loading&&onlineUsers.length===0?<Text style={s.muted}>Hiện không có người dùng online.</Text>:null}
-     {onlineUsers.map(user=><Pressable key={user.id} style={s.item} accessibilityRole="button" disabled={loading}
-      onPress={()=>showOnlineProfile(user.id)}>
-       <Text style={s.label}>{user.display_name||user.username} · @{user.username}</Text>
-       <Text style={s.muted}>{user.sessions} phiên · {user.connections} kết nối · Xem hồ sơ</Text>
-       {user.last_seen>0?<Text style={s.muted}>Ghi nhận gần nhất {new Date(user.last_seen*1000).toLocaleString('vi-VN')}</Text>:null}
-     </Pressable>)}
+     {onlineUsers.map(user=><Pressable key={user.id} style={s.item} accessibilityRole="button"
+      disabled={loading} onPress={()=>showOnlineProfile(user.id)}>
+      <View style={s.adminOnlineRow}><View style={s.onlinePulse}/>
+        <Text numberOfLines={1} style={[s.label,{flex:1}]}>{user.display_name||user.username}</Text>
+        <Text style={s.onlineLabel}>Trực tuyến</Text>
+      </View>
+      <Text style={s.muted}>@{user.username} · {user.sessions} phiên · {user.connections} kết nối</Text>
+      {user.last_seen>0?<Text style={s.activityExact}>
+        Ghi nhận {new Date(user.last_seen*1000).toLocaleString('vi-VN')}</Text>:null}
+    </Pressable>)}
     </>}
    </Box>}
    {tab==='registrations'&&<>
@@ -338,16 +343,31 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        <Text style={s.muted}>Trạng thái: {item.status}</Text>
      </Pressable>)}
    </Box>}
-   {tab==='users'&&<Box><Text style={s.head}>Tìm thành viên</Text>
+   {tab==='users'&&<Box><Text style={s.head}>Thành viên & hoạt động</Text>
+    <Text style={s.muted}>Trực tuyến dựa vào kết nối máy chủ, không phải trạng thái tài khoản.</Text>
     <Field placeholder="Tên đăng nhập, ID hoặc tên hiển thị" value={query} onChangeText={setQuery}/>
-    <Action label="Tìm kiếm" disabled={loading} onPress={loadUsers}/>
+    <View style={s.sortRow}>{[
+      ['oldest','Cũ nhất'],['newest','Mới nhất'],['activity','Hoạt động gần đây']
+    ].map(([order,title])=><Pressable key={order} accessibilityRole="button"
+      accessibilityState={{selected:userSort===order}} onPress={()=>{setUserSort(order);loadUsers(order);}}
+      style={[s.sortChip,userSort===order&&s.sortActive]}>
+      <Text style={[s.sortText,userSort===order&&s.sortTextActive]}>{title}</Text>
+    </Pressable>)}</View>
+    <Action label="Tìm kiếm" disabled={loading} onPress={()=>loadUsers(userSort)}/>
     {users.map(item=><Pressable key={item.id} style={s.item} onPress={()=>viewUser(item)}>
-      <Text style={s.label}>{item.display_name||item.username} (@{item.username})</Text>
-      <Text style={s.muted}>ID {item.id} • {item.sanction_kind||'Đang hoạt động'} · Xem chi tiết</Text>
+      <View style={s.adminOnlineRow}>
+        <View style={[s.onlinePulse,!item.online&&s.offlinePulse]}/>
+        <Text style={[s.label,{flex:1,minWidth:0}]} numberOfLines={1}>{item.display_name||item.username}</Text>
+        <Text style={item.online?s.onlineLabel:s.offlineLabel}>{adminPresence(item,presenceClock).short}</Text>
+      </View>
+      <Text style={s.muted}>@{item.username} · ID {item.id} · {item.sanction_kind?'Có hạn chế':'Tài khoản hợp lệ'}</Text>
+      {!!adminPresence(item,presenceClock).exact&&
+        <Text style={s.activityExact}>Ghi nhận: {adminPresence(item,presenceClock).exact}</Text>}
     </Pressable>)}
     {selectedUser&&<View style={s.item}>
       <Text style={s.head}>Hồ sơ @{selectedUser.username}</Text>
       <Text style={s.muted}>ID {selectedUser.id} • {selectedUser.sanction_kind||'Không hạn chế'}</Text>
+       <Text style={s.activityExact}>Hoạt động gần nhất: {adminPresence(selectedUser,presenceClock).exact||'Chưa ghi nhận'}</Text>
       <Text style={s.muted}>{selectedUser.friend_count} bạn bè · {selectedUser.group_count} nhóm · {selectedUser.message_count} tin nhắn</Text>
       <Text style={s.muted}>{selectedUser.session_count} phiên còn hiệu lực · {selectedUser.file_count} tệp</Text>
       <Text style={s.muted}>Tạo: {new Date(selectedUser.created_at*1000).toLocaleString('vi-VN')}</Text>
