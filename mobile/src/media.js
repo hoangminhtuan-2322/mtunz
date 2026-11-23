@@ -1,9 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 import { File, Paths } from 'expo-file-system';
 import * as Clipboard from 'expo-clipboard';
 import { API_ORIGIN, ApiError, api } from './client';
@@ -95,24 +92,4 @@ export async function saveSharedFile(attachment,token) {
 
 export async function copyChatText(value) {
   await Clipboard.setStringAsync(value || '');
-}
-
-export async function registerMobileNotifications(token) {
-  if (!Device.isDevice) throw new Error('Thông báo đẩy cần thiết bị thật.');
-  const projectId = Constants.easConfig?.projectId || Constants.expoConfig?.extra?.eas?.projectId;
-  if (!projectId) throw new Error('Chưa cấu hình EAS projectId để nhận thông báo khi đóng ứng dụng.');
-  const existing = await Notifications.getPermissionsAsync();
-  let status=existing.status;
-  if (status!=='granted') status=(await Notifications.requestPermissionsAsync()).status;
-  if (status!=='granted') throw new Error('Bạn chưa cấp quyền thông báo.');
-  await Notifications.setNotificationChannelAsync('messages',{
-    name:'Tin nhắn mtunz',importance:Notifications.AndroidImportance.HIGH,
-  });
-  const expoToken=(await Notifications.getExpoPushTokenAsync({projectId})).data;
-  await api('/api/mobile/push',{token,method:'POST',data:{token:expoToken}});
-  return true;
-}
-
-export async function unregisterMobileNotifications(token) {
-  await api('/api/mobile/push',{token,method:'DELETE'});
 }

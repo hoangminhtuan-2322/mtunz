@@ -31,7 +31,9 @@ CI hiện kiểm tra tương thích Expo, export bundle Android/iOS, kiểm th�
 
 ## Chuẩn bị cài APK/iOS
 
-Cần tài khoản Expo EAS, cấu hình projectId và khóa ký, tài khoản phân phối (nếu phát hành App Store/Play Store). Bật FCM cho Android và APNs cho iOS nếu muốn nhận push khi app đã đóng.
+Cần tài khoản Expo EAS, cấu hình projectId và khóa ký, tài khoản phân phối (nếu phát hành App Store/Play Store). Để Android nhận push khi đóng app, tạo ứng dụng Android `com.mtunz.mobile` trong Firebase và đăng ký thông tin xác thực FCM v1 trong EAS cùng dự án Expo. Với workflow GitHub, lưu nội dung `google-services.json` vào secret `MTUNZ_ANDROID_GOOGLE_SERVICES` và UUID dự án vào biến `EXPO_PROJECT_ID`. Với EAS, cung cấp đường dẫn file bằng `GOOGLE_SERVICES_FILE` và liên kết UUID bằng `EXPO_PROJECT_ID` hoặc cấu hình dự án Expo. iOS dùng APNs. Nếu bật bảo mật nâng cao cho Expo Push, đặt `EXPO_ACCESS_TOKEN` trong môi trường máy chủ Render.
+
+Trong app, vào **Trang cá nhân → Thông báo** hoặc **Admin → Tổng quan → Thông báo quản trị** để bật, gửi thử hoặc tắt trên từng thiết bị. Âm thanh dùng kênh Thông báo mtunz trong cài đặt hệ điều hành.
 
     cd mobile
     npx eas-cli login

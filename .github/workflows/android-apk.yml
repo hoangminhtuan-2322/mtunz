@@ -39,6 +39,23 @@ jobs:
           test -d "$ANDROID_HOME"
       - name: Install JavaScript dependencies
         run: npm install --no-audit --no-fund
+      - name: Prepare Android push configuration when configured
+        env:
+          MTUNZ_ANDROID_GOOGLE_SERVICES: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+        run: |
+          if [[ -z "$MTUNZ_ANDROID_GOOGLE_SERVICES" && -z "$EXPO_PROJECT_ID" ]]; then
+            echo "Building without Android cloud messaging configuration."
+            exit 0
+          fi
+          if [[ -z "$MTUNZ_ANDROID_GOOGLE_SERVICES" || -z "$EXPO_PROJECT_ID" ]]; then
+            echo "::error::Android push requires both MTUNZ_ANDROID_GOOGLE_SERVICES and EXPO_PROJECT_ID."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$MTUNZ_ANDROID_GOOGLE_SERVICES" > google-services.json
+          echo "GOOGLE_SERVICES_FILE=./google-services.json" >> "$GITHUB_ENV"
+          echo "EXPO_PROJECT_ID=$EXPO_PROJECT_ID" >> "$GITHUB_ENV"
       - name: Generate Android native project
         env:
           EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
