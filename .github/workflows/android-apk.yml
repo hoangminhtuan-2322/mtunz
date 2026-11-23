@@ -2,7 +2,7 @@ name: Build mtunz TRUE Native Android APK
 
 on:
   push:
-    branches: [main, feature/mtunz-true-native-android-release, release/mtunz-native-1-1-signed-candidate]
+    branches: [main, feature/mtunz-true-native-android-release]
     paths:
       - 'mobile/**'
       - '.github/workflows/android-apk.yml'
@@ -91,7 +91,7 @@ jobs:
             exit 1
           fi
       - name: Require the permanent signing key only for authorized main release
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
@@ -107,14 +107,14 @@ jobs:
           test -s "$RUNNER_TEMP/mtunz-fixed-release.jks"
           echo "MTUNZ_NATIVE_KEYSTORE_PATH=$RUNNER_TEMP/mtunz-fixed-release.jks" >> "$GITHUB_ENV"
       - name: Configure release signing (NEVER debug key for distribution)
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         env:
           MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
           MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
         run: node tools/configure_fixed_release_signing.cjs --release
       - name: Build standalone native RELEASE with the permanent mtunz signing key
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         env:
           MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
@@ -124,7 +124,7 @@ jobs:
           cd android
           ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
       - name: Build standalone NATIVE preview with debug signing only
-        if: ${{ ! ((github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate')) }}
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         run: |
           chmod +x android/gradlew
           cd android
@@ -138,10 +138,10 @@ jobs:
           "$SIGNER" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.mtunz.web' versionCode='3' versionName='1.1.0'"
       - name: Enforce fixed release certificate, NOT debug signer
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
       - name: Upload signed NATIVE candidate (strict certificate verified; emulator not yet checked)
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@v4
         with:
           name: mtunz-NATIVE-1.1.0-SIGNED-candidate
@@ -158,7 +158,7 @@ jobs:
           working-directory: mobile
           script: bash tools/smoke_native_android.sh
       - name: Upload NATIVE preview (DEBUG-signed, not for updating existing installation)
-        if: ${{ ! ((github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate')) }}
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@v4
         with:
           name: mtunz-NATIVE-PREVIEW-debug-signed
@@ -166,7 +166,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload NATIVE release (permanent signing key, can update TWA 1.0.1)
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-signed-candidate') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@v4
         with:
           name: mtunz-NATIVE-1.1.0-RELEASE-fixed-key
