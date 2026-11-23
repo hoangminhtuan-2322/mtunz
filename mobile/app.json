@@ -10,7 +10,10 @@
       "package": "com.mtunz.web",
       "versionCode": 11,
       "permissions": [
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "RECORD_AUDIO",
+        "CAMERA",
+        "MODIFY_AUDIO_SETTINGS"
       ],
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
@@ -38,6 +41,13 @@
         {
           "microphonePermission": "Cho phép mtunz ghi tin nhắn thoại khi bạn yêu cầu.",
           "enableBackgroundRecording": false
+        }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Cho phép mtunz dùng camera để gọi video.",
+          "microphonePermission": "Cho phép mtunz dùng micro để gọi thoại và video."
         }
       ]
     ],
