@@ -3,13 +3,14 @@ import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
 import {ActivityIndicator,Alert,AppState,FlatList,Image,KeyboardAvoidingView,
-  Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+  Linking,Modal,Platform,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   saveSharedFile,uploadAttachment} from './media';
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
+import SharedConversationGallery from './SharedConversationGallery';
 
 const P={bg:'#08111f',card:'#14243a',border:'#2c4160',text:'#f4f8ff',soft:'#a5b6cf',accent:'#67bcff',mine:'#245395',bad:'#ff9eac',green:'#79dfbe'};
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
@@ -49,6 +50,26 @@ function ModalSheet({visible,onClose,title,children}){
         <Pressable onPress={onClose}><Text style={css.link}>Đóng</Text></Pressable></View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:10,paddingBottom:20}}>{children}</ScrollView>
     </View></View>
+  </Modal>;
+}
+function ConversationInfoSheet({title,onClose,children}){
+  return <Modal visible animationType="slide" onRequestClose={onClose}>
+    <SafeAreaView style={css.detailsScreen}>
+      <View style={css.detailsHeader}>
+        <View style={{flex:1,minWidth:0,gap:4}}>
+          <Text style={css.detailsEyebrow}>CHI TIẾT HỘI THOẠI</Text>
+          <Text style={css.detailsTitle} numberOfLines={2}>{title}</Text>
+          <Text style={css.detailsSubtitle}>Nội dung đã chia sẻ và tùy chọn trò chuyện</Text>
+        </View>
+        <Pressable accessibilityRole="button" onPress={onClose} style={css.detailsClose}>
+          <Text style={css.detailsCloseText}>✕</Text>
+        </Pressable>
+      </View>
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+        contentContainerStyle={css.detailsContent}>
+        {children}
+      </ScrollView>
+    </SafeAreaView>
   </Modal>;
 }
 function Attachment({file,token,onOpen}){
@@ -103,7 +124,6 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [dialog,setDialog]=useState(''),[friendQuery,setFriendQuery]=useState(''),
     [results,setResults]=useState([]),[nickname,setNickname]=useState(''),[groupTitle,setGroupTitle]=useState(''),
     [groupCandidates,setGroupCandidates]=useState([]),[groupDetail,setGroupDetail]=useState(null),
-    [infoView,setInfoView]=useState('media'),[infoRows,setInfoRows]=useState([]),
     [searchText,setSearchText]=useState(''),[searchResults,setSearchResults]=useState([]),
     [social,setSocial]=useState({}),[profile,setProfile]=useState(null),
     [displayName,setDisplayName]=useState(user.display_name||''),[bio,setBio]=useState(user.bio||''),
@@ -557,23 +577,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   async function openInfo(){
     if(!room||room.scope==='world')return;
-    setDialog('info');setInfoView('media');
+    setDialog('info');
     try{
-      const data=await invoke('/api/chats/'+room.scope+'/'+room.id+'/shared?kind=media');
-      setInfoRows(data.items||[]);
       if(room.scope==='dm')setNickname(peer?.nickname||'');
       if(room.scope==='group'){
         const detail=await invoke('/api/groups/'+room.id);setGroupDetail(detail);
         setGroupEditTitle(detail.group?.title||group?.title||'');
         setGroupEditDescription(detail.group?.description||'');setAddGroupMembers([]);
       }
-    }catch(e){alertError(e);}
-  }
-  async function shared(kind){
-    setInfoView(kind);
-    try{
-      const data=await invoke('/api/chats/'+room.scope+'/'+room.id+'/shared?kind='+kind);
-      setInfoRows(data.items||[]);
     }catch(e){alertError(e);}
   }
   async function browsePeople(){
@@ -906,25 +917,26 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           target_scope:t.scope,target_id:t.id,
         },async()=>{setDialog('');setSelection(null);await refreshLists();})}>{t.name}</Btn>)}
     </ModalSheet>
-    <ModalSheet visible={dialog==='info'} onClose={()=>setDialog('')} title={roomTitle+' · Nội dung & cài đặt'}>
+    {dialog==='info'&&<ConversationInfoSheet title={roomTitle} onClose={()=>setDialog('')}>
       {room?.scope==='dm'&&<>
-        <Text style={css.h2}>Biệt danh chỉ bạn nhìn thấy</Text>
-        <Field value={nickname} onChangeText={setNickname} placeholder="Đặt biệt danh"/>
-        <Btn onPress={()=>perform('/api/chats/'+room.id+'/nickname','PUT',{nickname},
-          async()=>{await refreshLists();setDialog('');})}>Lưu biệt danh</Btn>
-        <View style={css.hrow}>
+        <View style={css.detailsCard}>
+          <Text style={css.detailsSectionTitle}>Biệt danh</Text>
+          <Text style={css.detailsHelp}>Tên riêng chỉ bạn nhìn thấy trong cuộc trò chuyện này.</Text>
+          <Field value={nickname} onChangeText={setNickname} placeholder="Đặt biệt danh"/>
+          <Btn onPress={()=>perform('/api/chats/'+room.id+'/nickname','PUT',{nickname},
+            async()=>{await refreshLists();})}>Lưu biệt danh</Btn>
+        </View>
+        <View style={css.detailActions}><View style={css.detailAction}>
           <Btn small quiet onPress={()=>perform('/api/chats/'+room.id+'/preferences','POST',{
             muted:!peer?.muted,archived:!!peer?.archived,pinned:!!peer?.pinned})}>
-            {peer?.muted?'Bật thông báo':'Tắt thông báo'}</Btn>
-          <Btn small quiet onPress={()=>perform('/api/chats/'+room.id+'/preferences','POST',{
+            {peer?.muted?'Bật thông báo':'Tắt thông báo'}</Btn></View>
+          <View style={css.detailAction}><Btn small quiet onPress={()=>perform('/api/chats/'+room.id+'/preferences','POST',{
             muted:!!peer?.muted,archived:!!peer?.archived,pinned:!peer?.pinned})}>
-            {peer?.pinned?'Bỏ ghim chat':'Ghim chat'}</Btn>
-        </View>
-        <View style={css.hrow}>
-          <Btn small quiet onPress={()=>perform('/api/chats/'+room.id+'/preferences','POST',{
+            {peer?.pinned?'Bỏ ghim chat':'Ghim chat'}</Btn></View>
+          <View style={css.detailAction}><Btn small quiet onPress={()=>perform('/api/chats/'+room.id+'/preferences','POST',{
             muted:!!peer?.muted,archived:!peer?.archived,pinned:!!peer?.pinned},jumpBack)}>
-            {peer?.archived?'Khôi phục':'Lưu trữ'}</Btn>
-          <Btn small quiet onPress={()=>openProfile(room.id)}>Xem hồ sơ</Btn>
+            {peer?.archived?'Khôi phục':'Lưu trữ'}</Btn></View>
+          <View style={css.detailAction}><Btn small quiet onPress={()=>openProfile(room.id)}>Xem hồ sơ</Btn></View>
         </View>
       </>}
       {room?.scope==='group'&&<>
@@ -956,20 +968,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           {text:'Hủy'},{text:'Rời nhóm',style:'destructive',onPress:()=>perform(
             '/api/groups/'+room.id+'/members/'+user.id,'DELETE',undefined,jumpBack)}])}>Rời nhóm</Btn>
       </>}
-      <Text style={css.h2}>Nội dung đã chia sẻ</Text>
-      <View style={css.hrow}>{[['media','Ảnh / video'],['files','Tệp'],['links','Link']].map(([kind,t])=>
-        <Btn key={kind} small quiet={infoView!==kind} onPress={()=>shared(kind)}>{t}</Btn>)}</View>
-      {infoRows.length===0&&<Text style={css.muted}>Chưa có nội dung.</Text>}
-      {infoRows.map(m=><Pressable key={m.id} style={css.rowCard}
-        onPress={async()=>{
-          if(infoView==='links'){const url=m.links?.[0]?.url;if(url&&/^https?:\/\//.test(url))await Linking.openURL(url);return;}
-          await saveSharedFile({id:m.attachment_id,name:m.name,mime:m.mime,size:m.size},token).catch(alertError);
-        }}>
-        <Text style={css.strong}>{infoView==='links'?m.links?.map(x=>x.host).join(', '):m.name||'Tệp đính kèm'}</Text>
-        <Text style={css.muted}>{readableTime(m.created_at)}</Text>
-      </Pressable>)}
-      <Btn quiet onPress={()=>{setDialog('search');setSearchResults([]);}}>Tìm tin nhắn trong hội thoại</Btn>
-    </ModalSheet>
+      <SharedConversationGallery room={room} token={token} onError={alertError}/>
+      <Btn quiet onPress={()=>{setDialog('search');setSearchResults([]);}}>⌕ Tìm tin nhắn trong hội thoại</Btn>
+    </ConversationInfoSheet>}
     <ModalSheet visible={dialog==='search'} onClose={()=>setDialog('')} title="Tìm kiếm tin nhắn">
       <Field value={searchText} onChangeText={setSearchText} placeholder="Nhập nội dung cần tìm"/>
       <Btn onPress={async()=>{
@@ -1145,6 +1146,23 @@ const css=StyleSheet.create({
   statusText:{fontSize:11,color:P.soft},
   errorBar:{backgroundColor:'#40243a',borderBottomWidth:1,borderColor:'#704157',padding:11},
   hrow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:9,flexWrap:'wrap'},
+  detailsScreen:{flex:1,backgroundColor:P.bg},
+  detailsHeader:{paddingHorizontal:19,paddingTop:17,paddingBottom:15,
+    flexDirection:'row',alignItems:'center',gap:12,backgroundColor:'#102139',
+    borderBottomWidth:1,borderBottomColor:'#31506f'},
+  detailsEyebrow:{color:'#7abaff',letterSpacing:1.8,fontSize:10,fontWeight:'900'},
+  detailsTitle:{color:P.text,fontSize:24,fontWeight:'900',letterSpacing:-.5,flexShrink:1},
+  detailsSubtitle:{fontSize:12,color:P.soft},
+  detailsClose:{height:43,width:43,borderRadius:15,backgroundColor:'#233b59',
+    alignItems:'center',justifyContent:'center',borderColor:'#3b5776',borderWidth:1},
+  detailsCloseText:{color:P.accent,fontSize:20,fontWeight:'800'},
+  detailsContent:{padding:16,paddingBottom:40,gap:15},
+  detailsCard:{padding:16,borderWidth:1,borderColor:'#355472',borderRadius:20,
+    backgroundColor:'#16283f',gap:11},
+  detailsSectionTitle:{fontSize:18,color:P.text,fontWeight:'900'},
+  detailsHelp:{color:P.soft,fontSize:12,lineHeight:19},
+  detailActions:{flexDirection:'row',flexWrap:'wrap',justifyContent:'space-between',gap:10},
+  detailAction:{width:'48%',minWidth:0},
   section:{padding:15,backgroundColor:P.card,borderWidth:1,borderColor:P.border,
     borderRadius:16,gap:11},
   rowCard:{flexDirection:'row',alignItems:'center',gap:12,padding:14,
