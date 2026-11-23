@@ -8,9 +8,19 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const messenger=fs.readFileSync(path.join(root,'mobile/src/Messenger.js'),'utf8');
 const cfg=require('../mobile/app.json').expo;
+const app=fs.readFileSync(path.join(root,'mobile/App.js'),'utf8');
+const pkg=require('../mobile/package.json');
 assert.equal(cfg.android.softwareKeyboardLayoutMode,'resize',
   'Do not use Android adjustPan together with padding: that pushes composer up twice');
 assert.equal(cfg.android.package,'com.mtunz.web');
+assert(pkg.dependencies['react-native-safe-area-context']==='~5.11.1',
+  'Expo SDK 58 needs safe area insets for Android edge-to-edge screens');
+assert(app.includes('SafeAreaProvider initialMetrics={initialWindowMetrics}'),
+  'Root SafeAreaProvider must cover Messenger, Admin and authentication');
+assert(app.includes("import {SafeAreaProvider,SafeAreaView,initialWindowMetrics} from 'react-native-safe-area-context'"),
+  'Use Android/iOS safe-area view instead of React Native iOS-only SafeAreaView');
+assert(messenger.includes("import {SafeAreaView} from 'react-native-safe-area-context'"),
+  'Conversation details modal must respect Android status/navigation bars');
 assert.equal(cfg.version,'1.1.3');
 assert.equal(cfg.android.versionCode,6);
 assert(/\bImage,Keyboard,KeyboardAvoidingView\b/.test(messenger),'Need Keyboard lifecycle events');
