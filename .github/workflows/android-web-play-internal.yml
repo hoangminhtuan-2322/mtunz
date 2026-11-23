@@ -1,0 +1,150 @@
+name: Publish mtunz to Google Play INTERNAL TESTING (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful main-branch Android TWA build run containing signed AAB"
+        required: true
+        type: string
+      physical_test_run_id:
+        description: "Successful Firebase PHYSICAL Android test workflow run ID"
+        required: true
+        type: string
+      play_app_signing_sha256:
+        description: "Copy Google Play APP SIGNING certificate SHA-256 from Play Console, NOT the upload certificate"
+        required: true
+        type: string
+      manual_qa_passed:
+        description: "I verified real-phone login, realtime messaging, files, background push and Admin with TEST accounts"
+        required: true
+        type: boolean
+        default: false
+      authorize_internal_testing:
+        description: "I explicitly authorize submission to the Play INTERNAL TESTING track only"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  release-internal:
+    if: ${{ inputs.manual_qa_passed && inputs.authorize_internal_testing }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require passed real-device tests and correct Play APP SIGNING identity
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN: ${{ inputs.source_run_id }}
+          DEVICE_RUN: ${{ inputs.physical_test_run_id }}
+          PLAY_FINGERPRINT: ${{ inputs.play_app_signing_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ && "$DEVICE_RUN" =~ ^[0-9]+$ ]] ||
+            { echo "::error::Provide valid numeric build and physical-test run IDs"; exit 1; }
+          expected="5DDF61E271829340CFB41785D520E9C55A1851E7F37CCCF5CB1BD26448D6A45C"
+          entered="$(printf '%s' "$PLAY_FINGERPRINT" | tr -d '[:space:]:' | tr '[:lower:]' '[:upper:]')"
+          [[ "$entered" == "$expected" ]] || {
+            echo "::error::Google Play APP SIGNING certificate differs from original mtunz Android 1.0.0. Publishing could break in-place updates. Refusing."
+            exit 1
+          }
+          build="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN")"
+          device="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DEVICE_RUN")"
+          echo "$build" | jq -e '.status == "completed" and .conclusion == "success" and .head_branch == "main"' >/dev/null ||
+            { echo "::error::Signed build must be a successful main-branch workflow run"; exit 1; }
+          echo "$device" | jq -e '.status == "completed" and .conclusion == "success" and .head_branch == "main"' >/dev/null ||
+            { echo "::error::Firebase physical test must be successful on main"; exit 1; }
+          test_name="$(echo "$device" | jq -r '.name')"
+          [[ "$test_name" == "Test signed mtunz APK on a real Android device (Firebase)" ]] ||
+            { echo "::error::Supplied device run is not a Firebase physical-device test"; exit 1; }
+      - name: Download release bundle from trusted Android build
+        uses: actions/download-artifact@v4
+        with:
+          name: mtunz-web-android-PLAY-RELEASE-aab
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: release
+      - name: Download signed release APK checked on the physical device
+        uses: actions/download-artifact@v4
+        with:
+          name: mtunz-web-android-RELEASE-stable-signing
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: release
+      - name: Download physical-device test provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: mtunz-physical-device-qa
+          run-id: ${{ inputs.physical_test_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: physical-test
+      - name: Refuse untested or mismatched APK / AAB release
+        shell: bash
+        env:
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          report=json.loads(Path('physical-test/attestation.json').read_text())
+          expected_run=int(os.environ['SOURCE_RUN'])
+          apk=Path('release/mtunz-web-release.apk')
+          digest=hashlib.sha256(apk.read_bytes()).hexdigest()
+          if report.get('source_run_id')!=expected_run or report.get('apk_sha256')!=digest:
+              raise SystemExit('Physical test did not run against this exact signed APK. REFUSING to publish.')
+          if report.get('test_type')!='firebase-physical-robo':
+              raise SystemExit('Invalid physical test provenance')
+          print('Matched signed APK SHA-256 to a successful Firebase Test Lab device run.')
+          PY
+          python android-web/tools/verify_release_artifact.py --apk release/mtunz-web-release.apk
+      - name: Verify original mtunz upload signing certificate
+        run: python android-web/tools/verify_release_artifact.py --aab release/mtunz-web-play.aab
+      - name: Confirm Google Play credentials were configured
+        env:
+          PLAY_SERVICE_ACCOUNT: ${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
+        shell: bash
+        run: |
+          if [[ -z "$PLAY_SERVICE_ACCOUNT" ]]; then
+            echo "::error::Set MTUNZ_PLAY_SERVICE_ACCOUNT_JSON in repository Actions secrets. Grant that account Play Console access to com.mtunz.web."
+            exit 1
+          fi
+      - name: Verify live mtunz website and Trusted Web Activity association
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --retry-delay 5 \
+            --max-time 30 'https://mtunz.onrender.com/.well-known/assetlinks.json' \
+            -o "$RUNNER_TEMP/mtunz-live-assetlinks.json"
+          python - "$RUNNER_TEMP/mtunz-live-assetlinks.json" <<'PY'
+          import json,sys
+          from pathlib import Path
+          expected='5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C'
+          statements=json.loads(Path(sys.argv[1]).read_text())
+          ok=any(
+              e.get('target',{}).get('package_name')=='com.mtunz.web'
+              and expected in e.get('target',{}).get('sha256_cert_fingerprints',[])
+              and 'delegate_permission/common.handle_all_urls' in e.get('relation',[])
+              for e in statements)
+          if not ok:
+              raise SystemExit('Live website does not authorize ORIGINAL mtunz signing key. Cannot release trusted Android wrapper.')
+          print('Production domain association verified.')
+          PY
+      - name: Upload to Google Play internal testing track ONLY
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # pinned v1 release
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.mtunz.web
+          releaseFiles: release/mtunz-web-play.aab
+          track: internal
+          status: completed
+          releaseName: mtunz Android 1.0.1 – internal testing

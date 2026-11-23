@@ -1,0 +1,52 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const read=p=>fs.readFileSync(p,'utf8');
+const build=read('.github/workflows/android-web-apk.yml');
+const real=read('.github/workflows/android-web-physical-device.yml');
+const play=read('.github/workflows/android-web-play-internal.yml');
+const identity=read('android-web/tools/verify_app_identity.py');
+const signer=read('android-web/tools/verify_release_artifact.py');
+const device=read('android-web/tools/device_upgrade_smoke.py');
+const gradle=read('android-web/app/build.gradle');
+const manifest=read('android-web/app/src/main/AndroidManifest.xml');
+
+assert(gradle.includes("applicationId 'com.mtunz.web'"));
+assert(gradle.includes('versionCode 2'));
+assert(gradle.includes("versionName '1.0.1'"));
+assert(manifest.includes('android:icon="@drawable/mtunz_icon"'));
+assert(identity.includes('LOCKED_ICON_GIT_SHA'));
+assert(identity.includes('ORIGINAL_SIGNER_SHA256'));
+assert(signer.includes('ORIGINAL_CERT'));
+assert(signer.includes('ABORT: APK is not signed by the ORIGINAL'));
+assert(signer.includes('ABORT: signed Play AAB upload key'));
+assert(device.includes('"install", "-r"') && !device.includes('"uninstall"'));
+assert(device.includes('versionCode=') && device.includes('check_apk(args.apk)'));
+
+assert(build.includes("if: github.event_name == 'workflow_dispatch'"),
+ 'Production signing must not automatically occur on push or pull requests.');
+assert(build.includes('python android-web/tools/verify_app_identity.py'));
+assert(build.includes('python android-web/tools/verify_release_artifact.py'));
+assert(build.includes('MTUNZ_ANDROID_WEB_KEYSTORE_BASE64'));
+assert(build.includes('original_fingerprint'));
+assert(build.includes('mtunz-web-android-PLAY-RELEASE-aab'));
+
+assert(real.includes('$'+'{{ github.token }}'), 'Real-device workflow expressions must expand.');
+assert(real.includes('gcloud firebase test android run'));
+assert(real.includes('--type robo'));
+assert(real.includes("model.get('formFactor','').upper()!='PHYSICAL'"),'Do not claim virtual devices are physical');
+assert(real.includes('mtunz-web-android-RELEASE-stable-signing'));
+assert(real.includes('mtunz-physical-device-qa'));
+assert(real.includes('apk_sha256'));
+assert(play.includes('$'+'{{ github.token }}'), 'Play workflow expressions must expand.');
+assert(!play.includes('\\$'+'{{') && !real.includes('\\$'+'{{'), 'No escaped Actions expressions.');
+assert(play.includes('inputs.manual_qa_passed && inputs.authorize_internal_testing'));
+assert(play.includes('mtunz-physical-device-qa'));
+assert(play.includes("report.get('source_run_id')"));
+assert(play.includes("report.get('apk_sha256')"));
+assert(play.includes('release/mtunz-web-play.aab'));
+assert(play.includes('track: internal'));
+assert(!/track:\s*production/i.test(play),'Never publish production automatically');
+assert(play.includes('play_app_signing_sha256'));
+assert(play.includes('MTUNZ_PLAY_SERVICE_ACCOUNT_JSON'));
+console.log('mtunz original icon/signing, physical provenance, and Play internal-only gates verified.');
