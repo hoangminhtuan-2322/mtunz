@@ -44,6 +44,8 @@ jobs:
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
           node --check static/image-viewer.js
+      - name: Verify real native Android identity, branding and pinned upgrade signing
+        run: node tests/native_android_release.cjs
       - name: Verify Android original-logo lock, signing and Play release safeguards
         run: |
           node tests/android_web_release_gate.cjs
