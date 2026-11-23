@@ -59,6 +59,43 @@ def test_world_is_coming_soon_by_default_but_readable_when_admin_closes():
     assert alice.post('/api/world/messages',json={'body':'Đã đóng'}).status_code==403
 
 
+
+def test_anonymous_alias_persists_per_message_without_exposing_account_identity():
+    admin=logged_admin()
+    alice=register_user(admin,'world_alias_alice')
+    bob=register_user(admin,'world_alias_bob')
+    assert admin_config(admin).status_code==200
+    assert alice.patch('/api/me/social',json={'world_anonymous':True}).status_code==200
+    first=alice.post('/api/world/messages',json={'body':'Xin chào','anonymous_name':'Mây Đêm'})
+    assert first.status_code==200,first.text
+    message=first.json()['message']
+    assert message['anonymous'] is True
+    assert message['display_name']=='Mây Đêm' and message['sender_id']==0
+    assert 'username' not in message
+    public=bob.get('/api/world/messages').json()['messages'][0]
+    assert public['display_name']=='Mây Đêm' and public['sender_id']==0
+    assert public['anonymous_name'] is None
+    assert alice.get('/api/world/messages').json()['messages'][0]['is_mine'] is True
+
+    second=alice.post('/api/world/messages',json={'body':'Đổi biệt danh','anonymous_name':'Sao Khuya'})
+    assert second.status_code==200,second.text
+    names=[msg['display_name'] for msg in bob.get('/api/world/messages').json()['messages']]
+    assert names==['Mây Đêm','Sao Khuya']
+    admin_messages=admin.get('/api/admin/world').json()['recent_messages']
+    assert admin_messages[0]['sender_id']==alice.get('/api/me').json()['user']['id']
+    assert admin_messages[0]['anonymous_name']=='Sao Khuya'
+
+    forbidden=alice.post('/api/world/messages',json={'body':'Không giả mạo Admin','anonymous_name':'Admin'})
+    assert forbidden.status_code==422
+    too_short=alice.post('/api/world/messages',json={'body':'Tên ngắn','anonymous_name':'X'})
+    assert too_short.status_code==422
+    assert alice.patch('/api/me/social',json={'world_anonymous':False}).status_code==200
+    normal=alice.post('/api/world/messages',json={'body':'Tin công khai','anonymous_name':'Giả Danh'})
+    assert normal.status_code==200,normal.text
+    assert normal.json()['message']['anonymous'] is False
+    assert normal.json()['message']['display_name']!='Giả Danh'
+
+
 def test_world_daily_schedule_supports_cross_midnight_and_on_demand_changes():
     from datetime import datetime
     from zoneinfo import ZoneInfo
