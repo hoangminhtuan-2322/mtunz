@@ -44,6 +44,11 @@ jobs:
           node --check static/motion-lite.js
           node --check static/mobile-polish.js
           node --check static/image-viewer.js
+      - name: Verify Android original-logo lock, signing and Play release safeguards
+        run: |
+          node tests/android_web_release_gate.cjs
+          python -m py_compile android-web/tools/verify_app_identity.py android-web/tools/verify_release_artifact.py android-web/tools/device_upgrade_smoke.py
+          python android-web/tools/verify_app_identity.py
       - name: Verify tab-scoped login survives page refresh
         run: node tests/tab_session_lifecycle.cjs
       - name: Check isolated auth animation and keyboard tab state
