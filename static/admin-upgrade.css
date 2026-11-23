@@ -64,3 +64,42 @@
 .admin-online-person .grow{min-width:0;overflow-wrap:anywhere}
 .admin-online-person button{flex-shrink:0}
 #admin-online-list{max-height:55vh;overflow:auto;overscroll-behavior:contain;margin-bottom:12px}
+
+/* Admin member activity: account status and connection presence are separate. */
+.admin-shell .admin-users-table{min-width:950px}
+.admin-shell .admin-users-table td:first-child{min-width:230px;overflow-wrap:anywhere}
+.admin-shell .admin-users-table th:nth-child(3){min-width:158px}
+.admin-shell .admin-last-activity{display:flex;flex-direction:column;gap:3px;white-space:nowrap;line-height:1.45;font-variant-numeric:tabular-nums}
+.admin-shell .admin-last-activity-label{font-size:12px;font-weight:750;color:#e3ebfa}
+.admin-shell .admin-last-activity-date{font-size:10.5px;color:#a9bdd7}
+.admin-shell .admin-last-activity.is-online .admin-last-activity-label{color:#66e2bf}
+.admin-shell .admin-last-activity.is-online .admin-last-activity-label:before{content:'';display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#53d6a9;box-shadow:0 0 0 3px #53d6a925}
+.admin-shell .admin-last-activity-unknown{font-size:11px;color:#a9bdd7}
+@media(max-width:820px){
+ .admin-shell .admin-users-scroll{overflow-x:hidden}
+ .admin-shell .admin-users-table{display:block;min-width:0;width:100%}
+ .admin-shell .admin-users-table thead{display:none}
+ .admin-shell .admin-users-table tbody{display:grid;gap:10px;padding:10px}
+ .admin-shell .admin-users-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 12px;background:#14253e;border:1px solid #344a69;border-radius:13px;padding:12px;min-width:0}
+ .admin-shell .admin-users-table tbody tr[hidden]{display:none!important}
+ .admin-shell .admin-users-table tbody tr td,
+ .admin-shell .admin-users-table tbody tr:nth-child(even) td{display:block;background:transparent!important;border:0;padding:4px;min-width:0;overflow-wrap:anywhere}
+ .admin-shell .admin-users-table tbody tr td:first-child{grid-column:1/-1;min-width:0}
+ .admin-shell .admin-users-table tbody tr td:nth-child(2){grid-column:1}
+ .admin-shell .admin-users-table tbody tr td:nth-child(3){grid-column:2}
+ .admin-shell .admin-users-table tbody tr td:nth-child(4),
+ .admin-shell .admin-users-table tbody tr td:nth-child(5),
+ .admin-shell .admin-users-table tbody tr td:nth-child(6){display:none}
+ .admin-shell .admin-users-table tbody tr td:nth-child(7){grid-column:1/-1;border-top:1px solid #354968;padding-top:9px}
+ .admin-shell .admin-users-table tbody tr td[data-label]:before{content:attr(data-label);display:block;color:#9db4d3;font-size:10px;font-weight:750;margin-bottom:5px}
+ .admin-shell .admin-users-table tbody tr td[colspan]{grid-column:1/-1;display:block}
+ .admin-shell .admin-users-table .table-actions{gap:7px}
+ .admin-shell .admin-users-table .admin-last-activity{white-space:normal}
+}
+@media(max-width:390px){
+ .admin-shell .admin-users-table tbody{padding:7px}
+ .admin-shell .admin-users-table tbody tr{padding:9px;gap:5px 8px}
+ .admin-shell .admin-users-table tbody tr td{padding:3px}
+ .admin-shell .admin-users-table .admin-last-activity-label{font-size:11px}
+ .admin-shell .admin-users-table .admin-last-activity-date{font-size:10px}
+}

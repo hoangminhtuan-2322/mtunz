@@ -1832,7 +1832,7 @@ async function loadAdmin(){
    case 'deletions':update.adminData=(await api('/api/admin/deletions')).requests;break;
    case 'users':{
     const params=new URLSearchParams({q:state.adminQuery,status:state.adminUserStatus||'all',
-      sort:state.adminUserSort||'newest',offset:String(state.adminUserOffset||0)});
+      sort:state.adminUserSort||'activity',offset:String(state.adminUserOffset||0)});
     const result=await api('/api/admin/users?'+params);
     if(result.offset>0&&result.total<=result.offset&&current()){
      state.adminUserOffset=Math.max(0,Math.floor((result.total-1)/result.limit)*result.limit);
@@ -1908,6 +1908,45 @@ function adminRegistrations(){const rows=state.adminData||[];
  ${rows.length?rows.map(r=>`<tr><td>${r.id}</td><td><b>${esc(r.username)}</b></td><td>${esc(r.phone||'Chưa cung cấp')}</td><td>${esc(r.email||'—')}</td><td>${date(r.created_at)}</td><td>${statusPill(r.status)}</td><td><div class="table-actions"><button class="btn ghost sm" data-act="admin-registration-detail" data-id="${r.id}">${icon('eye',14)} Chi tiết</button>${r.status==='pending'?`<button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button>`:'—'}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không có yêu cầu.</td></tr>'}</tbody></table></div>`;
 }
 function userStatus(u){return u.deletion_purge_at?'<span class="pill warn">Chờ xóa</span>':!u.sanction_kind?'<span class="pill good">Hoạt động</span>':u.sanction_until&&u.sanction_until*1000<Date.now()?'<span class="pill">Đã hết hạn</span>':`<span class="pill bad">${u.sanction_kind==='ban'?'Đã cấm':'Đã khóa'}</span>`;}
+// Admin-only activity, based on persisted authenticated sessions and live sockets.
+// A healthy account is not necessarily connected: keep status and presence distinct.
+function adminLastActivityRelative(seconds,online=false,clock=Date.now()){
+ const ts=Number(seconds);
+ if(online)return 'Đang trực tuyến';
+ if(!Number.isFinite(ts)||ts<=0)return 'Chưa ghi nhận';
+ const age=Math.max(0,Math.floor((clock-ts*1000)/1000));
+ if(age<60)return 'Vừa xong';
+ if(age<3600)return Math.floor(age/60)+' phút trước';
+ if(age<86400)return Math.floor(age/3600)+' giờ trước';
+ const day=new Date(clock),seen=new Date(ts*1000);
+ const midnight=new Date(day.getFullYear(),day.getMonth(),day.getDate()).getTime();
+ if(seen.getTime()>=midnight-86400000&&seen.getTime()<midnight)
+  return 'Hôm qua '+seen.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+ if(age<7*86400)return Math.floor(age/86400)+' ngày trước';
+ return seen.toLocaleDateString('vi-VN');
+}
+function adminLastActivityCell(u){
+ const stamp=Number(u.last_active_at);
+ if(!Number.isFinite(stamp)||stamp<=0||stamp>1e11){
+  return '<span class="admin-last-activity admin-last-activity-unknown">Chưa ghi nhận</span>';
+ }
+ const iso=new Date(stamp*1000).toISOString();
+ const full=new Date(stamp*1000).toLocaleString('vi-VN',{
+  hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',year:'numeric'});
+ return '<time class="admin-last-activity'+(u.online?' is-online':'')+'"'+
+  ' datetime="'+iso+'" data-last-seen="'+stamp+'" data-online="'+(u.online?'1':'0')+'"'+
+  ' title="'+esc(full)+' (giờ trên thiết bị)">'+
+  '<strong class="admin-last-activity-label">'+esc(adminLastActivityRelative(stamp,!!u.online))+'</strong>'+
+  '<small class="admin-last-activity-date">'+esc(full)+'</small></time>';
+}
+function adminRefreshLastActivityLabels(){
+ if(!state.user?.is_admin||state.adminTab!=='users'||document.hidden)return;
+ document.querySelectorAll('.admin-users-table .admin-last-activity[data-last-seen]').forEach(node=>{
+  const label=node.querySelector('.admin-last-activity-label');
+  if(label)label.textContent=adminLastActivityRelative(Number(node.dataset.lastSeen),node.dataset.online==='1');
+ });
+}
+setInterval(adminRefreshLastActivityLabels,60000);
 function adminUsers(){
  const data=state.adminData||[],meta=state.adminUserMeta||{total:0,offset:0,limit:50};
  const options=(items,selected)=>items.map(([value,label])=>`<option value="${value}" ${value===selected?'selected':''}>${label}</option>`).join('');
@@ -1916,25 +1955,25 @@ function adminUsers(){
  <input id="admin-user-query" class="input" name="q" placeholder="Tên hiển thị, tên đăng nhập, ID, số điện thoại hoặc email" maxlength="120" value="${esc(state.adminQuery)}"></div>
  <div class="row" style="flex-wrap:wrap;gap:10px">
  <label>Trạng thái <select class="input" name="status">${options([['all','Tất cả'],['active','Hoạt động'],['locked','Đang khóa'],['banned','Đã cấm'],['pending_deletion','Chờ xóa']],state.adminUserStatus||'all')}</select></label>
- <label>Sắp xếp <select class="input" name="sort">${options([['newest','Mới nhất'],['oldest','Cũ nhất'],['name','Theo tên'],['activity','Hoạt động gần đây']],state.adminUserSort||'newest')}</select></label>
+ <label>Sắp xếp <select class="input" name="sort">${options([['activity','Hoạt động gần đây (online trước)'],['newest','Ngày tham gia mới'],['oldest','Ngày tham gia cũ'],['name','Theo tên']],state.adminUserSort||'activity')}</select></label>
  <button type="submit" class="btn primary">${icon('search',16)} Tìm kiếm</button>
  <button type="button" class="btn ghost" data-act="admin-search-clear">Xóa bộ lọc</button></div></form>
  <div class="row between" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
  <span aria-live="polite">${meta.total?`${meta.offset+1}–${Math.min(meta.offset+meta.limit,meta.total)} / ${meta.total} tài khoản`:'0 tài khoản'}</span>
  <div class="row"><button type="button" class="btn ghost sm" data-act="admin-search-page" data-offset="${Math.max(0,meta.offset-meta.limit)}" ${meta.offset?'':'disabled'}>Trang trước</button>
  <button type="button" class="btn ghost sm" data-act="admin-search-page" data-offset="${meta.offset+meta.limit}" ${meta.offset+meta.limit<meta.total?'':'disabled'}>Trang sau</button></div></div>
- <div class="table-scroll"><table class="data-table"><thead><tr><th>Người dùng</th><th>Trạng thái</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
+ <div class="table-scroll admin-users-scroll"><table class="data-table admin-users-table"><thead><tr><th>Người dùng</th><th title="Trạng thái tài khoản, không phải trạng thái trực tuyến">Trạng thái TK</th><th aria-sort="${(state.adminUserSort||'activity')==='activity'?'descending':'none'}">Lần cuối hoạt động</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.display_name||u.username)}</b><div class="hint">@${esc(u.username)} · ID #${u.id}${u.public_id?' · Công khai #'+u.public_id:''}</div>
  <div class="hint">${esc(u.phone||'')}${u.phone&&u.email?' · ':''}${esc(u.email||'')}</div></div></div></td>
- <td>${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td>${date(u.created_at)}</td><td><button type="button" class="btn ghost sm" data-act="admin-user-friends" data-id="${u.id}" aria-label="Xem bạn bè của ${esc(u.display_name||u.username)}">${u.friend_count} bạn bè</button></td><td>${u.message_count}</td>
- <td><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
+ <td data-label="Trạng thái tài khoản">${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-label="Lần cuối hoạt động">${adminLastActivityCell(u)}</td><td>${date(u.created_at)}</td><td><button type="button" class="btn ghost sm" data-act="admin-user-friends" data-id="${u.id}" aria-label="Xem bạn bè của ${esc(u.display_name||u.username)}">${u.friend_count} bạn bè</button></td><td>${u.message_count}</td>
+ <td data-label="Hành động"><div class="table-actions"><button class="btn ghost sm" data-act="admin-user-detail" data-id="${u.id}">Chi tiết</button>
  <button class="btn ghost sm" data-act="admin-view-messages" data-id="${u.id}">${icon('eye',14)} Chat</button>
  <button class="btn ghost sm" data-act="admin-user-edit" data-id="${u.id}">${icon('settings',14)} Sửa</button>
  <button class="btn ghost sm" data-act="admin-user-revoke" data-id="${u.id}">${icon('lock',14)} Thu hồi phiên</button>
  <button class="btn danger sm" data-act="admin-sanction" data-kind="ban" data-id="${u.id}">Cấm</button>
  <button class="btn ghost sm" data-act="admin-sanction" data-kind="lock" data-id="${u.id}">Khóa</button>
  <button class="btn danger sm" type="button" data-act="admin-delete-user" data-id="${u.id}">${icon('ban',14)} Xóa vĩnh viễn</button>
- ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
+ ${u.sanction_kind?`<button class="btn success sm" data-act="admin-sanction" data-kind="unban" data-id="${u.id}">Unban</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Không tìm thấy người dùng.</td></tr>'}</tbody></table></div>`;
 }
 function adminDeletionQueue(){
  const items=state.adminData||[];
@@ -2688,7 +2727,7 @@ async function clickAction(button){
    break;
   }
   case 'admin-search-clear':
-   state.adminQuery='';state.adminUserStatus='all';state.adminUserSort='newest';state.adminUserOffset=0;await loadAdmin();break;
+   state.adminQuery='';state.adminUserStatus='all';state.adminUserSort='activity';state.adminUserOffset=0;await loadAdmin();break;
   case 'admin-search-page':
    state.adminUserOffset=Number(button.dataset.offset);await loadAdmin();break;
   case 'admin-delete-pending':{
