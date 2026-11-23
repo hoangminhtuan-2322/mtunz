@@ -4,9 +4,21 @@
         android:allowBackup="false"
         android:icon="@drawable/mtunz_icon"
         android:label="@string/app_name"
+        android:manageSpaceActivity="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
         android:theme="@android:style/Theme.Translucent.NoTitleBar"
         android:supportsRtl="true">
         <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
+
+        <!-- Required by Android Browser Helper LauncherActivity.
+             Without this component a signed APK may build but crash immediately
+             while initializing its site settings shortcut. -->
+        <activity android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:exported="false">
+            <meta-data android:name="android.support.customtabs.trusted.MANAGE_SPACE_URL"
+                android:value="https://mtunz.onrender.com/" />
+        </activity>
+        <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity"
+            android:exported="false" />
 
         <activity android:name=".MainActivity" android:exported="true">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL"
