@@ -6,7 +6,9 @@ import {ActivityIndicator,Alert,AppState,FlatList,Image,KeyboardAvoidingView,
   Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
-  registerMobileNotifications,saveSharedFile,unregisterMobileNotifications,uploadAttachment} from './media';
+  saveSharedFile,uploadAttachment} from './media';
+
+import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 
 const P={bg:'#08111f',card:'#14243a',border:'#2c4160',text:'#f4f8ff',soft:'#a5b6cf',accent:'#67bcff',mine:'#245395',bad:'#ff9eac',green:'#79dfbe'};
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
@@ -105,7 +107,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [displayName,setDisplayName]=useState(user.display_name||''),[bio,setBio]=useState(user.bio||''),
     [headline,setHeadline]=useState(''),[identityKind,setIdentityKind]=useState('display_name'),
     [secret,setSecret]=useState(''),[pin,setPin]=useState(''),[identityQuota,setIdentityQuota]=useState(null),
-    [pushState,setPushState]=useState('Chưa bật'),[typing,setTyping]=useState(false),
+    [typing,setTyping]=useState(false),
     [noticesUnread,setNoticesUnread]=useState(0),[blocked,setBlocked]=useState([]),
     [requestInbox,setRequestInbox]=useState([]),[viewer,setViewer]=useState(null),
     [groupEditTitle,setGroupEditTitle]=useState(''),[groupEditDescription,setGroupEditDescription]=useState(''),
@@ -306,7 +308,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       try{socket=new WebSocket(wsUrl(),[],{headers:{Authorization:'Bearer '+token}});}
       catch{retryTimer=setTimeout(connect,retryDelay);return;}
       wsRef.current=socket;setConnection('connecting');
-      socket.onopen=()=>{if(closed)return;retryDelay=1200;setConnection('online');schedule(['lists','catchup']);};
+      socket.onopen=()=>{if(closed)return;reportPushVisibility(socket,activeRef.current);retryDelay=1200;setConnection('online');schedule(['lists','catchup']);};
       socket.onmessage=onEvent;
       socket.onerror=()=>setConnection('offline');
       socket.onclose=()=>{if(closed)return;setConnection('offline');
@@ -315,6 +317,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     connect();
     const sub=AppState.addEventListener('change',state=>{
       activeRef.current=state==='active';
+      reportPushVisibility(socket,activeRef.current);
       if(!activeRef.current){socket?.close();return;}
       if(socket?.readyState!==WebSocket.OPEN&&socket?.readyState!==WebSocket.CONNECTING)connect();
       schedule(['lists','catchup']);
@@ -707,11 +710,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </Section>
         <Section title="Thông báo">
           <Btn quiet onPress={()=>{setDialog('notifications');refreshLists();}}>Thông báo mới ({noticesUnread})</Btn>
-          <Btn quiet onPress={async()=>{try{await registerMobileNotifications(token);setPushState('Đã bật');}
-              catch(e){alertError(e);}}}>Bật thông báo khi đóng ứng dụng</Btn>
-          <Btn quiet onPress={async()=>{try{await unregisterMobileNotifications(token);setPushState('Đã tắt');}
-              catch(e){alertError(e);}}}>Tắt thông báo</Btn>
-          <Text style={css.muted}>Trạng thái: {pushState}</Text>
+          <DevicePushSettings token={token}/>
         </Section>
         <Section title="Bảo mật tài khoản">
           <Text style={css.muted}>Xem các thiết bị, kiểm soát phiên đăng nhập và quyền truy cập tài khoản.</Text>

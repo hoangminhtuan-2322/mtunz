@@ -326,6 +326,7 @@ class Hub:
         self.guests: dict[str, set[WebSocket]] = defaultdict(set)
         self.session_hashes: dict[WebSocket, str] = {}
         self.device_hashes: dict[WebSocket, str] = {}
+        self.foreground: set[WebSocket] = set()
         self.valid_session_until: dict[str, int] = {}
 
     async def send(self, sockets, payload, *, member=False):
@@ -383,13 +384,15 @@ class Hub:
                     except Exception: pass
             sockets = good
         await self.send(sockets, {'type': event, **data}, member=True)
-        if event in ('message','group-message'):
-            online=frozenset(self.device_hashes[ws] for ws in sockets if ws in self.device_hashes)
-            enqueue_web_push(uid,event,online,data)
+        if event in ('message','group-message','support-message') or data.get('new_request'):
+            foreground=frozenset(self.device_hashes[ws] for ws in sockets
+                                 if ws in self.foreground and ws in self.device_hashes)
+            enqueue_web_push(uid,event,foreground,data)
 
     def detach_session(self, ws):
         sid = self.session_hashes.pop(ws, None)
         self.device_hashes.pop(ws,None)
+        self.foreground.discard(ws)
         self.valid_session_until.pop(sid, None)
 
     async def close_sockets(self, sockets, notice=None):
@@ -835,7 +838,7 @@ async def registration_request(request: Request, body: RegistrationRequest):
             c.execute('DELETE FROM registrations WHERE id=?', (existing['id'],))
         c.execute('INSERT INTO registrations(username,guest_id,created_at,phone,email) VALUES(?,?,?,?,?)',
                   (name,request.state.gid,now(),phone,email))
-    await hub.admins('registration-updated')
+    await hub.admins('registration-updated',new_request=True)
     return {'status':'pending','username':name,'phone':phone,'email':email}
 
 
@@ -1658,7 +1661,7 @@ async def create_ticket(request:Request,body:CreateTicket):
         cursor=c.execute('INSERT INTO tickets(guest_id,owner_id,kind,claim,created_at) VALUES(?,?,?,?,?)',
                          (request.state.gid,u['id'] if u else None,body.kind,body.claim.strip(),now()))
         tid=cursor.lastrowid
-    await hub.admins('support-updated')
+    await hub.admins('support-updated',ticket_id=tid,new_request=True)
     return {'id':tid}
 
 
@@ -2375,6 +2378,10 @@ async def websocket_events(ws:WebSocket):
                 await ws.close(code=1003)
                 break
             if not isinstance(msg,dict):
+                continue
+            if ws in hub.session_hashes and msg.get('type')=='alert-visibility':
+                if msg.get('visible') is True:hub.foreground.add(ws)
+                else:hub.foreground.discard(ws)
                 continue
             if uid is not None and msg.get('type')=='typing':
                 other=msg.get('to')

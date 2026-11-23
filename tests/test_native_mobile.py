@@ -252,3 +252,56 @@ def test_native_signup_uses_existing_admin_approval_and_web_identity():
         'token':claim,'username':'native_new_signup','password':'VeryStrongPassword123',
         'pin':'1234','pin_length':4,'accepted_terms':True})
     assert replay.status_code==403
+
+
+def test_native_admin_receives_background_registration_and_support(monkeypatch):
+    from queue import Queue
+    from requests import Response
+    import mobile_push
+
+    admin=logged_admin()
+    assert admin.post('/api/auth/logout').status_code==200
+    native,headers=native_login('admin',password='mtunz7',pin='2345')
+    endpoint='ExpoPushToken[nativeadmin_test_0123456789]'
+    assert native.get('/api/mobile/push',headers=headers).json()=={'enabled':False}
+    assert native.post('/api/mobile/push',headers=headers,json={'token':endpoint}).status_code==200
+    assert native.get('/api/mobile/push',headers=headers).json()=={'enabled':True}
+    sent=Queue()
+
+    def expo_request(url, **kwargs):
+        assert url==mobile_push.EXPO_GATEWAY
+        assert kwargs['allow_redirects'] is False
+        messages=kwargs['json']
+        sent.put(messages)
+        response=Response()
+        response.status_code=200
+        response._content=b'{"data":[{"status":"ok","id":"message-receipt"}]}'
+        return response
+
+    monkeypatch.setattr(mobile_push.requests,'post',expo_request)
+    with TestClient(app) as running:
+        guest=running.get('/')
+        assert guest.status_code==200
+        result=running.post('/api/registration/request',json={
+            'username':'native_push_signup','phone':'0912345617'})
+        assert result.status_code==200,result.text
+        [message]=sent.get(timeout=3)
+        assert message['to']==endpoint
+        assert message['data']=={'kind':'registration','chat_id':0}
+        assert 'native_push_signup' not in message['body']
+        assert message['channelId']=='messages' and message['sound']=='default'
+        with db() as c:
+            c.execute('DELETE FROM support_rate_limits')
+            c.execute("UPDATE settings SET value='0' WHERE key='support_intake_paused'")
+        ticket=running.post('/api/support/tickets',json={'kind':'other','claim':'Private data'})
+        assert ticket.status_code==200,ticket.text
+        tid=ticket.json()['id']
+        [message]=sent.get(timeout=3)
+        assert message['data']=={'kind':'support','chat_id':tid}
+        assert 'Private data' not in message['body']
+        assert running.post(f'/api/support/tickets/{tid}/messages',json={'body':'Confidential'}).status_code==200
+        [message]=sent.get(timeout=3)
+        assert message['data']['kind']=='support' and 'Confidential' not in message['body']
+        assert native.post('/api/mobile/push/test',headers=headers).json()=={'accepted':True}
+        [message]=sent.get(timeout=3)
+        assert message['to']==endpoint and message['data']['kind']=='test'

@@ -261,7 +261,7 @@ async function loadGroupMessages(scroll=true){
 function notificationsContent(){
  const ns=state.notices||[];
  return `<div class="main-body"><div class="section-wrap"><span class="eyebrow">TRUNG TÂM THÔNG BÁO</span><h1 class="section-title">Thông báo của bạn</h1>
- <p class="section-lead">Lời mời, hoạt động mới và thông báo từ quản trị viên.</p><div class="row" style="gap:12px;margin-bottom:20px"><button class="btn primary sm" data-act="notice-read">Đánh dấu tất cả đã đọc</button><button class="btn ghost sm" data-act="notice-permission">Báo tin khi đóng tab</button><button class="btn ghost sm" data-act="notice-push-off">Tắt báo khi đóng tab</button><button class="btn ghost sm" type="button" data-act="notice-sound" aria-pressed="${chatSoundEnabled()}">Âm báo tin nhắn</button></div>
+ <p class="section-lead">Lời mời, hoạt động mới và thông báo từ quản trị viên.</p><div class="row" style="gap:12px;margin-bottom:20px"><button class="btn primary sm" data-act="notice-read">Đánh dấu tất cả đã đọc</button><button class="btn ghost sm" type="button" data-act="notice-settings">${icon('bell',16)} Thông báo trên thiết bị</button></div>
  ${ns.length?ns.map(n=>`<div class="people-row ${n.read_at?'':'unread-notice'}">${icon('bell',18)}<div class="grow"><b>${esc(n.body)}</b><div class="hint">${date(n.created_at)}</div></div>${!n.read_at?'<span class="pill good">Mới</span>':''}</div>`).join(''):'<div class="empty">Chưa có thông báo nào.</div>'}</div></div>`;
 }
 async function loadNotices(){if(!state.user||state.user.is_admin)return;state.notices=(await api('/api/notifications')).notifications;}
@@ -438,22 +438,32 @@ async function extraAction(btn){
  case 'cancel-file':state.pendingAttachment=null;$('#compose-extra').innerHTML=composerExtras();break;
  case 'search-chat':await showSearch();break;
  case 'notice-read':await post('/api/notifications/read');await loadNotices();renderApp();break;
- case 'notice-permission':await enableChatPush();break;
+ case 'notice-settings':await showPushSettings();break;
+ case 'notice-permission':await enableChatPush();paintPushSettings();break;
  case 'notice-push-off':{
    await del('/api/me/push');
    const registration=await chatNotificationRegistration();
    const subscription=await registration?.pushManager?.getSubscription();
    if(subscription)await subscription.unsubscribe().catch(()=>{});
+   devicePush={uid:state.user?.id,enabled:false};
+   paintPushSettings();
    toast('Đã tắt thông báo nền trên thiết bị này.','ok');
    break;
  }
+ case 'notice-push-test':{
+   try{await post('/api/me/push/test');}
+   catch(error){await refreshPushStatus();paintPushSettings();throw error;}
+   toast('Đã gửi tới hệ thống thông báo. Kiểm tra thông báo trên thiết bị.','ok');
+   break;
+ }
  case 'notice-sound':{
-   const btn=document.querySelector('[data-act="notice-sound"]');
    const enabled=!chatSoundEnabled();
-   localStorage.setItem(chatSoundKey(),enabled?'on':'off');
-   btn?.setAttribute('aria-pressed',String(enabled));
+   await api('/api/me/push',{method:'PATCH',data:{sound:enabled}});
+   if(devicePush.uid===state.user?.id&&devicePush.enabled)devicePush.sound=enabled;
+   try{localStorage.setItem(chatSoundKey(),enabled?'on':'off');}catch{}
+   paintPushSettings();
    if(enabled){await unlockChatSound();playChatSound();}
-   toast(enabled?'Đã bật âm báo tin nhắn.':'Đã tắt âm báo tin nhắn.','ok');
+   toast(enabled?'Đã bật âm báo.':'Đã tắt âm báo.','ok');
    break;
  }
  case 'profile-view':{
@@ -518,9 +528,61 @@ function uploadSelected(file){
  return sendAttachment(file);
 }
 let notificationWorker;
+let devicePush={};
+async function refreshPushStatus(){
+ const uid=state.user?.id;
+ if(!uid)return;
+ try{
+  const result=await api('/api/me/push');
+  if(state.user?.id!==uid)return;
+  // Match the browser subscription as well as the server row. Permissions may have been reset.
+  if(result.enabled&&window.Notification?.permission==='granted'){
+   const registration=await chatNotificationRegistration();
+   result.enabled=!!(await registration?.pushManager?.getSubscription());
+  }else result.enabled=false;
+  if(state.user?.id!==uid)return;
+  if(result.enabled){
+   let preferred=result.sound;
+   try{
+    const local=localStorage.getItem(chatSoundKey());
+    if(local!==null)preferred=local!=='off';
+   }catch{}
+   if(result.sound!==preferred){
+    await api('/api/me/push',{method:'PATCH',data:{sound:preferred}});
+    result.sound=preferred;
+   }
+  }
+  if(state.user?.id===uid)devicePush={uid,...result};
+ }catch{}
+}
+function pushSettingsContent(){
+ const enabled=devicePush.uid===state.user?.id&&devicePush.enabled;
+ const denied=window.Notification?.permission==='denied';
+ return `<p class="hint" role="status">${denied?'Trình duyệt đang chặn thông báo. Hãy cho phép thông báo trong cài đặt của trình duyệt.':
+  enabled?'Thông báo nền đang bật trên thiết bị này.':'Thông báo nền chưa bật trên thiết bị này.'}</p>
+ <div class="row" style="gap:8px;flex-wrap:wrap;margin:12px 0">
+  ${enabled?`<button type="button" class="btn ghost sm" data-act="notice-push-test">Gửi thử thông báo</button>
+  <button type="button" class="btn ghost sm" data-act="notice-push-off">Tắt thông báo nền</button>`:
+  `<button type="button" class="btn primary sm" data-act="notice-permission"${denied?' disabled':''}>Bật thông báo nền</button>`}
+  <button type="button" class="btn ghost sm" data-act="notice-sound" aria-pressed="${chatSoundEnabled()}">Âm báo ${chatSoundEnabled()?'đang bật':'đang tắt'}</button>
+ </div>
+ <p class="hint">Trên iPhone, thêm mtunz vào Màn hình chính rồi mở từ biểu tượng để bật. Âm thanh ngoài app dùng âm của thiết bị.</p>`;
+}
+function paintPushSettings(){
+ const host=document.getElementById('device-push-settings');
+ if(host)host.innerHTML=pushSettingsContent();
+}
+async function showPushSettings(){
+ const owner=state.user.id;
+ modal({title:'Thông báo trên thiết bị',
+  description:state.user.is_admin?'Nhận cảnh báo đăng ký chờ duyệt và yêu cầu hỗ trợ.':'Nhận tin nhắn trực tiếp và tin nhắn nhóm kể cả khi đã đóng app.',
+  content:`<div id="device-push-settings">${pushSettingsContent()}</div>`,confirm:'Đóng'});
+ await refreshPushStatus();
+ if(state.user?.id===owner)paintPushSettings();
+}
 function chatNotificationRegistration(){
  if(!('serviceWorker' in navigator))return Promise.resolve(null);
- if(!notificationWorker)notificationWorker=navigator.serviceWorker.register('/static/chat-alert-worker.js')
+ if(!notificationWorker)notificationWorker=navigator.serviceWorker.register('/static/chat-alert-worker.js',{updateViaCache:'none'})
    .then(async registration=>{
     const worker=registration.installing||registration.waiting;
     if(!registration.active&&worker){
@@ -548,7 +610,7 @@ async function enableChatPush(){
  const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
  if(permission!=='granted'){toast('Trình duyệt chưa cấp quyền thông báo.','info');return;}
  const registration=await chatNotificationRegistration();
- if(!registration?.pushManager)throw Error('Chưa mở được Web Push. Trên iPhone hãy mở mtunz từ màn hình chính.');
+ if(!registration?.active||!registration.pushManager)throw Error('Chưa mở được Web Push. Trên iPhone hãy mở mtunz từ màn hình chính.');
  const {public_key}=await api('/api/me/push');
  const bytes=atob(public_key.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-public_key.length%4)%4));
  const expected=Uint8Array.from(bytes,ch=>ch.charCodeAt(0));
@@ -560,7 +622,8 @@ async function enableChatPush(){
   }
  }
  subscription??=await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:expected});
- await post('/api/me/push',subscription.toJSON());
+ const result=await post('/api/me/push',{...subscription.toJSON(),sound:chatSoundEnabled()});
+ devicePush={uid:state.user?.id,...result};
  toast('Đã bật thông báo nền trên thiết bị này.','ok');
 }
 async function notifyBrowser(message,tag='mtunz',silent=false){
@@ -578,7 +641,11 @@ let chatSoundContext,lastChatSound=-Infinity;
 const seenChatAlerts=new Set();
 function chatSoundKey(){return 'mtunz.chat-sound.'+state.user?.id;}
 function chatSoundEnabled(){
- try{return localStorage.getItem(chatSoundKey())!=='off';}catch{return true;}
+ try{
+  const preference=localStorage.getItem(chatSoundKey());
+  if(preference!==null)return preference!=='off';
+ }catch{}
+ return devicePush.uid!==state.user?.id||devicePush.sound!==false;
 }
 async function unlockChatSound(){
  // Admin support/registration alerts also need an unlocked audio context
@@ -617,8 +684,7 @@ function alertChatMessage(scope,id,message){
  if(!workflowAllowsAlert({scope,id},message))return;
  const viewing=direct?state.tab==='messages'&&state.selected===id:state.tab==='groups'&&state.groupSelected===id;
  const text=direct?'Bạn có tin nhắn mới.':'Bạn có tin nhắn mới trong nhóm.';
- if(document.hidden){void notifyBrowser(text,'chat:'+scope+':'+id,!chatSoundEnabled());return;}
- if(viewing)return;
+ if(document.hidden||viewing)return;
  toast(text,'info');
  if(chatSoundEnabled())playChatSound();
 }
@@ -791,7 +857,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-permission','notice-push-off','notice-sound',
+ 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-settings','notice-permission','notice-push-off','notice-push-test','notice-sound',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}

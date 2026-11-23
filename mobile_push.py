@@ -5,14 +5,22 @@ worker sends generic notifications to the fixed Expo HTTPS gateway.
 """
 import asyncio
 import logging
+import os
 import re
 import requests
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
+from web_notifications import admin_alert_kind
 
 LOG = logging.getLogger('mtunz.native_push')
 EXPO_GATEWAY = 'https://exp.host/--/api/v2/push/send'
 TOKEN_PATTERN = re.compile(r'^(?:ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]{16,180}\]$')
+PUSH_BODY = {
+    'dm':'Bạn có tin nhắn mới.', 'group':'Bạn có tin nhắn mới trong nhóm.',
+    'registration':'Có tài khoản mới chờ duyệt.',
+    'support':'Có yêu cầu hỗ trợ hoặc tin nhắn hỗ trợ mới.',
+    'test':'Đây là thông báo thử từ mtunz.',
+}
 
 
 def install(core):
@@ -39,12 +47,19 @@ def install(core):
             raise HTTPException(401, 'Phiên đăng nhập không hợp lệ.')
         return core.digest(value)
 
+    @app.get('/api/mobile/push')
+    def push_status(request: Request):
+        user=core.current_user(request)
+        sid=native_session_hash(request)
+        with db() as c:
+            enabled=bool(one(c,'SELECT 1 FROM mobile_push_tokens WHERE session_hash=? AND user_id=?',
+                             (sid,user['id'])))
+        return {'enabled':enabled}
+
     @app.post('/api/mobile/push')
     def enable_push(request: Request, body: Register):
         user = core.current_user(request)
         sid = native_session_hash(request)
-        if user['is_admin']:
-            raise HTTPException(403, 'Không hỗ trợ thông báo quản trị qua ứng dụng.')
         core.throttle(request, 'native-push', 20, 3600, str(user['id']))
         if not TOKEN_PATTERN.fullmatch(body.token):
             raise HTTPException(422, 'Mã thông báo thiết bị không hợp lệ.')
@@ -73,43 +88,69 @@ def install(core):
         c.execute('DELETE FROM mobile_push_tokens WHERE session_hash=?',(session_hash,))
     core.forget_push_on_logout = cleanup_logout
 
-    def send_mobile(uid, kind, chat_id, body, active_sessions):
+    def send_mobile(uid, kind, chat_id, body, foreground, session=None):
+        at=core.now()
         with db() as c:
-            if kind=='dm':
-                if core.has_block(c,uid,chat_id) or not core.friends(c,uid,chat_id):
-                    return
-            if not core.alert_allowed(c,kind,uid,chat_id,body,core.now()):
-                return
-            if one(c,'''SELECT 1 FROM account_deletion_requests WHERE user_id=?''',(uid,)):
-                return
-            if one(c,'''SELECT 1 FROM users WHERE id=? AND sanction_kind IS NOT NULL
-                        AND (sanction_until IS NULL OR sanction_until>?)''',(uid,core.now())):
-                return
-            # This join also prevents push from sessions revoked in another tab.
-            rows=core.many(c,'''SELECT p.token,p.session_hash FROM mobile_push_tokens p
-                 JOIN sessions s ON s.token_hash=p.session_hash AND s.user_id=p.user_id
-                 WHERE p.user_id=? AND s.expires_at>?
-                 ORDER BY p.updated_at DESC LIMIT 12''',(uid,core.now()))
-        messages=[{'to':r['token'],'sound':'default','title':'mtunz',
-                   'body':'Bạn có tin nhắn mới.',
-                   'data':{'kind':kind,'chat_id':chat_id},
-                   'ttl':1800,'priority':'high'} for r in rows if r['session_hash'] not in active_sessions]
+            if kind in ('dm','group'):
+                if kind=='dm' and (core.has_block(c,uid,chat_id) or not core.friends(c,uid,chat_id)):
+                    return False
+                if not core.alert_allowed(c,kind,uid,chat_id,body,at):
+                    return False
+            if kind in ('registration','support') and not one(c,'SELECT 1 FROM users WHERE id=? AND is_admin=1',(uid,)):
+                return False
+            if one(c,'SELECT 1 FROM account_deletion_requests WHERE user_id=?',(uid,)):
+                return False
+            if one(c,"""SELECT 1 FROM users WHERE id=? AND sanction_kind IS NOT NULL
+                        AND (sanction_until IS NULL OR sanction_until>?)""",(uid,at)):
+                return False
+            # Keep tokens tied to a session, including for the one-device test.
+            sql='SELECT p.token,p.session_hash,p.updated_at FROM mobile_push_tokens p JOIN sessions s ON s.token_hash=p.session_hash AND s.user_id=p.user_id WHERE p.user_id=? AND s.expires_at>?'
+            params=(uid,at)
+            if session:
+                sql+=' AND p.session_hash=?'
+                params+=(session,)
+            rows=core.many(c,sql+' ORDER BY p.updated_at DESC LIMIT 12',params)
+        recipients=[row for row in rows if row['session_hash'] not in foreground]
+        messages=[{'to':row['token'],'sound':'default','title':'mtunz','body':PUSH_BODY[kind],
+                   'data':{'kind':kind,'chat_id':chat_id},'channelId':'messages',
+                   'ttl':60 if kind=='test' else 1800,'priority':'high'} for row in recipients]
         if not messages:
-            return
+            return False
         try:
-            response=requests.post(EXPO_GATEWAY,json=messages,timeout=6,allow_redirects=False)
+            access_token=os.environ.get('EXPO_ACCESS_TOKEN','')
+            headers={'Authorization':'Bearer '+access_token} if access_token else {}
+            response=requests.post(EXPO_GATEWAY,json=messages,headers=headers,timeout=6,allow_redirects=False)
             if response.status_code!=200:
-                LOG.warning('Native push gateway returned non-successful status')
-                return
+                LOG.warning('Native push gateway returned status %s',response.status_code)
+                return False
             receipts=response.json().get('data') or []
             if isinstance(receipts,dict):
                 receipts=[receipts]
-            for item,recipient in zip(receipts,messages):
-                if item.get('status')=='error' and item.get('details',{}).get('error')=='DeviceNotRegistered':
+            accepted=False
+            for item,recipient in zip(receipts,recipients):
+                if item.get('status')=='ok':
+                    accepted=True
+                elif item.get('details',{}).get('error')=='DeviceNotRegistered':
                     with db() as c:
-                        c.execute('DELETE FROM mobile_push_tokens WHERE token=?',(recipient['to'],))
-        except (requests.RequestException,ValueError,TypeError):
+                        c.execute('DELETE FROM mobile_push_tokens WHERE token=? AND session_hash=? AND updated_at=?',
+                                  (recipient['token'],recipient['session_hash'],recipient['updated_at']))
+            return accepted
+        except (requests.RequestException,ValueError,TypeError,AttributeError):
             LOG.warning('Native push gateway unavailable')
+            return False
+
+    @app.post('/api/mobile/push/test')
+    async def push_test(request: Request):
+        user=core.current_user(request)
+        sid=native_session_hash(request)
+        core.throttle(request,'native-push-test',3,60,str(user['id']))
+        with db() as c:
+            if not one(c,'SELECT 1 FROM mobile_push_tokens WHERE session_hash=? AND user_id=?',
+                       (sid,user['id'])):
+                raise HTTPException(409,'Hãy bật thông báo trên thiết bị này trước.')
+        if not await asyncio.to_thread(send_mobile,user['id'],'test',0,'',frozenset(),sid):
+            raise HTTPException(503,'Cổng thông báo chưa chấp nhận lệnh gửi. Hãy kiểm tra rồi bật lại thông báo.')
+        return {'accepted':True}
 
     async def mobile_worker():
         queue=app.state.mobile_push_queue
@@ -126,17 +167,24 @@ def install(core):
                 LOG.warning('Native push processing failed')
 
     previous_enqueue = core.enqueue_web_push
-    def enqueue_both(uid,event,online,data):
-        previous_enqueue(uid,event,online,data)
-        msg=data.get('message') if event in ('message','group-message') else None
-        if not msg or msg.get('sender_id')==uid:return
+    def enqueue_both(uid,event,foreground_devices,data):
+        previous_enqueue(uid,event,foreground_devices,data)
         queue=getattr(app.state,'mobile_push_queue',None)
-        if queue is None or queue.full():return
-        active=frozenset(core.hub.session_hashes.get(ws) for ws in core.hub.users.get(uid,()))
+        if queue is None or queue.full():
+            return
+        foreground=frozenset(core.hub.session_hashes[ws] for ws in core.hub.users.get(uid,())
+                             if ws in core.hub.foreground and ws in core.hub.session_hashes)
+        admin_kind=admin_alert_kind(event,data)
+        if admin_kind:
+            queue.put_nowait((uid,admin_kind,data.get('ticket_id',0),'',foreground))
+            return
+        msg=data.get('message') if event in ('message','group-message') else None
+        if not msg or msg.get('sender_id')==uid:
+            return
         if event=='message':
-            queue.put_nowait((uid,'dm',msg['sender_id'],msg.get('body',''),active))
+            queue.put_nowait((uid,'dm',msg['sender_id'],msg.get('body',''),foreground))
         else:
-            queue.put_nowait((uid,'group',data['group_id'],msg.get('body',''),active))
+            queue.put_nowait((uid,'group',data['group_id'],msg.get('body',''),foreground))
     core.enqueue_web_push=enqueue_both
 
     @app.on_event('startup')

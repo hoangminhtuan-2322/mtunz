@@ -369,6 +369,12 @@ async function setup(){
   }
  }
 }
+function reportAlertVisibility(socket=state.ws,visible=!document.hidden){
+ if(state.user&&socket?.readyState===WebSocket.OPEN){
+  socket.send(JSON.stringify({type:'alert-visibility',visible}));
+ }
+}
+
 function connectSocket(retry=false){
  if(socketRetry){clearTimeout(socketRetry);socketRetry=null;}
  if(state.ws){state.ws.onclose=null;state.ws.close();}
@@ -380,9 +386,11 @@ function connectSocket(retry=false){
  },15000);
  socket.onopen=()=>{
   clearTimeout(handshakeTimeout);
+  if(state.ws!==socket)return;
   socketRetryDelay=2500;
   v9ConnectionBanner(true);
-  if(!retry||state.ws!==socket)return;
+  reportAlertVisibility(socket);
+  if(!retry)return;
   if(state.user?.is_admin)v9ScheduleAdminRefresh(350);
   if(state.user&&!state.user.is_admin){
    scheduleFriendsRefresh(0);
@@ -456,7 +464,7 @@ function connectSocket(retry=false){
    if(t==='registration-updated'){
      if(state.mode==='register'&&data.username===state.regName){state.regStatus=data.status;renderAuth();toast(data.status==='approved'?'Admin đã duyệt. Bạn có thể hoàn tất tạo tài khoản.':'Yêu cầu được cập nhật.','ok');}
      if(state.user?.is_admin){
-       v9AdminNotice('Có cập nhật yêu cầu đăng ký.','registration');
+       if(data.new_request)v9AdminNotice('Có tài khoản mới chờ duyệt.','registration');
        if(['registrations','overview'].includes(state.adminTab))v9ScheduleAdminRefresh();
      }
    }
@@ -517,8 +525,9 @@ function connectSocket(retry=false){
    }
    if(t==='support-updated'||t==='support-message'){
      if(state.user?.is_admin){
-       if(t==='support-updated')v9AdminNotice('Có thay đổi trong trung tâm hỗ trợ.','support-update');
-       else if(data.message?.from_admin===0)v9AdminNotice('Khách hàng vừa gửi phản hồi hỗ trợ.','support-message');
+       if(data.new_request)v9AdminNotice('Có phiếu hỗ trợ mới.','support-request');
+       else if(t==='support-message'&&!data.message?.from_admin)
+         v9AdminNotice('Có tin nhắn hỗ trợ mới.','support-message');
        if(['tickets','overview'].includes(state.adminTab))v9ScheduleAdminRefresh();
      }
      else if(state.supportTicket&&(!data.ticket_id||data.ticket_id===state.supportTicket)){
@@ -559,14 +568,12 @@ function v9ConnectionBanner(connected){
 let v9AdminTimer=0,v9AdminPending=false;
 const v9AdminAlertTimes=new Map();
 function v9AdminNotice(message,tag){
- if(!state.user?.is_admin)return;
+ if(!state.user?.is_admin||document.hidden)return;
  const now=Date.now(),last=v9AdminAlertTimes.get(tag)||0;
  if(now-last<3500)return;
  v9AdminAlertTimes.set(tag,now);
  if(v9AdminAlertTimes.size>15)v9AdminAlertTimes.delete(v9AdminAlertTimes.keys().next().value);
- if(document.hidden){
-  if(typeof notifyBrowser==='function')void notifyBrowser(message,'admin:'+tag,false);
- }else toast(message,'info');
+ toast(message,'info');
  if(typeof playChatSound==='function'&&typeof chatSoundEnabled==='function'&&chatSoundEnabled())
   playChatSound();
 }
@@ -664,6 +671,7 @@ async function enterApp(resume=false){
  }
  const previous=resume?readSavedView():null;
  activateCurrentTab();
+ if(typeof refreshPushStatus==='function')void refreshPushStatus();
  state.selected=null;state.groupSelected=null;state.tab='messages';
  if(state.user.is_admin){
   state.adminTab=previous&&adminTabs.some(([tab])=>tab===previous.adminTab)?
@@ -2190,7 +2198,7 @@ async function adminAuditDetail(eventId){
 function renderAdmin(){
  const [title,lead]=adminHeading[state.adminTab];
  const content=state.adminTab==='deletions'?adminDeletionQueue():state.adminTab==='groups'?adminGroupsContent():state.adminTab==='overview'?adminOverview():state.adminTab==='ops'&&typeof adminOpsV6==='function'?adminOpsV6():state.adminTab==='registrations'?adminRegistrations():state.adminTab==='users'?adminUsers():state.adminTab==='tickets'?adminTickets():state.adminTab==='broadcast'?adminBroadcast():state.adminTab==='security'?adminSecurity():state.adminTab==='world'?adminWorldContent():state.adminTab==='reports'?adminReportsContent():adminAudit();
- root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><span class="pill good">${icon('shield',13)} Quản trị viên</span></div>${content}</main></div>`;
+ root().innerHTML=`<div class="shell admin-shell">${adminNav()}<main class="admin-page"><div class="admin-header"><div><div class="eyebrow">ADMIN CONSOLE · FULL ACCESS</div><h1 style="margin-top:8px">${title}</h1><p>${lead}</p></div><button type="button" class="btn ghost sm" data-act="notice-settings">${icon('bell',16)} Thông báo</button></div>${content}</main></div>`;
  saveCurrentView();
  const el=$('#admin-ticket-messages');if(el)el.scrollTop=el.scrollHeight;
 }
@@ -2976,6 +2984,9 @@ document.addEventListener('submit',async event=>{
    }
   }
 });
+document.addEventListener('visibilitychange',()=>reportAlertVisibility());
+window.addEventListener('pagehide',()=>reportAlertVisibility(state.ws,false));
+window.addEventListener('pageshow',()=>reportAlertVisibility());
 document.addEventListener('DOMContentLoaded', setup);
 
 

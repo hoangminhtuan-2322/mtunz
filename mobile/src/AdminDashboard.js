@@ -1,6 +1,8 @@
 import React,{useCallback,useEffect,useState} from 'react';
 import {ActivityIndicator,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
+import * as Notifications from 'expo-notifications';
+import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 
 const P={bg:'#08111f',surface:'#14243a',line:'#2c4160',ink:'#f4f8ff',muted:'#a5b6cf',accent:'#67bcff',danger:'#ff9393'};
 
@@ -39,21 +41,52 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   setLastRefresh(Date.now());
  },[call]);
  useEffect(()=>{
-  let alive=true,timer=null,ws=null,appSub;
+  let alive=true,ws=null;
   const fetchNow=()=>refresh().catch(e=>{if(alive)setError(e.message);});
-  fetchNow();timer=setInterval(fetchNow,20000);
-  appSub=AppState.addEventListener('change',state=>{if(state==='active')fetchNow();});
-  try{
-   ws=new WebSocket(wsUrl(),null,{headers:{Authorization:'Bearer '+token}});
-   ws.onmessage=e=>{
-    let data;try{data=JSON.parse(e.data);}catch{return;}
-    if(data.type==='session-ended')onExpired();
-    if(['registration-updated','support-updated','admin-approval-request','admin-security-updated'].includes(data.type))
-     fetchNow();
-   };
-  }catch{}
-  return()=>{alive=false;clearInterval(timer);appSub?.remove();try{ws?.close();}catch{}};
+  const stop=()=>{
+   if(!ws)return;
+   reportPushVisibility(ws,false);
+   ws.close();ws=null;
+  };
+  function connect(){
+   if(!alive||AppState.currentState!=='active')return;
+   if(ws?.readyState===WebSocket.OPEN||ws?.readyState===WebSocket.CONNECTING)return;
+   try{
+    const socket=new WebSocket(wsUrl(),[],{headers:{Authorization:'Bearer '+token}});
+    ws=socket;
+    socket.onopen=()=>{if(ws===socket)reportPushVisibility(socket,AppState.currentState==='active');};
+    socket.onmessage=e=>{
+     if(ws!==socket)return;
+     let data;try{data=JSON.parse(e.data);}catch{return;}
+     if(data.type==='session-ended'){onExpired();return;}
+     if(data.type==='registration-updated'&&data.new_request)setNotice('Có tài khoản mới chờ duyệt.');
+     if(data.type==='support-updated'&&data.new_request)setNotice('Có phiếu hỗ trợ mới.');
+     if(data.type==='support-message'&&!data.message?.from_admin)setNotice('Có tin nhắn hỗ trợ mới.');
+     if(['registration-updated','support-updated','support-message','admin-approval-request','admin-security-updated'].includes(data.type))
+      fetchNow();
+    };
+   }catch{}
+  }
+  const timer=setInterval(()=>{if(AppState.currentState==='active'){connect();fetchNow();}},20000);
+  const appSub=AppState.addEventListener('change',state=>{
+   if(state==='active'){connect();fetchNow();}
+   else stop();
+  });
+  connect();fetchNow();
+  return()=>{alive=false;clearInterval(timer);appSub.remove();stop();};
  },[refresh,token,onExpired]);
+ useEffect(()=>{
+  let active=true;
+  const open=response=>{
+   if(!active)return;
+   const kind=response?.notification.request.content.data?.kind;
+   if(kind==='registration')setTab('registrations');
+   if(kind==='support')setTab('support');
+  };
+  const sub=Notifications.addNotificationResponseReceivedListener(open);
+  Notifications.getLastNotificationResponseAsync().then(value=>{if(value)open(value);}).catch(()=>{});
+  return()=>{active=false;sub.remove();};
+ },[]);
  async function act(path,method,body,success){
   if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return;}
   setBusy(true);setError('');setNotice('');
@@ -99,6 +132,11 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     <Text style={s.muted}>{lastRefresh?'Đồng bộ với máy chủ mtunz':'Đang kết nối…'}</Text>
     <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
+   {tab==='home'&&<Box>
+    <Text style={s.head}>Thông báo quản trị</Text>
+    <Text style={s.muted}>Nhận cảnh báo đăng ký chờ duyệt và yêu cầu hỗ trợ khi đóng ứng dụng.</Text>
+    <DevicePushSettings token={token}/>
+   </Box>}
    {tab==='home'&&<Box>
     <Text style={s.head}>Trạng thái hệ thống</Text>
     <View style={s.tiles}>
