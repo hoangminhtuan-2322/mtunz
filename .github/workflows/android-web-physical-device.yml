@@ -1,0 +1,79 @@
+name: Test signed mtunz APK on a real Android device (Firebase)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "SUCCESSFUL main-branch Build mtunz Android (web-synced TWA) run ID containing signed release APK"
+        required: true
+        type: string
+      device_model:
+        description: "PHYSICAL Firebase Test Lab model ID from gcloud firebase test android models list"
+        required: true
+        type: string
+      android_version:
+        description: "Supported Android version ID for that physical model"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  firebase-physical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs and trusted signed build origin
+        shell: bash
+        env:
+          GH_TOKEN: \${{ github.token }}
+          RUN_ID: \${{ inputs.source_run_id }}
+          MODEL: \${{ inputs.device_model }}
+          OS_VERSION: \${{ inputs.android_version }}
+          PROJECT_ID: \${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::Invalid source run ID"; exit 1; }
+          [[ "$MODEL" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "::error::Invalid device model"; exit 1; }
+          [[ "$OS_VERSION" =~ ^[0-9]+$ ]] || { echo "::error::Invalid device version"; exit 1; }
+          [[ -n "$PROJECT_ID" ]] || { echo "::error::Configure repository variable MTUNZ_FIREBASE_PROJECT_ID"; exit 1; }
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
+          echo "$run_json" | jq -e '.status == "completed" and .conclusion == "success" and .head_branch == "main"' >/dev/null ||
+            { echo "::error::Source build must be a successful main-branch workflow run"; exit 1; }
+      - name: Download the real-key signed release APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mtunz-web-android-RELEASE-stable-signing
+          run-id: \${{ inputs.source_run_id }}
+          repository: \${{ github.repository }}
+          github-token: \${{ github.token }}
+          path: release
+      - name: Verify upgrade-compatible certificate and application ID
+        run: python android-web/tools/verify_release_artifact.py --apk release/mtunz-web-release.apk
+      - name: Authenticate to Firebase Test Lab
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: \${{ secrets.MTUNZ_FIREBASE_SERVICE_ACCOUNT_JSON }}
+          project_id: \${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Run Robo smoke test on physical Android hardware
+        shell: bash
+        env:
+          MODEL: \${{ inputs.device_model }}
+          OS_VERSION: \${{ inputs.android_version }}
+          PROJECT_ID: \${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # Choose a PHYSICAL model/version pair from the Firebase Test Lab
+          # device catalog. Robo is a launch/navigation smoke test, not an
+          # authenticated chat, notification or administrator acceptance test.
+          gcloud firebase test android run \
+            --project "$PROJECT_ID" \
+            --type robo \
+            --app release/mtunz-web-release.apk \
+            --device "model=$MODEL,version=$OS_VERSION,locale=vi,orientation=portrait" \
+            --timeout 5m
