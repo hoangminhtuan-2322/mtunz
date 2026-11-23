@@ -1,29 +1,40 @@
-name: Build mtunz Android test APK
+name: Build mtunz TRUE Native Android APK
 
 on:
   push:
-    branches:
-      - main
-      - feature/native-mobile-chat-v1
+    branches: [main, feature/mtunz-true-native-android-release]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
     paths:
       - 'mobile/**'
       - '.github/workflows/android-apk.yml'
   workflow_dispatch:
+    inputs:
+      sign_release:
+        description: "Sign the fully NATIVE mtunz APK using the same permanent key as Android 1.0.1"
+        required: true
+        type: boolean
+        default: false
 
 concurrency:
-  group: mtunz-native-apk-${{ github.ref }}
+  group: mtunz-native-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  debug-apk:
+  native-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 65
     defaults:
       run:
         working-directory: mobile
+    env:
+      EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
+      CI: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,54 +44,113 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Inspect preinstalled Android SDK
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Verify original logo and native identity
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          test -d "$ANDROID_HOME"
-      - name: Install JavaScript dependencies
+          test "$(git hash-object assets/icon.png)" = '282a6971e38d51ce570b094e07d5624663bbedbb'
+          node - <<'NODE'
+          const f=require('./app.json').expo;
+          if(f.android.package!=='com.mtunz.web'||f.android.versionCode!==3||f.version!=='1.1.0')
+            throw Error('Native package/version must update mtunz 1.0.1 without changing package');
+          if(f.icon!=='./assets/icon.png')throw Error('Original logo was replaced');
+          NODE
+          if grep -R -nE 'react-native-webview|androidbrowserhelper|TrustedWebActivity|CustomTabs' App.js src; then
+            echo '::error::A native chat app must not embed a website or Custom Tabs.'
+            exit 1
+          fi
+      - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Prepare Android push configuration when configured
+      - name: Configure push services when provided for com.mtunz.web
         env:
-          MTUNZ_ANDROID_GOOGLE_SERVICES: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
           EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
         run: |
-          if [[ -z "$MTUNZ_ANDROID_GOOGLE_SERVICES" && -z "$EXPO_PROJECT_ID" ]]; then
-            echo "Building without Android cloud messaging configuration."
+          if [[ -z "$GOOGLE_SERVICES_JSON" && -z "$EXPO_PROJECT_ID" ]]; then
+            echo 'Native build without push credentials: background push requires Firebase and Expo setup.'
             exit 0
           fi
-          if [[ -z "$MTUNZ_ANDROID_GOOGLE_SERVICES" || -z "$EXPO_PROJECT_ID" ]]; then
-            echo "::error::Android push requires both MTUNZ_ANDROID_GOOGLE_SERVICES and EXPO_PROJECT_ID."
+          if [[ -z "$GOOGLE_SERVICES_JSON" || -z "$EXPO_PROJECT_ID" ]]; then
+            echo '::error::Native push needs BOTH EXPO_PROJECT_ID and MTUNZ_ANDROID_GOOGLE_SERVICES for com.mtunz.web.'
             exit 1
           fi
           umask 077
-          printf '%s' "$MTUNZ_ANDROID_GOOGLE_SERVICES" > google-services.json
+          printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
           echo "GOOGLE_SERVICES_FILE=./google-services.json" >> "$GITHUB_ENV"
           echo "EXPO_PROJECT_ID=$EXPO_PROJECT_ID" >> "$GITHUB_ENV"
-      - name: Generate Android native project
-        env:
-          EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
-          CI: '1'
+      - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
-      - name: Build standalone release-mode APK with Android debug signing
+      - name: Check generated native manifest and launch package
+        run: |
+          test -f android/app/build.gradle
+          test -f android/app/src/main/AndroidManifest.xml
+          grep -F 'com.mtunz.web' android/app/build.gradle
+          if grep -R -nE 'com.google.androidbrowserhelper.trusted.LauncherActivity|android.support.customtabs.trusted.DEFAULT_URL' android/app/src/main; then
+            echo '::error::Generated app unexpectedly uses TWA browser wrapper.'
+            exit 1
+          fi
+      - name: Require the permanent signing key only for authorized main release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         env:
-          EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
-          CI: '1'
+          KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$STORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD" || {
+            echo '::error::Set all four original NEW-fixed-key secrets in GitHub Actions.'; exit 1;
+          }
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/mtunz-fixed-release.jks"
+          test -s "$RUNNER_TEMP/mtunz-fixed-release.jks"
+          echo "MTUNZ_NATIVE_KEYSTORE_PATH=$RUNNER_TEMP/mtunz-fixed-release.jks" >> "$GITHUB_ENV"
+      - name: Configure release signing (NEVER debug key for distribution)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        env:
+          MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          MTUNZ_NATIVE_KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: node tools/configure_fixed_release_signing.cjs --release
+      - name: Build standalone React Native APK (embedded JavaScript, NO WebView)
         run: |
           chmod +x android/gradlew
           cd android
           ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
-      - name: Verify standalone JS bundle and APK signature
+      - name: Verify native JS bundle and APK signature
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
           unzip -Z1 "$APK" | grep -Fx 'assets/index.android.bundle'
-          SIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
-          test -x "$SIGNER"
-          "$SIGNER" verify --verbose "$APK"
-      - name: Upload standalone Android APK
+          SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$SIGNER" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.mtunz.web' versionCode='3' versionName='1.1.0'"
+      - name: Enforce fixed release certificate, NOT debug signer
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
+      - name: Check app launches as native UI on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          working-directory: mobile
+          script: bash tools/smoke_native_android.sh
+      - name: Upload NATIVE preview (DEBUG-signed, not for updating existing installation)
+        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@v4
         with:
-          name: mtunz-android-standalone-apk
+          name: mtunz-NATIVE-PREVIEW-debug-signed
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+      - name: Upload NATIVE release (permanent signing key, can update TWA 1.0.1)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mtunz-NATIVE-1.1.0-RELEASE-fixed-key
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
