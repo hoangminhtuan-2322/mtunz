@@ -12,7 +12,7 @@ for (const phrase of [
   "case 'logout':{",
   "ask('Xác nhận đăng xuất'",
   "'Đăng xuất',true",
-  "case 'admin-user-detail':await userDetails(id)",
+  "case 'admin-user-detail':await userDetails(id,button.dataset.username)",
   "api(`/api/admin/users/${uid}/details`)",
   "adminDetailRow('Số điện thoại'",
   "adminDetailRow('Email / Gmail'",
