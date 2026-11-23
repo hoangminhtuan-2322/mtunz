@@ -60,6 +60,26 @@ jobs:
           project_id: ${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
       - name: Install Google Cloud CLI
         uses: google-github-actions/setup-gcloud@v2
+      - name: Verify selected Firebase device is actually PHYSICAL
+        shell: bash
+        env:
+          MODEL: ${{ inputs.device_model }}
+          OS_VERSION: ${{ inputs.android_version }}
+          PROJECT_ID: ${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          gcloud firebase test android models describe "$MODEL" \
+            --project "$PROJECT_ID" --format=json > "$RUNNER_TEMP/mtunz-model.json"
+          python - "$RUNNER_TEMP/mtunz-model.json" <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          model=json.loads(Path(sys.argv[1]).read_text())
+          if model.get('formFactor','').upper()!='PHYSICAL':
+              raise SystemExit('This is not real Android hardware: choose a PHYSICAL Test Lab model.')
+          if os.environ['OS_VERSION'] not in [str(v) for v in model.get('supportedVersionIds',[])]:
+              raise SystemExit('Android version is not supported by selected physical model.')
+          print('Confirmed PHYSICAL Android model and supported Android version.')
+          PY
       - name: Run Robo smoke test on physical Android hardware
         shell: bash
         env:
