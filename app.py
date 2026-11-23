@@ -685,6 +685,8 @@ def current_user(request: Request, require=True, *, allow_deletion=False):
             timestamp=now()
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND last_seen<?',
                       (timestamp,digest(t),timestamp-119))
+            c.execute('UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)',
+                      (timestamp,row['id'],timestamp))
         return dict(row)
 
 
@@ -2409,8 +2411,11 @@ async def websocket_events(ws:WebSocket):
         hub.session_hashes[ws] = digest(sid)
         if gid:hub.device_hashes[ws]=digest(gid)
         with db() as c:
+            timestamp=now()
             c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
-                      (now(),digest(sid),uid))
+                      (timestamp,digest(sid),uid))
+            c.execute('UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)',
+                      (timestamp,uid,timestamp))
         if not was_online:await notify_presence(uid,True)
     elif gid:
         hub.guests[gid].add(ws)
@@ -2424,8 +2429,11 @@ async def websocket_events(ws:WebSocket):
             raw_message = await ws.receive_text()
             if uid is not None and now() - last_session_activity >= 120:
                 with db() as c:
+                    timestamp=now()
                     c.execute('UPDATE sessions SET last_seen=? WHERE token_hash=? AND user_id=?',
-                              (now(),digest(sid),uid))
+                              (timestamp,digest(sid),uid))
+                    c.execute('UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)',
+                              (timestamp,uid,timestamp))
                 last_session_activity = now()
             # Stop oversized socket events and floods before decoding JSON.
             if len(raw_message.encode('utf-8')) > MAX_WEBSOCKET_EVENT:
