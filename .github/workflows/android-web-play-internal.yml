@@ -119,7 +119,7 @@ jobs:
             exit 1
           fi
       - name: Upload to Google Play internal testing track ONLY
-        uses: r0adkll/upload-google-play@v1
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # pinned v1 release
         with:
           serviceAccountJsonPlainText: ${{ secrets.MTUNZ_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.mtunz.web
