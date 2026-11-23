@@ -3,8 +3,9 @@ import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,Styl
 import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
+import {adminPresence} from './presence';
 
-const P={bg:'#08111f',surface:'#14243a',line:'#2c4160',ink:'#f4f8ff',muted:'#a5b6cf',accent:'#67bcff',danger:'#ff9393'};
+const P={bg:'#071320',surface:'#11253a',line:'#294661',ink:'#f4f8ff',muted:'#a8bfd6',accent:'#6dbaff',danger:'#ff9393',green:'#73e0bd'};
 
 function Action({label,onPress,disabled=false,subtle=false}){
  return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
@@ -21,6 +22,7 @@ function Tile({title,value}){return <View style={s.tile}><Text style={s.value}>{
 
 export default function AdminDashboard({token,onLogout,onExpired}){
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
+ const [userSort,setUserSort]=useState('oldest'),[presenceClock,setPresenceClock]=useState(Date.now());
  const [tab,setTab]=useState('home'),[stats,setStats]=useState({}),[registration,setRegistration]=useState([]),
   [tickets,setTickets]=useState([]),[users,setUsers]=useState([]),[approvals,setApprovals]=useState([]),
   [query,setQuery]=useState(''),[pin,setPin]=useState(''),[draft,setDraft]=useState(''),
@@ -114,10 +116,14 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   catch(e){setError(e.message);return false;}
   finally{setBusy(false);}
  }
- async function loadUsers(){
+ async function loadUsers(sort=userSort){
+  const order=typeof sort==='string'&&['oldest','newest','activity'].includes(sort)?sort:userSort;
   setLoading(true);setError('');
-  try{const r=await call('/api/admin/users?q='+encodeURIComponent(query.trim())+'&limit=50');setUsers(r.users||[]);}
-  catch(e){setError(e.message);}finally{setLoading(false);}
+  try{
+    const r=await call('/api/admin/users?q='+encodeURIComponent(query.trim())+
+      '&sort='+encodeURIComponent(order)+'&limit=50');
+    setUsers(r.users||[]);
+  }catch(e){setError(e.message);}finally{setLoading(false);}
  }
  async function viewUser(item){
   setError('');
@@ -181,6 +187,28 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   catch(error){setError(error.message);}
   finally{setLoading(false);}
  }
+ // Relative timestamps refresh without inventing online activity.
+ useEffect(()=>{
+  const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
+  const interval=setInterval(tick,30000);
+  const subscription=AppState.addEventListener('change',tick);
+  return()=>{clearInterval(interval);subscription.remove();};
+ },[]);
+ // While the online panel is visible, check actual live socket membership.
+ useEffect(()=>{
+  if(tab!=='online')return;
+  let disposed=false;
+  const poll=async()=>{
+   if(AppState.currentState!=='active')return;
+   try{
+    const result=await call('/api/admin/online-users');
+    if(!disposed){setOnlineUsers(result.users||[]);setStats(old=>({...old,online:result.total}));}
+   }catch{}
+  };
+  poll();
+  const timer=setInterval(poll,15000);
+  return()=>{disposed=true;clearInterval(timer);};
+ },[tab,call]);
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan'],['registrations','Duyệt'],['support','Hỗ trợ'],['approvals','Thiết bị'],['users','Thành viên'],['worldAdmin','Thế giới']];
@@ -206,7 +234,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {error?<Text style={s.error}>{error}</Text>:null}
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
-    <Text style={s.muted}>{lastRefresh?'Đồng bộ với máy chủ mtunz':'Đang kết nối…'}</Text>
+    <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
     <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box>
