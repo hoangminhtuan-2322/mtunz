@@ -290,12 +290,16 @@ def test_admin_last_activity_online_first_and_rest_heartbeat():
     from app import now
 
     admin=logged_admin()
-    first=register_user(admin,'activity_first')
-    second=register_user(admin,'activity_second')
+    first=register_user(admin,'activity_flows_first')
+    second=register_user(admin,'activity_flows_second')
     first_id=first.get('/api/me').json()['user']['id']
     second_id=second.get('/api/me').json()['user']['id']
     base=now()
     with db() as c:
+        # Two registrations can occur in the same second; IDs are random, not sequential.
+        # Give them distinct creation times so pagination tests creation order deterministically.
+        c.execute('UPDATE users SET created_at=? WHERE id=?',(base-300,first_id))
+        c.execute('UPDATE users SET created_at=? WHERE id=?',(base-120,second_id))
         c.execute('UPDATE users SET last_seen=? WHERE id=?',(base-600,first_id))
         c.execute('UPDATE users SET last_seen=? WHERE id=?',(base-900,second_id))
         c.execute('UPDATE sessions SET last_seen=? WHERE user_id=?',(base-500,first_id))
@@ -310,11 +314,11 @@ def test_admin_last_activity_online_first_and_rest_heartbeat():
     page2=admin.get('/api/admin/users',params={'sort':'activity','limit':1,'offset':1})
     assert page2.json()['users'][0]['id']==first_id
     # Default is account creation time, oldest first, across all pages.
-    default=admin.get('/api/admin/users',params={'limit':1})
+    default=admin.get('/api/admin/users',params={'q':'activity_flows_','limit':1})
     assert default.json()['users'][0]['id']==first_id
-    next_page=admin.get('/api/admin/users',params={'limit':1,'offset':1})
+    next_page=admin.get('/api/admin/users',params={'q':'activity_flows_','limit':1,'offset':1})
     assert next_page.json()['users'][0]['id']==second_id
-    reversed_order=admin.get('/api/admin/users',params={'sort':'newest','limit':1})
+    reversed_order=admin.get('/api/admin/users',params={'q':'activity_flows_','sort':'newest','limit':1})
     assert reversed_order.json()['users'][0]['id']==second_id
 
     # Being logged in is not the same as having a connected WebSocket.
