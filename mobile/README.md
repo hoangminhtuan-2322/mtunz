@@ -1,6 +1,6 @@
-# mtunz Mobile — Android/iOS native, đồng bộ với web
+# mtunz Android NATIVE 1.1.0 — giao diện React Native, đồng bộ realtime với web
 
-Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Thay đổi trên PR thử nghiệm, chưa tự triển khai production.
+Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web` (giống TWA 1.0.1), versionCode **3**, versionName **1.1.0**, icon gốc không thay đổi.
 
 ## Đã tích hợp trong mã nguồn
 
@@ -31,7 +31,7 @@ CI hiện kiểm tra tương thích Expo, export bundle Android/iOS, kiểm th�
 
 ## Chuẩn bị cài APK/iOS
 
-Cần tài khoản Expo EAS, cấu hình projectId và khóa ký, tài khoản phân phối (nếu phát hành App Store/Play Store). Để Android nhận push khi đóng app, tạo ứng dụng Android `com.mtunz.mobile` trong Firebase và đăng ký thông tin xác thực FCM v1 trong EAS cùng dự án Expo. Với workflow GitHub, lưu nội dung `google-services.json` vào secret `MTUNZ_ANDROID_GOOGLE_SERVICES` và UUID dự án vào biến `EXPO_PROJECT_ID`. Với EAS, cung cấp đường dẫn file bằng `GOOGLE_SERVICES_FILE` và liên kết UUID bằng `EXPO_PROJECT_ID` hoặc cấu hình dự án Expo. iOS dùng APNs. Nếu bật bảo mật nâng cao cho Expo Push, đặt `EXPO_ACCESS_TOKEN` trong môi trường máy chủ Render.
+Cần tài khoản Expo EAS, cấu hình projectId và khóa ký, tài khoản phân phối (nếu phát hành App Store/Play Store). Để Android nhận push khi đóng app, tạo ứng dụng Android `com.mtunz.web` trong Firebase và đăng ký thông tin xác thực FCM v1 trong EAS cùng dự án Expo. Với workflow GitHub, lưu nội dung `google-services.json` vào secret `MTUNZ_ANDROID_GOOGLE_SERVICES` và UUID dự án vào biến `EXPO_PROJECT_ID`. Với EAS, cung cấp đường dẫn file bằng `GOOGLE_SERVICES_FILE` và liên kết UUID bằng `EXPO_PROJECT_ID` hoặc cấu hình dự án Expo. iOS dùng APNs. Nếu bật bảo mật nâng cao cho Expo Push, đặt `EXPO_ACCESS_TOKEN` trong môi trường máy chủ Render.
 
 Trong app, vào **Trang cá nhân → Thông báo** hoặc **Admin → Tổng quan → Thông báo quản trị** để bật, gửi thử hoặc tắt trên từng thiết bị. Âm thanh dùng kênh Thông báo mtunz trong cài đặt hệ điều hành.
 
@@ -41,7 +41,7 @@ Trong app, vào **Trang cá nhân → Thông báo** hoặc **Admin → Tổng qu
     npx eas-cli build --platform android --profile preview
     npx eas-cli build --platform ios --profile preview
 
-Profile preview xuất Android APK để thử nội bộ sau khi có signing; production dùng gói phù hợp nhà phát hành. Thư mục hiện **chưa chứa APK/IPA đã ký**. Trên Android SDK53+, Expo Go không hỗ trợ remote push; hãy dùng development build hoặc app đã ký để test.
+Profile preview xuất Android APK để thử nội bộ sau khi có signing; production dùng gói phù hợp nhà phát hành. Thư mục Git chỉ chứa mã nguồn; file APK đã ký được tạo dưới dạng GitHub Actions artifact, không commit vào repo. Trên Android SDK53+, Expo Go không hỗ trợ remote push; hãy dùng development build hoặc app đã ký để test.
 
 ## Giới hạn và an toàn trước khi phát hành
 
@@ -51,3 +51,37 @@ Profile preview xuất Android APK để thử nội bộ sau khi có signing; p
 - Chưa thể khẳng định ngang bằng 100% với web: gọi thoại/video WebRTC native, toàn bộ Admin, một số nâng cấp cộng đồng/thế giới, test tự động E2E trên máy thật, build và ký ứng dụng chưa hoàn tất.
 - **Bắt buộc kiểm thử Android/iOS thật**: HTTPS, native WebSocket bearer, PIN, bật/tắt push, chế độ nền, quyền micro, upload/preview/download, phân trang, cuộn tin và session revoke. Không coi CI bundle xanh là xác nhận mọi tính năng đã chạy tốt trên điện thoại.
 - Không lưu mật khẩu/PIN/token ở log, không bỏ qua TLS hoặc để lộ khóa DB trong mã app.
+
+
+## APK native thật (không WebView/TWA/Custom Tabs)
+
+APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng nhập, hội thoại, trình soạn tin, ảnh/file, nhóm, chat thế giới và quản trị cơ bản. Nó đóng gói `assets/index.android.bundle` trong file APK để chạy giao diện JavaScript trên React Native. **Không mở trang mtunz.onrender.com trong trình duyệt** để hiển thị màn chat.
+
+Ứng dụng vẫn dùng `https://mtunz.onrender.com` làm **API + WebSocket backend**; đây là đồng bộ dữ liệu thực sự với website chứ không phải mở trang web. Tin nhắn và tài khoản vẫn nằm trên máy chủ.
+
+### Giữ nguyên logo và cập nhật trực tiếp bản APK 1.0.1
+
+- Package: `com.mtunz.web`. Native 1.1.0 tăng versionCode từ 2 lên **3**.
+- Asset `mobile/assets/icon.png` có Git blob SHA **282a6971e38d51ce570b094e07d5624663bbedbb**, chính xác bằng file logo `android-web/app/src/main/res/drawable-nodpi/mtunz_icon.png` của APK trước.
+- Sử dụng **cùng 4 GitHub Actions secrets** của khóa ký cố định đã dùng cho APK 1.0.1:
+  `MTUNZ_ANDROID_WEB_KEYSTORE_BASE64`,
+  `MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD`,
+  `MTUNZ_ANDROID_WEB_KEY_ALIAS`, `MTUNZ_ANDROID_WEB_KEY_PASSWORD`.
+- Không tạo khóa mới, không đổi `applicationId`. Bản Native **phải được ký đúng cùng chứng chỉ** SHA-256
+  `80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B`.
+- Android cho phép cài cập nhật từ 1.0.1 lên 1.1.0 khi **cùng package và chứng chỉ**, versionCode tăng. Không đảm bảo dữ liệu web cũ chuyển tự động vào SecureStore: vì kiến trúc TWA/Chrome khác native, người dùng **đăng nhập lại** bằng tài khoản web đã có; tin nhắn lưu trên backend vẫn dùng chung.
+
+### Cách build APK Native bản đã ký trên GitHub
+
+Mở [Actions → Build mtunz TRUE Native Android APK](https://github.com/hoangminhtuan-2322/mtunz/actions/workflows/android-apk.yml), chọn `main`, nhấn `Run workflow`, bật **sign_release** rồi chạy. Đợi tất cả bước xanh, tải artifact **`mtunz-NATIVE-1.1.0-RELEASE-fixed-key`**, giải nén lấy `app-release.apk`. File này là ứng dụng **React Native**, không phải APK TWA.
+
+Workflow `push`/PR chỉ tạo artifact **`mtunz-NATIVE-PREVIEW-debug-signed`** để kiểm tra, không được dùng nó cập nhật bản 1.0.1 có chữ ký cố định. APK release được kiểm tra có JS bundle nội bộ, đúng package/version, chữ ký gốc mới, cài/mở trên giả lập, và tiến trình Android vẫn đang chạy.
+
+### Những chức năng chưa thể cam kết khi chỉ có APK
+
+- **Thông báo khi đóng app:** Expo Push cần Expo EAS projectId và Firebase FCM v1 cho **`com.mtunz.web`**; cần `MTUNZ_ANDROID_GOOGLE_SERVICES` chứa `google-services.json` cho package này cùng biến `EXPO_PROJECT_ID`, và credential FCM v1 trong EAS. Nếu chưa cấu hình, chức năng thông báo nền chưa sẵn sàng.
+- Một số màn quản trị nâng cao, cuộc gọi thoại/video và một số chức năng chat thế giới chưa có mức tương đương 100% website. Không giả vờ là đã đạt full tính năng.
+- Realtime WebSocket được duy trì khi ứng dụng đang mở/foreground. Khi hệ điều hành đóng/treo ứng dụng, chỉ push đã cấu hình mới có thể thông báo, không thể hứa kết nối WebSocket mãi.
+- Chưa kiểm thử toàn diện trên **điện thoại thật**. Trước khi đưa bản native cho nhiều người cài, cần thử xác thực + PIN, chat 2 thiết bị, gửi và lưu tệp, realtime, thông báo khi app nền, quyền Admin và kết nối yếu.
+
+APK tải ngoài Google Play vẫn có thể kích hoạt thông báo Google Play Protect. Điều này **không thể khắc phục bằng thay logo hay đổi WebView thành native**; cần phân phối qua Google Play hoặc cho người dùng quét ứng dụng theo thông báo hệ thống.
