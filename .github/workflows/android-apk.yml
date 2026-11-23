@@ -92,6 +92,8 @@ jobs:
         run: node ../tests/native_realtime_stability.cjs
       - name: Verify native parity and upload retries
         run: node ../tests/native_world_typing_parity.cjs
+      - name: Verify real shared gallery and media viewers
+        run: node ../tests/native_shared_gallery.cjs
       - name: Verify native Admin operations and PIN protections
         run: node ../tests/native_admin_parity.cjs
       - name: Verify safe restoration of Android sessions after network outages
