@@ -2,7 +2,7 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
-import {ActivityIndicator,Alert,AppState,FlatList,Image,KeyboardAvoidingView,
+import {ActivityIndicator,Alert,AppState,FlatList,Image,Keyboard,KeyboardAvoidingView,
   Linking,Modal,Platform,Pressable,SafeAreaView,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
@@ -461,7 +461,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
     return()=>sub.remove();
   },[openRoom]);
-  const jumpBack=()=>{stopTyping();updateRemoteTyping(false);roomRef.current=null;setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
+  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);roomRef.current=null;setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
   async function openAttachment(file){
     if(file?.mime?.startsWith('image/')){setViewer(file);return;}
@@ -652,6 +652,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{setIdentityQuota((await invoke('/api/me/identity/status')).quota);}
     catch(e){alertError(e);}
   }
+  // On Expo SDK 58 Android is edge-to-edge: windowSoftInputMode=adjustResize
+  // alone does not keep the composer above the IME. The active room must
+  // explicitly avoid the keyboard, and the inverted list should expose newest
+  // messages after focus instead of leaving them behind the IME.
+  useEffect(()=>{
+    if(!room)return;
+    const shown=Keyboard.addListener(Platform.OS==='ios'?'keyboardWillShow':'keyboardDidShow',()=>{
+      requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated:true}));
+    });
+    return()=>shown.remove();
+  },[room?.scope,room?.id]);
+
   const tabs=[['dm','Tin nhắn','▣'],['groups','Nhóm','▦'],['people','Bạn bè','♧'],['world','Thế giới','◎'],['settings','Cá nhân','⚙']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
   const matchingFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&
@@ -683,9 +695,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     {!!error&&<Pressable onPress={()=>setError('')} style={css.errorBar}>
       <Text style={{color:P.bad}}>{error}  ×</Text>
     </Pressable>}
-    {room?<KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
+    {room?<KeyboardAvoidingView style={css.chatKeyboardArea}
+      behavior="padding" keyboardVerticalOffset={0}>
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'}
         renderItem={({item})=><Message item={item} own={item.sender_id===user.id||item.is_mine}
           token={token} onSelect={room.scope==='world'?()=>{}:setSelection}
           onOpen={openAttachment}/>}
@@ -717,6 +732,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onPress={toggleVoice} disabled={voiceBusy||sending}><Text style={css.toolGlyph}>
             {recordState.isRecording?'■':'●'}</Text></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
+          onFocus={()=>requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated:true}))}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
             sendTyping(value);
@@ -1231,7 +1247,9 @@ const css=StyleSheet.create({
   thumb:{width:220,height:164,maxWidth:'100%',backgroundColor:P.bg,borderRadius:9},
   attachmentText:{color:P.text,fontSize:12,fontWeight:'700'},
   reactionText:{color:P.text,fontSize:13},
+  chatKeyboardArea:{flex:1,minHeight:0},
   compose:{flexDirection:'row',gap:6,paddingHorizontal:8,paddingTop:10,paddingBottom:9,
+    width:'100%',minWidth:0,
     alignItems:'flex-end',borderTopColor:P.border,borderTopWidth:1,
     backgroundColor:'#101e32'},
   toolButton:{width:35,height:44,borderRadius:11,alignItems:'center',justifyContent:'center',
