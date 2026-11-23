@@ -34,6 +34,7 @@ jobs:
         run: |
           node tests/native_realtime_stability.cjs
           node tests/native_world_typing_parity.cjs
+          node tests/native_shared_gallery.cjs
       - name: Verify native Admin, PIN, session and Android layout
         run: |
           node tests/native_admin_parity.cjs
