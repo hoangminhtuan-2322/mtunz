@@ -140,7 +140,18 @@ jobs:
       - name: Enforce fixed release certificate, NOT debug signer
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
         run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
+      - name: Detect Android emulator hardware acceleration
+        id: native_emulator
+        run: |
+          if [[ -c /dev/kvm && -r /dev/kvm && -w /dev/kvm ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'Android KVM virtualization is available.'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::GitHub Runner has no usable /dev/kvm. Android emulator smoke cannot run here; physical-device QA is still required.'
+          fi
       - name: Check app launches as native UI on Android emulator
+        if: steps.native_emulator.outputs.available == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -149,6 +160,11 @@ jobs:
           disable-animations: true
           working-directory: mobile
           script: bash tools/smoke_native_android.sh
+      - name: Report Android emulator limitation without claiming device QA
+        if: steps.native_emulator.outputs.available != 'true'
+        run: |
+          echo '::warning::Native build and signing passed, but no Android runtime launch was verified on this GitHub runner.'
+          echo 'Native runtime QA must be performed on a physical Android phone before distributing widely.'
       - name: Upload NATIVE preview (DEBUG-signed, not for updating existing installation)
         if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@v4
