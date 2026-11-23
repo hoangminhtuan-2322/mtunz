@@ -34,6 +34,7 @@ assert(build.includes('mtunz-web-android-PLAY-RELEASE-aab'));
 assert(real.includes('$'+'{{ github.token }}'), 'Real-device workflow expressions must expand.');
 assert(real.includes('gcloud firebase test android run'));
 assert(real.includes('--type robo'));
+assert(real.includes("model.get('formFactor','').upper()!='PHYSICAL'"),'Do not claim virtual devices are physical');
 assert(real.includes('mtunz-web-android-RELEASE-stable-signing'));
 assert(real.includes('mtunz-physical-device-qa'));
 assert(real.includes('apk_sha256'));
