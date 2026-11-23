@@ -106,6 +106,8 @@ jobs:
         run: node ../tests/native_auth_layout.cjs
       - name: Keep composer visible above Android keyboard
         run: node ../tests/native_keyboard_composer.cjs
+      - name: Guard polished chat, images, send and icon regressions
+        run: node ../tests/native_chat_quality.cjs
       - name: Verify push release credentials and support reply routing
         run: node ../tests/native_push_release.cjs
       - name: Verify Firebase/Expo push release prerequisites
