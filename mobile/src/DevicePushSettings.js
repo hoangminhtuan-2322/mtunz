@@ -16,9 +16,17 @@ export function reportPushVisibility(socket,visible){
   }
 }
 
+function pushProjectId(){
+  return Constants.easConfig?.projectId||Constants.expoConfig?.extra?.eas?.projectId||'';
+}
+
+function isPushConfigured(){
+  return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(pushProjectId());
+}
+
 async function enablePush(session){
-  const projectId=Constants.easConfig?.projectId||Constants.expoConfig?.extra?.eas?.projectId;
-  if(!projectId)throw Error('Bản cài đặt này chưa có cấu hình thông báo đẩy.');
+  const projectId=pushProjectId();
+  if(!isPushConfigured())throw Error('APK chưa được liên kết Firebase/Expo. Hãy cập nhật bản có thông báo nền.');
   if(Platform.OS==='android'){
     await Notifications.setNotificationChannelAsync('messages',{
       name:'Thông báo mtunz',importance:Notifications.AndroidImportance.HIGH,sound:'default',
@@ -32,6 +40,7 @@ async function enablePush(session){
 }
 
 export default function DevicePushSettings({token}){
+  const readyForPush=isPushConfigured();
   const [enabled,setEnabled]=useState(null);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
@@ -43,7 +52,7 @@ export default function DevicePushSettings({token}){
         const result=await api('/api/mobile/push',{token});
         if(!active)return;
         setEnabled(result.enabled);
-        if(result.enabled){
+        if(result.enabled&&readyForPush){
           // Do not show an OS prompt on resume. Refresh the token only when
           // permission is already granted and this user opted in previously.
           const permission=await Notifications.getPermissionsAsync();
@@ -62,7 +71,7 @@ export default function DevicePushSettings({token}){
       if(state==='active'&&Date.now()-lastAttempt>10*60*1000)sync();
     });
     return()=>{active=false;sub.remove();};
-  },[token]);
+  },[token,readyForPush]);
   async function run(action){
     setBusy(true);setMessage('');
     try{
@@ -79,11 +88,13 @@ export default function DevicePushSettings({token}){
     }catch(error){setMessage(error.message);}
     finally{setBusy(false);}
   }
-  const actions=enabled?[['test','Gửi thử thông báo'],['disable','Tắt thông báo nền']]:
+  const actions=!readyForPush?[]:enabled?[['test','Gửi thử thông báo'],['disable','Tắt thông báo nền']]:
     [['enable','Bật thông báo khi đóng app']];
   return <View style={styles.root}>
-    <Text style={styles.status}>{enabled?'Thiết bị đã đăng ký nhận thông báo nền; hãy gửi thử để xác nhận.':
-      enabled===false?'Thông báo nền chưa bật.':'Kiểm tra trạng thái thông báo…'}</Text>
+    {!readyForPush?<Text accessibilityLiveRegion="polite" style={styles.warning}>
+      Phiên bản này chưa kết nối Firebase/Expo Push. Thông báo khi đóng ứng dụng chưa hoạt động. Hãy cập nhật APK chính thức có FCM.
+    </Text>:<Text style={styles.status}>{enabled?'Đã lưu thiết bị trên máy chủ; hãy gửi thử để kiểm tra thông báo thực tế.':
+      enabled===false?'Thông báo nền chưa bật trên thiết bị này.':'Kiểm tra trạng thái thông báo…'}</Text>}
     <View style={styles.actions}>
       {actions.map(([action,label])=><Pressable key={action} accessibilityRole="button"
         disabled={busy} onPress={()=>run(action)} style={[styles.button,busy&&styles.busy]}>
@@ -100,5 +111,6 @@ const styles=StyleSheet.create({
   button:{borderColor:'#42658d',borderWidth:1,borderRadius:11,paddingHorizontal:12,minHeight:42,justifyContent:'center'},
   busy:{opacity:.5},
   label:{color:'#e4f2ff',fontWeight:'600'},
-  status:{color:'#a5b6cf',lineHeight:19},
+  status:{color:'#a5b6cf',lineHeight:19,flexShrink:1},
+  warning:{color:'#ffd29b',lineHeight:20,flexShrink:1},
 });
