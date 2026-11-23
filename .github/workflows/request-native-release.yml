@@ -1,0 +1,34 @@
+# One-time release request. This branch does not alter the signed native build itself.
+# The real android-apk.yml on main still validates Firebase/Expo credentials,
+# permanent signing secrets, package name, and certificate before output.
+name: Request mtunz native 1.1.0 signed release
+on:
+  push:
+    branches: ['release/native-v1.1.0']
+    paths: ['.github/workflows/request-native-release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  request-signed-release:
+    if: ${{ github.repository == 'hoangminhtuan-2322/mtunz' && github.ref == 'refs/heads/release/native-v1.1.0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify the exact reviewed main commit, then dispatch release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          EXPECTED_MAIN=d66f6e2bdef1770f507564c8279e25ef25936104
+          ACTUAL_MAIN="$(gh api "repos/$GH_REPO/commits/main" --jq '.sha')"
+          if [[ "$ACTUAL_MAIN" != "$EXPECTED_MAIN" ]]; then
+            echo "::error::main changed since release review; refusing to sign an unreviewed commit."
+            exit 1
+          fi
+          gh workflow run android-apk.yml --repo "$GH_REPO" --ref main -f sign_release=true
+          echo "Signed-release run requested on main at $EXPECTED_MAIN."
