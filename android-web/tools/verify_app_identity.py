@@ -56,8 +56,12 @@ def main():
     version_code = re.search(r"\bversionCode\s+(\d+)", gradle)
     require(version_code is not None and int(version_code.group(1)) > 1,
             "An update to the supplied versionCode=1 APK must increment versionCode.")
-    require(bool(re.search(r"\bversionName\s+['\"]1\.0\.1['\"]", gradle)),
-            "Expected next release versionName=1.0.1.")
+    version_name = re.search(r"\bversionName\s+['\"](\d+)\.(\d+)\.(\d+)['\"]", gradle)
+    require(
+        version_name is not None
+        and tuple(map(int, version_name.groups())) > (1, 0, 0),
+        "The new versionName must be newer than original 1.0.0."
+    )
 
     manifest = ET.parse(MANIFEST).getroot()
     android_attr = "{http://schemas.android.com/apk/res/android}"
