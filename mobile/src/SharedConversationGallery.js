@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Image,Linking,Pressable,StyleSheet,Text,View} from 'react-native';
 import {Image as ExpoImage} from 'expo-image';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {createVideoPlayer,VideoView,useVideoPlayer} from 'expo-video';
 import {api} from './client';
 import {attachmentSource,downloadSharedAttachment,saveSharedFile} from './media';
@@ -8,7 +9,8 @@ import {attachmentSource,downloadSharedAttachment,saveSharedFile} from './media'
 const C={bg:'#0d1c30',panel:'#162b45',border:'#304e6d',text:'#f4f8ff',
   secondary:'#a7bfd9',accent:'#71bdff'};
 export const SHARED_TABS=[
-  ['images','Ảnh','▧'],['videos','Video','▶'],['files','Tệp','▤'],['links','Liên kết','↗'],
+  ['images','Ảnh','images-outline'],['videos','Video','videocam-outline'],
+  ['files','Tệp','document-text-outline'],['links','Liên kết','link-outline'],
 ];
 const formatTime=value=>value?new Date(Number(value)*1000).toLocaleString('vi-VN',{day:'2-digit',
   month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
@@ -117,11 +119,15 @@ export default function SharedConversationGallery({room,token,onError}){
     </View>
     <View style={styles.tabs}>{SHARED_TABS.map(([key,name,glyph])=><Tap key={key}
       selected={kind===key} onPress={()=>{setKind(key);setPreview(null);setVideoUri(null);}}
-      style={styles.tab}><Text style={[styles.tabText,kind===key&&styles.activeText]}>
-        {glyph} {name}</Text></Tap>)}</View>
+      style={styles.tab}><View style={{flexDirection:'row',alignItems:'center',gap:6}}>
+          <Ionicons name={glyph} size={16} color={kind===key?'#071729':C.text}/>
+          <Text style={[styles.tabText,kind===key&&styles.activeText]}>{name}</Text>
+        </View></Tap>)}</View>
     {preview?<View style={styles.preview}>
       <View style={styles.previewBar}>
-        <Text numberOfLines={1} style={[styles.fileName,{flex:1}]}>{preview.name}</Text>
+        <Text numberOfLines={1} style={[styles.fileName,{flex:1}]}>
+          {preview.mime?.startsWith('image/')?'Ảnh đã chia sẻ':preview.name}
+        </Text>
         <Tap onPress={()=>{setPreview(null);setVideoUri(null);}}>
           <Text style={styles.actionText}>✕ Đóng</Text>
         </Tap>
