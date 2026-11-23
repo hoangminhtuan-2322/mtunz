@@ -42,6 +42,8 @@ jobs:
         run: node ../tests/native_admin_parity.cjs
       - name: Verify safe restoration of Android sessions after network outages
         run: node ../tests/native_session_recovery.cjs
+      - name: Check responsive Android login on narrow screens
+        run: node ../tests/native_auth_layout.cjs
       - name: Check SDK compatibility
         run: npx expo-doctor
       - name: Export Android application bundle

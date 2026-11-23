@@ -1,6 +1,6 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAreaView,
-  ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image} from 'react-native';
+  ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image,useWindowDimensions} from 'react-native';
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
@@ -24,6 +24,9 @@ function Button({children,onPress,disabled=false,quiet=false}) {
     <Text style={[styles.buttonText,quiet&&{color:C.text}]}>{children}</Text></Pressable>;
 }
 export default function App() {
+  const {width:screenWidth,height:screenHeight,fontScale}=useWindowDimensions();
+  const compactAuth=screenWidth<390||fontScale>1.15;
+  const shortAuth=screenHeight<720;
   const [ready,setReady]=useState(false),[token,setToken]=useState(null),[user,setUser]=useState(null);
   const [recoverToken,setRecoverToken]=useState(null),[recoverBusy,setRecoverBusy]=useState(false);
   const recoveryRunRef=useRef(0);
@@ -259,20 +262,21 @@ export default function App() {
       onProfile={refreshProfile}/>
   </SafeAreaView>;
   return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
-    <KeyboardAvoidingView style={styles.center} behavior={Platform.OS==='ios'?'padding':undefined}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.centerInner}
-        showsVerticalScrollIndicator={false}>
-        <View style={styles.intro}>
+    <KeyboardAvoidingView style={styles.authShell} behavior={Platform.OS==='ios'?'padding':undefined}>
+      <ScrollView style={styles.authScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        contentContainerStyle={[styles.centerInner,compactAuth&&styles.centerInnerCompact,shortAuth&&styles.centerInnerShort]}
+        showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never">
+        <View style={[styles.intro,compactAuth&&styles.introCompact]}>
           <View style={styles.brandRow}>
             <Image source={require('./assets/brand-logo.png')} style={styles.brandMark} resizeMode="contain"/>
             <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
           </View>
-          <Text style={styles.introTitle}>Kết nối mọi khoảnh khắc.</Text>
+          <Text style={[styles.introTitle,compactAuth&&styles.introTitleCompact]}>Kết nối mọi khoảnh khắc.</Text>
           <Text style={styles.introSub}>Trò chuyện liền mạch giữa điện thoại và website.</Text>
           <View style={styles.connected}><View style={styles.onlineDot}/>
-            <Text style={styles.connectedText}>Cùng tài khoản • Cùng cuộc trò chuyện</Text></View>
+            <Text style={styles.connectedText}>Cùng tài khoản · Cùng trò chuyện</Text></View>
         </View>
-        <View style={styles.card}>
+        <View style={[styles.card,compactAuth&&styles.cardCompact]}>
           <Text style={styles.eyebrow}>CHÀO MỪNG BẠN QUAY LẠI</Text>
           <Text style={styles.title}>{user?.onboarding_required?'Hoàn tất hồ sơ':mode==='register'?'Tạo tài khoản mtunz':adminApproval?'Duyệt thiết bị Admin':challenge?'Xác minh PIN':'Đăng nhập'}</Text>
           <Text style={styles.muted}>Một tài khoản cho cả website, Android và iOS.</Text>
@@ -320,8 +324,8 @@ export default function App() {
             <Button quiet onPress={()=>{setMode('register');setError('');}}>Đăng ký tài khoản mới</Button>
           </>}
           {!!error&&<View style={styles.errorPanel}><Text style={styles.error}>{error}</Text></View>}
-          <View style={styles.infoRow}><Text style={styles.infoIcon}>⌁</Text>
-            <Text style={styles.muted}>Tài khoản được bảo vệ bằng mật khẩu và PIN. Admin cần phê duyệt thiết bị mới khi có phiên đang hoạt động.</Text></View>
+          <View style={styles.infoRow}><Text style={styles.infoIcon} accessibilityLabel="Bảo mật">⌁</Text>
+            <Text style={styles.infoText}>Tài khoản được bảo vệ bằng mật khẩu và PIN. Thiết bị Admin mới có thể cần phê duyệt.</Text></View>
         </View>
         <View style={styles.footer}>
           <Text style={styles.footerText}>mtunz • Một không gian, nhiều kết nối</Text>
@@ -334,40 +338,52 @@ export default function App() {
 const styles=StyleSheet.create({
   root:{flex:1,backgroundColor:C.bg},
   center:{flex:1,justifyContent:'center',alignItems:'center'},
-  centerInner:{flexGrow:1,justifyContent:'center',paddingTop:28,paddingBottom:32,
-    paddingHorizontal:20,maxWidth:480,width:'100%',alignSelf:'center',gap:26},
-  intro:{gap:10,alignItems:'flex-start',paddingHorizontal:4},
-  brandRow:{flexDirection:'row',alignItems:'center',gap:10,marginBottom:9},
-  brandMark:{height:46,width:46},
-  brand:{fontSize:34,fontWeight:'900',color:C.text,letterSpacing:-1.1},
-  introTitle:{fontSize:26,lineHeight:34,fontWeight:'800',color:C.text,letterSpacing:-.5},
-  introSub:{fontSize:14,color:C.muted,lineHeight:21},
+  authShell:{flex:1,width:'100%',minWidth:0},
+  authScroll:{flex:1,width:'100%',minWidth:0},
+  centerInner:{flexGrow:1,justifyContent:'center',paddingTop:24,paddingBottom:28,
+    paddingHorizontal:18,maxWidth:480,width:'100%',alignSelf:'center',gap:20},
+  centerInnerCompact:{paddingHorizontal:14,paddingTop:16,paddingBottom:24,gap:16},
+  centerInnerShort:{justifyContent:'flex-start'},
+  intro:{gap:8,alignItems:'flex-start',paddingHorizontal:3,minWidth:0,width:'100%'},
+  introCompact:{gap:6,paddingHorizontal:2},
+  brandRow:{flexDirection:'row',alignItems:'center',gap:9,marginBottom:5,minWidth:0,maxWidth:'100%'},
+  brandMark:{height:43,width:43},
+  brand:{fontSize:30,fontWeight:'900',color:C.text,letterSpacing:-1,flexShrink:1},
+  introTitle:{fontSize:24,lineHeight:31,fontWeight:'800',color:C.text,letterSpacing:-.5,
+    flexShrink:1,maxWidth:'100%'},
+  introTitleCompact:{fontSize:21,lineHeight:28},
+  introSub:{fontSize:14,color:C.muted,lineHeight:21,flexShrink:1,maxWidth:'100%'},
   connected:{alignSelf:'flex-start',flexDirection:'row',alignItems:'center',gap:8,
-    backgroundColor:'#123449',borderWidth:1,borderColor:'#275567',
-    paddingHorizontal:12,paddingVertical:8,borderRadius:40,marginTop:5},
-  connectedText:{color:'#9ee2d4',fontSize:12,fontWeight:'700'},
-  onlineDot:{width:7,height:7,borderRadius:4,backgroundColor:C.success},
-  card:{backgroundColor:C.card,borderRadius:24,padding:22,gap:14,
-    borderWidth:1,borderColor:C.border,width:'100%'},
-  eyebrow:{fontSize:10,color:C.accent,letterSpacing:1.8,fontWeight:'900'},
-  title:{fontSize:25,lineHeight:31,fontWeight:'900',color:C.text,letterSpacing:-.5},
-  muted:{fontSize:13,color:C.muted,lineHeight:19},
-  field:{gap:7},
+    backgroundColor:'#123449',borderWidth:1,borderColor:'#275567',maxWidth:'100%',minWidth:0,
+    paddingHorizontal:12,paddingVertical:8,borderRadius:40,marginTop:4},
+  connectedText:{color:'#9ee2d4',fontSize:12,fontWeight:'700',flexShrink:1},
+  onlineDot:{width:7,height:7,borderRadius:4,backgroundColor:C.success,flexShrink:0},
+  card:{backgroundColor:C.card,borderRadius:22,padding:20,gap:13,
+    borderWidth:1,borderColor:C.border,width:'100%',minWidth:0,maxWidth:'100%'},
+  cardCompact:{padding:16,borderRadius:20,gap:12},
+  eyebrow:{fontSize:10,color:C.accent,letterSpacing:1.3,fontWeight:'900',flexShrink:1},
+  title:{fontSize:24,lineHeight:30,fontWeight:'900',color:C.text,letterSpacing:-.5,flexShrink:1},
+  muted:{fontSize:13,color:C.muted,lineHeight:20,flexShrink:1},
+  field:{gap:7,minWidth:0,width:'100%'},
   fieldLabel:{fontSize:13,fontWeight:'800',color:'#d9e6f8'},
   input:{borderColor:'#375172',borderWidth:1,borderRadius:13,
-    paddingHorizontal:15,minHeight:51,fontSize:15,color:C.text,backgroundColor:'#0b1728'},
+    paddingHorizontal:14,minHeight:51,fontSize:15,color:C.text,backgroundColor:'#0b1728',
+    width:'100%',minWidth:0},
   button:{backgroundColor:C.accent,borderRadius:14,alignItems:'center',
-    justifyContent:'center',paddingHorizontal:15,paddingVertical:13,minHeight:52},
+    justifyContent:'center',paddingHorizontal:12,paddingVertical:12,minHeight:50,
+    width:'100%',maxWidth:'100%',minWidth:0},
   quiet:{backgroundColor:C.subtle,borderWidth:1,borderColor:C.border},
   pressed:{opacity:.82,transform:[{scale:.995}]},
-  buttonText:{color:'#091526',fontSize:15,fontWeight:'900',letterSpacing:.1},
+  buttonText:{color:'#091526',fontSize:15,fontWeight:'900',letterSpacing:.1,
+    flexShrink:1,textAlign:'center'},
   errorPanel:{backgroundColor:'#3a2437',borderWidth:1,borderColor:'#7a4058',borderRadius:12,padding:12},
   error:{color:'#ffb5bc',fontSize:13,lineHeight:19},
-  infoRow:{flexDirection:'row',alignItems:'flex-start',gap:11,
-    borderTopWidth:1,borderColor:C.border,paddingTop:15},
-  infoIcon:{fontSize:20,color:C.accent},
-  footer:{gap:6,alignItems:'center',paddingHorizontal:10},
+  infoRow:{flexDirection:'row',alignItems:'flex-start',gap:10,
+    borderTopWidth:1,borderColor:C.border,paddingTop:14,minWidth:0,width:'100%'},
+  infoIcon:{fontSize:20,color:C.accent,flexShrink:0},
+  infoText:{fontSize:12,color:C.muted,lineHeight:19,flex:1,minWidth:0,flexShrink:1},
+  footer:{gap:6,alignItems:'center',paddingHorizontal:8,width:'100%',minWidth:0},
   footerText:{fontSize:12,color:C.muted,textAlign:'center'},
-  server:{color:'#6c829f',fontSize:11,textAlign:'center'},
+  server:{color:'#6c829f',fontSize:11,textAlign:'center',flexShrink:1},
   link:{color:C.accent,fontSize:13,fontWeight:'700'},
 });
