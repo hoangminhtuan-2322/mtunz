@@ -389,6 +389,7 @@ function connectSocket(retry=false){
  socket.onopen=()=>{
   clearTimeout(handshakeTimeout);
   if(state.ws!==socket)return;
+  if(document.hidden){socket.close(1000,'App backgrounded');return;}
   socketRetryDelay=2500;
   v9ConnectionBanner(true);
   reportAlertVisibility(socket);
