@@ -24,7 +24,7 @@ assert(!settings.includes('Thông báo mới ({noticesUnread})'),
   'Avoid a giant button for large unread counts');
 assert(settings.includes("noticesUnread>99?'99+':noticesUnread"),
   'Cap badge display at 99+ without changing actual unread count');
-assert(messenger.includes('notices.filter(x=>!x.read_at).length'),
+assert(messenger.includes('n.filter(x=>!x.read_at).length'),
   'Unread must come from server read_at, not fabricated');
 const notices=messenger.slice(messenger.indexOf("dialog==='notifications'"),
   messenger.indexOf("dialog==='security'"));
