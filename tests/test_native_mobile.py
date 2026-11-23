@@ -12,7 +12,7 @@ from test_flows import logged_admin, register_user
 def clean_native():
     RATE_BUCKETS.clear()
     with db() as c:
-        for table in ('scheduled_messages','admin_login_requests','message_requests',
+        for table in ('mobile_push_receipts','mobile_push_tokens','scheduled_messages','admin_login_requests','message_requests',
                       'world_messages','world_penalties','user_reports','message_pins',
                       'group_messages','group_members','chat_groups','reactions',
                       'chat_preferences','attachments','recovery_grants','ticket_messages',
@@ -374,3 +374,63 @@ def test_android_support_reply_push_to_owner_without_private_body(monkeypatch):
         assert message['data']=={'kind':'support_reply','chat_id':tid}
         assert 'Thông tin tài khoản riêng tư' not in message['body']
         assert message['channelId']=='messages'
+
+
+def test_expo_receipt_checks_report_delivery_errors_and_expire_tokens(monkeypatch):
+    """An Expo ticket is not delivery; receipts must prune unregistered devices."""
+    import time
+    import mobile_push
+    from requests import Response
+    admin=logged_admin()
+    register_user(admin,'native_receipt_user')
+    native,headers=native_login('native_receipt_user')
+    token='ExpoPushToken['+('Z'*28)+']'
+    assert native.post('/api/mobile/push',headers=headers,json={'token':token}).status_code==200
+    with db() as c:
+        row=c.execute('SELECT session_hash FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()
+        assert row is not None
+        sid=row['session_hash']
+        c.execute('''INSERT INTO mobile_push_receipts
+                     (receipt_id,token,session_hash,created_at) VALUES(?,?,?,?)''',
+                  ('expo-receipt-invalid',token,sid,int(time.time())-1000))
+    called=[]
+    def receipt_request(url,**kwargs):
+        assert url==mobile_push.EXPO_RECEIPTS_GATEWAY
+        assert kwargs['json']=={'ids':['expo-receipt-invalid']}
+        assert kwargs['allow_redirects'] is False
+        called.append(True)
+        response=Response()
+        response.status_code=200
+        response._content=b'{"data":{"expo-receipt-invalid":{"status":"error","details":{"error":"DeviceNotRegistered"}}}}'
+        return response
+    monkeypatch.setattr(mobile_push.requests,'post',receipt_request)
+    assert app.state.mobile_check_expo_receipts()==1
+    assert called
+    with db() as c:
+        assert not c.execute('SELECT 1 FROM mobile_push_receipts WHERE receipt_id=?',
+                             ('expo-receipt-invalid',)).fetchone()
+        assert not c.execute('SELECT 1 FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()
+    assert native.get('/api/mobile/push',headers=headers).json()=={'enabled':False}
+
+
+def test_expo_receipt_missing_retained_until_available(monkeypatch):
+    """A receipt missing at the gateway is not a delivery confirmation."""
+    import time
+    import mobile_push
+    from requests import Response
+    with db() as c:
+        c.execute('''INSERT INTO mobile_push_receipts
+                     (receipt_id,token,session_hash,created_at) VALUES(?,?,?,?)''',
+                  ('expo-receipt-not-ready','ExpoPushToken['+'Y'*24+']','dead-session',
+                   int(time.time())-1000))
+    def pending_request(url,**kwargs):
+        assert url==mobile_push.EXPO_RECEIPTS_GATEWAY
+        response=Response()
+        response.status_code=200
+        response._content=b'{"data":{}}'
+        return response
+    monkeypatch.setattr(mobile_push.requests,'post',pending_request)
+    assert app.state.mobile_check_expo_receipts()==0
+    with db() as c:
+        assert c.execute('SELECT 1 FROM mobile_push_receipts WHERE receipt_id=?',
+                         ('expo-receipt-not-ready',)).fetchone()
