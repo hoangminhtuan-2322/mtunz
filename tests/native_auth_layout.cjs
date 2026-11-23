@@ -2,7 +2,9 @@
 // Regression: login/registration must remain inside narrow Android viewports.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
-const code=fs.readFileSync('mobile/App.js','utf8');
+const path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const code=fs.readFileSync(path.join(root,'mobile/App.js'),'utf8');
 const app=require('../mobile/app.json').expo;
 const checks=[
   ['viewport-aware dimensions',/useWindowDimensions/.test(code)&&/screenWidth<390\|\|fontScale>1\.15/.test(code)],
