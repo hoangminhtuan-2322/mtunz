@@ -1371,9 +1371,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     <Modal visible={!!viewer} transparent animationType="fade" onRequestClose={()=>setViewer(null)}>
       <View style={{flex:1,backgroundColor:'#03070ef5',justifyContent:'center',gap:16,padding:8}}>
         <View style={css.hrow}>
-          <Pressable onPress={()=>setViewer(null)}><Text style={css.link}>✕ Đóng ảnh</Text></Pressable>
-          <Pressable onPress={()=>saveSharedFile(viewer,token).catch(alertError)}>
-            <Text style={css.link}>Lưu / Chia sẻ</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Đóng ảnh"
+            onPress={()=>setViewer(null)} style={css.viewerAction}>
+            <Ionicons name="close" size={23} color={P.text}/></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Lưu hoặc chia sẻ ảnh"
+            onPress={()=>saveSharedFile(viewer,token).catch(alertError)} style={css.viewerAction}>
+            <Ionicons name="download-outline" size={23} color={P.text}/></Pressable>
         </View>
         {!!viewer&&<Image source={attachmentSource(viewer,token)}
           style={{flex:1,width:'100%'}} resizeMode="contain"/>}
