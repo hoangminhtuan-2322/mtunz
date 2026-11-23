@@ -94,6 +94,8 @@ jobs:
         run: node ../tests/native_world_typing_parity.cjs
       - name: Verify native Admin operations and PIN protections
         run: node ../tests/native_admin_parity.cjs
+      - name: Verify safe restoration of Android sessions after network outages
+        run: node ../tests/native_session_recovery.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
       - name: Check generated native manifest and launch package

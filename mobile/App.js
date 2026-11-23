@@ -1,10 +1,11 @@
-import React,{useCallback,useEffect,useState} from 'react';
-import {ActivityIndicator,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAreaView,
+import React,{useCallback,useEffect,useRef,useState} from 'react';
+import {ActivityIndicator,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAreaView,
   ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image} from 'react-native';
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
 import AdminDashboard from './src/AdminDashboard';
+import {shouldRetrySession} from './src/sessionRecovery';
 
 const C={bg:'#08111f',card:'#14243a',text:'#f4f8ff',muted:'#a5b6cf',
   accent:'#67bcff',border:'#2c4160',subtle:'#1b304c',success:'#70dabb'};
@@ -24,6 +25,8 @@ function Button({children,onPress,disabled=false,quiet=false}) {
 }
 export default function App() {
   const [ready,setReady]=useState(false),[token,setToken]=useState(null),[user,setUser]=useState(null);
+  const [recoverToken,setRecoverToken]=useState(null),[recoverBusy,setRecoverBusy]=useState(false);
+  const recoveryRunRef=useRef(0);
   const [username,setUsername]=useState(''),[password,setPassword]=useState(''),[pin,setPin]=useState('');
   const [challenge,setChallenge]=useState(null),[newName,setNewName]=useState('');
   const [adminApproval,setAdminApproval]=useState(null);
@@ -34,6 +37,8 @@ export default function App() {
     [accepted,setAccepted]=useState(false);
 
   const clear=useCallback(async()=>{
+    ++recoveryRunRef.current;
+    setRecoverToken(null);setRecoverBusy(false);
     await clearSession().catch(()=>{});
     setToken(null);setUser(null);setChallenge(null);setAdminApproval(null);setPassword('');setPin('');
   },[]);
@@ -45,13 +50,14 @@ export default function App() {
   useEffect(()=>{
     let mounted=true;
     (async()=>{
+      let restored=null;
       try{
         const pending=await readPendingRegistration();
         if(pending&&mounted){
           setMode('register');setSignupToken(pending.token);
           setSignupUsername(pending.username);setSignupPhase('pending');
         }
-        const restored=await readSession();
+        restored=await readSession();
         if(!restored||!mounted)return;
         const data=await api('/api/me',{token:restored});
         if(!mounted)return;
@@ -62,13 +68,47 @@ export default function App() {
         setToken(restored);setUser(data.user);
       }catch(e){
         if(mounted){
-          if(e.status===401)await clear();
-          else setError(e.message||'Không thể kiểm tra phiên. Hãy thử lại khi có mạng.');
+          if(e.status===401||e.status===403||e.status===410)await clear();
+          else if(restored&&shouldRetrySession(e))setRecoverToken(restored);
+          setError(e.message||'Không thể kiểm tra phiên. Hãy thử lại khi có mạng.');
         }
       }finally{if(mounted)setReady(true);}
     })();
     return()=>{mounted=false;};
   },[clear]);
+
+  const recoverSession=useCallback(async()=>{
+    if(!recoverToken||recoverBusy)return;
+    const run=++recoveryRunRef.current;
+    setRecoverBusy(true);setError('');
+    try{
+      const result=await api('/api/me',{token:recoverToken});
+      if(run!==recoveryRunRef.current)return;
+      if(!result.user||result.user.deletion_purge_at){
+        await clear();
+        setError('Tài khoản chưa sẵn sàng hoặc đang chờ xóa. Hãy đăng nhập lại.');
+        return;
+      }
+      setToken(recoverToken);setUser(result.user);setRecoverToken(null);
+    }catch(e){
+      if(run!==recoveryRunRef.current)return;
+      if(e.status===401||e.status===403||e.status===410){
+        await clear();
+        setError('Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.');
+      }else{
+        setError(e.message||'Chưa thể kết nối máy chủ. Hãy thử lại khi có mạng.');
+      }
+    }finally{
+      if(run===recoveryRunRef.current)setRecoverBusy(false);
+    }
+  },[recoverToken,recoverBusy,clear]);
+  useEffect(()=>{
+    if(!recoverToken)return;
+    const subscription=AppState.addEventListener('change',state=>{
+      if(state==='active'&&!recoverBusy)void recoverSession();
+    });
+    return()=>subscription.remove();
+  },[recoverToken,recoverBusy,recoverSession]);
 
   async function signIn(){
     if(!username.trim()||!password){setError('Hãy nhập tài khoản và mật khẩu.');return;}
@@ -186,6 +226,28 @@ export default function App() {
   if(!ready)return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
     <View style={styles.center}><ActivityIndicator color={C.accent}/>
       <Text style={styles.muted}>Đang xác minh phiên đăng nhập…</Text></View>
+  </SafeAreaView>;
+  if(recoverToken&&!user)return <SafeAreaView style={styles.root}>
+    <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+    <View style={styles.center}>
+      <View style={[styles.card,{width:'90%',maxWidth:430}]}>
+        <View style={styles.brandRow}>
+          <Image source={require('./assets/brand-logo.png')} style={styles.brandMark} resizeMode="contain"/>
+          <Text style={styles.brand}>mtunz<Text style={{color:C.accent}}>.</Text></Text>
+        </View>
+        <Text style={styles.title}>Đang tạm mất kết nối</Text>
+        <Text style={styles.muted}>
+          Phiên đăng nhập của bạn vẫn được giữ an toàn. Kiểm tra mạng hoặc thử kết nối lại với mtunz.
+        </Text>
+        {!!error&&<View style={styles.errorPanel}><Text style={styles.error}>{error}</Text></View>}
+        <Button disabled={recoverBusy} onPress={recoverSession}>
+          {recoverBusy?'Đang thử kết nối…':'Thử kết nối lại'}
+        </Button>
+        <Button quiet disabled={recoverBusy} onPress={async()=>{
+          await clear();setError('');setMode('login');
+        }}>Đăng nhập tài khoản khác</Button>
+      </View>
+    </View>
   </SafeAreaView>;
   if(user?.is_admin)return <SafeAreaView style={styles.root}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
