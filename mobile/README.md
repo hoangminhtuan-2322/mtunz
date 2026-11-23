@@ -1,6 +1,6 @@
-# mtunz Android NATIVE 1.1.4 — giao diện React Native, đồng bộ realtime với web
+# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 8 (React Native)
 
-Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web` (giống TWA 1.0.1), versionCode **7**, versionName **1.1.4**, icon gốc không thay đổi.
+Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **8**, versionName **1.0.0**, icon không thay đổi. **Đây là bản React Native 1.1.4 giữ nguyên chức năng, chỉ đổi tên hiển thị thành 1.0.0; KHÔNG PHẢI APK TWA 1.0.0 gốc.** Android vẫn cần versionCode 8 cao hơn 7 để cho phép cập nhật mà không gỡ cài đặt.
 
 ## Đã tích hợp trong mã nguồn
 
@@ -61,7 +61,7 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
 
 ### Giữ nguyên logo và cập nhật trực tiếp bản APK 1.0.1
 
-- Package: `com.mtunz.web`. Native 1.1.4 tăng versionCode từ 2 lên **7**.
+- Package: `com.mtunz.web`. Native 1.0.0 đặt versionCode **8** để cập nhật đè bản 1.1.4 (versionCode 7).
 - Asset `mobile/assets/icon.png` có Git blob SHA **282a6971e38d51ce570b094e07d5624663bbedbb**, chính xác bằng file logo `android-web/app/src/main/res/drawable-nodpi/mtunz_icon.png` của APK trước.
 - Sử dụng **cùng 4 GitHub Actions secrets** của khóa ký cố định đã dùng cho APK 1.0.1:
   `MTUNZ_ANDROID_WEB_KEYSTORE_BASE64`,
@@ -69,11 +69,11 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
   `MTUNZ_ANDROID_WEB_KEY_ALIAS`, `MTUNZ_ANDROID_WEB_KEY_PASSWORD`.
 - Không tạo khóa mới, không đổi `applicationId`. Bản Native **phải được ký đúng cùng chứng chỉ** SHA-256
   `80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B`.
-- Android cho phép cài cập nhật từ 1.0.1 lên 1.1.4 khi **cùng package và chứng chỉ**, versionCode tăng. Không đảm bảo dữ liệu web cũ chuyển tự động vào SecureStore: vì kiến trúc TWA/Chrome khác native, người dùng **đăng nhập lại** bằng tài khoản web đã có; tin nhắn lưu trên backend vẫn dùng chung.
+- Android cho phép cài cập nhật từ 1.0.1 lên 1.0.0 khi **cùng package và chứng chỉ**, versionCode tăng. Không đảm bảo dữ liệu web cũ chuyển tự động vào SecureStore: vì kiến trúc TWA/Chrome khác native, người dùng **đăng nhập lại** bằng tài khoản web đã có; tin nhắn lưu trên backend vẫn dùng chung.
 
 ### Cách build APK Native bản đã ký trên GitHub
 
-Mở [Actions → Build mtunz TRUE Native Android APK](https://github.com/hoangminhtuan-2322/mtunz/actions/workflows/android-apk.yml), chọn `main`, nhấn `Run workflow`, bật **sign_release** rồi chạy. Đợi tất cả bước xanh, tải artifact **`mtunz-NATIVE-1.1.4-RELEASE-fixed-key`**, giải nén lấy `app-release.apk`. File này là ứng dụng **React Native**, không phải APK TWA.
+Mở [Actions → Build mtunz TRUE Native Android APK](https://github.com/hoangminhtuan-2322/mtunz/actions/workflows/android-apk.yml), chọn `main`, nhấn `Run workflow`, bật **sign_release** rồi chạy. Đợi tất cả bước xanh, tải artifact **`mtunz-NATIVE-1.0.0-RELEASE-fixed-key`**, giải nén lấy `app-release.apk`. File này là ứng dụng **React Native**, không phải APK TWA.
 
 Workflow `push`/PR tạo artifact **`mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug`** cho ứng dụng **mtunz Preview**, package `com.mtunz.web.preview`, dùng khóa debug. Preview này cài **song song** với bản đang có (`com.mtunz.web`) mà không yêu cầu gỡ bản cũ. Preview không dùng Firebase production nên **không có thông báo nền**. Khi thử, đăng nhập cùng tài khoản với website. Bản này chỉ để kiểm thử, không thể cài đè bản chính thức. APK release được kiểm tra có JS bundle nội bộ, đúng package/version, chữ ký gốc mới, cài/mở trên giả lập, và tiến trình Android vẫn đang chạy.
 
