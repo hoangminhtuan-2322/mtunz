@@ -434,6 +434,8 @@ MAX_JSON_REQUEST = 64 * 1024
 MAX_UPLOAD_REQUEST = 3 * 1024 * 1024
 MAX_WEBSOCKET_EVENT = 16 * 1024
 MAX_WEBSOCKET_EVENTS_PER_WINDOW = 100
+# Idle timeout for heartbeat-aware web/native sockets. Older clients retain protocol keepalive.
+PRESENCE_HEARTBEAT_TIMEOUT = 20
 
 
 def throttle(request: Request, scope: str, limit: int, window: int, identity: str = ''):
@@ -2435,7 +2437,7 @@ async def websocket_events(ws:WebSocket):
             # rely on WebSocket protocol keepalive for compatibility.
             try:
                 raw_message = await asyncio.wait_for(
-                    ws.receive_text(), timeout=20 if heartbeat_enabled else None)
+                    ws.receive_text(), timeout=PRESENCE_HEARTBEAT_TIMEOUT if heartbeat_enabled else None)
             except asyncio.TimeoutError:
                 try:
                     await asyncio.wait_for(ws.close(code=1001), timeout=1)
