@@ -913,7 +913,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <Text style={css.eyebrow}>HỘP THƯ CỦA BẠN</Text>
             <Text style={css.h2}>Cuộc trò chuyện</Text></View>
             <Text style={css.countPill}>{matchingFriends.length} liên hệ</Text></View>
-          <View style={css.searchWrap}><Text style={css.searchGlyph}>⌕</Text>
+          <View style={css.searchWrap}><Ionicons name="search-outline" size={19} color={P.soft}/>
             <TextInput value={inboxQuery} onChangeText={setInboxQuery}
               placeholder="Tìm cuộc trò chuyện..." placeholderTextColor={P.soft}
               style={css.searchInput}/></View>
@@ -978,7 +978,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <Text style={css.eyebrow}>CỘNG ĐỒNG RIÊNG</Text>
             <Text style={css.h2}>Nhóm của tôi</Text></View>
             <Btn small onPress={()=>setDialog('createGroup')}>＋ Tạo</Btn></View>
-          <View style={css.searchWrap}><Text style={css.searchGlyph}>⌕</Text>
+          <View style={css.searchWrap}><Ionicons name="search-outline" size={19} color={P.soft}/>
             <TextInput value={groupQuery} onChangeText={setGroupQuery}
               placeholder="Tìm nhóm..." placeholderTextColor={P.soft} style={css.searchInput}/></View>
         </View>}
