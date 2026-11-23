@@ -32,10 +32,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
       - name: Install Android platform and build tools
-        run: sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$ANDROID_HOME"
+          sdkmanager_bin="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -x "$sdkmanager_bin"
+          "$sdkmanager_bin" --install 'platforms;android-36' 'build-tools;36.0.0'
       - name: Verify website association configuration
         run: |
           python - <<'PY'
