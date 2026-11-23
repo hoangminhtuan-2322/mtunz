@@ -12,12 +12,10 @@ Trên điện thoại cần kết nối Internet và trình duyệt Android hỗ
 
 ## Quy trình bản phát hành có chữ ký cố định
 
-Không bao giờ commit keystore hoặc mật khẩu vào repo công khai. **Giữ một keystore cố định, sao lưu ngoại tuyến** để các bản cập nhật có cùng chữ ký. Nhà phát hành tạo keystore riêng trên máy tin cậy, ví dụ:
+Không bao giờ commit keystore hoặc mật khẩu vào repo công khai. **Phải tìm lại đúng khóa ký RIÊNG đã dùng cho APK mtunz 1.0.0** (từ máy build ban đầu, file .jks/.keystore/.p12 hoặc bản sao lưu). **Không dùng \`keytool -genkeypair\` để tạo một khóa mới:** khóa mới không thể cập nhật đè APK cũ. Chỉ có APK 1.0.0 không thể trích xuất khóa riêng. Kiểm tra file khóa gốc trên máy tin cậy:
 
 ```bash
-keytool -genkeypair -keystore mtunz-web-release.jks -alias mtunz_web \
-  -keyalg RSA -keysize 3072 -validity 10000
-keytool -list -v -keystore mtunz-web-release.jks -alias mtunz_web
+keytool -list -v -keystore /duong-dan/keystore-goc.jks -alias TEN_ALIAS_GOC
 ```
 
 Lấy SHA-256 certificate fingerprint do `keytool -list -v` in ra, thêm vào đúng entry `com.mtunz.web` của `static/android-assetlinks.json`, commit và **triển khai phiên bản này lên Render**. Kiểm tra `https://mtunz.onrender.com/.well-known/assetlinks.json` trả JSON chứa fingerprint vừa thêm. Khi phát hành trên Google Play với Play App Signing, cần thêm **Play app signing certificate SHA-256** (có thể khác upload key) vào cùng danh sách.
@@ -29,7 +27,7 @@ Trong **GitHub → Settings → Secrets and variables → Actions**, tạo bốn
 - `MTUNZ_ANDROID_WEB_KEY_ALIAS`: alias của khóa.
 - `MTUNZ_ANDROID_WEB_KEY_PASSWORD`: mật khẩu của khóa.
 
-Workflow `.github/workflows/android-web-apk.yml` sẽ build, kiểm tra manifest, cài/chạy thử trên emulator và, nếu **đủ cả bốn secrets**, chỉ tạo `mtunz-web-android-RELEASE-stable-signing` khi SHA-256 chứng chỉ trùng với fingerprint trong assetlinks. Sau khi giải nén artifact, APK phát hành là `mtunz-web-release.apk`. Workflow còn tạo artifact `mtunz-web-android-PLAY-RELEASE-aab` chứa `mtunz-web-play.aab` để tải lên **Google Play Console → Internal testing**. AAB chỉ có khi cấu hình đủ bí mật ký. Nếu không có secrets, chỉ có APK thử nghiệm; thiếu một phần secrets sẽ làm workflow thất bại để tránh tạo bản phát hành ký sai.
+Khi dùng **Actions → Build mtunz Android (web-synced TWA) → Run workflow** trên nhánh main, workflow `.github/workflows/android-web-apk.yml` sẽ build, kiểm tra manifest, cài/chạy thử trên emulator và, nếu **đủ cả bốn secrets của khóa GỐC**, chỉ tạo `mtunz-web-android-RELEASE-stable-signing` khi SHA-256 chứng chỉ trùng với fingerprint trong assetlinks. Sau khi giải nén artifact, APK phát hành là `mtunz-web-release.apk`. Workflow còn tạo artifact `mtunz-web-android-PLAY-RELEASE-aab` chứa `mtunz-web-play.aab` để tải lên **Google Play Console → Internal testing**. AAB chỉ có khi cấu hình đủ bí mật ký. Các lần chạy CI thông thường (push/PR) chỉ tạo APK preview có khóa debug. Khi chủ dự án chọn Run workflow để **ký phát hành**, thiếu bất kỳ secrets nào sẽ làm job thất bại; không bao giờ dùng khóa mới hoặc khóa debug để phát hành bản cập nhật đè.
 
 ## Google Play Protect và cách phân phối
 
@@ -77,3 +75,74 @@ Không yêu cầu người dùng xóa app cũ khi họ có thể còn dữ liệ
 Mọi thay đổi chức năng phải phát triển trên mã nguồn `android-web/` và website
 mtunz tương ứng, sau đó mới build một APK mới. Không tự ý chuyển dự án sang
 `com.mtunz.mobile` hoặc dùng logo khác.
+
+
+## Chặn sai chữ ký hoặc sai gói trước khi phát hành
+
+```bash
+python android-web/tools/verify_app_identity.py
+python android-web/tools/verify_release_artifact.py --apk /duong-dan/mtunz-web-release.apk --aab /duong-dan/mtunz-web-play.aab
+```
+
+Kiểm tra nhận diện: `com.mtunz.web`, versionCode **lớn hơn 1**, và certificate SHA-256 phải đúng:
+`5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C`.
+Không sử dụng `mtunz-web-android-PREVIEW-debug-signed` làm release hoặc để kiểm thử cài đè.
+
+## Test trên thiết bị Android thật trước phát hành
+
+### A. Kiểm tra cập nhật không gỡ ứng dụng (USB/ADB)
+
+Trên **một điện thoại Android thật** đã cài bản mtunz 1.0.0, bật Developer options và USB debugging. Cài Android SDK Platform Tools trên máy tính; lấy APK `mtunz-web-release.apk` **đã ký đúng khóa gốc** từ artifact của Run workflow đã ký.
+
+```bash
+python android-web/tools/device_upgrade_smoke.py --apk /duong-dan/mtunz-web-release.apk
+```
+
+Script kiểm tra chữ ký trước, yêu cầu app 1.0.0 đang cài, thực hiện `adb install -r` **không xóa app/data**, xác nhận versionCode được tăng, mở ứng dụng. Nếu bất kỳ điều kiện nào không đạt, dừng lại. **Không gỡ bản gốc** để né lỗi ký; như vậy sẽ làm mất khả năng thử cập nhật giữ dữ liệu.
+
+### B. Firebase Test Lab — smartphone thật tại trung tâm Google
+
+Tạo project Firebase/Google Cloud có Test Lab và quyền billing (nếu tính phí). Lưu:
+- GitHub Actions repository secret `MTUNZ_FIREBASE_SERVICE_ACCOUNT_JSON`: JSON tài khoản dịch vụ có quyền Test Lab.
+- GitHub Actions repository variable `MTUNZ_FIREBASE_PROJECT_ID`: ID project Cloud.
+
+Xem cặp model/version thực sự hỗ trợ **PHYSICAL**:
+```bash
+gcloud firebase test android models list
+```
+
+Vào Actions → **Test signed mtunz APK on a real Android device (Firebase)** → Run workflow. Nhập:
+- `source_run_id`: ID job Build mtunz Android chạy trên main, có signed APK artifact.
+- `device_model`: model PHYSICAL từ Firebase.
+- `android_version`: version ID thực sự được hỗ trợ với model trên.
+
+Workflow sẽ xác minh ký gốc, chạy Firebase Test Lab Robo trên thiết bị thật, và chỉ khi thành công mới lưu artifact `mtunz-physical-device-qa` với SHA-256 của **đúng APK đã thử**. Robo chỉ đánh giá khởi chạy/điều hướng trước đăng nhập, **không chứng minh đăng nhập, chat, file, push hoặc Admin hoạt động**.
+
+### C. Kiểm thử thủ công bắt buộc với hai điện thoại/tài khoản TEST
+
+Đánh dấu sau khi đã thực sự thử, không tự điền đạt theo build CI:
+
+- [ ] Cài đè v1.0.0 → v1.0.1 bằng khóa gốc, không gỡ; tài khoản/dữ liệu còn nguyên.
+- [ ] Mở app đúng logo, tên mtunz, không bị văng; TWA mở trang web bình thường, không lỗi mất kết nối.
+- [ ] Đăng nhập và đăng xuất; khởi động lại app vẫn theo đúng quy tắc phiên.
+- [ ] Chat 2 chiều với một tài khoản trên web và một tài khoản trên app; gửi/nhận theo thời gian thực, lịch sử không mất sau refresh.
+- [ ] Gửi và nhận ảnh/video/tệp; xem trong app và tải về; xử lý đúng quyền truy cập tệp của điện thoại.
+- [ ] Cho phép thông báo; thử tin mới khi app chuyển nền, khóa màn hình và sau khi vuốt đóng; đối chiếu thông báo web/push theo cài đặt Chrome, OS và máy chủ. Ghi rõ các trường hợp không nhận.
+- [ ] Đăng nhập Admin trên thiết bị được phép; kiểm tra duyệt tài khoản, danh sách online, hỗ trợ và thông báo Admin. Không thử thao tác phá hủy trên tài khoản thật.
+- [ ] Thử Wi-Fi ↔ 4G/5G, màn hình nhỏ, quay dọc/ngang và kết nối yếu.
+- [ ] Đối chiếu cert SHA-256 Google Play **APP SIGNING** với bản 1.0.0 trước khi gửi AAB.
+
+Chú ý: TWA có thể phụ thuộc Chrome/Web Push và thiết lập pin/tiết kiệm pin của hệ điều hành; kiểm thử phải mô tả lỗi cụ thể thay vì ghi “full chức năng” khi chưa chứng minh.
+
+## Phát hành Google Play Internal Testing — không tự công khai
+
+1. Có tài khoản [Google Play Console](https://play.google.com/console/) và hoàn tất xác minh developer, đăng ký package `com.mtunz.web`, điền app content/privacy policy/contact/app access theo yêu cầu Play.
+2. **Cực kỳ quan trọng khi bật Play App Signing:** vào phần chọn signing key và dùng **khóa gốc bản mtunz 1.0.0** làm **app signing key**, không chấp nhận khóa Google tự sinh khác. So sánh chứng chỉ **App signing key certificate** trên Play Console với SHA-256 gốc nêu trên. Upload key và app signing key là **hai khái niệm khác nhau**; APK do Google Play cài dùng **app signing key**. Nếu nó không trùng bản 1.0.0, các máy đã cài APK cũ sẽ gặp lỗi cập nhật.
+3. Tạo Google Play Developer API service account với quyền cần thiết cho ứng dụng trong Play Console. Lưu **GitHub Actions repository secret** `MTUNZ_PLAY_SERVICE_ACCOUNT_JSON`. Không gửi JSON khóa dịch vụ qua chat hoặc commit vào GitHub.
+4. Sau khi **Run workflow build ký gốc**, **Firebase physical run thành công**, và hoàn tất toàn bộ checklist thủ công, mở Actions → **Publish mtunz to Google Play INTERNAL TESTING (manual only)**, nhập đúng 2 run ID, chép SHA-256 **APP SIGNING certificate** từ Play Console, xác nhận hai lựa chọn kiểm thử/cho phép phát hành nội bộ.
+5. Workflow tải **đúng AAB và APK đã kiểm thử**, so sánh bằng chứng SHA-256, kiểm tra chứng chỉ, và chỉ đăng lên track `internal`. Nó **không** tự đăng `production`; kiểm tra thủ công trong Play Console xem bản thử nghiệm đã sẵn sàng cho người thử hay chưa.
+6. Sau khi thử nghiệm nội bộ đạt, chủ dự án mới quyết định phát hành public. Một số tài khoản Play cá nhân mới phải qua closed testing (Google hiện quy định tối thiểu 12 tester trong 14 ngày liên tiếp trước khi có quyền production).
+
+Hướng dẫn của Google: https://developer.android.com/studio/publish/app-signing và https://support.google.com/googleplay/android-developer/answer/9842756 .
+
+**Google Play Protect không có nút “tắt cảnh báo” trong code:** phân phối hợp lệ qua Google Play tránh nhiều cảnh báo tải APK ngoài, nhưng Google vẫn quét ứng dụng và có thể cảnh báo khi có rủi ro. Không yêu cầu ai tắt Play Protect.
