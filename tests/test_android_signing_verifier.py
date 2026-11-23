@@ -59,3 +59,15 @@ def test_accepts_pinned_signer_even_if_reported_twice(monkeypatch, tmp_path):
         lambda *args: SIGNED_OUTPUT * 2 if args[0] == "apksigner" else BADGING,
     )
     verifier.check_apk(apk)
+
+
+def test_prefers_android_sdk_36_tools_over_older_system_install(tmp_path, monkeypatch):
+    sdk = tmp_path / "android-sdk"
+    build = sdk / "build-tools" / "36.0.0"
+    build.mkdir(parents=True)
+    for tool in ("apksigner", "aapt"):
+        (build / tool).write_bytes(b"dummy bin")
+    monkeypatch.setenv("ANDROID_HOME", str(sdk))
+    monkeypatch.setenv("PATH", "")
+    assert verifier.find_tool("apksigner") == str(build / "apksigner")
+    assert verifier.find_tool("aapt") == str(build / "aapt")
