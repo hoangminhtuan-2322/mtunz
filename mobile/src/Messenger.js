@@ -9,6 +9,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   saveSharedFile,uploadAttachment} from './media';
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
+import {createRefreshQueue,mergeRecentWindow} from './realtime';
 
 const P={bg:'#08111f',card:'#14243a',border:'#2c4160',text:'#f4f8ff',soft:'#a5b6cf',accent:'#67bcff',mine:'#245395',bad:'#ff9eac',green:'#79dfbe'};
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
@@ -165,10 +166,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       const next=(response.messages||[]).map(sanitize);
       setMessages(current=>{
         if(before)return dedupe([...next,...current]);
-        if(keyRef.current!==key)return order(next);
-        // Replace the overlapping latest window from the server, preserving older pages.
-        const first=next.length?Number(next[0].id):Infinity;
-        return dedupe([...current.filter(x=>Number(x.id)<first),...next]);
+        // Keep live events received while the REST request was in flight.
+        // Only the overlapping IDs should be replaced by the server snapshot.
+        return mergeRecentWindow(current,next);
       });
       keyRef.current=key;
       if(next.length&&(!before || liveRef.current[key]===undefined))
@@ -229,19 +229,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   // One WebSocket for the entire authenticated mobile session. Reconcile on resume.
   useEffect(()=>{
-    let closed=false,socket=null,retryDelay=1200,refreshTimer=null,retryTimer=null,heartbeatTimer=null;
+    let closed=false,socket=null,retryDelay=1200,retryTimer=null,heartbeatTimer=null;
     const stopHeartbeat=()=>{clearInterval(heartbeatTimer);heartbeatTimer=null;};
-    const schedule=(kinds)=>{
-      if(closed)return;
-      clearTimeout(refreshTimer);
-      refreshTimer=setTimeout(()=>{
-        if(!activeRef.current||closed)return;
-        if(!kinds||kinds.includes('lists'))refreshLists().catch(alertError);
-        const target=roomRef.current;
-        if(target&&kinds?.includes('catchup'))reconcileRoom(target);
-        else if(target&&(!kinds||kinds.includes('chat')))loadWindow(target);
-      },300);
-    };
+    // A second event must not cancel a pending catch-up after reconnect.
+    const refreshQueue=createRefreshQueue(kinds=>{
+      if(!activeRef.current||closed)return;
+      if(!kinds||kinds.includes('lists'))refreshLists().catch(alertError);
+      const target=roomRef.current;
+      if(target&&kinds?.includes('catchup'))reconcileRoom(target);
+      else if(target&&(!kinds||kinds.includes('chat')))loadWindow(target);
+    });
+    const schedule=kinds=>refreshQueue.schedule(kinds);
     const onEvent=event=>{
       let data;try{data=JSON.parse(event.data);}catch{return;}
       const target=roomRef.current;
@@ -342,7 +340,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       schedule(['lists','catchup']);
     });
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
-    return()=>{closed=true;clearTimeout(refreshTimer);clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
+    return()=>{closed=true;refreshQueue.stop();clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
   },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile]);
 

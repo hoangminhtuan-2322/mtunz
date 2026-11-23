@@ -34,6 +34,8 @@ jobs:
           node-version: '22.13'
       - name: Install Expo dependencies
         run: npm install --no-audit --no-fund
+      - name: Regress native realtime catch-up and window merges
+        run: node ../tests/native_realtime_stability.cjs
       - name: Check SDK compatibility
         run: npx expo-doctor
       - name: Export Android application bundle

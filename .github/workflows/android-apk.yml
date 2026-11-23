@@ -79,6 +79,8 @@ jobs:
           printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
           echo "GOOGLE_SERVICES_FILE=./google-services.json" >> "$GITHUB_ENV"
           echo "EXPO_PROJECT_ID=$EXPO_PROJECT_ID" >> "$GITHUB_ENV"
+      - name: Regress native realtime catch-up and window merges
+        run: node ../tests/native_realtime_stability.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
       - name: Check generated native manifest and launch package
