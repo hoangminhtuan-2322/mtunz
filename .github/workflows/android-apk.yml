@@ -1,10 +1,14 @@
-name: Build mtunz Android test APK
+name: Build mtunz native Android preview (debug-signed)
 
 on:
   push:
     branches:
       - main
       - feature/native-mobile-chat-v1
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/android-apk.yml'
+  pull_request:
     paths:
       - 'mobile/**'
       - '.github/workflows/android-apk.yml'
@@ -77,10 +81,28 @@ jobs:
           SIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           test -x "$SIGNER"
           "$SIGNER" verify --verbose "$APK"
+      - name: Smoke-test native Android startup on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            set -e
+            adb install -r mobile/android/app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n com.mtunz.mobile/.MainActivity
+            sleep 22
+            if ! adb shell pidof com.mtunz.mobile >/dev/null; then
+              echo '::error::mtunz native app exited after launch; recent Android logs follow.'
+              adb logcat -d -t 1500 | grep -E 'AndroidRuntime|FATAL EXCEPTION|ReactNativeJS|com.mtunz.mobile' | tail -100 || true
+              exit 1
+            fi
+            echo 'Native Android app remained alive after launch.'
       - name: Upload standalone Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: mtunz-android-standalone-apk
+          name: mtunz-native-android-PREVIEW-debug-signed
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
