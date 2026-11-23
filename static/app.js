@@ -389,6 +389,7 @@ function connectSocket(retry=false){
  socket.onopen=()=>{
   clearTimeout(handshakeTimeout);
   if(state.ws!==socket)return;
+  if(document.hidden){socket.close(1000,'App backgrounded');return;}
   socketRetryDelay=2500;
   v9ConnectionBanner(true);
   reportAlertVisibility(socket);
@@ -398,7 +399,7 @@ function connectSocket(retry=false){
     socket.send(JSON.stringify({type:'presence-heartbeat'}));
   };
   beat();
-  presenceHeartbeatTimer=setInterval(beat,25000);
+  presenceHeartbeatTimer=setInterval(beat,6000);
   if(!retry)return;
   if(state.user?.is_admin)v9ScheduleAdminRefresh(350);
   if(state.user&&!state.user.is_admin){
@@ -624,7 +625,7 @@ document.addEventListener('focusout',event=>{
 },true);
 window.addEventListener('online',()=>{
  v9ConnectionBanner(state.ws?.readyState===WebSocket.OPEN);
- if(state.user&&(!state.ws||state.ws.readyState===WebSocket.CLOSED))connectSocket(true);
+ if(state.user&&!document.hidden&&(!state.ws||state.ws.readyState===WebSocket.CLOSED))connectSocket(true);
 });
 window.addEventListener('offline',()=>v9ConnectionBanner(false));
 document.addEventListener('visibilitychange',()=>{
@@ -3102,7 +3103,13 @@ document.addEventListener('submit',async event=>{
    }
   }
 });
-document.addEventListener('visibilitychange',()=>reportAlertVisibility());
+document.addEventListener('visibilitychange',()=>{
+ reportAlertVisibility();
+ // A hidden tab/app is no longer an active chat session. Closing gracefully
+ // broadcasts offline immediately. Short server timeout is a crash fallback.
+ if(document.hidden&&state.ws?.readyState===WebSocket.OPEN)
+  state.ws.close(1000,'App backgrounded');
+});
 window.addEventListener('pagehide',()=>{
  pageIsUnloading=true;
  reportAlertVisibility(state.ws,false);

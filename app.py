@@ -434,6 +434,8 @@ MAX_JSON_REQUEST = 64 * 1024
 MAX_UPLOAD_REQUEST = 3 * 1024 * 1024
 MAX_WEBSOCKET_EVENT = 16 * 1024
 MAX_WEBSOCKET_EVENTS_PER_WINDOW = 100
+# Idle timeout for heartbeat-aware web/native sockets. Older clients retain protocol keepalive.
+PRESENCE_HEARTBEAT_TIMEOUT = 20
 
 
 def throttle(request: Request, scope: str, limit: int, window: int, identity: str = ''):
@@ -2430,14 +2432,17 @@ async def websocket_events(ws:WebSocket):
         last_session_activity = now()
         heartbeat_enabled = False
         while True:
-            # New browser clients opt in to a heartbeat. A sleeping, killed or
-            # network-disconnected tab cannot keep a phantom online presence.
-            # Legacy/native clients keep their existing connection behavior.
+            # Heartbeat-aware browser/native clients should not remain online
+            # after a network drop or an OS-killed app. Legacy clients still
+            # rely on WebSocket protocol keepalive for compatibility.
             try:
                 raw_message = await asyncio.wait_for(
-                    ws.receive_text(), timeout=75 if heartbeat_enabled else None)
+                    ws.receive_text(), timeout=PRESENCE_HEARTBEAT_TIMEOUT if heartbeat_enabled else None)
             except asyncio.TimeoutError:
-                await ws.close(code=1001)
+                try:
+                    await asyncio.wait_for(ws.close(code=1001), timeout=1)
+                except (RuntimeError, OSError, asyncio.TimeoutError):
+                    pass
                 break
             if uid is not None and now() - last_session_activity >= 120:
                 with db() as c:

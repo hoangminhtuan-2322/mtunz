@@ -229,7 +229,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   // One WebSocket for the entire authenticated mobile session. Reconcile on resume.
   useEffect(()=>{
-    let closed=false,socket=null,retryDelay=1200,refreshTimer=null,retryTimer=null;
+    let closed=false,socket=null,retryDelay=1200,refreshTimer=null,retryTimer=null,heartbeatTimer=null;
+    const stopHeartbeat=()=>{clearInterval(heartbeatTimer);heartbeatTimer=null;};
     const schedule=(kinds)=>{
       if(closed)return;
       clearTimeout(refreshTimer);
@@ -305,25 +306,43 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     };
     function connect(){
       if(closed||!activeRef.current)return;
+      if(socket?.readyState===WebSocket.OPEN||socket?.readyState===WebSocket.CONNECTING)return;
+      clearTimeout(retryTimer);retryTimer=null;
       try{socket=new WebSocket(wsUrl(),[],{headers:{Authorization:'Bearer '+token}});}
       catch{retryTimer=setTimeout(connect,retryDelay);return;}
-      wsRef.current=socket;setConnection('connecting');
-      socket.onopen=()=>{if(closed)return;reportPushVisibility(socket,activeRef.current);retryDelay=1200;setConnection('online');schedule(['lists','catchup']);};
-      socket.onmessage=onEvent;
-      socket.onerror=()=>setConnection('offline');
-      socket.onclose=()=>{if(closed)return;setConnection('offline');
-        if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}};
+      const current=socket;
+      wsRef.current=current;setConnection('connecting');
+      current.onopen=()=>{
+        if(closed||wsRef.current!==current||!activeRef.current){current.close();return;}
+        reportPushVisibility(current,true);
+        const beat=()=>{
+          if(!closed&&wsRef.current===current&&activeRef.current&&current.readyState===WebSocket.OPEN)
+            current.send(JSON.stringify({type:'presence-heartbeat'}));
+        };
+        stopHeartbeat();
+        beat();
+        heartbeatTimer=setInterval(beat,6000);
+        retryDelay=1200;setConnection('online');schedule(['lists','catchup']);
+      };
+      current.onmessage=event=>{if(wsRef.current===current)onEvent(event);};
+      current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
+      current.onclose=()=>{
+        if(wsRef.current!==current)return;
+        stopHeartbeat();if(closed)return;
+        setConnection('offline');
+        if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}
+      };
     }
     connect();
     const sub=AppState.addEventListener('change',state=>{
       activeRef.current=state==='active';
       reportPushVisibility(socket,activeRef.current);
-      if(!activeRef.current){socket?.close();return;}
+      if(!activeRef.current){stopHeartbeat();socket?.close();return;}
       if(socket?.readyState!==WebSocket.OPEN&&socket?.readyState!==WebSocket.CONNECTING)connect();
       schedule(['lists','catchup']);
     });
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
-    return()=>{closed=true;clearTimeout(refreshTimer);clearTimeout(retryTimer);clearInterval(check);
+    return()=>{closed=true;clearTimeout(refreshTimer);clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
   },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile]);
 

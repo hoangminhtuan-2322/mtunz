@@ -240,6 +240,23 @@ def test_admin_online_list_matches_stats_and_groups_sockets_by_account():
     assert admin.get(route).json()['total']==0
 
 
+def test_stale_heartbeat_socket_is_disconnected(monkeypatch):
+    """A killed client is evicted even when no WebSocket close frame arrives."""
+    import app as core
+    from starlette.websockets import WebSocketDisconnect
+
+    admin = logged_admin()
+    member = register_user(admin,'presence_timeout_demo')
+    monkeypatch.setattr(core,'PRESENCE_HEARTBEAT_TIMEOUT',0.2)
+    with member.websocket_connect('/ws') as socket:
+        assert admin.get('/api/admin/online-users').json()['total'] == 1
+        socket.send_json({'type':'presence-heartbeat'})
+        with pytest.raises(WebSocketDisconnect) as ended:
+            socket.receive_text()
+        assert ended.value.code == 1001
+    assert admin.get('/api/admin/online-users').json()['total'] == 0
+
+
 def test_friend_presence_disconnect_sends_last_seen(monkeypatch):
     """Real websocket connection/disconnect emits the latest server timestamp."""
     import app as core
