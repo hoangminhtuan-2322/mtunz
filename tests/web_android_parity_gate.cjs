@@ -17,10 +17,11 @@ function git(args) {
 }
 function changedFileTypes(files, patch='') {
   const webUI=files.filter(p=>p.startsWith('static/') && /\.(js|html|css)$/.test(p));
-  const backend=files.filter(p=>/^(app\.py|features\.py|messaging_v4\.py|mobile_api\.py|world_chat\.py|social_profile\.py|community(?:_plus_v7|_v6)?\.py|admin_ops_v6\.py)$/.test(p));
+  const backend=files.filter(p=>/^(app\.py|features\.py|messaging_v4\.py|mobile_api\.py|chat_library\.py|world_chat\.py|social_profile\.py|community(?:_plus_v7|_v6)?\.py|admin_ops_v6\.py)$/.test(p));
   const newApiRoute=backend.length>0 &&
     patch.split('\n').some(line=>/^\+(?!\+).*(?:@(?:app|router)\.(?:get|post|put|patch|delete|websocket)\s*\()/.test(line));
-  const native=files.filter(p=>p==='mobile/App.js'||/^mobile\/src\/.*\.(?:js|jsx|ts|tsx)$/.test(p));
+  const native=files.filter(p=>p==='mobile/App.js'||p==='mobile/package.json'||
+    p==='mobile/app.json'||/^mobile\/src\/.*\.(?:js|jsx|ts|tsx)$/.test(p));
   const nativeTests=files.filter(p=>/^tests\/(?:native_.*\.cjs|test_native_mobile\.py)$/.test(p));
   return {webUI,backend,newApiRoute,native,nativeTests};
 }
@@ -87,6 +88,11 @@ function selfTest() {
     body:''}).errors.length,1);
   assert.equal(problems({...common,files:['static/colors.css'],
     body:'Parity-Impact: none\nParity-Reason: Web-only theme colors, no functionality.'}).errors.length,0);
+  assert(problems({...common,files:['chat_library.py'],
+    patch:"+@app.get('/api/chats/{scope}/{room_id}/shared')",body:''}).errors.length===1);
+  assert(problems({...common,files:['mobile/package.json'],previousCode:5,currentCode:5,
+    body:''}).errors.some(x=>x.includes('versionCode')));
+
   console.log('Parity change-classifier self-tests passed.');
 }
 if(require.main===module) {
