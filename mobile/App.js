@@ -2,6 +2,7 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,
   ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image,useWindowDimensions} from 'react-native';
 import {SafeAreaProvider,SafeAreaView,initialWindowMetrics} from 'react-native-safe-area-context';
+import {KeyboardProvider} from 'react-native-keyboard-controller';
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
@@ -340,9 +341,14 @@ function AppContent() {
 // One native provider controls Android 15+/iOS safe-area insets across login,
 // Admin and Messenger. The built-in React Native SafeAreaView is iOS-only.
 export default function App(){
-  return <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-    <AppContent/>
-  </SafeAreaProvider>;
+  // Expo SDK 58 Android edge-to-edge does not resize the root for Gboard/IME.
+  // The native keyboard provider supplies animated IME insets to Messenger.
+  // SafeAreaView remains the single owner of system-bar insets.
+  return <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+      <AppContent/>
+    </SafeAreaProvider>
+  </KeyboardProvider>;
 }
 const styles=StyleSheet.create({
   root:{flex:1,backgroundColor:C.bg},
