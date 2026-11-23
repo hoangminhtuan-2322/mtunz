@@ -103,6 +103,12 @@ jobs:
           SIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)
           test -x "$SIGNER"
           "$SIGNER" verify --verbose "$APK"
+      - name: Enable Android emulator hardware acceleration
+        shell: bash
+        run: |
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod a+rw /dev/kvm
+          fi
       - name: Smoke-test native Android startup on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
