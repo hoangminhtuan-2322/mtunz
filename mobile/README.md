@@ -1,6 +1,6 @@
-# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 9 (React Native)
+# mtunz Android NATIVE — tên hiển thị 1.0.0, mã cập nhật 10 (React Native)
 
-Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **9**, versionName **1.0.0**, icon không thay đổi. **Đây là app React Native hiện hành, không phải APK TWA 1.0.0 gốc.** Màn Cá nhân được sắp xếp thành nhóm cài đặt gọn hơn; thông báo nền chỉ hiển thị trạng thái thật, không giả lập Firebase/Expo Push. Android cần versionCode 9 cao hơn 8 để cho phép cập nhật mà không gỡ cài đặt.
+Ứng dụng **React Native + Expo SDK 58**, dùng **cùng FastAPI, PostgreSQL/SQLite, tài khoản và lịch sử chat** với website. Không dùng WebView hoặc database chat riêng. Bản APK native dùng package `com.mtunz.web`, versionCode **10**, versionName **1.0.0**, icon không thay đổi. **Đây là app React Native hiện hành, không phải APK TWA 1.0.0 gốc.** Màn Cá nhân được sắp xếp thành nhóm cài đặt gọn hơn; thông báo nền chỉ hiển thị trạng thái thật, không giả lập Firebase/Expo Push. Android cần versionCode 10 cao hơn 9 để cho phép cập nhật mà không gỡ cài đặt.
 
 ## Đã tích hợp trong mã nguồn
 
@@ -61,7 +61,7 @@ APK từ `mobile/` là ứng dụng React Native tự dựng giao diện đăng 
 
 ### Giữ nguyên logo và cập nhật trực tiếp bản APK 1.0.1
 
-- Package: `com.mtunz.web`. Native 1.0.0 đặt versionCode **9** để cập nhật đè bản Native 1.0.0 trước đó (versionCode 8).
+- Package: `com.mtunz.web`. Native 1.0.0 đặt versionCode **10** để cập nhật đè bản Native 1.0.0 trước đó (versionCode 9).
 - Asset `mobile/assets/icon.png` có Git blob SHA **282a6971e38d51ce570b094e07d5624663bbedbb**, chính xác bằng file logo `android-web/app/src/main/res/drawable-nodpi/mtunz_icon.png` của APK trước.
 - Sử dụng **cùng 4 GitHub Actions secrets** của khóa ký cố định đã dùng cho APK 1.0.1:
   `MTUNZ_ANDROID_WEB_KEYSTORE_BASE64`,
@@ -96,3 +96,7 @@ APK tải ngoài Google Play vẫn có thể kích hoạt thông báo Google Pla
 6. Cài release lên điện thoại Android thật, đăng nhập và bật thông báo trong app, gửi thử; kiểm tra **tin nhắn DM/nhóm, phản hồi hỗ trợ, đăng ký/hỗ trợ admin** khi ứng dụng đóng. HTTP 200 của Expo chỉ là chấp nhận yêu cầu, không khẳng định thông báo đã đến.
 
 Không dùng Preview `com.mtunz.web.preview` để thử FCM production; Preview không có Firebase credentials. Chỉ khi đã xác minh push thực tế và chứng chỉ ký bản 1.0.1 mới phát hành rộng.
+
+### Nâng cấp chat Native versionCode 10
+
+Bản tên hiển thị **1.0.0**, mã cập nhật **10** sử dụng React Native + bộ điều khiển bàn phím native `react-native-keyboard-controller` cho Android edge-to-edge; thanh soạn tin nằm trên IME/Gboard. Tin nhắn mới nhất ở offset 0 của danh sách đảo, gửi tin/mở bàn phím quay về tin cuối, khi cuộn đọc tin cũ có nút nhảy đến tin mới. Ảnh chỉ hiển thị hình và thời gian, không lộ tên file/dung lượng trong bong bóng; tài liệu khác vẫn có tên để tải. Icon thống nhất qua Ionicons. CI kiểm tra `tests/native_chat_quality.cjs` và quy tắc web/native parity vẫn bắt buộc. Cần xác minh thêm trên thiết bị MIUI/Android thực trước khi tuyên bố lỗi bàn phím được khắc phục hoàn toàn.
