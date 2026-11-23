@@ -306,25 +306,32 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     };
     function connect(){
       if(closed||!activeRef.current)return;
+      if(socket?.readyState===WebSocket.OPEN||socket?.readyState===WebSocket.CONNECTING)return;
+      clearTimeout(retryTimer);retryTimer=null;
       try{socket=new WebSocket(wsUrl(),[],{headers:{Authorization:'Bearer '+token}});}
       catch{retryTimer=setTimeout(connect,retryDelay);return;}
-      wsRef.current=socket;setConnection('connecting');
-      socket.onopen=()=>{
-        if(closed||!activeRef.current){socket?.close();return;}
-        reportPushVisibility(socket,true);
+      const current=socket;
+      wsRef.current=current;setConnection('connecting');
+      current.onopen=()=>{
+        if(closed||wsRef.current!==current||!activeRef.current){current.close();return;}
+        reportPushVisibility(current,true);
         const beat=()=>{
-          if(!closed&&activeRef.current&&socket?.readyState===WebSocket.OPEN)
-            socket.send(JSON.stringify({type:'presence-heartbeat'}));
+          if(!closed&&wsRef.current===current&&activeRef.current&&current.readyState===WebSocket.OPEN)
+            current.send(JSON.stringify({type:'presence-heartbeat'}));
         };
         stopHeartbeat();
         beat();
         heartbeatTimer=setInterval(beat,6000);
         retryDelay=1200;setConnection('online');schedule(['lists','catchup']);
       };
-      socket.onmessage=onEvent;
-      socket.onerror=()=>setConnection('offline');
-      socket.onclose=()=>{stopHeartbeat();if(closed)return;setConnection('offline');
-        if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}};
+      current.onmessage=event=>{if(wsRef.current===current)onEvent(event);};
+      current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
+      current.onclose=()=>{
+        if(wsRef.current!==current)return;
+        stopHeartbeat();if(closed)return;
+        setConnection('offline');
+        if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}
+      };
     }
     connect();
     const sub=AppState.addEventListener('change',state=>{
