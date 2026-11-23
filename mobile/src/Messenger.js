@@ -1138,9 +1138,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         onPress={()=>perform('/api/me/social','PATCH',{profile_visibility:x},refreshSocial)}>
         {social.profile_visibility===x?'✓ ':''}{x==='everyone'?'Công khai':x==='friends'?'Chỉ bạn bè':'Riêng tư'}
       </Btn>)}
-      <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',{show_online:!user.show_online})}>
-        {user.show_online?'Ẩn':'Hiện'} trạng thái online</Btn>
-      <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',{show_receipts:!user.show_receipts})}>
+      <View style={css.privacyStatusPanel}>
+        <View style={css.statusRow}><View style={[css.statusDot,!user.show_online&&css.statusIdle]}/>
+          <Text style={css.privacyHeadline}>Trạng thái hoạt động: {user.show_online?'Đang hiển thị':'Đang ẩn'}</Text></View>
+        <Text style={css.muted}>Cài đặt này đồng bộ với website. Khi ẩn, người khác không xem được trạng thái online hoặc lần hoạt động gần nhất của bạn.</Text>
+        <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',
+          {show_online:!user.show_online},async()=>{await onProfile?.();await refreshLists();})}>
+          {user.show_online?'Ẩn trạng thái hoạt động':'Hiện trạng thái hoạt động'}</Btn>
+      </View>
+      <Btn quiet onPress={()=>perform('/api/me/profile','PATCH',
+        {show_receipts:!user.show_receipts},async()=>{await onProfile?.();await refreshLists();})}>
         {user.show_receipts?'Tắt':'Bật'} xác nhận đã đọc</Btn>
       <Text style={css.h2}>Đổi tên có xác minh</Text>
       <Text style={css.muted}>Tên đăng nhập: 1 lần / 60 ngày · tên hiển thị: 2 lần / 30 ngày</Text>
@@ -1274,6 +1281,9 @@ const css=StyleSheet.create({
     alignItems:'center',justifyContent:'center',borderColor:'#3b5776',borderWidth:1},
   detailsCloseText:{color:P.accent,fontSize:20,fontWeight:'800'},
   detailsContent:{padding:16,paddingBottom:40,gap:15},
+  privacyStatusPanel:{padding:14,borderRadius:16,backgroundColor:'#153149',
+    borderWidth:1,borderColor:'#315879',gap:10},
+  privacyHeadline:{color:'#dff3ff',fontSize:13,fontWeight:'900',flexShrink:1},
   detailsCard:{padding:16,borderWidth:1,borderColor:'#355472',borderRadius:20,
     backgroundColor:'#16283f',gap:11},
   detailsSectionTitle:{fontSize:18,color:P.text,fontWeight:'900'},
