@@ -30,3 +30,11 @@ assert(media.includes("data.append('upload_key',uploadKey)"));
 assert(network.includes("signal: controller.signal"));
 assert(push.includes("Notifications.getPermissionsAsync()"));
 console.log('native uploads, request timeout, presence and push refresh assertions passed');
+
+const support=fs.readFileSync(root+'/app.py','utf8');
+for(const required of ["'/api/support/tickets'","sendSupportMessage","createSupportTicket",
+  "data.type==='support-message'","data.type==='support-deleted'"])
+  assert(chat.includes(required),'Missing native in-app support: '+required);
+assert(support.includes("owner_id=u['id'] if u else None"),
+  'Support must authorize with server-resolved account ownership');
+console.log('native authenticated support sync assertions passed');

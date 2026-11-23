@@ -115,14 +115,23 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [groupEditTitle,setGroupEditTitle]=useState(''),[groupEditDescription,setGroupEditDescription]=useState(''),
     [addGroupMembers,setAddGroupMembers]=useState([]),
     [reportReason,setReportReason]=useState('fraud'),[reportDescription,setReportDescription]=useState(''),
-    [reportTarget,setReportTarget]=useState(null);
+    [reportTarget,setReportTarget]=useState(null),
+    [supportTickets,setSupportTickets]=useState([]),
+    [supportPaused,setSupportPaused]=useState(false),
+    [supportTicket,setSupportTicket]=useState(null),
+    [supportMessages,setSupportMessages]=useState([]),
+    [supportClaim,setSupportClaim]=useState(''),
+    [supportDraft,setSupportDraft]=useState(''),
+    [supportBusy,setSupportBusy]=useState(false);
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
     keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    supportTicketRef=useRef(null),
     sendRef=useRef(false);
   roomRef.current=room;
+  supportTicketRef.current=supportTicket;
   // Voice notes use the phone microphone only when explicitly requested.
   const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordState=useAudioRecorderState(recorder,400);
@@ -331,6 +340,20 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(data.type==='world-message'&&target?.scope==='world'&&data.message?.room_id===target.id)
         setMessages(old=>dedupe([...old,sanitize(data.message)]));
       if(data.type==='world-message-removed'&&target?.scope==='world')loadWindow(target);
+      if(data.type==='support-message'){
+        const ticket=supportTicketRef.current;
+        if(ticket&&data.ticket_id===ticket.id&&data.message)
+          setSupportMessages(old=>old.some(m=>m.id===data.message.id)?old:[...old,data.message]);
+        loadSupport().catch(()=>{});
+      }
+      if(data.type==='support-updated'||data.type==='support-deleted'){
+        loadSupport().catch(()=>{});
+        const ticket=supportTicketRef.current;
+        if(ticket&&data.ticket_id===ticket.id){
+          if(data.type==='support-deleted'){supportTicketRef.current=null;setSupportTicket(null);setSupportMessages([]);}
+          else openSupportTicket(ticket).catch(()=>{});
+        }
+      }
       if(data.type==='world-status')setWorldStatus(old=>({...old,...data}));
       if(data.type==='world-rooms-updated')
         invoke('/api/world/rooms').then(value=>setWorldRooms(value.rooms||[])).catch(()=>{});
@@ -565,6 +588,38 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       setWorldStatus(status);setWorldRooms(rooms.rooms||[]);
       if(status.open)openRoom({scope:'world',id:rooms.rooms?.[0]?.id||1});
     }catch(e){alertError(e);}
+  }
+  async function loadSupport(){
+    const data=await invoke('/api/support/tickets');
+    setSupportTickets(data.tickets||[]);setSupportPaused(!!data.paused);
+  }
+  async function openSupportTicket(item){
+    const data=await invoke('/api/support/tickets/'+item.id+'/messages');
+    setSupportTicket({...item,status:data.status||item.status});
+    setSupportMessages(data.messages||[]);
+  }
+  async function createSupportTicket(){
+    if(!supportClaim.trim()||supportBusy)return;
+    setSupportBusy(true);
+    try{
+      const created=await invoke('/api/support/tickets','POST',{
+        kind:'other',claim:supportClaim.trim(),
+      });
+      setSupportClaim('');
+      await loadSupport();
+      await openSupportTicket({id:created.id,kind:'other',claim:supportClaim.trim(),status:'open'});
+    }catch(e){alertError(e);}finally{setSupportBusy(false);}
+  }
+  async function sendSupportMessage(){
+    const ticket=supportTicketRef.current;
+    const body=supportDraft.trim();
+    if(!ticket||ticket.status!=='open'||!body||supportBusy)return;
+    setSupportBusy(true);
+    try{
+      const result=await invoke('/api/support/tickets/'+ticket.id+'/messages','POST',{body});
+      setSupportMessages(old=>old.some(m=>m.id===result.message.id)?old:[...old,result.message]);
+      setSupportDraft('');
+    }catch(e){alertError(e);}finally{setSupportBusy(false);}
   }
   async function loadSettings(){
     await refreshSocial();
@@ -805,7 +860,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Btn quiet onPress={()=>setDialog('security')}>Quản lý thiết bị đăng nhập</Btn>
         </Section>
         <Section title="Hỗ trợ và thông tin">
-          <Btn quiet onPress={()=>setDialog('support')}>Liên hệ hỗ trợ / báo cáo</Btn>
+          <Btn quiet onPress={()=>{setDialog('support');loadSupport().catch(alertError);}}>Liên hệ hỗ trợ / báo cáo</Btn>
           <Btn danger onPress={()=>Alert.alert('Đăng xuất','Đăng xuất khỏi ứng dụng này?',[
             {text:'Hủy',style:'cancel'},{text:'Đăng xuất',onPress:onLogout,style:'destructive'}])}>Đăng xuất</Btn>
         </Section>
@@ -996,9 +1051,43 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         Alert.alert('Thiết bị',JSON.stringify(r.sessions?.map(x=>x.device_name||x.os_name)||[]).slice(0,700)))}>
         Xem thiết bị đăng nhập</Btn>
     </ModalSheet>
-    <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Hỗ trợ">
-      <Text style={css.muted}>Báo cáo lừa đảo, hành vi xấu hoặc đề nghị hỗ trợ qua website; đăng nhập bằng cùng tài khoản.</Text>
-      <Btn quiet onPress={()=>Linking.openURL(API_ORIGIN)}>Mở website mtunz</Btn>
+    <ModalSheet visible={dialog==='support'} onClose={()=>setDialog('')} title="Trung tâm hỗ trợ">
+      {supportTicket?<View style={css.section}>
+        <Btn quiet small onPress={()=>{setSupportTicket(null);setSupportMessages([]);loadSupport().catch(alertError);}}>‹ Danh sách phiếu</Btn>
+        <Text style={css.h2}>Phiếu #{supportTicket.id}</Text>
+        <Text style={css.muted}>{supportTicket.claim||'Yêu cầu hỗ trợ'} · {supportTicket.status}</Text>
+        {supportMessages.map((message,index)=><View key={message.id||index} style={css.rowCard}>
+          <View style={{flex:1,gap:5}}>
+            <Text style={css.strong}>{message.from_admin?'Quản trị viên':'Bạn'}</Text>
+            <Text style={css.muted}>{message.body}</Text>
+          </View>
+        </View>)}
+        {supportTicket.status==='open'?<>
+          <Field value={supportDraft} onChangeText={setSupportDraft}
+            placeholder="Nhập lời nhắn tới quản trị viên..." multiline/>
+          <Btn disabled={supportBusy||!supportDraft.trim()} onPress={sendSupportMessage}>
+            {supportBusy?'Đang gửi…':'Gửi hỗ trợ'}</Btn>
+        </>:<Text style={css.muted}>Phiếu đã đóng. Bạn vẫn có thể xem lịch sử hỗ trợ.</Text>}
+        <Btn quiet small onPress={()=>openSupportTicket(supportTicket).catch(alertError)}>Làm mới tin nhắn</Btn>
+      </View>:<>
+        <Text style={css.muted}>Yêu cầu hỗ trợ đồng bộ giữa ứng dụng và website khi đăng nhập cùng tài khoản.</Text>
+        <Btn quiet small onPress={()=>loadSupport().catch(alertError)}>Làm mới phiếu hỗ trợ</Btn>
+        <Text style={css.h2}>Các yêu cầu của bạn</Text>
+        {supportTickets.map(ticket=><Pressable key={ticket.id} style={css.rowCard}
+          onPress={()=>openSupportTicket(ticket).catch(alertError)}>
+          <View style={{flex:1,gap:4}}>
+            <Text style={css.strong}>#{ticket.id} · {ticket.claim||'Yêu cầu hỗ trợ'}</Text>
+            <Text style={css.muted}>{ticket.status} · Nhấn để xem hội thoại</Text>
+          </View>
+        </Pressable>)}
+        {!supportTickets.length&&<Text style={css.muted}>Bạn chưa có yêu cầu hỗ trợ nào.</Text>}
+        <Text style={css.h2}>Tạo yêu cầu mới</Text>
+        <Text style={css.muted}>{supportPaused?'Trung tâm hỗ trợ đang tạm ngừng nhận yêu cầu mới.':'Mô tả vấn đề để quản trị viên tiếp nhận và phản hồi.'}</Text>
+        <Field value={supportClaim} onChangeText={value=>setSupportClaim(value.slice(0,160))}
+          placeholder="Bạn đang cần hỗ trợ vấn đề gì?" multiline/>
+        <Btn disabled={supportPaused||supportBusy||!supportClaim.trim()} onPress={createSupportTicket}>
+          {supportBusy?'Đang gửi…':'Gửi yêu cầu hỗ trợ'}</Btn>
+      </>}
     </ModalSheet>
     <Modal visible={!!viewer} transparent animationType="fade" onRequestClose={()=>setViewer(null)}>
       <View style={{flex:1,backgroundColor:'#03070ef5',justifyContent:'center',gap:16,padding:8}}>
