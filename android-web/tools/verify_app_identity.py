@@ -1,4 +1,4 @@
-"""Guardrails for updates to the original mtunz Android 1.0.0 APK.
+"""Guardrails for original mtunz logo/package and the new stable signing key.
 
 Source of truth: the user-supplied mtunz-android-1.0.0(1).apk:
   applicationId: com.mtunz.web
@@ -8,7 +8,8 @@ Source of truth: the user-supplied mtunz-android-1.0.0(1).apk:
     5D:DF:61:E2:71:82:93:40:CF:B4:17:85:D5:20:E9:C5:
     5A:18:51:E7:F3:7C:CC:F5:CB:1B:D2:64:48:D6:A4:5C
 
-Never change the app's logo or signing identity without explicit owner approval.
+The owner approved a new stable signing key because the legacy private key is unavailable.
+Do not change the app logo, package ID or NEW signing identity after this release.
 The PNG stored in the repository is the source image; Android resource packing
 can produce different compressed bytes in an APK without changing the artwork.
 """
@@ -26,6 +27,7 @@ GRADLE = ROOT / "android-web/app/build.gradle"
 MANIFEST = ROOT / "android-web/app/src/main/AndroidManifest.xml"
 STRINGS = ROOT / "android-web/app/src/main/res/values/strings.xml"
 ASSETLINKS = ROOT / "static/android-assetlinks.json"
+SIGNING = ROOT / "android-web/release-signing.json"
 
 # Git object SHA-1 of the original PNG committed to mtunz main.
 # This intentionally locks the exact current source artwork and cannot
@@ -95,8 +97,22 @@ def main():
         for item in assetlinks
     ), "Original installed app signing fingerprint removed from assetlinks.")
 
-    print("OK: original APK identity, app logo, website origin and upgrade version preserved.")
-    print("The release must still be signed with the original private key.")
+    signing = json.loads(SIGNING.read_text(encoding="utf-8"))
+    new_cert = "80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B"
+    require(signing.get("package_name") == ORIGINAL_PACKAGE
+            and signing.get("release_cert_sha256") == new_cert
+            and signing.get("legacy_1_0_0_cert_sha256") == ORIGINAL_SIGNER_SHA256,
+            "Pinned original or new signing certificate changed.")
+    require(any(
+        item.get("target", {}).get("namespace") == "android_app"
+        and item["target"].get("package_name") == ORIGINAL_PACKAGE
+        and new_cert in item["target"].get("sha256_cert_fingerprints", [])
+        for item in assetlinks
+    ), "New fixed release certificate missing from Digital Asset Links.")
+
+    print("OK: original mtunz logo, package ID and website origin preserved.")
+    print("OK: new fixed signing cert pinned; legacy certificate remains authorized.")
+    print("NOTE: new-key releases cannot install over the original 1.0.0 APK.")
 
 
 if __name__ == "__main__":
