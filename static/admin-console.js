@@ -277,7 +277,11 @@
   if(e.target.dataset.adminFilter==='status'){const config=valueFor(activeTab());config.status=e.target.value;config.page=0;refreshList();}
  });
  setInterval(()=>{
-  if(!autoRefresh||!adminReady()||document.hidden||document.activeElement?.closest('.admin-page form,.admin-list-tools'))return;
+  // The Admin member table follows actual presence and last activity at a
+  // modest cadence; do not interrupt editing, open actions, or modal dialogs.
+  if(!adminReady()||document.hidden||(!autoRefresh&&activeTab()!=='users'))return;
+  if(document.activeElement?.closest('.admin-page form,.admin-list-tools'))return;
+  if(q('.admin-users-table details[open]')||q('#modal-root [role="dialog"]'))return;
   if(typeof loadAdmin==='function')loadAdmin();
  },60000);
 })();
