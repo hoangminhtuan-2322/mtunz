@@ -29,7 +29,7 @@ Trong **GitHub → Settings → Secrets and variables → Actions**, tạo bốn
 - `MTUNZ_ANDROID_WEB_KEY_ALIAS`: alias của khóa.
 - `MTUNZ_ANDROID_WEB_KEY_PASSWORD`: mật khẩu của khóa.
 
-Workflow `.github/workflows/android-web-apk.yml` sẽ build, kiểm tra manifest, cài/chạy thử trên emulator và, nếu **đủ cả bốn secrets**, chỉ tạo `mtunz-web-android-RELEASE-stable-signing` khi SHA-256 chứng chỉ trùng với fingerprint trong assetlinks. Sau khi giải nén artifact, APK phát hành là `mtunz-web-release.apk`. Nếu không có secrets, chỉ có APK thử nghiệm; thiếu một phần secrets sẽ làm workflow thất bại để tránh tạo bản phát hành ký sai.
+Workflow `.github/workflows/android-web-apk.yml` sẽ build, kiểm tra manifest, cài/chạy thử trên emulator và, nếu **đủ cả bốn secrets**, chỉ tạo `mtunz-web-android-RELEASE-stable-signing` khi SHA-256 chứng chỉ trùng với fingerprint trong assetlinks. Sau khi giải nén artifact, APK phát hành là `mtunz-web-release.apk`. Workflow còn tạo artifact `mtunz-web-android-PLAY-RELEASE-aab` chứa `mtunz-web-play.aab` để tải lên **Google Play Console → Internal testing**. AAB chỉ có khi cấu hình đủ bí mật ký. Nếu không có secrets, chỉ có APK thử nghiệm; thiếu một phần secrets sẽ làm workflow thất bại để tránh tạo bản phát hành ký sai.
 
 ## Google Play Protect và cách phân phối
 
@@ -46,4 +46,4 @@ gradle -p android-web :app:assembleDebug
 gradle -p android-web :app:assembleRelease
 ```
 
-APK debug có thể cài ở `android-web/app/build/outputs/apk/debug/app-debug.apk`; APK release tại `android-web/app/build/outputs/apk/release/app-release-unsigned.apk` **chưa được ký, không thể phát hành trực tiếp**. Dùng `zipalign` và `apksigner` với khóa phát hành như trong workflow. Không đăng tải khóa bí mật, tệp `.jks`, mật khẩu hay cấu hình người dùng vào repo.
+APK debug có thể cài ở `android-web/app/build/outputs/apk/debug/app-debug.apk`; APK release tại `android-web/app/build/outputs/apk/release/app-release-unsigned.apk` **chưa được ký, không thể phát hành trực tiếp**. Tương tự, `app-release.aab` do Gradle xuất ra chưa có chữ ký phát hành; workflow dùng `jarsigner` ký bundle trước khi tải lên Google Play. Dùng `zipalign` và `apksigner` với khóa phát hành như trong workflow. Không đăng tải khóa bí mật, tệp `.jks`, mật khẩu hay cấu hình người dùng vào repo.
