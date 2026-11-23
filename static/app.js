@@ -1876,7 +1876,10 @@ function statCard(label,value,footer){return `<div class="stat"><div class="stat
 function adminOverview(){
  const d=state.adminData||{},s=d.stats||{total_users:0,online:0,pending:0,tickets:0,reserved_slots:0,max_users:100,messages:0};
  const regs=(d.registrations||[]).filter(x=>x.status==='pending').slice(0,5);
- return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}${statCard('Đang online',s.online,'Theo kết nối realtime')}
+ return `<div class="stats-grid">${statCard('Tổng tài khoản',s.total_users,'Không tính tài khoản admin')}<button type="button" class="stat admin-online-card" data-act="admin-online-users">
+ <span class="stat-label">Đang online</span><span class="stat-value">${s.online}</span>
+ <span class="stat-foot">Xem người đang kết nối ${icon('chevron',14)}</span>
+ </button>
  ${statCard('Chờ phê duyệt',s.pending,'Tạo tài khoản mới')}${statCard('Chờ xóa',s.deletion_pending||0,'Có thể hủy trước hạn')}${statCard('Yêu cầu hỗ trợ',s.tickets,'Các cuộc trò chuyện đang mở')}${statCard('Nhóm chat',s.groups||0,'Không gian chung')}${statCard('Tin nhắn',s.messages||0,'Tin nhắn hệ thống')}</div>
  <div class="admin-panels"><section class="card"><div class="row between"><h2>Yêu cầu đăng ký mới</h2><button class="btn ghost sm" data-act="admin-tab" data-tab="registrations">Xem tất cả</button></div>
  <div class="sep"></div>${regs.length?regs.map(r=>`<div class="people-row">${avatar(r.username,false,'sm')}<div class="grow"><b>${esc(r.username)}</b><div class="hint">${date(r.created_at)}</div></div><button class="btn success sm" data-act="admin-decision" data-id="${r.id}" data-approve="1">Duyệt</button><button class="btn danger sm" data-act="admin-decision" data-id="${r.id}" data-approve="0">Từ chối</button></div>`).join(''):'<div class="empty">Không có yêu cầu đang chờ.</div>'}</section>
@@ -2305,10 +2308,42 @@ function sanctionDialog(uid,kind){
 function adminDetailRow(label,value){
  return `<div class="admin-detail-row"><span class="muted">${esc(label)}</span><strong>${value}</strong></div>`;
 }
-async function userDetails(uid){
- const summary=(state.adminData||[]).find(x=>x.id===uid);
+async function showAdminOnlineUsers(){
  modal({
-  title:`Hồ sơ quản trị: ${summary?.username||'#'+uid}`,
+  title:'Người dùng đang online',
+  description:'Danh sách tài khoản đang có kết nối realtime tại thời điểm kiểm tra.',
+  confirm:'Đóng',
+  content:`<div id="admin-online-list"><p class="hint" role="status">Đang tải danh sách…</p></div>
+  <button type="button" class="btn ghost sm" data-act="admin-online-refresh">${icon('refresh',15)} Làm mới danh sách</button>`
+ });
+ await refreshAdminOnlineUsers();
+}
+async function refreshAdminOnlineUsers(){
+ const list=$('#admin-online-list');
+ if(!list)return;
+ try{
+  const result=await api('/api/admin/online-users');
+  if(!list.isConnected)return;
+  const count=document.querySelector('.admin-online-card .stat-value');
+  if(count)count.textContent=result.total;
+  list.innerHTML=`<p class="hint" role="status">${result.total} người · Cập nhật ${deadlineDate(result.checked_at)}</p>${
+   result.users.length?result.users.map(member=>`<div class="people-row admin-online-person">
+    ${avatar(member.display_name||member.username,true,'sm')}
+    <div class="grow"><b>${esc(member.display_name||member.username)}</b>
+    <div class="hint">@${esc(member.username)}${member.public_id?' · #'+esc(member.public_id):''}</div>
+    <div class="hint">${member.sessions} phiên · ${member.connections} kết nối</div>
+    <div class="hint">Ghi nhận gần nhất ${deadlineDate(member.last_seen)}</div></div>
+    <button type="button" class="btn ghost sm" data-act="admin-user-detail" data-id="${member.id}"
+     data-username="${esc(member.username)}">Chi tiết</button>
+   </div>`).join(''):'<p class="empty">Hiện không có người dùng online.</p>'}`;
+ }catch(error){
+  if(list.isConnected)list.textContent=error.message;
+ }
+}
+async function userDetails(uid,username){
+ const summary=Array.isArray(state.adminData)?state.adminData.find(x=>x.id===uid):null;
+ modal({
+  title:`Hồ sơ quản trị: ${summary?.username||username||'#'+uid}`,
   description:'Thông tin chỉ dành cho quản trị viên. Lượt xem này được ghi vào nhật ký kiểm toán.',
   confirm:'Đóng',closable:false,
   content:`<div id="admin-user-details-${uid}" class="admin-detail-loading" role="status" aria-live="polite">
@@ -2666,7 +2701,9 @@ async function clickAction(button){
    if(!candidate)throw Error('Không tìm thấy người dùng được chọn.');
    showPermanentDeleteDialog(candidate);break;
   }
-  case 'admin-user-detail':await userDetails(id);break;
+  case 'admin-online-users':await showAdminOnlineUsers();break;
+  case 'admin-online-refresh':await refreshAdminOnlineUsers();break;
+  case 'admin-user-detail':await userDetails(id,button.dataset.username);break;
   case 'admin-user-friends':await adminUserFriends(id,button);break;
   case 'admin-view-messages':await userMessageLog(id,Number(button.dataset.peer),button);break;
   case 'admin-sanction':sanctionDialog(id,button.dataset.kind);break;
@@ -2736,7 +2773,7 @@ document.addEventListener('click',async event=>{
  const btn=event.target.closest('[data-act]');if(!btn||btn.disabled)return;
  // Only potentially slow navigation/actions show a spinner. No continuous animations.
  const busy=btn.tagName==='BUTTON'&&['app-tab','admin-tab','admin-refresh',
-   'admin-user-detail','admin-user-friends','admin-view-messages','refresh-registration','admin-decision'].includes(btn.dataset.act);
+   'admin-online-users','admin-online-refresh','admin-user-detail','admin-user-friends','admin-view-messages','refresh-registration','admin-decision'].includes(btn.dataset.act);
  if(busy){btn.disabled=true;btn.classList.add('is-loading');btn.setAttribute('aria-busy','true');}
  try{await clickAction(btn);}catch(e){toast(e.message,'error');}
  finally{if(busy&&btn.isConnected){btn.disabled=false;btn.classList.remove('is-loading');btn.removeAttribute('aria-busy');}}

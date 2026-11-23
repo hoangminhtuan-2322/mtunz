@@ -62,6 +62,25 @@ const {chromium}=require('playwright-core');
     'Incoming Admin event must not replace an active input');
    await page.locator('.admin-page textarea').evaluate(el=>el.blur());
    await page.waitForFunction(()=>window.__v9AdminReloads===1,{timeout:2000});
+   const at=Math.floor(Date.now()/1000);
+   await page.route('**/api/admin/online-users',route=>route.fulfill({json:{
+    total:1,checked_at:at,users:[{id:12,public_id:100012,username:'online_member',
+      display_name:'Thành viên online',sessions:1,connections:2,last_seen:at}]
+   }}));
+   await page.route('**/api/admin/users/12/details',route=>route.fulfill({json:{
+    user:{id:12,username:'online_member',display_name:'Thành viên online',session_count:1}
+   }}));
+   await page.evaluate(()=>{
+    document.querySelector('body > .admin-page')?.remove();
+    state.adminTab='overview';
+    state.adminData={stats:{online:1,messages:0}};
+    renderAdmin();
+   });
+   await page.getByRole('button',{name:/Đang online/}).click();
+   const online=page.locator('#admin-online-list');
+   await online.getByText('1 phiên · 2 kết nối').waitFor();
+   await online.getByRole('button',{name:'Chi tiết',exact:true}).click();
+   await page.getByRole('heading',{name:'Hồ sơ quản trị: online_member'}).waitFor();
    await page.close();
   }
   console.log('Web V9 browser tests passed on 320px, 390px and desktop.');

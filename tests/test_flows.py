@@ -213,3 +213,28 @@ def test_new_member_ids_are_random_numeric_unique_and_searchable(monkeypatch):
     third=register_user(admin,'id_collision')
     assert third.get('/api/me').json()['user']['id']==unused
     assert admin.get('/api/me').json()['user']['id']==original_admin
+
+
+def test_admin_online_list_matches_stats_and_groups_sockets_by_account():
+    admin=logged_admin()
+    member=register_user(admin,'online_admin_demo')
+    member_id=member.get('/api/me').json()['user']['id']
+    route='/api/admin/online-users'
+    assert TestClient(app).get(route).status_code==401
+    assert member.get(route).status_code==403
+    assert admin.get(route).json()['users']==[]
+    with member.websocket_connect('/ws'):
+        with member.websocket_connect('/ws'):
+            response=admin.get(route)
+            assert response.status_code==200 and response.headers['cache-control']=='no-store'
+            result=response.json()
+            assert result['total']==admin.get('/api/admin/stats').json()['online']==1
+            [online]=result['users']
+            assert online['id']==member_id and online['username']=='online_admin_demo'
+            assert online['sessions']==1 and online['connections']==2 and online['last_seen']>0
+            assert set(online)=={'id','public_id','username','display_name','last_seen','sessions','connections'}
+            # Ignore sockets whose backing sessions are no longer valid.
+            with db() as c:
+                c.execute('UPDATE sessions SET expires_at=0 WHERE user_id=?',(member_id,))
+            assert admin.get(route).json()['total']==0
+    assert admin.get(route).json()['total']==0

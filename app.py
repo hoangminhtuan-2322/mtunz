@@ -1756,6 +1756,43 @@ async def reset_account(request:Request,body:ResetAccount):
 
 
 # --- Administrative controls ---
+def admin_online_members(c):
+    """Summarize current sockets backed by an active member session."""
+    socket_counts = defaultdict(int)
+    for session_hash in hub.session_hashes.values():
+        socket_counts[session_hash] += 1
+    hashes = list(socket_counts)
+    members = {}
+    at = now()
+    for offset in range(0, len(hashes), 250):
+        batch = hashes[offset:offset + 250]
+        marks = ','.join('?' for _ in batch)
+        sessions = many(c, f"""SELECT s.token_hash,s.last_seen,u.id,u.public_id,u.username,u.display_name
+                               FROM sessions s JOIN users u ON u.id=s.user_id
+                               WHERE s.token_hash IN ({marks}) AND s.expires_at>?
+                               AND u.is_admin=0 AND u.needs_display_name=0
+                               AND (u.sanction_kind IS NULL OR u.sanction_until<=?)
+                               AND NOT EXISTS (SELECT 1 FROM account_deletion_requests d WHERE d.user_id=u.id)""",
+                        (*batch, at, at))
+        for row in sessions:
+            member = members.setdefault(row['id'], {
+                'id': row['id'], 'public_id': row['public_id'], 'username': row['username'],
+                'display_name': row['display_name'], 'sessions': 0, 'connections': 0, 'last_seen': 0,
+            })
+            member['sessions'] += 1
+            member['connections'] += socket_counts[row['token_hash']]
+            member['last_seen'] = max(member['last_seen'], row['last_seen'] or 0)
+    return sorted(members.values(), key=lambda member: (-member['last_seen'], member['id']))
+
+
+@app.get('/api/admin/online-users')
+async def admin_online_users(request: Request):
+    require_admin(request)
+    with db() as c:
+        members = admin_online_members(c)
+    return {'users': members, 'total': len(members), 'checked_at': now()}
+
+
 @app.get('/api/admin/stats')
 async def admin_stats(request:Request):
     require_admin(request)
@@ -1768,7 +1805,7 @@ async def admin_stats(request:Request):
           'tickets':one(c,"SELECT count(*) n FROM tickets WHERE status='open'")['n'],
           'messages':one(c,'SELECT count(*) n FROM messages')['n']+one(c,'SELECT count(*) n FROM group_messages')['n'],
           'groups':one(c,'SELECT count(*) n FROM chat_groups')['n'],
-          'online':sum(bool(v) for uid,v in hub.users.items() if uid!=1)}
+          'online':len(admin_online_members(c))}
 
 
 @app.get('/api/admin/registrations')
