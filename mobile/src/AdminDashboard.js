@@ -23,6 +23,9 @@ function Tile({title,value}){return <View style={s.tile}><Text style={s.value}>{
 
 export default function AdminDashboard({token,onLogout,onExpired}){
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
+ const [audit,setAudit]=useState([]),[auditTotal,setAuditTotal]=useState(0),
+  [auditOffset,setAuditOffset]=useState(0),[auditQuery,setAuditQuery]=useState(''),
+  [auditDetail,setAuditDetail]=useState(null),[auditLoading,setAuditLoading]=useState(false);
  const [userSort,setUserSort]=useState('oldest'),[presenceClock,setPresenceClock]=useState(Date.now());
  const [tab,setTab]=useState('home'),[stats,setStats]=useState({}),[registration,setRegistration]=useState([]),
   [tickets,setTickets]=useState([]),[users,setUsers]=useState([]),[approvals,setApprovals]=useState([]),
@@ -144,6 +147,19 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   try{setSelectedUser((await call('/api/admin/users/'+item.id+'/details')).user);}
   catch(e){setError(e.message);}
  }
+ async function loadAudit(offset=0){
+  setAuditLoading(true);setError('');
+  try{
+   const q=encodeURIComponent(auditQuery.trim().slice(0,90));
+   const result=await call('/api/admin/audit?limit=30&offset='+offset+'&q='+q);
+   setAudit(result.logs||[]);setAuditTotal(result.total||0);
+   setAuditOffset(offset);setAuditDetail(null);
+  }catch(e){setError(e.message);}finally{setAuditLoading(false);}
+ }
+ async function openAudit(item){
+  try{const result=await call('/api/admin/audit/'+item.id);setAuditDetail(result.event||null);}
+  catch(e){setError(e.message);}
+ }
  async function loadWorldAdmin(){
   try{setWorldConfig((await call('/api/admin/world')).config);}
   catch(e){setError(e.message);}
@@ -240,7 +256,8 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan','grid-outline'],['registrations','Duyệt','checkmark-done-outline'],
   ['support','Hỗ trợ','headset-outline'],['approvals','Thiết bị','phone-portrait-outline'],
-  ['users','Thành viên','people-outline'],['worldAdmin','Thế giới','earth-outline']];
+  ['users','Thành viên','people-outline'],['worldAdmin','Thế giới','earth-outline'],
+  ['audit','Nhật ký','receipt-outline']];
  return <View style={{flex:1,backgroundColor:P.bg}}>
   <View style={s.top}><View style={s.adminBrandRow}>
     <Image source={require('../assets/brand-logo.png')} style={s.adminLogo} resizeMode="contain"/>
@@ -253,13 +270,13 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     contentContainerStyle={s.page}>
    <View style={s.hero}>
     <Text style={s.heroEyebrow}>QUẢN TRỊ MTUNZ</Text>
-    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':tab==='worldAdmin'?'Điều hành chat thế giới':'Quản lý thành viên'}</Text>
+    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':tab==='worldAdmin'?'Điều hành chat thế giới':tab==='audit'?'Nhật ký quản trị':'Quản lý thành viên'}</Text>
     <Text style={s.heroSub}>Theo dõi hoạt động và xử lý công việc trực tiếp trên điện thoại.</Text>
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:9,paddingBottom:12}}>
     {tabs.map(([id,label,iconName])=><Pressable key={id} accessibilityRole="tab"
       accessibilityState={{selected:tab===id}}
-      onPress={()=>{setTab(id);setError('');setNotice('');if(id==='worldAdmin')void loadWorldAdmin();}}
+      onPress={()=>{setTab(id);setError('');setNotice('');if(id==='worldAdmin')void loadWorldAdmin();if(id==='audit')void loadAudit(0);}}
       style={[s.tab,tab===id&&s.active]}>
       <Ionicons name={iconName} size={17} color={tab===id?P.accent:P.muted}/>
       <Text style={{color:P.ink,fontWeight:tab===id?'800':'600',fontSize:12}}>{label}</Text>
@@ -269,7 +286,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
     <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
-    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
+    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}if(tab==='audit'){void loadAudit(auditOffset);return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box>
     <Text style={s.head}>Thông báo quản trị</Text>
@@ -376,6 +393,34 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        <Text numberOfLines={2} style={s.muted}>{item.claim||'Không có nội dung'}</Text>
        <Text style={s.muted}>Trạng thái: {item.status}</Text>
      </Pressable>)}
+   </Box>}
+   {tab==='audit'&&<Box>
+     <Text style={s.head}>Lịch sử thao tác quản trị ({auditTotal})</Text>
+     <Text style={s.muted}>Dữ liệu lấy trực tiếp từ nhật ký máy chủ, có phân trang và chi tiết sự kiện.</Text>
+     <Field placeholder="Tìm thao tác hoặc quản trị viên" value={auditQuery}
+       onChangeText={v=>setAuditQuery(v.slice(0,90))}/>
+     <Action label={auditLoading?'Đang tìm…':'Tìm nhật ký'} disabled={auditLoading}
+       onPress={()=>loadAudit(0)}/>
+     {auditDetail&&<View style={s.item}>
+       <Text style={s.label}>Sự kiện #{auditDetail.id} · {auditDetail.action}</Text>
+       <Text style={s.muted}>@{auditDetail.admin_username} · {new Date(auditDetail.created_at*1000).toLocaleString('vi-VN')}</Text>
+       <Text style={s.muted} selectable>{auditDetail.detail||'Không có thông tin bổ sung.'}</Text>
+       <Action subtle label="Đóng chi tiết" onPress={()=>setAuditDetail(null)}/>
+     </View>}
+     {audit.length===0&&!auditLoading?<Text style={s.muted}>Không có thao tác phù hợp.</Text>:null}
+     {audit.map(item=><Pressable key={item.id} accessibilityRole="button" style={s.item}
+       onPress={()=>openAudit(item)}>
+       <Text style={s.label}>{item.action||'Thao tác'} · #{item.id}</Text>
+       <Text style={s.muted}>@{item.admin_username||'Admin'} · {new Date(item.created_at*1000).toLocaleString('vi-VN')}</Text>
+       <Text numberOfLines={2} style={s.muted}>{item.detail||'Chạm để xem chi tiết'}</Text>
+       <Text style={s.onlineLabel}>Xem chi tiết</Text>
+     </Pressable>)}
+     <View style={s.actions}>
+       <Action subtle label="Trang trước" disabled={auditLoading||auditOffset===0}
+         onPress={()=>loadAudit(Math.max(0,auditOffset-30))}/>
+       <Action subtle label="Trang tiếp" disabled={auditLoading||auditOffset+30>=auditTotal}
+         onPress={()=>loadAudit(auditOffset+30)}/>
+     </View>
    </Box>}
    {tab==='users'&&<Box><Text style={s.head}>Thành viên & hoạt động</Text>
     <Text style={s.muted}>Trực tuyến dựa vào kết nối máy chủ, không phải trạng thái tài khoản.</Text>
