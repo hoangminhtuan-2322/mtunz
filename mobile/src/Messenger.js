@@ -12,8 +12,9 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import SharedConversationGallery from './SharedConversationGallery';
+import {friendPresence} from './presence';
 
-const P={bg:'#08111f',card:'#14243a',border:'#2c4160',text:'#f4f8ff',soft:'#a5b6cf',accent:'#67bcff',mine:'#245395',bad:'#ff9eac',green:'#79dfbe'};
+const P={bg:'#071320',card:'#11253a',border:'#294661',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',mine:'#2760a6',bad:'#ff9eac',green:'#73e0bd'};
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
 const dedupe=rows=>order([...new Map(rows.map(m=>[m.id,m])).values()]);
 const label=f=>f?.nickname||f?.display_name||f?.username||f?.title||'Thành viên';
@@ -117,6 +118,7 @@ function Message({item,own,token,onSelect,onOpen}){
 
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
+  const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
     [groups,setGroups]=useState([]),[notices,setNotices]=useState([]),[requests,setRequests]=useState([]),
     [worldStatus,setWorldStatus]=useState({open:false}),[worldRooms,setWorldRooms]=useState([]),
@@ -153,6 +155,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
     keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    presenceVersionRef=useRef(0),presenceEventsRef=useRef(new Map()),
     supportTicketRef=useRef(null),
     sendRef=useRef(false);
   roomRef.current=room;
@@ -204,10 +207,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   },[token,onExpired]);
   const refreshLists=useCallback(async()=>{
     const requested=++listRequestRef.current;
+    const presenceBefore=presenceVersionRef.current;
     const tasks=await Promise.allSettled([
       invoke('/api/friends'),invoke('/api/groups'),invoke('/api/notifications')]);
     if(requested!==listRequestRef.current)return;
-    if(tasks[0].status==='fulfilled')setFriends(tasks[0].value.friends||[]);
+    if(tasks[0].status==='fulfilled')setFriends((tasks[0].value.friends||[]).map(friend=>{
+      const event=presenceEventsRef.current.get(friend.other_id);
+      if(!event||event.version<=presenceBefore)return friend;
+      return {...friend,online:event.online,last_seen:event.last_seen||friend.last_seen};
+    }));
     if(tasks[1].status==='fulfilled')setGroups(tasks[1].value.groups||[]);
     if(tasks[2].status==='fulfilled'){
       const n=tasks[2].value.notifications||[];
@@ -334,9 +342,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         }
       }
       if(data.type==='presence'&&Number.isSafeInteger(data.user_id)){
-        // Keep presence badges in sync with the web without waiting for polling.
+        const stamp=Number(data.last_seen);
+        const event={online:data.online===true,
+          last_seen:Number.isFinite(stamp)&&stamp>0?stamp:null,
+          version:++presenceVersionRef.current};
+        presenceEventsRef.current.set(data.user_id,event);
         setFriends(old=>old.map(friend=>friend.other_id===data.user_id?
-          {...friend,online:!!data.online,last_seen:data.last_seen}:friend));
+          {...friend,online:event.online,last_seen:event.last_seen||friend.last_seen}:friend));
+        setPresenceClock(Date.now());
       }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
         setMessages(old=>dedupe([...old,sanitize(data.message)]));
@@ -463,7 +476,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return()=>sub.remove();
   },[openRoom]);
   const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);roomRef.current=null;setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
+  useEffect(()=>{
+    const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
+    const interval=setInterval(tick,30000);
+    const sub=AppState.addEventListener('change',tick);
+    return()=>{clearInterval(interval);sub.remove();};
+  },[]);
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
+  const peerStatus=friendPresence(peer,connection==='online',presenceClock);
   async function openAttachment(file){
     if(file?.mime?.startsWith('image/')){setViewer(file);return;}
     await saveSharedFile(file,token).catch(alertError);
@@ -667,8 +687,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   const tabs=[['dm','Tin nhắn','▣'],['groups','Nhóm','▦'],['people','Bạn bè','♧'],['world','Thế giới','◎'],['settings','Cá nhân','⚙']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
-  const matchingFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&
-    label(f).toLocaleLowerCase('vi-VN').includes(inboxQuery.trim().toLocaleLowerCase('vi-VN')));
+  const acceptedFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted);
+  const activeFriends=connection==='online'?acceptedFriends.filter(f=>f.online===true):[];
+  const unreadTotal=acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0);
+  const matchingFriends=acceptedFriends.filter(f=>
+    label(f).toLocaleLowerCase('vi-VN').includes(inboxQuery.trim().toLocaleLowerCase('vi-VN'))&&
+    (inboxFilter==='all'||inboxFilter==='unread'&&Number(f.unread||0)>0||
+      inboxFilter==='online'&&connection==='online'&&f.online===true));
   const matchingGroups=groups.filter(g=>(g.title||'').toLocaleLowerCase('vi-VN')
     .includes(groupQuery.trim().toLocaleLowerCase('vi-VN')));
 
@@ -680,12 +705,28 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {room?<Text style={css.backGlyph}>‹</Text>:
           <Image source={require('../assets/brand-logo.png')} style={css.webIcon} resizeMode="contain"/>}
       </Pressable>
-      <View style={{flex:1,gap:3}}>
-        {!room&&<Text style={css.eyebrow}>MTUNZ MESSENGER</Text>}
+      {!!room&&room.scope==='dm'&&<View style={css.headerPeerAvatar}>
+        {peer?.avatar_url?<Image source={avatarSource(peer.avatar_url,token)} style={css.headerPeerImage}/>:
+          <Text style={css.headerPeerInitial}>{roomTitle.slice(0,1).toUpperCase()}</Text>}
+        {peerStatus.online&&<View style={css.headerPeerOnline}/>}
+      </View>}
+      <View style={{flex:1,minWidth:0,gap:4}}>
+        {!room&&<Text style={css.eyebrow}>MTUNZ · KẾT NỐI REALTIME</Text>}
         <Text style={css.title} numberOfLines={1}>{room?roomTitle:currentTab}</Text>
-        <View style={css.statusRow}><View style={[css.statusDot,connection!=='online'&&css.statusOffline]}/>
-          <Text style={css.statusText}>{typing?'Đang nhập tin nhắn…':
-             connection==='online'?'Đã kết nối · Đồng bộ trực tiếp':'Đang kết nối lại…'}</Text></View>
+        <View style={css.statusRow}>
+          {(room?.scope!=='dm'||peerStatus.kind!=='hidden')&&<View
+            style={[css.statusDot,room?.scope==='dm'?
+              (peerStatus.online?null:peerStatus.kind==='syncing'?css.statusOffline:css.statusIdle):
+              connection!=='online'?css.statusOffline:null]}/>}
+          <Text numberOfLines={2} style={css.statusText}>
+            {room?.scope==='dm'?(typing?'Đang nhập tin nhắn…':
+              peerStatus.short||'Không chia sẻ trạng thái hoạt động'):
+              room?.scope==='group'?(typing?'Đang nhập tin nhắn…':
+                (group?.member_count||'Nhóm')+' thành viên · '+(connection==='online'?'Đã đồng bộ':'Đang kết nối')):
+              room?.scope==='world'?(typing?'Đang nhập tin nhắn…':connection==='online'?'Chat thế giới · Trực tuyến':'Đang kết nối lại…'):
+              connection==='online'?'Đã kết nối · Đồng bộ trực tiếp':'Đang kết nối lại…'}
+          </Text>
+        </View>
       </View>
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Text style={css.headerActionText}>Chi tiết</Text></Pressable>}
