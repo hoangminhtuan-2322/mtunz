@@ -140,7 +140,8 @@ export default function SharedConversationGallery({room,token,onError}){
           videoUri?<NativeVideo key={videoUri} uri={videoUri}/>:
           <Text style={styles.subtitle}>Không thể phát video này.</Text>}
       <Tap onPress={()=>saveSharedFile(preview,token).catch(onError)} style={styles.save}>
-        <Text style={styles.actionText}>↓ Lưu / chia sẻ tệp</Text>
+        <Ionicons name="download-outline" size={18} color={C.text}/>
+        <Text style={styles.actionText}>{preview.mime?.startsWith('image/')?'Lưu / chia sẻ ảnh':'Lưu / chia sẻ tệp'}</Text>
       </Tap>
     </View>:null}
     {busy&&!rows.length?<View style={styles.loading}>
@@ -150,13 +151,14 @@ export default function SharedConversationGallery({room,token,onError}){
     {!!message?<View style={styles.notice}><Text style={styles.warning}>{message}</Text>
       <Tap onPress={()=>load(null)}><Text style={styles.actionText}>Thử lại</Text></Tap></View>:null}
     {!busy&&!message&&!rows.length?<View style={styles.empty}>
-      <Text style={styles.emptyGlyph}>{SHARED_TABS.find(t=>t[0]===kind)?.[2]}</Text>
+      <Ionicons name={SHARED_TABS.find(t=>t[0]===kind)?.[2]||'albums-outline'}
+         size={33} color={C.accent}/>
       <Text style={styles.emptyText}>{kind==='images'?'Chưa có ảnh được chia sẻ':
         kind==='videos'?'Chưa có video được chia sẻ':
         kind==='files'?'Chưa có tệp được chia sẻ':'Chưa có liên kết nào'}</Text>
     </View>:null}
     {kind==='images'?<View style={styles.grid}>{rows.map(row=><Pressable key={row.id}
-      accessibilityRole="button" accessibilityLabel={'Xem ảnh '+(row.name||'')}
+      accessibilityRole="button" accessibilityLabel="Xem ảnh đã chia sẻ"
       onPress={()=>open(row)} style={styles.tile}>
       <Image source={attachmentSource(sharedFile(row),token)} resizeMode="cover"
         style={styles.tileImage}/>
