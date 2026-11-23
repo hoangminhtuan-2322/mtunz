@@ -1,0 +1,58 @@
+name: Check Firebase Expo push readiness (no secret disclosure)
+on:
+  push:
+    branches: ['chore/firebase-connection-check-20261123']
+    paths: ['.github/workflows/firebase-connection-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  check-push-connection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GOOGLE_SERVICES_JSON: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+      EXPO_FCM_V1_READY: ${{ vars.EXPO_FCM_V1_READY }}
+    steps:
+      - name: Verify configuration presence without leaking credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '### mtunz Firebase / Expo Push readiness' >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$EXPO_PROJECT_ID" ]]; then
+            echo '- Expo EAS project ID: **MISSING**' >> "$GITHUB_STEP_SUMMARY"
+            echo '::warning::EXPO_PROJECT_ID variable is missing.'
+          elif [[ "$EXPO_PROJECT_ID" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]]; then
+            echo '- Expo EAS project ID: **present / format valid**' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '- Expo EAS project ID: **INVALID format**' >> "$GITHUB_STEP_SUMMARY"
+            echo '::warning::EXPO_PROJECT_ID must be an EAS project UUID.'
+          fi
+          if [[ -z "$GOOGLE_SERVICES_JSON" ]]; then
+            echo '- Android google-services.json: **MISSING**' >> "$GITHUB_STEP_SUMMARY"
+            echo '::warning::MTUNZ_ANDROID_GOOGLE_SERVICES secret is missing.'
+          else
+            if node -e '
+              try {
+                const d=JSON.parse(process.env.GOOGLE_SERVICES_JSON);
+                if(!d.project_info?.project_id || !/^\d{6,20}$/.test(String(d.project_info?.project_number||"")))process.exit(1);
+                const c=(d.client||[]).find(x=>x.client_info?.android_client_info?.package_name==="com.mtunz.web");
+                if(!c?.client_info?.mobilesdk_app_id || !c.api_key?.some(x=>x.current_key))process.exit(1);
+              } catch {process.exit(1)}
+            '; then
+              echo '- Android google-services.json: **present / matches com.mtunz.web**' >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo '- Android google-services.json: **INVALID or wrong package**' >> "$GITHUB_STEP_SUMMARY"
+              echo '::warning::Firebase client JSON is malformed or does not match com.mtunz.web.'
+            fi
+          fi
+          if [[ "$EXPO_FCM_V1_READY" == 'true' ]]; then
+            echo '- FCM v1 credential in Expo: **owner marked ready, not independently verified**' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '- FCM v1 credential in Expo: **NOT MARKED READY**' >> "$GITHUB_STEP_SUMMARY"
+            echo '::warning::Upload FCM v1 service account key to Expo and then set EXPO_FCM_V1_READY=true.'
+          fi
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This check cannot inspect Expo account credentials or prove delivery on a physical phone. Never add FCM private keys to GitHub or these logs.' >> "$GITHUB_STEP_SUMMARY"
