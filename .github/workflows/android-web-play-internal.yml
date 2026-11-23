@@ -71,6 +71,42 @@ jobs:
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: release
+      - name: Download signed release APK checked on the physical device
+        uses: actions/download-artifact@v4
+        with:
+          name: mtunz-web-android-RELEASE-stable-signing
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: release
+      - name: Download physical-device test provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: mtunz-physical-device-qa
+          run-id: ${{ inputs.physical_test_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: physical-test
+      - name: Refuse untested or mismatched APK / AAB release
+        shell: bash
+        env:
+          SOURCE_RUN: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib,json,os
+          from pathlib import Path
+          report=json.loads(Path('physical-test/attestation.json').read_text())
+          expected_run=int(os.environ['SOURCE_RUN'])
+          apk=Path('release/mtunz-web-release.apk')
+          digest=hashlib.sha256(apk.read_bytes()).hexdigest()
+          if report.get('source_run_id')!=expected_run or report.get('apk_sha256')!=digest:
+              raise SystemExit('Physical test did not run against this exact signed APK. REFUSING to publish.')
+          if report.get('test_type')!='firebase-physical-robo':
+              raise SystemExit('Invalid physical test provenance')
+          print('Matched signed APK SHA-256 to a successful Firebase Test Lab device run.')
+          PY
+          python android-web/tools/verify_release_artifact.py --apk release/mtunz-web-release.apk
       - name: Verify original mtunz upload signing certificate
         run: python android-web/tools/verify_release_artifact.py --aab release/mtunz-web-play.aab
       - name: Confirm Google Play credentials were configured
