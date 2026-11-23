@@ -2,7 +2,7 @@ name: Build mtunz TRUE Native Android APK
 
 on:
   push:
-    branches: [main, feature/mtunz-true-native-android-release]
+    branches: [main, feature/mtunz-true-native-android-release, release/mtunz-native-1-1-one-time-sign]
     paths:
       - 'mobile/**'
       - '.github/workflows/android-apk.yml'
@@ -91,7 +91,7 @@ jobs:
             exit 1
           fi
       - name: Require the permanent signing key only for authorized main release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-one-time-sign') }}
         env:
           KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
@@ -107,7 +107,7 @@ jobs:
           test -s "$RUNNER_TEMP/mtunz-fixed-release.jks"
           echo "MTUNZ_NATIVE_KEYSTORE_PATH=$RUNNER_TEMP/mtunz-fixed-release.jks" >> "$GITHUB_ENV"
       - name: Configure release signing (NEVER debug key for distribution)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-one-time-sign') }}
         env:
           MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
@@ -127,7 +127,7 @@ jobs:
           "$SIGNER" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.mtunz.web' versionCode='3' versionName='1.1.0'"
       - name: Enforce fixed release certificate, NOT debug signer
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-one-time-sign') }}
         run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
       - name: Check app launches as native UI on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -139,7 +139,7 @@ jobs:
           working-directory: mobile
           script: bash tools/smoke_native_android.sh
       - name: Upload NATIVE preview (DEBUG-signed, not for updating existing installation)
-        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
+        if: ${{ ! ((github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-one-time-sign')) }}
         uses: actions/upload-artifact@v4
         with:
           name: mtunz-NATIVE-PREVIEW-debug-signed
@@ -147,7 +147,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload NATIVE release (permanent signing key, can update TWA 1.0.1)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/release/mtunz-native-1-1-one-time-sign') }}
         uses: actions/upload-artifact@v4
         with:
           name: mtunz-NATIVE-1.1.0-RELEASE-fixed-key
