@@ -29,11 +29,11 @@ jobs:
       - name: Validate inputs and trusted signed build origin
         shell: bash
         env:
-          GH_TOKEN: \${{ github.token }}
-          RUN_ID: \${{ inputs.source_run_id }}
-          MODEL: \${{ inputs.device_model }}
-          OS_VERSION: \${{ inputs.android_version }}
-          PROJECT_ID: \${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.source_run_id }}
+          MODEL: ${{ inputs.device_model }}
+          OS_VERSION: ${{ inputs.android_version }}
+          PROJECT_ID: ${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
         run: |
           set -euo pipefail
           [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::Invalid source run ID"; exit 1; }
@@ -47,25 +47,25 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mtunz-web-android-RELEASE-stable-signing
-          run-id: \${{ inputs.source_run_id }}
-          repository: \${{ github.repository }}
-          github-token: \${{ github.token }}
+          run-id: ${{ inputs.source_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
           path: release
       - name: Verify upgrade-compatible certificate and application ID
         run: python android-web/tools/verify_release_artifact.py --apk release/mtunz-web-release.apk
       - name: Authenticate to Firebase Test Lab
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: \${{ secrets.MTUNZ_FIREBASE_SERVICE_ACCOUNT_JSON }}
-          project_id: \${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+          credentials_json: ${{ secrets.MTUNZ_FIREBASE_SERVICE_ACCOUNT_JSON }}
+          project_id: ${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
       - name: Install Google Cloud CLI
         uses: google-github-actions/setup-gcloud@v2
       - name: Run Robo smoke test on physical Android hardware
         shell: bash
         env:
-          MODEL: \${{ inputs.device_model }}
-          OS_VERSION: \${{ inputs.android_version }}
-          PROJECT_ID: \${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
+          MODEL: ${{ inputs.device_model }}
+          OS_VERSION: ${{ inputs.android_version }}
+          PROJECT_ID: ${{ vars.MTUNZ_FIREBASE_PROJECT_ID }}
         run: |
           set -euo pipefail
           # Choose a PHYSICAL model/version pair from the Firebase Test Lab
