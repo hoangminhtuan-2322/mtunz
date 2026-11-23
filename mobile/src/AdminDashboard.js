@@ -49,11 +49,12 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   setLastRefresh(Date.now());
  },[call]);
  useEffect(()=>{
-  let alive=true,ws=null,heartbeatTimer=null;
+  let alive=true,ws=null,heartbeatTimer=null,reconnectTimer=null,retryMs=1000;
   const stopHeartbeat=()=>{clearInterval(heartbeatTimer);heartbeatTimer=null;};
+  const stopRetry=()=>{if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}};
   const fetchNow=()=>refresh().catch(e=>{if(alive)setError(e.message);});
   const stop=()=>{
-   stopHeartbeat();
+   stopHeartbeat();stopRetry();
    if(!ws)return;
    reportPushVisibility(ws,false);
    ws.close();ws=null;
@@ -68,6 +69,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
      if(ws!==socket)return;
      if(AppState.currentState!=='active'){stop();return;}
      reportPushVisibility(socket,true);
+     retryMs=1000;stopRetry();fetchNow();
      const beat=()=>{
       if(alive&&ws===socket&&AppState.currentState==='active'&&socket.readyState===WebSocket.OPEN)
        socket.send(JSON.stringify({type:'presence-heartbeat'}));
@@ -76,7 +78,13 @@ export default function AdminDashboard({token,onLogout,onExpired}){
      heartbeatTimer=setInterval(beat,6000);
     };
     socket.onclose=()=>{
-     if(ws===socket){stopHeartbeat();ws=null;}
+     if(ws===socket){
+       stopHeartbeat();ws=null;
+       if(alive&&AppState.currentState==='active'&&!reconnectTimer){
+         const delay=retryMs;retryMs=Math.min(retryMs*2,16000);
+         reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect();},delay);
+       }
+     }
     };
     socket.onmessage=e=>{
      if(ws!==socket)return;
@@ -88,7 +96,12 @@ export default function AdminDashboard({token,onLogout,onExpired}){
      if(['registration-updated','support-updated','support-message','admin-approval-request','admin-security-updated'].includes(data.type))
       fetchNow();
     };
-   }catch{}
+   }catch{
+     if(alive&&AppState.currentState==='active'&&!reconnectTimer){
+       reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect();},retryMs);
+       retryMs=Math.min(retryMs*2,16000);
+     }
+   }
   }
   const timer=setInterval(()=>{if(AppState.currentState==='active'){connect();fetchNow();}},20000);
   const appSub=AppState.addEventListener('change',state=>{
