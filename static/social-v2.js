@@ -233,13 +233,16 @@ document.addEventListener('submit',async event=>{
 document.addEventListener('change',async event=>{
  const el=event.target;
  if(el.matches('input[data-social-world-anon]')){
+  const aliasField=document.querySelector('.world-alias-field');
+  if(aliasField)aliasField.hidden=!el.checked;
+  if(el.checked)document.getElementById('world-anonymous-name')?.focus({preventScroll:true});
   el.disabled=true;
   try{
    await api('/api/me/social',{method:'PATCH',data:{world_anonymous:el.checked}});
    state.user.world_anonymous=el.checked;
    toast(el.checked?'Tin nhắn thế giới mới sẽ hiển thị ẩn danh.':'Tin nhắn mới sẽ hiển thị tên của bạn.','ok');
   }catch(err){el.checked=!el.checked;toast(err.message||'Không thể cập nhật.','error');}
-  finally{el.disabled=false;}
+  finally{el.disabled=false;if(aliasField)aliasField.hidden=!el.checked;}
  }
  if(el.matches('input[data-social-upload]')){
   const kind=el.dataset.socialUpload;

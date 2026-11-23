@@ -5,6 +5,7 @@ whole account for 15 days. The feature remains OFF until an admin opens it.
 Daily schedules use Asia/Ho_Chi_Minh and are evaluated on every request.
 No background worker is needed for opens/closes.
 """
+import unicodedata
 from datetime import datetime, timedelta, time as datetime_time
 from zoneinfo import ZoneInfo
 
@@ -44,6 +45,7 @@ def install(core):
           created_at INTEGER NOT NULL,
           deleted_at INTEGER,
           anonymous INTEGER NOT NULL DEFAULT 0,
+          anonymous_name TEXT NOT NULL DEFAULT '',
           attachment_id INTEGER REFERENCES attachments(id)
         );
         CREATE INDEX IF NOT EXISTS world_messages_recent_idx
@@ -91,6 +93,8 @@ def install(core):
             c.execute('ALTER TABLE world_messages ADD COLUMN anonymous INTEGER NOT NULL DEFAULT 0')
         if 'attachment_id' not in message_fields:
             c.execute('ALTER TABLE world_messages ADD COLUMN attachment_id INTEGER')
+        if 'anonymous_name' not in message_fields:
+            c.execute("ALTER TABLE world_messages ADD COLUMN anonymous_name TEXT NOT NULL DEFAULT ''")
         c.execute("""INSERT INTO world_settings(id,enabled,schedule_enabled,open_minute,close_minute,updated_at)
                      VALUES(1,0,0,540,1320,0) ON CONFLICT(id) DO NOTHING""")
 
@@ -152,8 +156,10 @@ def install(core):
 
     def world_record(c,row,viewer_id=None,admin=False):
         anonymous=bool(row['anonymous'])
+        alias=(row['anonymous_name'] or '').strip() if anonymous else ''
         return {'id':row['id'],'room_id':row['room_id'], 'sender_id':row['sender_id'] if admin or not anonymous else 0,
-                'display_name':('Ẩn danh' if anonymous and not admin else row['display_name'] or 'Thành viên'),
+                'display_name':(alias or 'Ẩn danh') if anonymous and not admin else row['display_name'] or 'Thành viên',
+                'anonymous_name':alias if admin and anonymous else None,
                 'anonymous':anonymous, 'is_mine':viewer_id==row['sender_id'] if viewer_id else False,
                 'body':'' if row['deleted_at'] else row['body'],
                 'created_at':row['created_at'],'deleted':bool(row['deleted_at']),
@@ -183,7 +189,7 @@ def install(core):
             if before>0:
                 where+=' AND m.id<?'
                 params.append(before)
-            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,m.room_id,
+            rows=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,m.anonymous_name,m.room_id,
                                    m.attachment_id,a.original_name AS attachment_name,
                                    a.mime AS attachment_mime,a.size AS attachment_size,u.display_name
                             FROM world_messages m JOIN users u ON u.id=m.sender_id
@@ -196,6 +202,17 @@ def install(core):
         body:str=Field(default='',max_length=1200)
         attachment_id:int|None=None
         room_id:int=Field(default=1,ge=1)
+        anonymous_name:str=Field(default='',max_length=24)
+
+    def safe_world_alias(raw):
+        alias=unicodedata.normalize('NFKC',raw or '').strip()
+        if not alias:
+            return ''
+        if len(alias)<2 or len(alias)>24 or any(unicodedata.category(char).startswith('C') for char in alias):
+            raise HTTPException(422,'Biệt danh ẩn danh phải có 2–24 ký tự hợp lệ.')
+        if alias.casefold() in {'admin','administrator','moderator','mod','mtunz','system','hệ thống','quản trị viên'}:
+            raise HTTPException(422,'Biệt danh này được dành riêng cho hệ thống hoặc quản trị viên.')
+        return alias
 
     @app.post('/api/world/messages')
     async def world_send(request:Request,body:WorldMessage):
@@ -276,11 +293,12 @@ def install(core):
                 c.execute('UPDATE world_penalties SET window_started=?,window_count=?,last_sent_at=? WHERE user_id=?',
                           (started,count,at,user['id']))
                 anonymous=bool(user['world_anonymous'])
-                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous,attachment_id,room_id) VALUES(?,?,?,?,?,?)',
-                                 (user['id'],content,at,int(anonymous),body.attachment_id,body.room_id))
+                alias=safe_world_alias(body.anonymous_name) if anonymous else ''
+                result=c.execute('INSERT INTO world_messages(sender_id,body,created_at,anonymous,anonymous_name,attachment_id,room_id) VALUES(?,?,?,?,?,?,?)',
+                                 (user['id'],content,at,int(anonymous),alias,body.attachment_id,body.room_id))
                 mid=result.lastrowid
                 saved={'id':mid,'room_id':body.room_id,'sender_id':0 if anonymous else user['id'],
-                       'display_name':'Ẩn danh' if anonymous else user['display_name'] or 'Thành viên',
+                       'display_name':(alias or 'Ẩn danh') if anonymous else user['display_name'] or 'Thành viên',
                        'anonymous':anonymous,'body':content,'created_at':at,'deleted':False,
                        'attachment':None}
                 if body.attachment_id:
@@ -320,7 +338,7 @@ def install(core):
                                  ORDER BY p.last_violation_at DESC LIMIT 50''',(timestamp(),timestamp()))
             pending=one(c,"SELECT count(*) AS n FROM user_reports WHERE status='pending'")['n']
             total=one(c,'SELECT COUNT(*) AS n FROM world_messages')['n']
-            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,m.room_id,
+            messages=many(c,'''SELECT m.id,m.sender_id,m.body,m.created_at,m.deleted_at,m.anonymous,m.anonymous_name,m.room_id,
                                    m.attachment_id,a.original_name AS attachment_name,
                                    a.mime AS attachment_mime,a.size AS attachment_size,u.display_name
                                 FROM world_messages m JOIN users u ON u.id=m.sender_id

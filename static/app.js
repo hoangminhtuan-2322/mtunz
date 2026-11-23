@@ -1722,7 +1722,7 @@ function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
-  state.tab==='world'?`${memberHeader('Chat thế giới','Không gian chung · Quy tắc cộng đồng')}${typeof worldPage==='function'?worldPage():worldComingSoon()}`:
+  state.tab==='world'?(typeof worldPage==='function'?worldPage():worldComingSoon()):
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='archive'?`${memberHeader('Lưu trữ','Tin nhắn được cất giữ an toàn')}<div class="main-body">${archiveContent()}</div>`:
   state.tab==='friends'?`${memberHeader('Bạn bè','Quản lý các kết nối của bạn') }<div class="main-body">${friendsContent()}</div>`:
@@ -1731,7 +1731,7 @@ function renderApp(){
   state.tab==='settings'?`${memberHeader('Cài đặt','Bảo mật và tùy chọn hệ thống') }<div class="main-body">${settingsContent()}</div>`:
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
- root().innerHTML=`<div class="shell ${activeMain?'chat-open':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-mode':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
  const sidebar=$('#side-items');
  if(sidebar)sidebar.sidebarMarkup=sidebar.innerHTML;
  const header=$('#chat-header');
