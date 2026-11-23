@@ -1875,7 +1875,7 @@ async def set_capacity(request:Request,body:Capacity):
 @app.get('/api/admin/users')
 async def admin_users(request:Request,q:str=Query('',max_length=120),
                       status:Literal['all','active','locked','banned','pending_deletion']='all',
-                      sort:Literal['newest','oldest','name','activity']='activity',
+                      sort:Literal['newest','oldest','name','activity']='oldest',
                       limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0,le=100000)):
     require_admin(request)
     query=q.strip()
