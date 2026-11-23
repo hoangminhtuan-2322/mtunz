@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {ActivityIndicator,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,SafeAreaView,
+import {ActivityIndicator,AppState,KeyboardAvoidingView,Linking,Platform,Pressable,
   ScrollView,StatusBar,StyleSheet,Text,TextInput,View,Image,useWindowDimensions} from 'react-native';
+import {SafeAreaProvider,SafeAreaView,initialWindowMetrics} from 'react-native-safe-area-context';
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
@@ -23,7 +24,7 @@ function Button({children,onPress,disabled=false,quiet=false}) {
     style={({pressed})=>[styles.button,quiet&&styles.quiet,pressed&&!disabled&&styles.pressed,disabled&&{opacity:.45}]}>
     <Text style={[styles.buttonText,quiet&&{color:C.text}]}>{children}</Text></Pressable>;
 }
-export default function App() {
+function AppContent() {
   const {width:screenWidth,height:screenHeight,fontScale}=useWindowDimensions();
   const compactAuth=screenWidth<390||fontScale>1.15;
   const shortAuth=screenHeight<720;
@@ -334,6 +335,14 @@ export default function App() {
       </ScrollView>
     </KeyboardAvoidingView>
   </SafeAreaView>;
+}
+
+// One native provider controls Android 15+/iOS safe-area insets across login,
+// Admin and Messenger. The built-in React Native SafeAreaView is iOS-only.
+export default function App(){
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+    <AppContent/>
+  </SafeAreaProvider>;
 }
 const styles=StyleSheet.create({
   root:{flex:1,backgroundColor:C.bg},
