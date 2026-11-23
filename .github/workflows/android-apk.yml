@@ -96,6 +96,8 @@ jobs:
         run: node ../tests/native_shared_gallery.cjs
       - name: Verify native Admin operations and PIN protections
         run: node ../tests/native_admin_parity.cjs
+      - name: Verify live presence, privacy and Web parity in native app
+        run: node ../tests/native_smart_presence.cjs
       - name: Verify safe restoration of Android sessions after network outages
         run: node ../tests/native_session_recovery.cjs
       - name: Check responsive Android login on narrow screens
