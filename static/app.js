@@ -1875,7 +1875,7 @@ async function loadAdmin(){
    case 'deletions':update.adminData=(await api('/api/admin/deletions')).requests;break;
    case 'users':{
     const params=new URLSearchParams({q:state.adminQuery,status:state.adminUserStatus||'all',
-      sort:state.adminUserSort||'activity',offset:String(state.adminUserOffset||0)});
+      sort:state.adminUserSort||'oldest',offset:String(state.adminUserOffset||0)});
     const result=await api('/api/admin/users?'+params);
     if(result.offset>0&&result.total<=result.offset&&current()){
      state.adminUserOffset=Math.max(0,Math.floor((result.total-1)/result.limit)*result.limit);
@@ -1998,14 +1998,14 @@ function adminUsers(){
  <input id="admin-user-query" class="input" name="q" placeholder="Tên hiển thị, tên đăng nhập, ID, số điện thoại hoặc email" maxlength="120" value="${esc(state.adminQuery)}"></div>
  <div class="row" style="flex-wrap:wrap;gap:10px">
  <label>Trạng thái <select class="input" name="status">${options([['all','Tất cả'],['active','Hoạt động'],['locked','Đang khóa'],['banned','Đã cấm'],['pending_deletion','Chờ xóa']],state.adminUserStatus||'all')}</select></label>
- <label>Sắp xếp <select class="input" name="sort">${options([['activity','Hoạt động gần đây (online trước)'],['newest','Ngày tham gia mới'],['oldest','Ngày tham gia cũ'],['name','Theo tên']],state.adminUserSort||'activity')}</select></label>
+ <label>Sắp xếp <select class="input" name="sort">${options([['oldest','Ngày tạo: cũ nhất → mới nhất'],['newest','Ngày tạo: mới nhất → cũ nhất'],['activity','Hoạt động gần đây (online trước)'],['name','Theo tên']],state.adminUserSort||'oldest')}</select></label>
  <button type="submit" class="btn primary">${icon('search',16)} Tìm kiếm</button>
  <button type="button" class="btn ghost" data-act="admin-search-clear">Xóa bộ lọc</button></div></form>
  <div class="row between" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
  <span aria-live="polite">${meta.total?`${meta.offset+1}–${Math.min(meta.offset+meta.limit,meta.total)} / ${meta.total} tài khoản`:'0 tài khoản'}</span>
  <div class="row"><button type="button" class="btn ghost sm" data-act="admin-search-page" data-offset="${Math.max(0,meta.offset-meta.limit)}" ${meta.offset?'':'disabled'}>Trang trước</button>
  <button type="button" class="btn ghost sm" data-act="admin-search-page" data-offset="${meta.offset+meta.limit}" ${meta.offset+meta.limit<meta.total?'':'disabled'}>Trang sau</button></div></div>
- <div class="table-scroll admin-users-scroll"><table class="data-table admin-users-table"><thead><tr><th>Người dùng</th><th title="Trạng thái tài khoản, không phải trạng thái trực tuyến">Trạng thái TK</th><th aria-sort="${(state.adminUserSort||'activity')==='activity'?'descending':'none'}">Lần cuối hoạt động</th><th>Ngày tham gia</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
+ <div class="table-scroll admin-users-scroll"><table class="data-table admin-users-table"><thead><tr><th>Người dùng</th><th title="Trạng thái tài khoản, không phải trạng thái trực tuyến">Trạng thái TK</th><th aria-sort="${(state.adminUserSort||'oldest')==='activity'?'descending':'none'}">Lần cuối hoạt động</th><th aria-sort="${(state.adminUserSort||'oldest')==='oldest'?'ascending':state.adminUserSort==='newest'?'descending':'none'}">Ngày tham gia ${(!state.adminUserSort||state.adminUserSort==='oldest')?'↑':state.adminUserSort==='newest'?'↓':''}</th><th>Bạn bè</th><th>Tin nhắn</th><th>Hành động</th></tr></thead><tbody>
  ${data.length?data.map(u=>`<tr><td><div class="row">${avatar(u.username,false,'sm')}<div><b>${esc(u.display_name||u.username)}</b><div class="hint">@${esc(u.username)} · ID #${u.id}${u.public_id?' · Công khai #'+u.public_id:''}</div>
  <div class="hint">${esc(u.phone||'')}${u.phone&&u.email?' · ':''}${esc(u.email||'')}</div></div></div></td>
  <td data-label="Trạng thái tài khoản">${userStatus(u)}${u.deletion_purge_at?`<div class="hint">Hạn: ${deadlineDate(u.deletion_purge_at)}</div>`:''}</td><td data-label="Lần cuối hoạt động">${adminLastActivityCell(u)}</td><td>${date(u.created_at)}</td><td><button type="button" class="btn ghost sm" data-act="admin-user-friends" data-id="${u.id}" aria-label="Xem bạn bè của ${esc(u.display_name||u.username)}">${u.friend_count} bạn bè</button></td><td>${u.message_count}</td>
@@ -2770,7 +2770,7 @@ async function clickAction(button){
    break;
   }
   case 'admin-search-clear':
-   state.adminQuery='';state.adminUserStatus='all';state.adminUserSort='activity';state.adminUserOffset=0;await loadAdmin();break;
+   state.adminQuery='';state.adminUserStatus='all';state.adminUserSort='oldest';state.adminUserOffset=0;await loadAdmin();break;
   case 'admin-search-page':
    state.adminUserOffset=Number(button.dataset.offset);await loadAdmin();break;
   case 'admin-delete-pending':{
