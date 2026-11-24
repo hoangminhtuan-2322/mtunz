@@ -108,6 +108,10 @@ jobs:
         run: node ../tests/native_account_settings.cjs
       - name: Verify safe restoration of Android sessions after network outages
         run: node ../tests/native_session_recovery.cjs
+      - name: Verify password visibility and PIN masking on web and Android
+        run: |
+          node ../tests/password_visibility.cjs
+          node --check ../static/app.js
       - name: Check responsive Android login on narrow screens
         run: node ../tests/native_auth_layout.cjs
       - name: Keep composer visible above Android keyboard
