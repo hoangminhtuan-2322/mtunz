@@ -217,6 +217,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const draftDirtyRef=useRef(new Set()),draftReadyRef=useRef(false),draftSaveTimer=useRef(null);
   const inputRef=useRef(null),jumpRef=useRef(null),jumpTimer=useRef(null),jumpSeq=useRef(0),historyBusyRef=useRef(false);
   const [highlightId,setHighlightId]=useState(null),[historyBusy,setHistoryBusy]=useState(false),[sendStage,setSendStage]=useState('');
+  const onSearchTargetVisible=useRef(({viewableItems})=>{
+    const target=jumpRef.current;
+    if(target&&viewableItems.some(v=>v.isViewable&&Number(v.item?.id)===target.id)){
+      jumpRef.current=null;clearTimeout(jumpTimer.current);
+    }
+  }).current;
+  const searchViewabilityConfig=useRef({itemVisiblePercentThreshold:20}).current;
   function persistDrafts(){
     clearTimeout(draftSaveTimer.current);
     if(draftReadyRef.current)void writeDraftVault(token,draftsRef.current).catch(()=>{});
@@ -1038,10 +1045,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
         renderScrollComponent={renderChatScroll} style={css.chatListViewport}
         onScrollToIndexFailed={recoverSearchScroll}
+        onViewableItemsChanged={onSearchTargetVisible} viewabilityConfig={searchViewabilityConfig}
         onScrollBeginDrag={()=>{jumpRef.current=null;clearTimeout(jumpTimer.current);}}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS==='ios'?'interactive':'none'}
         onScroll={event=>{
+          if(jumpRef.current||historyBusyRef.current)return;
           const closeToLatest=event.nativeEvent.contentOffset.y<=100;
           isAtLatestRef.current=closeToLatest;
           if(closeToLatest&&newerMessages)setNewerMessages(false);

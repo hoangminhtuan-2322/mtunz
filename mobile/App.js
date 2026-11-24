@@ -277,7 +277,7 @@ function AppContent() {
   </SafeAreaView>;
   if(user&&!user.onboarding_required)return <SafeAreaView style={styles.root}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
-    <Messenger token={token} user={user} onLogout={logout} onExpired={expired}
+    <Messenger key={token} token={token} user={user} onLogout={logout} onExpired={expired}
       onProfile={refreshProfile}/>
   </SafeAreaView>;
   return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
