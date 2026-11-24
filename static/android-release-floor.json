@@ -1,0 +1,11 @@
+{
+  "available": true,
+  "platform": "android",
+  "package": "com.mtunz.web",
+  "version": "1.0.0",
+  "version_code": 15,
+  "size_bytes": 140472088,
+  "published_at": "2026-11-24T14:30:16Z",
+  "download_url": "https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code15/mtunz-android-v1.0.0-code15.apk",
+  "sha256": "d0c3f63fd26d8acb1802af55ca9aed3f355b877b3f8ffc40dff62d691e940c73"
+}

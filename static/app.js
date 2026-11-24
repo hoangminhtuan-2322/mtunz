@@ -2663,26 +2663,49 @@ function grantDialog(tid){
   toast('Đã gửi mã khôi phục tới cuộc trò chuyện.','ok');await loadAdmin();}});
 }
 
+function validAndroidRelease(release){
+  const version=release?.version,code=release?.version_code;
+  return release?.available===true&&release.platform==='android'&&release.package==='com.mtunz.web'&&
+    /^\d+\.\d+\.\d+$/.test(version)&&Number.isSafeInteger(code)&&code>0&&code<=2100000000&&
+    release.download_url==='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v'+version+'-code'+code+'/mtunz-android-v'+version+'-code'+code+'.apk';
+}
+function selectPublicAndroidRelease(rows){
+  if(!Array.isArray(rows))return null;
+  let best=null;
+  for(const row of rows){
+    if(!row||row.draft||row.prerelease||!row.published_at)continue;
+    const match=/^android-v(\d+\.\d+\.\d+)-code([1-9]\d{0,9})$/.exec(row.tag_name||'');
+    if(!match)continue;
+    const version=match[1],code=Number(match[2]),name='mtunz-android-v'+version+'-code'+code+'.apk';
+    const asset=Array.isArray(row.assets)&&row.assets.find(a=>a&&a.name===name&&a.state==='uploaded'&&Number.isSafeInteger(a.size)&&a.size>0);
+    if(!asset)continue;
+    const candidate={available:true,platform:'android',package:'com.mtunz.web',version,version_code:code,size_bytes:asset.size,published_at:row.published_at,download_url:asset.browser_download_url};
+    if(validAndroidRelease(candidate)&&(!best||code>best.version_code))best=candidate;
+  }
+  return best;
+}
 async function showAndroidDownload(){
- let release;
- try{release=await api('/api/mobile/release');}
- catch{release={available:false,unavailable_reason:'catalog_unreachable'};}
- const version=release.version,code=release.version_code;
- const valid=release.available&&release.platform==='android'&&release.package==='com.mtunz.web'&&
-   /^\d+\.\d+\.\d+$/.test(version)&&Number.isSafeInteger(code)&&code>0&&
-   release.download_url==='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v'+version+'-code'+code+'/mtunz-android-v'+version+'-code'+code+'.apk';
- if(!valid){
-   const previewUrl='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-preview-v1.1.0-code11-run45333101932/mtunz-android-preview-v1.1.0-code11.apk';
-   modal({title:'Tải ứng dụng Android',description:'Bạn có thể tải bản Android thử nghiệm trong khi bản chính thức đang được hoàn thiện.',
-     content:'<div class="android-release-panel"><span class="eyebrow">BẢN THỬ NGHIỆM · PREVIEW</span><h3>mtunz 1.1.0</h3><p class="hint">Build 11 · 140,5 MB · Android Native</p><p class="hint">Chưa hỗ trợ thông báo đẩy, chưa hỗ trợ IOS, chỉ hỗ trợ Android.</p><p class="hint">Bản chính thức sẽ được ưu tiên tự động khi phát hành.</p></div>',
-     confirm:'Tải APK Preview',cancel:'Đóng',handler:()=>{window.location.assign(previewUrl);}});
-   return;
- }
- const size=Number.isFinite(release.size_bytes)?(release.size_bytes/1048576).toFixed(1)+' MB':'';
- const day=release.published_at?new Date(release.published_at).toLocaleDateString('vi-VN'):'';
- modal({title:'Tải ứng dụng Android',description:'Ứng dụng mtunz native, cùng tài khoản và tin nhắn với website. Chỉ hỗ trợ Android.',
-   content:`<div class="android-release-panel"><span class="eyebrow">PHIÊN BẢN CHÍNH THỨC</span><h3>mtunz ${esc(version)}</h3><p class="hint">Build ${code} · ${esc(size)} · ${esc(day)}</p>${release.stale?'<p class="hint">Đang hiển thị thông tin phiên bản đã xác nhận gần nhất.</p>':''}<p class="hint">Tải APK trên điện thoại Android, mở file và xác nhận cài đặt. Hệ thống Android sẽ kiểm tra chữ ký khi cập nhật.</p><p class="hint">iOS chưa được hỗ trợ.</p></div>`,
-   confirm:'Tải APK',cancel:'Đóng',handler:()=>{window.location.assign(release.download_url);}});
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),6000);
+  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":15,"size_bytes":140472088,"published_at":"2026-11-24T14:30:16Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code15/mtunz-android-v1.0.0-code15.apk","sha256":"d0c3f63fd26d8acb1802af55ca9aed3f355b877b3f8ffc40dff62d691e940c73"};
+  let release={...floor,stale:true};
+  const candidates=await Promise.allSettled([
+    api('/api/mobile/release',{signal:controller.signal}),
+    fetch('https://api.github.com/repos/hoangminhtuan-2322/mtunz/releases?per_page=100',{signal:controller.signal,credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',headers:{Accept:'application/vnd.github+json'}})
+      .then(response=>{if(!response.ok)throw Error('catalog');return response.json();}).then(selectPublicAndroidRelease)
+  ]);
+  clearTimeout(timer);
+  for(const candidate of candidates){
+    const r=candidate.status==='fulfilled'?candidate.value:null;
+    if(validAndroidRelease(r)&&(r.version_code>release.version_code||
+      r.version_code===release.version_code&&!r.stale))release=r;
+  }
+  const version=release.version,code=release.version_code;
+  const size=Number.isFinite(release.size_bytes)?(release.size_bytes/1000000).toFixed(1)+' MB':'';
+  const day=release.published_at?new Date(release.published_at).toLocaleDateString('vi-VN'):'';
+  modal({title:'Tải ứng dụng Android',description:'Ứng dụng mtunz native, cùng tài khoản và tin nhắn với website. Chỉ hỗ trợ Android.',
+    content:'<div class="android-release-panel"><span class="eyebrow">PHIÊN BẢN CHÍNH THỨC</span><h3>mtunz '+esc(version)+'</h3><p class="hint">Build '+code+' · '+esc(size)+' · Android Native · '+esc(day)+'</p>'+(release.stale?'<p class="hint">Đang hiển thị bản phát hành đã xác minh gần nhất; chưa kiểm tra được bản mới hơn.</p>':'')+'<p class="hint">Tải APK trên điện thoại Android, mở file và xác nhận cài đặt. Hệ thống Android sẽ kiểm tra chữ ký khi cập nhật.</p><p class="hint">iOS chưa được hỗ trợ.</p></div>',
+    confirm:'Tải APK',cancel:'Đóng',handler:()=>{window.location.assign(release.download_url);}});
 }
 // ==== Centralized interactions (no inline event handlers, all user input escaped) ====
 async function clickAction(button){

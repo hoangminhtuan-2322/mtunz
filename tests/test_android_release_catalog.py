@@ -1,5 +1,6 @@
 import unittest
-from android_release_catalog import select_release, BASE
+from android_release_catalog import select_release, BASE, verified_release_floor, latest_android_release
+from unittest.mock import patch
 
 def release(version, code, **kwargs):
     tag=f'android-v{version}-code{code}'
@@ -26,6 +27,14 @@ class CatalogTests(unittest.TestCase):
         self.assertFalse(select_release([r])['available'])
         self.assertFalse(select_release([release('1.1.0',11,assets=[])])['available'])
         self.assertFalse(select_release([])['available'])
+    def test_offline_fallback_is_verified_stable_release(self):
+        floor=verified_release_floor()
+        self.assertTrue(floor['available'])
+        self.assertEqual(floor['version_code'],15)
+        with patch('android_release_catalog._cached',None), patch('android_release_catalog._expires',0), patch('android_release_catalog.urlopen',side_effect=OSError('rate limit')):
+            result=latest_android_release()
+            self.assertEqual(result['download_url'],floor['download_url'])
+            self.assertTrue(result['stale'])
     def test_only_completed_asset(self):
         r=release('1.2.3',20)
         r['assets'][0]['state']='open'
