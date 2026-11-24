@@ -52,6 +52,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+      - name: Read latest published Android build code
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          MAX_CODE="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | awk -F'-code' '/^android-v[0-9]+\.[0-9]+\.[0-9]+-code[1-9][0-9]*$/ {print $2}' | sort -n | tail -1)"
+          echo "MAX_PUBLISHED_ANDROID_CODE=${MAX_CODE:-0}" >> "$GITHUB_ENV"
       - name: Read Android release identity from app.json
         id: android_version
         run: |
@@ -60,7 +69,13 @@ jobs:
           const f=require('./app.json').expo;
           if(f.android.package!=='com.mtunz.web'||!Number.isSafeInteger(f.android.versionCode)||f.android.versionCode<2||f.android.versionCode>2100000000||!/^\d+\.\d+\.\d+$/.test(f.version))
             throw Error('Invalid Android release identity');
-          fs.appendFileSync(process.env.GITHUB_OUTPUT,'name='+f.version+'\ncode='+f.android.versionCode+'\nsigned='+process.env.SIGNED_NATIVE_RELEASE+'\n');
+          const signed=process.env.SIGNED_NATIVE_RELEASE==='true';
+          const maxCode=Number(process.env.MAX_PUBLISHED_ANDROID_CODE||0);
+          if(!Number.isSafeInteger(maxCode)||maxCode<0)throw Error('Invalid published version code');
+          const code=signed?Math.max(f.android.versionCode,maxCode+1):f.android.versionCode;
+          if(code>2100000000)throw Error('Android version code exhausted');
+          if(signed)fs.appendFileSync(process.env.GITHUB_ENV,'MTUNZ_ANDROID_BUILD_CODE='+code+'\n');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'name='+f.version+'\ncode='+code+'\nsigned='+signed+'\n');
           NODE
       - name: Verify original logo and native identity
         run: |
@@ -123,6 +138,11 @@ jobs:
         run: node ../tests/native_account_settings.cjs
       - name: Verify safe restoration of Android sessions after network outages
         run: node ../tests/native_session_recovery.cjs
+      - name: Verify Android release catalog and shared update interface
+        run: |
+          cd ..
+          python3 -m unittest discover -s tests -p test_android_release_catalog.py
+          node tests/android_release_sync.cjs
       - name: Verify password visibility and PIN masking on web and Android
         run: |
           node ../tests/password_visibility.cjs
