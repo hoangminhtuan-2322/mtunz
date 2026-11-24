@@ -71,8 +71,8 @@ jobs:
           BADGING="$("$TOOLS/aapt" dump badging "$APK")"
           PACKAGE_LINE="$(printf '%s\n' "$BADGING" | sed -n '/^package: name=/p')"
           [[ "$PACKAGE_LINE" == "package: name='com.mtunz.web' "* ]]
-                    CODE="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionCode='\\([0-9]*\\)'.*/\\1/p")"
-                    VERSION="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionName='\\([0-9]*\\.[0-9]*\\.[0-9]*\\)'.*/\\1/p")"
+          CODE="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionCode='\\([0-9]*\\)'.*/\\1/p")"
+          VERSION="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionName='\\([0-9]*\\.[0-9]*\\.[0-9]*\\)'.*/\\1/p")"
           [[ "$CODE" =~ ^[1-9][0-9]{0,9}$ && "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$CODE" -le 2100000000 && "$ARTIFACT_NAME" == "mtunz-NATIVE-$VERSION-RELEASE-fixed-key" ]]
           MAX="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft==false and .prerelease==false) | .tag_name' | awk -F'-code' '/^android-v[0-9]+\.[0-9]+\.[0-9]+-code[1-9][0-9]*$/ {print $2}' | sort -n | tail -1)"
