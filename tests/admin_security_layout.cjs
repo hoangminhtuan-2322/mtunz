@@ -14,7 +14,7 @@ function section(start,end){
  assert(a>=0&&b>a,'Missing function section '+start);
  return app.slice(a,b);
 }
-const inputSrc=section('function inputField(', '\nfunction authTabs(){');
+const inputSrc=section('function passwordEye(', '\nfunction authTabs(){');
 const settingsSrc=section('function settingsContent(){','\nfunction supportInApp(){');
 const securitySrc=section('function adminSecurity(){','\nfunction adminAudit(){');
 assert(inputSrc.includes('function secureSettingsField('),'Plain secure field builder exists');
@@ -39,6 +39,9 @@ function inspectMarkup(markup, count) {
  const inputs=[...markup.matchAll(/class="input" id="([^"]+)" name="([^"]+)" type="([^"]+)"/g)];
  assert.equal(fields.length,count,'Expected one plain field for each input');
  assert.equal(inputs.length,count,'Every secure input has correct markup');
+ const eyes=[...markup.matchAll(/data-password-eye aria-controls="([^"]+)"/g)];
+ assert.equal(eyes.length,inputs.filter(m=>/password/i.test(m[2])).length,'Only password inputs have a reveal control');
+ for(const eye of eyes)assert(/password/i.test(eye[1]),'Never expose a PIN via the password eye');
  for(const match of inputs){
   assert.equal(match[1],match[2],'Label id and form name refer to same field');
   assert.equal(match[3],'password','Secret fields must remain masked');

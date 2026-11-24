@@ -1,0 +1,27 @@
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const read=p=>fs.readFileSync(path.join(__dirname,'..',p),'utf8');
+const app=read('mobile/App.js'),chat=read('mobile/src/Messenger.js'),web=read('static/app.js');
+assert(app.includes('const canReveal=secret&&!number'));
+assert(app.includes('secureTextEntry={secret&&(!canReveal||!passwordVisible)}'));
+assert(app.includes('useState(false)')&&app.includes("state!=='active')setPasswordVisible(false)"));
+assert(chat.includes('secureTextEntry revealPassword placeholder="Mật khẩu xác nhận"'));
+assert(chat.includes('secureTextEntry&&(!revealPassword||!visible)'));
+assert(!chat.includes('revealPassword placeholder="Mã PIN'));
+assert(web.includes("type==='password'&&/password/i.test(name)"));
+assert(web.includes('data-password-eye')&&web.includes('aria-pressed="false"'));
+assert(web.includes("field.type=visible?'text':'password'"));
+assert(web.includes("if(document.hidden)maskVisiblePasswords()"));
+assert(web.includes("maskVisiblePasswords();\n document.querySelectorAll('input[type=\"password\"]"));
+console.log('Password visibility web/native, hidden by default, PIN unchanged: PASS');
+
+const update=read('mobile/src/AndroidUpdate.js');
+assert(update.includes("api('/api/mobile/release'"));
+assert(update.includes('release.version_code>installedCode'));
+assert(web.includes("data-act=\"android-download\""));
+assert(web.includes("api('/api/mobile/release')"));
+assert(read('mobile/src/Messenger.js').includes('<AndroidUpdate/>'));
+assert(read('mobile/src/AdminDashboard.js').includes('<AndroidUpdate/>'));
+console.log('Native and web Android download catalog: PASS');
