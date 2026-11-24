@@ -1,4 +1,5 @@
 import AndroidUpdate from './AndroidUpdate';
+import StorageSettings from './StorageSettings';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
@@ -1448,7 +1449,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             onPress={()=>{setDialog('notifications');refreshLists();}}/>
           <DevicePushSettings token={token} compact/>
         </AccountGroup>
-        <AccountGroup title="Ứng dụng"><AndroidUpdate/></AccountGroup>
+        <AccountGroup title="Ứng dụng"><AndroidUpdate/><StorageSettings token={token}/></AccountGroup>
         <AccountGroup title="Hỗ trợ">
           <AccountRow symbol="?" title="Trung tâm hỗ trợ"
             subtitle="Liên hệ quản trị viên hoặc gửi báo cáo"
