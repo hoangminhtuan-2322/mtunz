@@ -56,3 +56,9 @@
 .password-eye-wrap>.password-eye:hover,.password-eye-wrap>.password-eye:focus-visible{color:var(--text,#eef7ff);outline:2px solid #78b9ef;outline-offset:-3px}
 .password-eye.is-revealed svg{opacity:.85}
 .password-eye.is-revealed::after{content:'';position:absolute;width:23px;height:2px;background:currentColor;transform:rotate(-45deg);border-radius:2px;pointer-events:none}
+
+/* Android release download panel uses the same dialog design as the web app. */
+.android-release-panel{border:1px solid var(--line,#30435a);border-radius:16px;padding:16px;background:var(--card,#16283c);display:grid;gap:8px;min-width:0}
+.android-release-panel h3,.android-release-panel p{margin:0}
+.android-release-panel h3{font-size:21px;font-weight:800}
+.rail-extra .rail-android-download .rail-icon{color:var(--brand,#6dbaff)}
