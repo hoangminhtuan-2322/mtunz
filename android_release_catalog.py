@@ -28,7 +28,9 @@ def select_release(rows):
             continue
         name = f'mtunz-android-v{version}-code{code}.apk'
         url = BASE + tag + '/' + name
-        for asset in row.get('assets', []):
+        for asset in row.get('assets', []) or []:
+            if not isinstance(asset, dict):
+                continue
             if asset.get('name') != name or asset.get('browser_download_url') != url:
                 continue
             size = asset.get('size', 0)
@@ -60,6 +62,7 @@ def latest_android_release():
         except (OSError, ValueError, TypeError, AttributeError):
             _expires = time.monotonic() + 30
             if _cached is not None:
-                return {**_cached, 'stale': True}
+                _cached = {**_cached, 'stale': True}
+                return dict(_cached)
             return {'available': False, 'platform': 'android', 'package': 'com.mtunz.web',
                     'unavailable_reason': 'catalog_unreachable'}
