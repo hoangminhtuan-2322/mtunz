@@ -123,6 +123,19 @@ jobs:
         run: node tools/verify_push_release.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
+      - name: Preserve WebRTC JNI classes during Android release optimization
+        run: |
+          set -euo pipefail
+          RULES=android/app/proguard-rules.pro
+          test -f "$RULES"
+          # WebRTC M155.0.1 references an optional AV1 decoder JNI interface
+          # absent from its packaged AAR. Scope the suppression to that class,
+          # not all R8 warnings. Keep the JNI classes used by the native module.
+          cat >> "$RULES" <<'PROGUARD'
+          -keep class com.oney.WebRTCModule.** { *; }
+          -keep class org.webrtc.** { *; }
+          -dontwarn org.webrtc.Dav1dDecoder$Natives
+          PROGUARD
       - name: Check generated native manifest and launch package
         run: |
           test -f android/app/build.gradle
