@@ -1,0 +1,58 @@
+name: Check mtunz native release readiness
+on:
+  push:
+    branches: [ci/native-release-readiness-20261124]
+    paths: ['.github/workflows/native-release-readiness.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Firebase and permanent signing configuration without exposing values
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
+          EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+          EXPO_FCM_V1_READY: ${{ vars.EXPO_FCM_V1_READY }}
+          KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PY'
+          import os,json,re
+          env=os.environ
+          names=['GOOGLE_SERVICES_JSON','EXPO_PROJECT_ID','EXPO_FCM_V1_READY','KEYSTORE_BASE64','STORE_PASSWORD','KEY_ALIAS','KEY_PASSWORD']
+          for name in names:
+              print(name+': '+('CONFIGURED' if env.get(name) else 'MISSING'))
+          try:
+              doc=json.loads(env.get('GOOGLE_SERVICES_JSON',''))
+              valid=any(c.get('client_info',{}).get('android_client_info',{}).get('package_name')=='com.mtunz.web' for c in doc.get('client',[]))
+          except (ValueError,TypeError,AttributeError):
+              valid=False
+          print('FIREBASE_ANDROID_PACKAGE: '+('MATCH' if valid else 'UNVERIFIED'))
+          print('EXPO_PROJECT_UUID: '+('VALID' if re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}',env.get('EXPO_PROJECT_ID','')) else 'UNVERIFIED'))
+          print('FCM_V1_READINESS_DECLARATION: '+('TRUE' if env.get('EXPO_FCM_V1_READY')=='true' else 'NOT_READY'))
+          PY
+          if [[ -n "$KEYSTORE_BASE64" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" ]]; then
+            temp="$(mktemp -d)"
+            trap 'rm -rf "$temp"' EXIT
+            if printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$temp/release.jks" 2>/dev/null &&
+               LC_ALL=C keytool -list -v -keystore "$temp/release.jks" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" > "$temp/cert.txt" 2>/dev/null; then
+              if grep -Fq '80:6A:14:7A:41:42:20:3F:05:EA:D8:C5:76:3D:4C:D5:59:C4:D6:CC:B9:EC:FF:02:BA:72:8D:59:AA:1A:8F:7B' "$temp/cert.txt"; then
+                echo 'PERMANENT_SIGNING_CERTIFICATE: MATCH'
+              else
+                echo 'PERMANENT_SIGNING_CERTIFICATE: MISMATCH'
+              fi
+            else
+              echo 'PERMANENT_SIGNING_CERTIFICATE: UNREADABLE'
+            fi
+          else
+            echo 'PERMANENT_SIGNING_CERTIFICATE: UNVERIFIED'
+          fi
+          echo 'Preflight only: no APK signed, no FCM delivery tested, no deployment performed.'
