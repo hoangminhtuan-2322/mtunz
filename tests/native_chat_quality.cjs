@@ -19,7 +19,7 @@ for(const name of ['chatbubbles','people','person-add','earth','settings',
   'images-outline','attach-outline','mic-outline','send','arrow-back'])
   assert(chat.includes(name),'Missing polished icon: '+name);
 const attachment=chat.slice(chat.indexOf('function Attachment({file,token,onOpen})'),
-  chat.indexOf('function Message({item,own,token,onSelect,onOpen})'));
+  chat.indexOf('function Message({item,own,token,onSelect,onOpen,onReply,highlighted})'));
 assert(attachment.includes("if(file.mime?.startsWith('image/'))"),
   'Images need a separate clean photo card');
 const imageBranch=attachment.slice(attachment.indexOf("if(file.mime?.startsWith('image/'))"),
@@ -75,3 +75,21 @@ assert(chat.includes('onLongPress={()=>quickChatActions(item)}')&&chat.includes(
 assert(chat.includes('searchSeqRef.current')&&chat.includes('removeSentDraft(originalRoom,submittedDraft)'));
 assert(chat.includes('KeyboardStickyView')&&chat.includes('KeyboardChatScrollView'));
 console.log('Native inbox filters, Vietnamese search, session drafts and quick actions passed.');
+
+const {sanitizeDrafts,mergeHydratedDrafts,isReplySwipe,findHistory}=require('../mobile/src/inboxTools');
+assert.deepEqual(sanitizeDrafts({'dm:1':'test','world:1':'private','bad':'x','group:2':'group'}),{'dm:1':'test','group:2':'group'});
+assert.deepEqual(mergeHydratedDrafts({'dm:1':'old','dm:2':'keep'},{'dm:3':'new'},new Set(['dm:1','dm:3'])),{'dm:2':'keep','dm:3':'new'});
+assert(isReplySwipe({dx:60,dy:8},55));assert(!isReplySwipe({dx:60,dy:75},55));assert(!isReplySwipe({dx:-60,dy:0},55));
+assert(chat.includes('onScrollToIndexFailed={recoverSearchScroll}')&&chat.includes('jumpToSearchResult(m)'));
+assert(chat.includes('sendRef.current||')&&chat.includes('sendStage'));
+assert(read('mobile/src/draftVault.js').includes('SecureStore.setItemAsync'));
+assert(read('mobile/src/client.js').includes('clearDraftVault(token)'));
+(async()=>{
+ const a=await findHistory([{id:100}],50,async before=>Array.from({length:70},(_,i)=>({id:before-1-i})),()=>true);
+ assert(a.found&&a.rows.some(m=>m.id===50));
+ const b=await findHistory([{id:100}],2,async()=>[],()=>true);
+ assert(!b.found&&b.exhausted);
+ const d=await findHistory([{id:100}],50,async()=>[{id:50}],()=>false);
+ assert(!d.found&&!d.rows.length);
+ console.log('Swipe, encrypted draft isolation, bounded history and send guard: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});
