@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import * as Notifications from 'expo-notifications';
 import {clearDraftVault} from './draftVault';
+import {retireMediaCache} from './mediaCache';
 
 export const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
 const STORE_KEY = 'mtunz-native-session-v1';
@@ -70,7 +71,7 @@ export async function readSession() {
 
 export async function clearSession() {
   const token=await readSession().catch(()=>null);
-  if(token)await clearDraftVault(token).catch(()=>{});
+  if(token){await retireMediaCache(token).catch(()=>{});await clearDraftVault(token).catch(()=>{});}
   await SecureStore.deleteItemAsync(STORE_KEY);
   await Notifications.dismissAllNotificationsAsync().catch(()=>{});
   await Notifications.clearLastNotificationResponseAsync().catch(()=>{});

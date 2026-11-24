@@ -1,7 +1,8 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-import { File, Paths } from 'expo-file-system';
+import { File } from 'expo-file-system';
+import {withTemporaryMedia} from './mediaCache';
 import * as Clipboard from 'expo-clipboard';
 import { API_ORIGIN, ApiError, api } from './client';
 
@@ -96,26 +97,23 @@ export async function downloadSharedAttachment(attachment,token) {
   const id=Number(attachment?.id);
   if(!Number.isSafeInteger(id)||id<=0||!token)throw new Error('Tệp hoặc phiên đăng nhập không hợp lệ.');
   const safe=cleanFileName(attachment.name||('file-'+id));
-  const destination=new File(Paths.cache,'mtunz-preview-'+id+'-'+safe);
-  return File.downloadFileAsync(API_ORIGIN+'/api/attachments/'+id,
-    destination,{headers:{Authorization:'Bearer '+token},idempotent:true});
+  return withTemporaryMedia(token,id,safe,destination=>File.downloadFileAsync(API_ORIGIN+'/api/attachments/'+id,
+    destination,{headers:{Authorization:'Bearer '+token},idempotent:false}));
 }
 
 export async function saveSharedFile(attachment,token) {
-  if (!attachment?.id) throw new Error('Tệp không tồn tại.');
-  const safe=cleanFileName(attachment.name || ('file-'+attachment.id));
-  const destination = new File(Paths.cache,'mtunz-'+Number(attachment.id)+'-'+safe);
-  const file = await File.downloadFileAsync(
-    API_ORIGIN+'/api/attachments/'+Number(attachment.id)+'?download=1',
-    destination,{headers:{Authorization:'Bearer '+token},idempotent:true},
-  );
-  if (await File.canPreview(file)) {
-    await File.preview(file,{title:safe});
-  } else if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(file.uri);
-  } else {
-    throw new Error('Thiết bị chưa có ứng dụng hỗ trợ mở tệp này.');
-  }
+  const id=Number(attachment?.id);
+  if(!Number.isSafeInteger(id)||id<=0||!token)throw Error('Tệp hoặc phiên đăng nhập không hợp lệ.');
+  const safe=cleanFileName(attachment.name||('file-'+id));
+  return withTemporaryMedia(token,id,safe,async (destination,assertCurrent)=>{
+    const file=await File.downloadFileAsync(API_ORIGIN+'/api/attachments/'+id+'?download=1',
+      destination,{headers:{Authorization:'Bearer '+token},idempotent:false});
+    assertCurrent();
+    if(await File.canPreview(file)){assertCurrent();await File.preview(file,{title:safe});}
+    else if(await Sharing.isAvailableAsync()){assertCurrent();await Sharing.shareAsync(file.uri);}
+    else throw Error('Thiết bị chưa có ứng dụng hỗ trợ mở tệp này.');
+    return file;
+  });
 }
 
 export async function copyChatText(value) {
