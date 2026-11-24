@@ -15,6 +15,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
+import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft} from './inboxTools';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
 
@@ -193,6 +194,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const {bottom:keyboardBottomInset}=useSafeAreaInsets();
   const renderChatScroll=useCallback(props=><ChatScrollView {...props} inverted/>,[]);
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
+  const [drafts,setDrafts]=useState({}),[refreshingInbox,setRefreshingInbox]=useState(false);
+  const [searchBusy,setSearchBusy]=useState(false),[searchDone,setSearchDone]=useState(false),[searchError,setSearchError]=useState('');
+  const draftsRef=useRef({}),searchSeqRef=useRef(0),inboxRefreshRef=useRef(false),preferenceBusyRef=useRef(false);
+  function changeStoredDraft(key,value){draftsRef.current=updateDraft(draftsRef.current,key,value);setDrafts(draftsRef.current);}
+  function removeSentDraft(key,value){draftsRef.current=clearSentDraft(draftsRef.current,key,value);setDrafts(draftsRef.current);}
   const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
   const [newerMessages,setNewerMessages]=useState(false);
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
@@ -384,9 +390,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   },[invoke]);
   const openRoom=useCallback(target=>{
     stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
+    searchSeqRef.current++;setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
-    setDraft('');setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
+    setDraft(draftsRef.current[conversationKey(target)]||'');setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     nonceRef.current=null;uploadRef.current=null;
     void loadWindow(target);
   },[loadWindow,stopTyping,updateRemoteTyping]);
@@ -563,7 +570,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
     return()=>sub.remove();
   },[openRoom]);
-  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);
+  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;setSearchBusy(false);
     roomRef.current=null;isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
@@ -585,6 +592,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     if(room.scope==='world'&&draft.length>1200){setError('Tin nhắn thế giới tối đa 1200 ký tự.');return;}
     setSending(true);sendRef.current=true;setError('');
     const scope=room.scope,originalRoom=room.scope+':'+room.id,text=draft.trim();
+    const submittedDraft=draft;
     const key=originalRoom+':'+text+':'+(picked?.uri||'');
     const nonce=nonceRef.current?.key===key?nonceRef.current.id:Crypto.randomUUID();
     nonceRef.current={key,id:nonce};
@@ -600,11 +608,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(scope==='group'){endpoint='/api/groups/'+room.id+'/messages';Object.assign(data,{reply_to:reply?.id||null,client_message_id:nonce});}
       if(scope==='world'){endpoint='/api/world/messages';Object.assign(data,{room_id:room.id,anonymous_name:social.world_anonymous?worldAlias.trim():''});}
       const result=await invoke(endpoint,'POST',data);
-      stopTyping();
+      removeSentDraft(originalRoom,submittedDraft);
       if(roomRef.current?.scope===scope&&roomRef.current?.id===room.id){
+        if(!draftsRef.current[originalRoom])stopTyping();
         if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
         if(scope==='world'&&!result.message)loadWindow(room);
-        setDraft('');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
+        setDraft(draftsRef.current[originalRoom]||'');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
         scrollToLatest();
       }
       refreshLists().catch(()=>{});
@@ -679,7 +688,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{
       await invoke(room.scope==='dm'?'/api/messages/'+mid:
         '/api/groups/'+room.id+'/messages/'+mid,'PATCH',{body:draft.trim()});
-      setDraft('');setReply(null);
+      if(conversationKey(roomRef.current)===conversationKey(room)){
+        setDraft(draftsRef.current[conversationKey(room)]||'');setReply(null);
+      }
     }catch(e){alertError(e);}
     finally{setSending(false);}
   }
@@ -812,12 +823,55 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const acceptedFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted);
   const activeFriends=connection==='online'?acceptedFriends.filter(f=>f.online===true):[];
   const unreadTotal=acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0);
-  const matchingFriends=acceptedFriends.filter(f=>
-    label(f).toLocaleLowerCase('vi-VN').includes(inboxQuery.trim().toLocaleLowerCase('vi-VN'))&&
-    (inboxFilter==='all'||inboxFilter==='unread'&&Number(f.unread||0)>0||
-      inboxFilter==='online'&&connection==='online'&&f.online===true));
-  const matchingGroups=groups.filter(g=>(g.title||'').toLocaleLowerCase('vi-VN')
-    .includes(groupQuery.trim().toLocaleLowerCase('vi-VN')));
+  const matchingFriends=filterInbox(friends,inboxQuery,inboxFilter,connection==='online');
+  const matchingGroups=groups.filter(g=>normalizeSearch(g.title).includes(normalizeSearch(groupQuery)));
+  const archivedCount=friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length;
+  async function refreshInbox(){
+    if(inboxRefreshRef.current)return;
+    inboxRefreshRef.current=true;setRefreshingInbox(true);
+    try{await refreshLists();}finally{inboxRefreshRef.current=false;setRefreshingInbox(false);}
+  }
+  function quickChatActions(friend){
+    Keyboard.dismiss();
+    Alert.alert(label(friend),'Quản lý cuộc trò chuyện',[
+      {text:friend.pinned?'Bỏ ghim':'Ghim lên đầu',onPress:()=>quickPreference(friend,'pinned')},
+      {text:friend.archived?'Khôi phục':'Lưu trữ',onPress:()=>quickPreference(friend,'archived')},
+      {text:'Tùy chọn khác',onPress:()=>Alert.alert(label(friend),'Thông báo cuộc trò chuyện',[
+        {text:'Hủy',style:'cancel'},{text:friend.muted?'Bật thông báo':'Tắt thông báo',onPress:()=>quickPreference(friend,'muted')},
+      ])},
+    ],{cancelable:true});
+  }
+  async function quickPreference(friend,field){
+    if(preferenceBusyRef.current)return;
+    preferenceBusyRef.current=true;
+    try{
+      const current=friends.find(f=>f.other_id===friend.other_id)||friend;
+      const prefs={muted:!!current.muted,archived:!!current.archived,pinned:!!current.pinned};
+      prefs[field]=!prefs[field];
+      await perform('/api/chats/'+current.other_id+'/preferences','POST',prefs);
+    }finally{preferenceBusyRef.current=false;}
+  }
+  function openMessageSearch(){
+    Keyboard.dismiss();searchSeqRef.current++;setSearchText('');setSearchResults([]);
+    setSearchBusy(false);setSearchDone(false);setSearchError('');setDialog('search');
+  }
+  function closeMessageSearch(){
+    searchSeqRef.current++;setSearchBusy(false);setDialog('');
+  }
+  async function searchMessages(){
+    const target=roomRef.current,query=searchText.trim();
+    if(!target||target.scope==='world'||!query||searchBusy)return;
+    const seq=++searchSeqRef.current;
+    setSearchBusy(true);setSearchDone(false);setSearchError('');setSearchResults([]);
+    try{
+      const q=target.scope==='dm'?{q:query,other_id:String(target.id)}:{q:query,group_id:String(target.id)};
+      const data=await invoke('/api/search/messages?'+new URLSearchParams(q));
+      if(seq===searchSeqRef.current&&conversationKey(roomRef.current)===conversationKey(target)){
+        setSearchResults(data.results||[]);setSearchDone(true);
+      }
+    }catch(e){if(seq===searchSeqRef.current)setSearchError(e.message||'Không thể tìm kiếm.');}
+    finally{if(seq===searchSeqRef.current)setSearchBusy(false);}
+  }
 
   return <View style={{flex:1,backgroundColor:P.bg}}>
     <NativeCallOverlay call={nativeCall}/>
@@ -863,6 +917,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Ionicons name="videocam-outline" color={connection==='online'?P.accent:P.soft} size={23}/>
         </Pressable>
       </>}
+      {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" accessibilityLabel="Tìm tin nhắn"
+        style={css.headerAction} onPress={openMessageSearch}>
+        <Ionicons name="search-outline" color={P.accent} size={21}/></Pressable>}
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
       {!room&&<Pressable accessibilityRole="button" accessibilityLabel="Làm mới"
@@ -906,7 +963,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       </Pressable>}
       {!!reply&&<View style={css.replyBar}>
         <Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời #'+reply.id}</Text>
-        <Pressable onPress={()=>{setReply(null);setDraft('');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
+        <Pressable onPress={()=>{setReply(null);if(reply.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
       {!!picked&&<View style={css.replyBar}>
         {picked.type?.startsWith('image/')?
@@ -938,6 +995,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onFocus={()=>scrollToLatest(false)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
+            if(!reply?.edit_id)changeStoredDraft(conversationKey(room),value);
             sendTyping(value);
             if(value!==draft){nonceRef.current=null;if(value.trim()!==draft.trim())uploadRef.current=null;}
             setDraft(value);
@@ -951,7 +1009,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       </View>
       </KeyboardStickyView>
     </View>:<>
-      {tab==='dm'&&<FlatList data={matchingFriends}
+      {tab==='dm'&&<FlatList data={matchingFriends} refreshing={refreshingInbox} onRefresh={refreshInbox}
         keyboardShouldPersistTaps="handled" keyExtractor={f=>String(f.other_id)}
         contentContainerStyle={css.inboxContent}
         ListHeaderComponent={<View style={css.listHeader}>
@@ -962,10 +1020,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <View style={css.searchWrap}><Ionicons name="search-outline" size={19} color={P.soft}/>
             <TextInput value={inboxQuery} onChangeText={setInboxQuery}
               placeholder="Tìm cuộc trò chuyện..." placeholderTextColor={P.soft}
-              style={css.searchInput}/></View>
+              style={css.searchInput}/>{!!inboxQuery&&<Pressable accessibilityRole="button" accessibilityLabel="Xóa tìm kiếm" onPress={()=>setInboxQuery('')}><Ionicons name="close-circle" color={P.soft} size={20}/></Pressable>}</View>
           <View style={css.filterRow}>{[
             ['all','Tất cả'],['unread','Chưa đọc'+(unreadTotal?' · '+unreadTotal:'')],
-            ['online','Hoạt động'+(activeFriends.length?' · '+activeFriends.length:'')]
+            ['online','Hoạt động'+(activeFriends.length?' · '+activeFriends.length:'')],
+            ['pinned','Đã ghim'],['archived','Lưu trữ'+(archivedCount?' · '+archivedCount:'')]
           ].map(([value,title])=><Pressable key={value} accessibilityRole="button"
             accessibilityState={{selected:inboxFilter===value}} onPress={()=>setInboxFilter(value)}
             style={[css.filterChip,inboxFilter===value&&css.filterChipActive]}>
@@ -991,13 +1050,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         ListEmptyComponent={<EmptyState symbol="✉"
           title={inboxFilter==='online'?'Chưa có bạn bè trực tuyến':
             inboxFilter==='unread'?'Không có tin nhắn chưa đọc':
+            inboxFilter==='archived'?'Chưa có hội thoại lưu trữ':inboxFilter==='pinned'?'Chưa có hội thoại ghim':
             inboxQuery?'Không tìm thấy hội thoại':'Bắt đầu kết nối'}
           subtitle={inboxFilter==='online'?(connection==='online'?
             'Danh sách tự cập nhật khi bạn bè trực tuyến.':'Đang kết nối lại để lấy trạng thái chính xác.'):
             inboxFilter==='unread'?'Tất cả tin nhắn đã được đọc.':
+            inboxFilter==='archived'||inboxFilter==='pinned'?'Nhấn giữ hội thoại để quản lý.':
             inboxQuery?'Thử nhập tên khác hoặc mở tab Bạn bè.':
             'Kết bạn để gửi những tin nhắn đầu tiên.'}/>}
         renderItem={({item})=><Pressable accessibilityRole="button" style={css.chatRow}
+          onLongPress={()=>quickChatActions(item)} delayLongPress={350}
           onPress={()=>openRoom({scope:'dm',id:item.other_id})}>
           <View style={css.avatarWrap}>
             <View style={css.avatar}>{item.avatar_url?<Image source={avatarSource(item.avatar_url,token)} style={css.avatarImage}/>:
@@ -1006,18 +1068,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           </View>
           <View style={css.chatCopy}>
             <View style={css.chatTopLine}><Text style={css.chatName} numberOfLines={1}>{label(item)}</Text>
-              {!!item.pinned&&<Text style={css.chatFlag}>⌁</Text>}
-              {!!item.muted&&<Text style={css.chatFlag}>◌</Text>}
+              {!!item.pinned&&<Ionicons name="pin" size={13} color={P.accent}/>}
+              {!!item.muted&&<Ionicons name="notifications-off-outline" size={14} color={P.soft}/>}
               {!!item.last_message?.created_at&&<Text style={css.chatTime}>
                 {readableTime(item.last_message.created_at)}</Text>}</View>
             <View style={css.chatBottomLine}><Text numberOfLines={1}
               style={[css.previewText,item.unread>0&&css.previewUnread]}>
-              {item.last_message?.body||(connection==='online'&&item.online?'Đang hoạt động · Bắt đầu trò chuyện':'Nhấn để bắt đầu trò chuyện')}</Text>
+              {drafts['dm:'+item.other_id]?'Bản nháp: '+drafts['dm:'+item.other_id]:item.last_message?.body||(connection==='online'&&item.online?'Đang hoạt động · Bắt đầu trò chuyện':'Nhấn để bắt đầu trò chuyện')}</Text>
               {item.unread>0&&<Text style={css.badge}>{item.unread>99?'99+':item.unread}</Text>}</View>
             <FriendPresenceBadge friend={item} connected={connection==='online'} clock={presenceClock}/>
           </View>
         </Pressable>}/>}
-      {tab==='groups'&&<FlatList data={matchingGroups} keyExtractor={g=>String(g.id)}
+      {tab==='groups'&&<FlatList data={matchingGroups} refreshing={refreshingInbox} onRefresh={refreshInbox} keyExtractor={g=>String(g.id)}
         keyboardShouldPersistTaps="handled" contentContainerStyle={css.inboxContent}
         ListHeaderComponent={<View style={css.listHeader}>
           <View style={css.headerTitleRow}><View style={{flex:1,gap:3}}>
@@ -1038,7 +1100,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             {!!item.last_message?.created_at&&<Text style={css.chatTime}>
               {readableTime(item.last_message.created_at)}</Text>}</View>
             <View style={css.chatBottomLine}><Text numberOfLines={1} style={css.previewText}>
-              {item.member_count} người · {item.last_message?.body||'Chưa có tin nhắn'}</Text>
+              {drafts['group:'+item.id]?'Bản nháp: '+drafts['group:'+item.id]:item.member_count+' người · '+(item.last_message?.body||'Chưa có tin nhắn')}</Text>
               {item.unread>0&&<Text style={css.badge}>{item.unread}</Text>}</View></View>
         </Pressable>}/>}
       {tab==='people'&&<ScrollView showsVerticalScrollIndicator={false}
@@ -1250,16 +1312,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             '/api/groups/'+room.id+'/members/'+user.id,'DELETE',undefined,jumpBack)}])}>Rời nhóm</Btn>
       </>}
       <SharedConversationGallery room={room} token={token} onError={alertError}/>
-      <Btn quiet onPress={()=>{setDialog('search');setSearchResults([]);}}>⌕ Tìm tin nhắn trong hội thoại</Btn>
+      <Btn quiet onPress={openMessageSearch}>⌕ Tìm tin nhắn trong hội thoại</Btn>
     </ConversationInfoSheet>}
-    <ModalSheet visible={dialog==='search'} onClose={()=>setDialog('')} title="Tìm kiếm tin nhắn">
-      <Field value={searchText} onChangeText={setSearchText} placeholder="Nhập nội dung cần tìm"/>
-      <Btn onPress={async()=>{
-        try{const q=room.scope==='dm'?{q:searchText,other_id:String(room.id)}:{q:searchText,group_id:String(room.id)};
-          const data=await invoke('/api/search/messages?'+new URLSearchParams(q));
-          setSearchResults(data.results||[]);
-        }catch(e){alertError(e);}}}>Tìm kiếm</Btn>
-      {searchResults.map(m=><Text key={m.id} style={css.muted}>#{m.id} · {m.body}</Text>)}
+    <ModalSheet visible={dialog==='search'} onClose={closeMessageSearch} title="Tìm kiếm tin nhắn">
+      <Field value={searchText} onChangeText={value=>{searchSeqRef.current++;setSearchText(value);setSearchResults([]);setSearchBusy(false);setSearchDone(false);setSearchError('');}} placeholder="Nhập nội dung cần tìm"/>
+      <Btn disabled={searchBusy||!searchText.trim()} onPress={searchMessages}>{searchBusy?'Đang tìm…':'Tìm kiếm'}</Btn>
+      {!!searchError&&<Text style={css.muted}>{searchError}</Text>}
+      {searchDone&&<Text style={css.muted}>{searchResults.length?searchResults.length+' kết quả':'Không tìm thấy tin nhắn phù hợp.'}</Text>}
+      {searchResults.map(m=><View key={m.id} style={css.rowCard}>
+        <View style={{flex:1,gap:5}}><Text style={css.strong}>{m.body||'Tin nhắn đính kèm'}</Text>
+          <Text style={css.muted}>{m.created_at?new Date(m.created_at*1000).toLocaleString('vi-VN'):'Tin #'+m.id}</Text></View>
+        {!!m.body&&<Pressable accessibilityRole="button" accessibilityLabel="Sao chép kết quả" onPress={()=>copyChatText(m.body).catch(alertError)}><Ionicons name="copy-outline" size={22} color={P.accent}/></Pressable>}
+      </View>)}
     </ModalSheet>
     <ModalSheet visible={dialog==='createGroup'} onClose={()=>setDialog('')} title="Tạo nhóm mới">
       <Field value={groupTitle} onChangeText={setGroupTitle} placeholder="Tên nhóm (2-70 ký tự)"/>

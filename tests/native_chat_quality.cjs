@@ -58,3 +58,20 @@ for(const term of ['Parity-Impact','Parity-Reason','Release-Plan',
   'Native code changed without increasing','Web + native change needs a native regression test'])
   assert(gate.includes(term),'Web/native change gate must remain active: '+term);
 console.log('Professional image bubbles, unified icon pack, chat latest-scroll, Web/Android guard: PASS');
+
+const {conversationKey,normalizeSearch,updateDraft,clearSentDraft,filterInbox}=require('../mobile/src/inboxTools');
+assert.equal(normalizeSearch('Đặng Minh Tú'),'dang minh tu');
+assert.equal(conversationKey({scope:'group',id:4}),'group:4');
+const fixture=[{other_id:1,state:'accepted',display_name:'Đặng Tú',pinned:true,last_message:{created_at:1}},{other_id:2,state:'accepted',nickname:'Bạn thân',last_message:{created_at:5},unread:2},{other_id:3,state:'accepted',archived:true},{other_id:4,state:'accepted',restricted:true}];
+assert.deepEqual(filterInbox(fixture,'','all',true).map(f=>f.other_id),[1,2]);
+assert.deepEqual(filterInbox(fixture,'dang tu','all',true).map(f=>f.other_id),[1]);
+assert.deepEqual(filterInbox(fixture,'','archived',true).map(f=>f.other_id),[3]);
+assert.deepEqual(filterInbox(fixture,'','unread',true).map(f=>f.other_id),[2]);
+assert.deepEqual(filterInbox(fixture,'','pinned',true).map(f=>f.other_id),[1]);
+let drafts=updateDraft({},'dm:1','hello');drafts=updateDraft(drafts,'group:1','group draft');
+assert.equal(drafts['dm:1'],'hello');assert.equal(clearSentDraft(drafts,'dm:1','old'),drafts);
+assert.deepEqual(clearSentDraft(drafts,'dm:1','hello'),{'group:1':'group draft'});
+assert(chat.includes('onLongPress={()=>quickChatActions(item)}')&&chat.includes('onRefresh={refreshInbox}'));
+assert(chat.includes('searchSeqRef.current')&&chat.includes('removeSentDraft(originalRoom,submittedDraft)'));
+assert(chat.includes('KeyboardStickyView')&&chat.includes('KeyboardChatScrollView'));
+console.log('Native inbox filters, Vietnamese search, session drafts and quick actions passed.');
