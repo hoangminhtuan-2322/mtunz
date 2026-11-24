@@ -110,6 +110,7 @@ jobs:
           python3 -m unittest discover -s tests -p test_android_release_catalog.py
           node --check static/app.js
           node tests/native_android_download.cjs
+          node tests/android_preview_download.cjs
       - name: Verify password visibility and PIN masking on web and Android
         run: node ../tests/password_visibility.cjs
       - name: Check responsive Android login on narrow screens
