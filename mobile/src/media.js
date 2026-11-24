@@ -105,11 +105,12 @@ export async function saveSharedFile(attachment,token) {
   const id=Number(attachment?.id);
   if(!Number.isSafeInteger(id)||id<=0||!token)throw Error('Tệp hoặc phiên đăng nhập không hợp lệ.');
   const safe=cleanFileName(attachment.name||('file-'+id));
-  return withTemporaryMedia(token,id,safe,async destination=>{
+  return withTemporaryMedia(token,id,safe,async (destination,assertCurrent)=>{
     const file=await File.downloadFileAsync(API_ORIGIN+'/api/attachments/'+id+'?download=1',
       destination,{headers:{Authorization:'Bearer '+token},idempotent:false});
-    if(await File.canPreview(file))await File.preview(file,{title:safe});
-    else if(await Sharing.isAvailableAsync())await Sharing.shareAsync(file.uri);
+    assertCurrent();
+    if(await File.canPreview(file)){assertCurrent();await File.preview(file,{title:safe});}
+    else if(await Sharing.isAvailableAsync()){assertCurrent();await Sharing.shareAsync(file.uri);}
     else throw Error('Thiết bị chưa có ứng dụng hỗ trợ mở tệp này.');
     return file;
   });

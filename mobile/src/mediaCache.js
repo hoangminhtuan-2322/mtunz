@@ -27,8 +27,9 @@ export async function withTemporaryMedia(token,id,name,work){
   const file=new File(Paths.cache,'mtunz-media-v2-'+scope+'-'+Crypto.randomUUID()+'-'+id+'-'+safeName(name));
   active.add(file.uri);
   try{
-    const result=await work(file);
-    if(retired.has(scope))throw Error('Phiên đăng nhập đã kết thúc.');
+    const assertCurrent=()=>{if(retired.has(scope))throw Error('Phiên đăng nhập đã kết thúc.');};
+    const result=await work(file,assertCurrent);
+    assertCurrent();
     return result;
   }catch(error){try{erase(file);}catch{}throw error;}
   finally{
