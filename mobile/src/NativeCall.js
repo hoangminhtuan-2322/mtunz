@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {Alert,AppState,Modal,Pressable,StyleSheet,Text,View} from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import {finishCall,formatCallDuration,callStatusLabel,appendCallHistory} from './callHistory';
 import {mediaDevices,MediaStream,RTCPeerConnection,RTCIceCandidate,RTCSessionDescription,RTCView} from 'react-native-webrtc';
 
 const ICE={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]};
@@ -14,7 +15,8 @@ export function useNativeCall(wsRef,friends){
   const contactsRef=useRef(friends);contactsRef.current=friends;
   const callRef=useRef(null),incomingRef=useRef(null),pendingIce=useRef(new Map()),startingRef=useRef(false);
   const generationRef=useRef(0),inviteTimerRef=useRef(null);
-  const [view,setView]=useState(null),[incoming,setIncoming]=useState(null);
+  const [view,setView]=useState(null),[incoming,setIncoming]=useState(null),[history,setHistory]=useState([]);
+  const clearHistory=useCallback(()=>setHistory([]),[]);
   const transmit=useCallback((type,to,signal=null,video=false)=>{
     const socket=wsRef.current;
     if(!socket||socket.readyState!==WebSocket.OPEN)return false;
@@ -23,25 +25,27 @@ export function useNativeCall(wsRef,friends){
   const update=useCallback(()=>{
     const c=callRef.current;
     setView(c?{peerId:c.peerId,title:c.title,video:c.video,local:c.local,
-      remote:c.remote,status:c.status,muted:c.muted,cameraDisabled:c.cameraDisabled}:null);
+      remote:c.remote,status:c.status,muted:c.muted,cameraDisabled:c.cameraDisabled,connectedAt:c.connectedAt}:null);
   },[]);
-  const endCall=useCallback((signal=true)=>{
+  const endCall=useCallback((signal=true,reason='ended')=>{
     ++generationRef.current;
     if(inviteTimerRef.current){clearTimeout(inviteTimerRef.current);inviteTimerRef.current=null;}
-    const c=callRef.current;callRef.current=null;startingRef.current=false;
+    const c=callRef.current,invite=incomingRef.current;callRef.current=null;startingRef.current=false;
+    const record=finishCall(c||invite,reason,Date.now());
+    if(record)setHistory(old=>appendCallHistory(old,record));
     if(c){
       if(signal)transmit('call-hangup',c.peerId);
       if(c.timer)clearTimeout(c.timer);
+      if(c.disconnectTimer)clearTimeout(c.disconnectTimer);
       try{c.local?.getTracks().forEach(track=>track.stop());}catch{}
       try{c.remote?.getTracks().forEach(track=>track.stop());}catch{}
       try{c.pc?.close();}catch{}
       pendingIce.current.delete(c.peerId);
     }
-    const invite=incomingRef.current;
     if(invite){if(signal&&!c)transmit('call-decline',invite.peerId);pendingIce.current.delete(invite.peerId);}
     incomingRef.current=null;setIncoming(null);setView(null);
   },[transmit]);
-  const setup=useCallback(async(peerId,title,video,generation)=>{
+  const setup=useCallback(async(peerId,title,video,generation,invite=null)=>{
     const local=await mediaDevices.getUserMedia({audio:true,video:!!video});
     if(generationRef.current!==generation||AppState.currentState==='background'){
       local.getTracks().forEach(track=>track.stop());return null;
@@ -50,7 +54,8 @@ export function useNativeCall(wsRef,friends){
     try{pc=new RTCPeerConnection(ICE);}catch(error){local.getTracks().forEach(track=>track.stop());throw error;}
     const remote=new MediaStream();
     const c={peerId,title,video,local,remote,pc,status:'Đang kết nối…',
-      muted:false,cameraDisabled:false,timer:null,ice:[]};
+      muted:false,cameraDisabled:false,timer:null,disconnectTimer:null,ice:[],
+      direction:invite?'incoming':'outgoing',startedAt:invite?.startedAt||Date.now(),connectedAt:null};
     callRef.current=c;
     local.getTracks().forEach(track=>pc.addTrack(track,local));
     pc.onicecandidate=event=>{
@@ -73,13 +78,20 @@ export function useNativeCall(wsRef,friends){
       c.status=state==='connected'?'Đã kết nối':
         state==='connecting'?'Đang kết nối…':
         state==='disconnected'?'Đang nối lại…':state==='failed'?'Kết nối thất bại':c.status;
-      if(state==='connected'&&c.timer){clearTimeout(c.timer);c.timer=null;}
-      if(state==='failed'||state==='closed'){endCall(false);return;}
+      if(state==='connected'){
+        if(!c.connectedAt)c.connectedAt=Date.now();
+        if(c.timer){clearTimeout(c.timer);c.timer=null;}
+        if(c.disconnectTimer){clearTimeout(c.disconnectTimer);c.disconnectTimer=null;}
+      }
+      if(state==='disconnected'&&!c.disconnectTimer){
+        c.disconnectTimer=setTimeout(()=>{if(callRef.current===c&&pc.connectionState!=='connected')endCall(true,'network');},15000);
+      }
+      if(state==='failed'||state==='closed'){endCall(false,'network');return;}
       update();
     };
     c.timer=setTimeout(()=>{
       if(callRef.current===c&&pc.connectionState!=='connected'){
-        endCall(true);
+        endCall(true,'timeout');
         Alert.alert('Không thể kết nối','Cuộc gọi không kết nối sau 45 giây. Mạng có thể cần máy chủ TURN.');
       }
     },45000);
@@ -103,14 +115,14 @@ export function useNativeCall(wsRef,friends){
       const signal=c.pc.localDescription?.toJSON?.()||offer;
       if(!transmit('call-offer',c.peerId,signal,video))throw Error('Mất kết nối với máy chủ.');
     }catch(error){
-      if(generationRef.current===generation){endCall(false);
+      if(generationRef.current===generation){endCall(false,'failed');
         Alert.alert('Không thể gọi',error?.message||'Không thể bật micro hoặc camera.');}
     }finally{if(generationRef.current===generation)startingRef.current=false;}
   },[endCall,setup,transmit,update,wsRef]);
   const decline=useCallback(()=>{
     const invite=incomingRef.current;
     if(invite){transmit('call-decline',invite.peerId);pendingIce.current.delete(invite.peerId);}
-    endCall(false);
+    endCall(false,'declined');
   },[transmit,endCall]);
   const accept=useCallback(async()=>{
     const invite=incomingRef.current;
@@ -118,7 +130,7 @@ export function useNativeCall(wsRef,friends){
     startingRef.current=true;
     const generation=++generationRef.current;
     try{
-      const c=await setup(invite.peerId,invite.title,invite.video,generation);
+      const c=await setup(invite.peerId,invite.title,invite.video,generation,invite);
       if(!c||callRef.current!==c)return;
       if(inviteTimerRef.current){clearTimeout(inviteTimerRef.current);inviteTimerRef.current=null;}
       incomingRef.current=null;setIncoming(null);
@@ -132,7 +144,7 @@ export function useNativeCall(wsRef,friends){
       if(!transmit('call-answer',invite.peerId,c.pc.localDescription?.toJSON?.()||answer))
         throw Error('Mất kết nối với máy chủ.');
     }catch(error){
-      if(generationRef.current===generation){endCall(false);transmit('call-decline',invite.peerId);
+      if(generationRef.current===generation){endCall(false,'failed');transmit('call-decline',invite.peerId);
         Alert.alert('Không thể nghe máy',error?.message||'Kiểm tra quyền micro/camera.');}
     }finally{if(generationRef.current===generation)startingRef.current=false;}
   },[endCall,setup,transmit]);
@@ -145,10 +157,10 @@ export function useNativeCall(wsRef,friends){
       if(!friend||callRef.current||incomingRef.current||startingRef.current||
          !data.signal||data.signal.type!=='offer'){transmit('call-decline',from);return;}
       const invite={peerId:from,title:friend.display_name||friend.username||'Bạn bè',
-        video:!!data.video,signal:data.signal};
+        video:!!data.video,signal:data.signal,direction:'incoming',startedAt:Date.now(),connectedAt:null};
       incomingRef.current=invite;setIncoming(invite);
       inviteTimerRef.current=setTimeout(()=>{
-        if(incomingRef.current===invite){transmit('call-decline',from);endCall(false);}
+        if(incomingRef.current===invite){transmit('call-decline',from);endCall(false,'timeout');}
       },45000);
       return;
     }
@@ -165,8 +177,8 @@ export function useNativeCall(wsRef,friends){
       return;
     }
     if(data.type==='call-hangup'||data.type==='call-decline'){
-      if(c?.peerId===from)endCall(false);
-      else if(incomingRef.current?.peerId===from)endCall(false);
+      if(c?.peerId===from)endCall(false,data.type==='call-decline'?'declined':'remote');
+      else if(incomingRef.current?.peerId===from)endCall(false,'remote');
       return;
     }
     if(data.type==='call-answer'&&c?.peerId===from&&data.signal?.type==='answer'){
@@ -176,7 +188,7 @@ export function useNativeCall(wsRef,friends){
         const queued=pendingIce.current.get(from)||[];
         pendingIce.current.delete(from);
         for(const ice of queued)await c.pc.addIceCandidate(new RTCIceCandidate(ice));
-      }catch{if(callRef.current===c){endCall(false);Alert.alert('Lỗi cuộc gọi','Không thể thiết lập kết nối thoại/video.');}}
+      }catch{if(callRef.current===c){endCall(false,'failed');Alert.alert('Lỗi cuộc gọi','Không thể thiết lập kết nối thoại/video.');}}
     }
   },[endCall,transmit]);
   const toggleMic=useCallback(()=>{
@@ -188,15 +200,21 @@ export function useNativeCall(wsRef,friends){
     c.cameraDisabled=!c.cameraDisabled;c.local?.getVideoTracks().forEach(t=>{t.enabled=!c.cameraDisabled;});update();
   },[update]);
   useEffect(()=>{
-    const sub=AppState.addEventListener('change',state=>{if(state==='background')endCall(true);});
+    const sub=AppState.addEventListener('change',state=>{if(state==='background')endCall(true,'background');});
     return()=>{sub.remove();endCall(false);};
   },[endCall]);
-  return {incoming,view,startCall,onSignal,decline,accept,endCall,toggleMic,toggleCamera};
+  return {incoming,view,startCall,onSignal,decline,accept,endCall,toggleMic,toggleCamera,history,clearHistory};
 }
 
 export function NativeCallOverlay({call}){
   const {incoming,view,decline,accept,endCall,toggleMic,toggleCamera}=call;
   const active=view||incoming;
+  const [clock,setClock]=useState(Date.now());
+  useEffect(()=>{
+    if(!view?.connectedAt)return;
+    setClock(Date.now());const timer=setInterval(()=>setClock(Date.now()),1000);
+    return()=>clearInterval(timer);
+  },[view?.connectedAt]);
   return <Modal visible={!!active} animationType="slide" presentationStyle="fullScreen"
     onRequestClose={()=>incoming?decline():endCall(true)}>
     <View style={styles.root}>
@@ -204,6 +222,7 @@ export function NativeCallOverlay({call}){
       <Text style={styles.title}>{active?.title||'Cuộc gọi mtunz'}</Text>
       <Text style={styles.subtitle}>{incoming?(incoming.video?'Cuộc gọi video đến':'Cuộc gọi thoại đến'):
         view?.status||'Đang kết nối…'}</Text>
+      {!!view?.connectedAt&&<Text style={styles.duration}>{formatCallDuration(Math.max(0,Math.floor((clock-view.connectedAt)/1000)))}</Text>}
       {view?.video&&<View style={styles.videoArea}>
         {view.remote?.toURL&&<RTCView style={styles.remoteVideo} streamURL={view.remote.toURL()} objectFit="cover"/>}
         {view.local?.toURL&&<RTCView style={styles.localVideo} streamURL={view.local.toURL()} objectFit="cover" mirror/>}
@@ -226,11 +245,13 @@ export function NativeCallOverlay({call}){
     </View>
   </Modal>;
 }
+export {formatCallDuration,callStatusLabel};
 const styles=StyleSheet.create({
   root:{flex:1,backgroundColor:COLORS.bg,alignItems:'center',padding:20,paddingTop:80,paddingBottom:48,gap:16},
   avatar:{width:94,height:94,borderRadius:47,backgroundColor:COLORS.panel,alignItems:'center',justifyContent:'center'},
   title:{color:COLORS.text,fontSize:25,fontWeight:'800',textAlign:'center'},
   subtitle:{color:COLORS.primary,fontSize:15,textAlign:'center'},
+  duration:{color:COLORS.text,fontSize:22,fontWeight:'700',fontVariant:['tabular-nums']},
   flex:{flex:1},
   videoArea:{flex:1,width:'100%',position:'relative',borderRadius:19,overflow:'hidden',backgroundColor:'#0c2135'},
   remoteVideo:{height:'100%',width:'100%'},
