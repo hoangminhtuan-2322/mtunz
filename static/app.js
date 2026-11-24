@@ -740,6 +740,7 @@ async function enterApp(resume=false){
 }
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
+ maskVisiblePasswords();
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  v4FailedSends.clear();directSendQueues.clear();clearChatReads();v4ClearDraftTimers();
  state.user=null;state.selected=null;state.groupSelected=null;state.savedDevice=false;state.rememberedDevice=false;
@@ -866,17 +867,22 @@ function showAuthFieldError(form,fieldName,message){
  input.focus({preventScroll:true});
  return true;
 }
+function passwordEye(name){
+ return `<button type="button" class="password-eye" data-password-eye aria-controls="${esc(name)}" aria-label="Hiển thị mật khẩu" aria-pressed="false">${icon('eye',19)}</button>`;
+}
 function inputField(label,name,type='text',placeholder='',attr='',required=true){
  const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
+ const reveal=type==='password'&&/password/i.test(name);
  return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
- <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
- <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':''}></div></div>`;
+ <div class="auth-input-wrap${reveal?' password-eye-wrap':''}"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
+ <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':''}>${reveal?passwordEye(name):''}</div></div>`;
 }
 /* Plain form control for account settings/admin: no absolutely positioned icon.
    Do not use the decorative auth-input component outside the sign-in flow. */
 function secureSettingsField(label,name,type='text',placeholder='',attr=''){
+ const reveal=type==='password'&&/password/i.test(name);
  return `<div class="field secure-settings-field"><label for="${name}">${esc(label)}</label>
- <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required></div>`;
+ ${reveal?'<div class="password-eye-wrap">':''}<input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required>${reveal?passwordEye(name)+'</div>':''}</div>`;
 }
 function authTabs(){return `<div class="auth-nav" role="group" aria-label="Điều hướng tài khoản">
  <button type="button" class="${state.mode==='login'?'active':''}" aria-pressed="${state.mode==='login'}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
@@ -1164,6 +1170,8 @@ function appRail(){
           <span class="rail-icon" aria-hidden="true">${icon('dots',20)}</span><span class="rail-text">Thêm</span><span class="rail-more-chevron" aria-hidden="true">${icon('chevron',14)}</span></button>
         <div id="rail-more-items" class="rail-extra ${moreOpen?'is-open':''}" ${moreOpen?'':'hidden'}>
           ${secondary.map(item).join('')}
+          <button type="button" class="rail-btn rail-android-download" data-act="android-download" title="Tải ứng dụng Android" aria-label="Tải ứng dụng Android">
+            <span class="rail-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M12 7v8m-3-3 3 3 3-3M10 19h4"/></svg></span><span class="rail-text">Tải Android</span></button>
         </div>
       </div>
     </nav>
@@ -2655,10 +2663,30 @@ function grantDialog(tid){
   toast('Đã gửi mã khôi phục tới cuộc trò chuyện.','ok');await loadAdmin();}});
 }
 
+async function showAndroidDownload(){
+ let release;
+ try{release=await api('/api/mobile/release');}
+ catch{release={available:false,unavailable_reason:'catalog_unreachable'};}
+ const version=release.version,code=release.version_code;
+ const valid=release.available&&release.platform==='android'&&release.package==='com.mtunz.web'&&
+   /^\d+\.\d+\.\d+$/.test(version)&&Number.isSafeInteger(code)&&code>0&&
+   release.download_url==='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v'+version+'-code'+code+'/mtunz-android-v'+version+'-code'+code+'.apk';
+ if(!valid){
+   modal({title:'Tải ứng dụng Android',description:release.unavailable_reason?'Tạm thời không kiểm tra được phiên bản. Vui lòng thử lại sau.':'Bản APK chính thức chưa được phát hành. Khi có bản mới, nút tải sẽ tự động xuất hiện.',
+     content:'<div class="android-release-panel"><strong>Android</strong><p class="hint">Hiện chỉ hỗ trợ Android. iOS chưa được hỗ trợ. Không cung cấp bản thử nghiệm thay cho bản chính thức.</p></div>',confirm:'Đóng',cancel:null});
+   return;
+ }
+ const size=Number.isFinite(release.size_bytes)?(release.size_bytes/1048576).toFixed(1)+' MB':'';
+ const day=release.published_at?new Date(release.published_at).toLocaleDateString('vi-VN'):'';
+ modal({title:'Tải ứng dụng Android',description:'Ứng dụng mtunz native, cùng tài khoản và tin nhắn với website. Chỉ hỗ trợ Android.',
+   content:`<div class="android-release-panel"><span class="eyebrow">PHIÊN BẢN CHÍNH THỨC</span><h3>mtunz ${esc(version)}</h3><p class="hint">Build ${code} · ${esc(size)} · ${esc(day)}</p>${release.stale?'<p class="hint">Đang hiển thị thông tin phiên bản đã xác nhận gần nhất.</p>':''}<p class="hint">Tải APK trên điện thoại Android, mở file và xác nhận cài đặt. Hệ thống Android sẽ kiểm tra chữ ký khi cập nhật.</p><p class="hint">iOS chưa được hỗ trợ.</p></div>`,
+   confirm:'Tải APK',cancel:'Đóng',handler:()=>{window.location.assign(release.download_url);}});
+}
 // ==== Centralized interactions (no inline event handlers, all user input escaped) ====
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
+  case 'android-download':await showAndroidDownload();break;
   case 'copy-member-id':{
     if(!state.user || state.user.is_admin)return;
     const accountId=String(state.user.public_id||state.user.id);
@@ -2850,6 +2878,25 @@ window.addEventListener('pageshow',()=>{
  if(state.user)return;
  const input=$('form[data-form="login-password"] input[data-manual-password]');
  if(input){input.value='';input.readOnly=true;delete input.dataset.manuallyUnlocked;}
+});
+function setPasswordVisibility(button,visible){
+ const field=button.closest('.password-eye-wrap')?.querySelector('input');
+ if(!field||!/password/i.test(field.name)||!['password','text'].includes(field.type))return;
+ field.type=visible?'text':'password';
+ button.setAttribute('aria-pressed',String(visible));
+ button.setAttribute('aria-label',visible?'Ẩn mật khẩu':'Hiển thị mật khẩu');
+ button.classList.toggle('is-revealed',visible);
+}
+function maskVisiblePasswords(){
+ document.querySelectorAll('[data-password-eye][aria-pressed="true"]').forEach(button=>setPasswordVisibility(button,false));
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)maskVisiblePasswords();});
+window.addEventListener('pagehide',maskVisiblePasswords);
+window.addEventListener('pageshow',maskVisiblePasswords);
+document.addEventListener('click',event=>{
+ const button=event.target.closest('[data-password-eye]');
+ if(!button)return;
+ setPasswordVisibility(button,button.getAttribute('aria-pressed')!=='true');
 });
 document.addEventListener('click',async event=>{
  const btn=event.target.closest('[data-act]');if(!btn||btn.disabled)return;
