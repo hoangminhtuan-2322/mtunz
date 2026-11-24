@@ -222,7 +222,7 @@ export function NativeCallOverlay({call}){
       <Text style={styles.title}>{active?.title||'Cuộc gọi mtunz'}</Text>
       <Text style={styles.subtitle}>{incoming?(incoming.video?'Cuộc gọi video đến':'Cuộc gọi thoại đến'):
         view?.status||'Đang kết nối…'}</Text>
-      {!!view?.connectedAt&&<Text style={styles.duration}>{formatCallDuration(Math.max(0,Math.floor((clock-view.connectedAt)/1000)))}</Text>
+      {!!view?.connectedAt&&<Text style={styles.duration}>{formatCallDuration(Math.max(0,Math.floor((clock-view.connectedAt)/1000)))}</Text>}
       {view?.video&&<View style={styles.videoArea}>
         {view.remote?.toURL&&<RTCView style={styles.remoteVideo} streamURL={view.remote.toURL()} objectFit="cover"/>}
         {view.local?.toURL&&<RTCView style={styles.localVideo} streamURL={view.local.toURL()} objectFit="cover" mirror/>}
