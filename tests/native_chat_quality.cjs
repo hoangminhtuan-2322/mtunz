@@ -43,7 +43,7 @@ assert(chat.includes('newerMessages&&<Pressable')&&
 assert(chat.includes("if(id>previous)")&&
   chat.includes('isAtLatestRef.current'),
   'Only truly newer messages should trigger auto-scroll or jump control');
-assert(app.includes('KeyboardProvider')&&chat.includes('automaticOffset'),
+assert(app.includes('KeyboardProvider')&&chat.includes('KeyboardStickyView')&&chat.includes('KeyboardChatScrollView'),
   'Keyboard-safe input required in login and chat');
 assert(chat.includes('onContentSizeChange')&&chat.includes('if(isAtLatestRef.current)'),
   'Async message and photo layout changes must keep latest message visible');

@@ -24,16 +24,24 @@ assert(app.includes('SafeAreaProvider initialMetrics={initialWindowMetrics}'),
   'Keep exactly one safe-area provider under keyboard root');
 assert(app.includes("behavior={Platform.OS==='android'?'height':'padding'} automaticOffset keyboardVerticalOffset={0}"),
   'Auth should remain visible above IME on Android');
-assert(chat.includes("import {KeyboardAvoidingView} from 'react-native-keyboard-controller'"),
-  'Do not use legacy React Native KeyboardAvoidingView for chat');
-assert(chat.includes("behavior={Platform.OS==='android'?'height':'padding'}")&&
-  chat.includes('automaticOffset keyboardVerticalOffset={0}'),
-  'Native keyboard controller should shrink chat column on Android and pad iOS');
+assert(chat.includes("import {KeyboardChatScrollView,KeyboardStickyView} from 'react-native-keyboard-controller'"),
+  'Use native chat scroll and a sticky composer instead of layout-driven avoidance');
+assert(!chat.includes('<KeyboardAvoidingView')&&!chat.includes('Keyboard.addListener('),
+  'Chat must not wait for JS keyboard events or resize twice');
+assert(chat.includes('offset={bottom} keyboardLiftBehavior="always"')&&
+  chat.includes('automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"'),
+  'Native list insets must match the existing bottom safe area');
+assert(chat.includes('const renderChatScroll=useCallback')&&chat.includes('renderScrollComponent={renderChatScroll}')&&
+  chat.includes('ref={ref} inverted={inverted}'),
+  'Keep a stable custom scroll component and inverted list ref');
+assert(chat.includes('offset={{closed:0,opened:keyboardBottomInset}}')&&
+  chat.includes('stickyComposer:{flexShrink:0,zIndex:2'),
+  'Composer must move with native IME frames and remain above the list');
 assert(chat.includes('chatKeyboardArea:{flex:1,minHeight:0}'),
   'Chat column must be shrinkable');
 assert(chat.includes('scrollEventThrottle={16}')&&
   chat.includes('onScroll={event=>'),'Read whether user is near the bottom of the inverted list');
-assert(chat.includes("onFocus={()=>scrollToLatest(true)}"),
+assert(chat.includes("onFocus={()=>scrollToLatest(false)}"),
   'Focus should always scroll to newest message');
 assert(chat.includes('listRef.current?.scrollToOffset({offset:0,animated})'),
   'Inverted list latest message is offset zero');
@@ -47,11 +55,12 @@ assert(chat.includes("const jumpBack=()=>{Keyboard.dismiss();"),
   'Leaving chat should hide keyboard');
 assert(chat.includes('keyboardShouldPersistTaps="handled"'),
   'Send and attachment buttons should respond with keyboard up');
-const room=chat.slice(chat.indexOf('{room?<KeyboardAvoidingView'),
-  chat.indexOf('</KeyboardAvoidingView>:'));
-assert(room.includes('<FlatList')&&room.includes('<View style={css.compose}>')&&
-  room.indexOf('<FlatList')<room.indexOf('<View style={css.compose}>'),
-  'List and composer belong to one IME-aware column');
+const room=chat.slice(chat.indexOf('{room?<View style={css.chatKeyboardArea}>'),
+  chat.indexOf('</KeyboardStickyView>')+'</KeyboardStickyView>'.length);
+const sticky=room.slice(room.indexOf('<KeyboardStickyView'));
+assert(room.includes('<FlatList')&&room.indexOf('<FlatList')<room.indexOf('<KeyboardStickyView')&&
+  sticky.includes('<View style={css.compose}>')&&sticky.includes('css.replyBar')&&sticky.includes('worldAlias'),
+  'All composer controls, reply/attachment previews and world alias must travel together');
 assert(room.includes('accessibilityLabel="Gửi tin nhắn"')||
   room.includes("accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}"),
   'Send action must remain accessible above keyboard');

@@ -5,9 +5,9 @@ import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
 import {ActivityIndicator,Alert,AppState,FlatList,Image,Keyboard,
   Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
-import {KeyboardAvoidingView} from 'react-native-keyboard-controller';
+import {KeyboardChatScrollView,KeyboardStickyView} from 'react-native-keyboard-controller';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {SafeAreaView,useSafeAreaInsets} from 'react-native-safe-area-context';
 import {API_ORIGIN,api,wsUrl} from './client';
 import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   saveSharedFile,uploadAttachment} from './media';
@@ -180,7 +180,18 @@ function FriendPresenceBadge({friend,connected,clock}){
     <Text numberOfLines={1} style={css.chatPresenceText}>{presence.short}</Text>
   </View>;
 }
+// Native IME animation drives both the composer and the inverted list.
+// The outer App SafeAreaView already reserves the navigation-bar inset.
+const ChatScrollView=React.forwardRef(function ChatScrollView({inverted,...props},ref){
+  const {bottom}=useSafeAreaInsets();
+  return <KeyboardChatScrollView {...props} ref={ref} inverted={inverted}
+    offset={bottom} keyboardLiftBehavior="always"
+    automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"/>;
+});
+
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
+  const {bottom:keyboardBottomInset}=useSafeAreaInsets();
+  const renderChatScroll=useCallback(props=><ChatScrollView {...props} inverted/>,[]);
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
   const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
   const [newerMessages,setNewerMessages]=useState(false);
@@ -792,13 +803,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       else setNewerMessages(true);
     }
   },[messages,room?.scope,room?.id]);
-  useEffect(()=>{
-    if(!room)return;
-    const shown=Keyboard.addListener(Platform.OS==='ios'?'keyboardWillShow':'keyboardDidShow',()=>{
-      scrollToLatest(true);
-    });
-    return()=>shown.remove();
-  },[room?.scope,room?.id]);
+  // Do not wait for keyboardDidShow or drive keyboard position through JS.
+  // Focus jumps to the latest message; the native IME animation handles movement.
 
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
     ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
@@ -866,11 +872,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     {!!error&&<Pressable onPress={()=>setError('')} style={css.errorBar}>
       <Text style={{color:P.bad}}>{error}  ×</Text>
     </Pressable>}
-    {room?<KeyboardAvoidingView style={css.chatKeyboardArea}
-      behavior={Platform.OS==='android'?'height':'padding'}
-      automaticOffset keyboardVerticalOffset={0}>
+    {room?<View style={css.chatKeyboardArea}>
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
+        renderScrollComponent={renderChatScroll} style={css.chatListViewport}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS==='ios'?'interactive':'none'}
         onScroll={event=>{
@@ -893,6 +898,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         ListEmptyComponent={!loading?<EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/>:null}
         onEndReached={loadOlder} onEndReachedThreshold={0.25}
         maintainVisibleContentPosition={{minIndexForVisible:0}}/>
+      <KeyboardStickyView offset={{closed:0,opened:keyboardBottomInset}} style={css.stickyComposer}>
       {newerMessages&&<Pressable accessibilityRole="button" accessibilityLabel="Chuyển tới tin nhắn mới nhất"
         onPress={()=>scrollToLatest()} style={css.jumpLatest}>
         <Ionicons name="arrow-down" size={17} color="#f7fbff"/>
@@ -929,7 +935,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
               color={recordState.isRecording?P.bad:P.accent}/></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
           textAlignVertical="center" blurOnSubmit={false}
-          onFocus={()=>scrollToLatest(true)}
+          onFocus={()=>scrollToLatest(false)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
             sendTyping(value);
@@ -943,7 +949,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <Ionicons name="send" size={20} color={P.bg}/>}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>:<>
+      </KeyboardStickyView>
+    </View>:<>
       {tab==='dm'&&<FlatList data={matchingFriends}
         keyboardShouldPersistTaps="handled" keyExtractor={f=>String(f.other_id)}
         contentContainerStyle={css.inboxContent}
@@ -1596,6 +1603,8 @@ const css=StyleSheet.create({
   attachmentText:{color:P.text,fontSize:12,fontWeight:'700'},
   reactionText:{color:P.text,fontSize:13},
   chatKeyboardArea:{flex:1,minHeight:0},
+  chatListViewport:{flex:1,minHeight:0},
+  stickyComposer:{flexShrink:0,zIndex:2,backgroundColor:P.bg},
   compose:{flexDirection:'row',gap:6,paddingHorizontal:10,paddingTop:11,paddingBottom:10,
     width:'100%',minWidth:0,alignItems:'flex-end',borderTopColor:'#2d4a64',
     borderTopWidth:1,backgroundColor:'#10253a'},
