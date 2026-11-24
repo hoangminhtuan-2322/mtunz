@@ -77,6 +77,6 @@ for(const required of [
   'AS last_active_at',
 ])assert(backend.includes(required),'Backend must govern privacy and live state: '+required);
 assert.equal(app.android.package,'com.mtunz.web');
-assert.equal(app.version,'1.0.0');
-assert.equal(app.android.versionCode,10);
+assert.equal(app.version,'1.1.0');
+assert.equal(app.android.versionCode,11);
 console.log('Web-parity native presence, last activity, privacy, stale-socket, Admin monitoring and signed version: PASS');

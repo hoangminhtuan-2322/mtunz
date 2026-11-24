@@ -748,6 +748,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   // near the bottom, and always jump after a local send or input focus.
   function scrollToLatest(animated=true){
     isAtLatestRef.current=true;setNewerMessages(false);
+    // The inverted list may not have measured a just-sent image or message yet.
+    // Scroll on the next frame, then let onContentSizeChange finish positioning.
     requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated}));
   }
   useEffect(()=>{
@@ -831,18 +833,23 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS==='ios'?'interactive':'on-drag'}
+        keyboardDismissMode={Platform.OS==='ios'?'interactive':'none'}
         onScroll={event=>{
           const closeToLatest=event.nativeEvent.contentOffset.y<=100;
           isAtLatestRef.current=closeToLatest;
           if(closeToLatest&&newerMessages)setNewerMessages(false);
         }}
         scrollEventThrottle={16}
+        onContentSizeChange={()=>{
+          // Keep the most recent bubble visible after async image sizing and sends.
+          // Never pull someone away from older messages they are reading.
+          if(isAtLatestRef.current)listRef.current?.scrollToOffset({offset:0,animated:false});
+        }}
         renderItem={({item})=><Message item={item} own={item.sender_id===user.id||item.is_mine}
           token={token} onSelect={room.scope==='world'?()=>{}:setSelection}
           onOpen={openAttachment}/>}
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
-        removeClippedSubviews={Platform.OS==='android'}
+        removeClippedSubviews={false} // avoid disappearing photo/video cells on Android
         contentContainerStyle={css.messageList}
         ListEmptyComponent={!loading?<EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/>:null}
         onEndReached={loadOlder} onEndReachedThreshold={0.25}
@@ -882,6 +889,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onPress={toggleVoice} disabled={voiceBusy||sending}><Ionicons name={recordState.isRecording?'stop-circle':'mic-outline'} size={21}
               color={recordState.isRecording?P.bad:P.accent}/></Pressable>
         <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
+          textAlignVertical="center" blurOnSubmit={false}
           onFocus={()=>scrollToLatest(true)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
           onChangeText={value=>{
@@ -905,7 +913,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <Text style={css.eyebrow}>HỘP THƯ CỦA BẠN</Text>
             <Text style={css.h2}>Cuộc trò chuyện</Text></View>
             <Text style={css.countPill}>{matchingFriends.length} liên hệ</Text></View>
-          <View style={css.searchWrap}><Text style={css.searchGlyph}>⌕</Text>
+          <View style={css.searchWrap}><Ionicons name="search-outline" size={19} color={P.soft}/>
             <TextInput value={inboxQuery} onChangeText={setInboxQuery}
               placeholder="Tìm cuộc trò chuyện..." placeholderTextColor={P.soft}
               style={css.searchInput}/></View>
@@ -970,7 +978,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             <Text style={css.eyebrow}>CỘNG ĐỒNG RIÊNG</Text>
             <Text style={css.h2}>Nhóm của tôi</Text></View>
             <Btn small onPress={()=>setDialog('createGroup')}>＋ Tạo</Btn></View>
-          <View style={css.searchWrap}><Text style={css.searchGlyph}>⌕</Text>
+          <View style={css.searchWrap}><Ionicons name="search-outline" size={19} color={P.soft}/>
             <TextInput value={groupQuery} onChangeText={setGroupQuery}
               placeholder="Tìm nhóm..." placeholderTextColor={P.soft} style={css.searchInput}/></View>
         </View>}

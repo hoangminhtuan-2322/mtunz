@@ -9,8 +9,8 @@ const gallery=read('mobile/src/SharedConversationGallery.js');
 const app=read('mobile/App.js');
 const cfg=require('../mobile/app.json').expo;
 const pkg=require('../mobile/package.json');
-assert.equal(cfg.version,'1.0.0');
-assert.equal(cfg.android.versionCode,10);
+assert.equal(cfg.version,'1.1.0');
+assert.equal(cfg.android.versionCode,11);
 assert.equal(cfg.android.package,'com.mtunz.web');
 assert.equal(pkg.dependencies['@expo/vector-icons'],'^15.0.2');
 assert(chat.includes("import Ionicons from '@expo/vector-icons/Ionicons';"),
@@ -45,6 +45,12 @@ assert(chat.includes("if(id>previous)")&&
   'Only truly newer messages should trigger auto-scroll or jump control');
 assert(app.includes('KeyboardProvider')&&chat.includes('automaticOffset'),
   'Keyboard-safe input required in login and chat');
+assert(chat.includes('onContentSizeChange')&&chat.includes('if(isAtLatestRef.current)'),
+  'Async message and photo layout changes must keep latest message visible');
+assert(chat.includes("keyboardDismissMode={Platform.OS==='ios'?'interactive':'none'}"),
+  'Android scrolling must not dismiss the keyboard and hide the composer');
+assert(chat.includes('removeClippedSubviews={false}'),
+  'Android should not clip or blank out photo/video bubbles');
 assert(gallery.includes('attachmentSource'),
   'Keep full-screen saved image access and shared-gallery parity');
 const gate=read('tests/web_android_parity_gate.cjs');
