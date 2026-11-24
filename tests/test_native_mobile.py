@@ -287,7 +287,9 @@ def test_native_admin_receives_background_registration_and_support(monkeypatch):
         assert result.status_code==200,result.text
         [message]=sent.get(timeout=3)
         assert message['to']==endpoint
-        assert message['data']=={'kind':'registration','chat_id':0}
+        assert {k:message['data'][k] for k in ('kind','chat_id')}=={'kind':'registration','chat_id':0}
+        assert len(message['data']['session_binding'])==64
+        assert 'categoryId' not in message
         assert 'native_push_signup' not in message['body']
         assert message['channelId']=='messages' and message['sound']=='default'
         with db() as c:
@@ -297,7 +299,9 @@ def test_native_admin_receives_background_registration_and_support(monkeypatch):
         assert ticket.status_code==200,ticket.text
         tid=ticket.json()['id']
         [message]=sent.get(timeout=3)
-        assert message['data']=={'kind':'support','chat_id':tid}
+        assert {k:message['data'][k] for k in ('kind','chat_id')}=={'kind':'support','chat_id':tid}
+        assert len(message['data']['session_binding'])==64
+        assert 'categoryId' not in message
         assert 'Private data' not in message['body']
         assert running.post(f'/api/support/tickets/{tid}/messages',json={'body':'Confidential'}).status_code==200
         [message]=sent.get(timeout=3)
@@ -371,7 +375,9 @@ def test_android_support_reply_push_to_owner_without_private_body(monkeypatch):
         assert sent.status_code==200,sent.text
         [message]=received.get(timeout=4)
         assert message['to']==token
-        assert message['data']=={'kind':'support_reply','chat_id':tid}
+        assert {k:message['data'][k] for k in ('kind','chat_id')}=={'kind':'support_reply','chat_id':tid}
+        assert len(message['data']['session_binding'])==64
+        assert 'categoryId' not in message
         assert 'Thông tin tài khoản riêng tư' not in message['body']
         assert message['channelId']=='messages'
 
@@ -434,3 +440,15 @@ def test_expo_receipt_missing_retained_until_available(monkeypatch):
     with db() as c:
         assert c.execute('SELECT 1 FROM mobile_push_receipts WHERE receipt_id=?',
                          ('expo-receipt-not-ready',)).fetchone()
+
+def test_mobile_notification_message_actions_keep_private_body_and_bind_session():
+    from mobile_push import build_push_message, MESSAGE_CATEGORY
+    import hashlib
+    row={'token':'ExpoPushToken[test-token]','session_hash':'a'*64}
+    message=build_push_message(row,'dm',42)
+    assert message['categoryId']==MESSAGE_CATEGORY
+    assert message['body']=='Bạn có tin nhắn mới.'
+    assert message['data']=={'kind':'dm','chat_id':42,'session_binding':hashlib.sha256(('mtunz-push-response:'+row['session_hash']).encode()).hexdigest()}
+    assert row['session_hash'] not in str(message)
+    assert build_push_message(row,'group',42)['categoryId']==MESSAGE_CATEGORY
+    assert 'categoryId' not in build_push_message(row,'support_reply',42)

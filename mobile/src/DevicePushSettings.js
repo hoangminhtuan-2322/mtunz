@@ -1,8 +1,9 @@
 import React,{useEffect,useState} from 'react';
-import {AppState,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {AppState,Linking,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import {api} from './client';
+import {MESSAGE_CATEGORY,QUICK_REPLY,OPEN_CHAT} from './notificationActions';
 
 Notifications.setNotificationHandler({
   handleNotification:async()=>({
@@ -24,10 +25,19 @@ function isPushConfigured(){
   return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(pushProjectId());
 }
 
+async function registerMessageActions(){
+  if(Platform.OS!=='android')return;
+  await Notifications.setNotificationCategoryAsync(MESSAGE_CATEGORY,[
+    {identifier:OPEN_CHAT,buttonTitle:'Mở hội thoại',options:{opensAppToForeground:true}},
+    {identifier:QUICK_REPLY,buttonTitle:'Soạn trả lời',textInput:{placeholder:'Nhập nội dung',submitButtonTitle:'Mở để gửi'},
+      options:{opensAppToForeground:true,isAuthenticationRequired:true}},
+  ]);
+}
 async function enablePush(session){
   const projectId=pushProjectId();
   if(!isPushConfigured())throw Error('APK chưa được liên kết Firebase/Expo. Hãy cập nhật bản có thông báo nền.');
   if(Platform.OS==='android'){
+    await registerMessageActions().catch(()=>{});
     await Notifications.setNotificationChannelAsync('messages',{
       name:'Thông báo mtunz',importance:Notifications.AndroidImportance.HIGH,sound:'default',
     });
@@ -48,6 +58,7 @@ export default function DevicePushSettings({token,compact=false}){
   useEffect(()=>{
     if(!readyForPush)return;
     let active=true,lastAttempt=0;
+    void registerMessageActions().catch(()=>{});
     const sync=async()=>{
       lastAttempt=Date.now();
       try{
@@ -117,6 +128,7 @@ export default function DevicePushSettings({token,compact=false}){
         <Text style={styles.label}>{label}</Text>
       </Pressable>)}
     </View>
+    {readyForPush&&Platform.OS==='android'&&<Pressable accessibilityRole="button" onPress={()=>Linking.openSettings().catch(()=>setMessage('Không mở được cài đặt Android.'))} style={styles.button}><Text style={styles.label}>Cài đặt thông báo Android</Text></Pressable>}
     {message?<Text accessibilityLiveRegion="polite" style={styles.status}>{message}</Text>:null}
     </View>}
   </View>;

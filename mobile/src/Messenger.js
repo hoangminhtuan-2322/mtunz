@@ -17,6 +17,7 @@ import {useNativeCall,NativeCallOverlay} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
+import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
@@ -606,27 +607,58 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{
-    const onResponse=response=>{
-      const data=response?.notification?.request?.content?.data||{};
-      const scope=data.kind==='dm'?'dm':data.kind==='group'?'group':null;
-      const chatId=Number(data.chat_id);
-      if(!Number.isSafeInteger(chatId)||chatId<=0)return;
-      if(scope){openRoom({scope,id:chatId});return;}
-      if(data.kind==='support_reply'){
-        setRoom(null);
-        setDialog('support');
-        invoke('/api/support/tickets').then(result=>{
-          setSupportTickets(result.tickets||[]);
-          setSupportPaused(!!result.paused);
-          const item=(result.tickets||[]).find(ticket=>ticket.id===chatId);
-          if(item)openSupportTicket(item).catch(alertError);
-        }).catch(alertError);
-      }
+    let active=true;
+    const handled=new Set();
+    const binding=Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,token)
+      .then(hash=>Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,'mtunz-push-response:'+hash));
+    const onResponse=async response=>{
+      const request=response?.notification?.request;
+      const id=request?.identifier;
+      if(!id||handled.has(id))return;
+      handled.add(id);
+      if(handled.size>100)handled.delete(handled.values().next().value);
+      try{
+        const last=await Notifications.getLastNotificationResponseAsync();
+        if(last?.notification?.request?.identifier===id)await Notifications.clearLastNotificationResponseAsync();
+        const parsed=parsePushResponse(response,await binding,Notifications.DEFAULT_ACTION_IDENTIFIER);
+        if(!active||!parsed)return;
+        const {scope,chatId,text}=parsed;
+        if(scope){
+          // Server still authorizes every history/send request. No notification action sends a message.
+          const data=await invoke(scope==='dm'?'/api/friends':'/api/groups');
+          if(!active)return;
+          const authorized=scope==='dm'?(data.friends||[]).some(f=>Number(f.other_id)===chatId&&f.state==='accepted'&&!f.restricted):
+            (data.groups||[]).some(g=>Number(g.id)===chatId);
+          if(!authorized){setError('Cuộc trò chuyện không còn khả dụng.');return;}
+          if(sendRef.current){setError('Đang gửi tin nhắn. Hãy mở lại thông báo sau khi hoàn tất.');return;}
+          const target={scope,id:chatId},key=conversationKey(target);
+          if(text){
+            // Merge the encrypted saved draft before applying the action, without replacing user text.
+            const saved=await readDraftVault(token).catch(()=>({}));
+            if(!active)return;
+            draftsRef.current=mergeHydratedDrafts(saved,draftsRef.current,draftDirtyRef.current);
+            const merged=combineReplyDraft(draftsRef.current[key],text);
+            if(merged===null){setError('Bản nháp đã gần đầy. Hãy mở hội thoại để chỉnh sửa trước khi trả lời.');return;}
+            changeStoredDraft(key,merged);persistDrafts();
+          }
+          openRoom(target);
+          if(text)requestAnimationFrame(()=>{if(active&&conversationKey(roomRef.current)===key)inputRef.current?.focus();});
+          return;
+        }
+        if(parsed.kind==='support_reply'){ // validated equivalent of data.kind==='support_reply'
+          const result=await invoke('/api/support/tickets');
+          if(!active)return;
+          const item=(result.tickets||[]).find(ticket=>Number(ticket.id)===chatId);
+          if(!item)return;
+          setRoom(null);setDialog('support');setSupportTickets(result.tickets||[]);setSupportPaused(!!result.paused);
+          await openSupportTicket(item);
+        }
+      }catch(e){if(active)alertError(e);}
     };
-    const sub=Notifications.addNotificationResponseReceivedListener(onResponse);
-    Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
-    return()=>sub.remove();
-  },[openRoom]);
+    const sub=Notifications.addNotificationResponseReceivedListener(response=>{void onResponse(response);});
+    Notifications.getLastNotificationResponseAsync().then(result=>{if(result&&active)void onResponse(result);}).catch(()=>{});
+    return()=>{active=false;sub.remove();};
+  },[openRoom,token,invoke,alertError]);
   const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
     roomRef.current=null;isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
