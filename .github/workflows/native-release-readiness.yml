@@ -56,3 +56,5 @@ jobs:
             echo 'PERMANENT_SIGNING_CERTIFICATE: UNVERIFIED'
           fi
           echo 'Preflight only: no APK signed, no FCM delivery tested, no deployment performed.'
+
+# Recheck after owner configured Firebase FCM V1 and Expo project variables.
