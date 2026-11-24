@@ -12,6 +12,11 @@ on:
       - '.github/workflows/android-apk.yml'
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: "Publish signed APK publicly after physical-device QA"
+        required: true
+        type: boolean
+        default: false
       sign_release:
         description: "Sign the fully NATIVE mtunz APK using the same permanent key as Android 1.0.1"
         required: true
@@ -35,6 +40,11 @@ jobs:
     env:
       EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
       CI: '1'
+      SIGNED_NATIVE_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.MTUNZ_AUTO_ANDROID_RELEASE == 'true') }}
+    outputs:
+      version: ${{ steps.android_version.outputs.name }}
+      code: ${{ steps.android_version.outputs.code }}
+      signed: ${{ steps.android_version.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,12 +57,37 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
+      - name: Read latest published Android build code
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          MAX_CODE="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | awk -F'-code' '/^android-v[0-9]+\.[0-9]+\.[0-9]+-code[1-9][0-9]*$/ {print $2}' | sort -n | tail -1)"
+          echo "MAX_PUBLISHED_ANDROID_CODE=${MAX_CODE:-0}" >> "$GITHUB_ENV"
+      - name: Read Android release identity from app.json
+        id: android_version
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const f=require('./app.json').expo;
+          if(f.android.package!=='com.mtunz.web'||!Number.isSafeInteger(f.android.versionCode)||f.android.versionCode<2||f.android.versionCode>2100000000||!/^\d+\.\d+\.\d+$/.test(f.version))
+            throw Error('Invalid Android release identity');
+          const signed=process.env.SIGNED_NATIVE_RELEASE==='true';
+          const maxCode=Number(process.env.MAX_PUBLISHED_ANDROID_CODE||0);
+          if(!Number.isSafeInteger(maxCode)||maxCode<0)throw Error('Invalid published version code');
+          const code=signed?Math.max(f.android.versionCode,maxCode+1):f.android.versionCode;
+          if(code>2100000000)throw Error('Android version code exhausted');
+          if(signed)fs.appendFileSync(process.env.GITHUB_ENV,'MTUNZ_ANDROID_BUILD_CODE='+code+'\n');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'name='+f.version+'\ncode='+code+'\nsigned='+signed+'\n');
+          NODE
       - name: Verify original logo and native identity
         run: |
           test "$(git hash-object assets/icon.png)" = '282a6971e38d51ce570b094e07d5624663bbedbb'
           node - <<'NODE'
           const f=require('./app.json').expo;
-          if(f.android.package!=='com.mtunz.web'||f.android.versionCode!==11||f.version!=='1.1.0')
+          if(f.android.package!=='com.mtunz.web'||!Number.isSafeInteger(f.android.versionCode)||f.android.versionCode<2||!/^\d+\.\d+\.\d+$/.test(f.version))
             throw Error('Native package/version must update mtunz 1.0.1 without changing package');
           if(f.icon!=='./assets/icon.png')throw Error('Original logo was replaced');
           NODE
@@ -66,7 +101,7 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.MTUNZ_ANDROID_GOOGLE_SERVICES }}
           EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
-          REQUIRE_NATIVE_PUSH: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+          REQUIRE_NATIVE_PUSH: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         run: |
           if [[ "$REQUIRE_NATIVE_PUSH" != "true" ]]; then
             echo '::warning::Native side-by-side preview does not bundle production Firebase. Push is disabled in preview.'
@@ -96,6 +131,10 @@ jobs:
         run: node ../tests/native_shared_gallery.cjs
       - name: Verify native Admin operations and PIN protections
         run: node ../tests/native_admin_parity.cjs
+      - name: Verify true native WebRTC call wiring and Android permissions
+        run: node ../tests/native_webrtc_calls.cjs
+      - name: Verify native Admin audit log parity
+        run: node ../tests/native_admin_audit.cjs
       - name: Verify native Admin fast reconnect and push lifecycle
         run: node ../tests/native_admin_reconnect.cjs
       - name: Verify live presence, privacy and Web parity in native app
@@ -108,11 +147,13 @@ jobs:
         run: |
           cd ..
           python3 -m unittest discover -s tests -p test_android_release_catalog.py
-          node --check static/app.js
+          node tests/android_release_sync.cjs
           node tests/native_android_download.cjs
           node tests/android_preview_download.cjs
       - name: Verify password visibility and PIN masking on web and Android
-        run: node ../tests/password_visibility.cjs
+        run: |
+          node ../tests/password_visibility.cjs
+          node --check ../static/app.js
       - name: Check responsive Android login on narrow screens
         run: node ../tests/native_auth_layout.cjs
       - name: Keep composer visible above Android keyboard
@@ -122,12 +163,25 @@ jobs:
       - name: Verify push release credentials and support reply routing
         run: node ../tests/native_push_release.cjs
       - name: Verify Firebase/Expo push release prerequisites
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         env:
           EXPO_FCM_V1_READY: ${{ vars.EXPO_FCM_V1_READY }}
         run: node tools/verify_push_release.cjs
       - name: Generate ACTUAL Android native project and JS bundle
         run: npx expo prebuild --platform android --non-interactive
+      - name: Preserve WebRTC JNI classes during Android release optimization
+        run: |
+          set -euo pipefail
+          RULES=android/app/proguard-rules.pro
+          test -f "$RULES"
+          # WebRTC M155.0.1 references an optional AV1 decoder JNI interface
+          # absent from its packaged AAR. Scope the suppression to that class,
+          # not all R8 warnings. Keep the JNI classes used by the native module.
+          cat >> "$RULES" <<'PROGUARD'
+          -keep class com.oney.WebRTCModule.** { *; }
+          -keep class org.webrtc.** { *; }
+          -dontwarn org.webrtc.Dav1dDecoder$Natives
+          PROGUARD
       - name: Check generated native manifest and launch package
         run: |
           test -f android/app/build.gradle
@@ -138,7 +192,7 @@ jobs:
             exit 1
           fi
       - name: Require the permanent signing key only for authorized main release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         env:
           KEYSTORE_BASE64: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
@@ -154,7 +208,7 @@ jobs:
           test -s "$RUNNER_TEMP/mtunz-fixed-release.jks"
           echo "MTUNZ_NATIVE_KEYSTORE_PATH=$RUNNER_TEMP/mtunz-fixed-release.jks" >> "$GITHUB_ENV"
       - name: Configure release signing (NEVER debug key for distribution)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         env:
           MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
@@ -182,7 +236,7 @@ jobs:
             sleep $((attempt * 5))
           done
       - name: Build standalone native RELEASE with the permanent mtunz signing key
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         env:
           MTUNZ_NATIVE_KEYSTORE_PASSWORD: ${{ secrets.MTUNZ_ANDROID_WEB_KEYSTORE_PASSWORD }}
           MTUNZ_NATIVE_KEY_ALIAS: ${{ secrets.MTUNZ_ANDROID_WEB_KEY_ALIAS }}
@@ -192,17 +246,18 @@ jobs:
           cd android
           ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
       - name: Give debug preview an independent Android identity
-        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE != 'true' }}
         run: node tools/configure_preview_package.cjs
       - name: Build standalone NATIVE preview with debug signing only
-        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE != 'true' }}
         run: |
           chmod +x android/gradlew
           cd android
           ./gradlew :app:assembleRelease --no-daemon --stacktrace --max-workers=2
       - name: Verify native JS bundle and APK signature
         env:
-          SIGNED_NATIVE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+          EXPECTED_VERSION: ${{ steps.android_version.outputs.name }}
+          EXPECTED_CODE: ${{ steps.android_version.outputs.code }}
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           test -s "$APK"
@@ -211,9 +266,9 @@ jobs:
           "$SIGNER" verify --verbose --print-certs "$APK"
           EXPECTED_PACKAGE=com.mtunz.web.preview
           if [[ "$SIGNED_NATIVE_RELEASE" == "true" ]]; then EXPECTED_PACKAGE=com.mtunz.web; fi
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='$EXPECTED_PACKAGE' versionCode='11' versionName='1.1.0'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='$EXPECTED_PACKAGE' versionCode='$EXPECTED_CODE' versionName='$EXPECTED_VERSION'"
       - name: Enforce fixed release certificate, NOT debug signer
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         run: python ../android-web/tools/verify_release_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
       - name: Detect Android emulator hardware acceleration
         id: native_emulator
@@ -241,7 +296,7 @@ jobs:
           echo '::warning::Native build and signing passed, but no Android runtime launch was verified on this GitHub runner.'
           echo 'Native runtime QA must be performed on a physical Android phone before distributing widely.'
       - name: Upload NATIVE preview (DEBUG-signed, not for updating existing installation)
-        if: ${{ ! (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE != 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: mtunz-NATIVE-SIDEBYSIDE-PREVIEW-debug
@@ -249,10 +304,50 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload NATIVE release (permanent signing key, can update TWA 1.0.1)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main' }}
+        if: ${{ env.SIGNED_NATIVE_RELEASE == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: mtunz-NATIVE-1.1.0-RELEASE-fixed-key
+          name: mtunz-NATIVE-${{ steps.android_version.outputs.name }}-RELEASE-fixed-key
           path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+  publish-android:
+    # No release write token is exposed to npm, Gradle, or preview builds.
+    needs: native-android
+    if: ${{ needs.native-android.result == 'success' && needs.native-android.outputs.signed == 'true' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && vars.MTUNZ_AUTO_ANDROID_RELEASE == 'true')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: mtunz-NATIVE-${{ needs.native-android.outputs.version }}-RELEASE-fixed-key
+          path: release-apk
+      - name: Publish verified Android APK as immutable stable version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.native-android.outputs.version }}
+          CODE: ${{ needs.native-android.outputs.code }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$CODE" =~ ^[1-9][0-9]*$ ]]
+          test -s release-apk/app-release.apk
+          TAG="android-v$VERSION-code$CODE"
+          # Refuse a stale workflow if main advanced while the APK was building.
+          HEAD="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)"
+          if [[ "$HEAD" != "$GITHUB_SHA" ]]; then
+            echo '::notice::A newer main commit exists; not publishing this APK.'
+            exit 0
+          fi
+          # Do not overwrite a release or publish a lower/equal Android build.
+          MAX_CODE="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' | awk -F'-code' '/^android-v[0-9]+\.[0-9]+\.[0-9]+-code[1-9][0-9]*$/ {print $2}' | sort -n | tail -1)"
+          if [[ -n "$MAX_CODE" && "$CODE" -le "$MAX_CODE" ]]; then
+            echo "::notice::Android build $CODE is already published or older. Bump mobile/app.json versionCode for the next release."
+            exit 0
+          fi
+          APK="release-apk/mtunz-android-v$VERSION-code$CODE.apk"
+          mv release-apk/app-release.apk "$APK"
+          gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --title "mtunz Android $VERSION (build $CODE)" --notes "Android native APK; fixed certificate and package validated by CI. iOS is not supported. Android installation requires user confirmation." --latest=false

@@ -55,9 +55,9 @@ function baseChecks() {
   assert(Number.isInteger(mobile.android.versionCode)&&mobile.android.versionCode>1);
   assert(/^\d+\.\d+\.\d+$/.test(mobile.version));
   const nativeWorkflow=fs.readFileSync(path.join(root,'.github/workflows/android-apk.yml'),'utf8');
-  assert(nativeWorkflow.includes('mtunz-NATIVE-'+mobile.version+'-RELEASE-fixed-key'),
+  assert(nativeWorkflow.includes('mtunz-NATIVE-${{ steps.android_version.outputs.name }}-RELEASE-fixed-key'),
     'Signed Android artifact/version drift');
-  assert(nativeWorkflow.includes("versionCode='"+mobile.android.versionCode+"'"),
+  assert(nativeWorkflow.includes("versionCode='$EXPECTED_CODE'")&&nativeWorkflow.includes("versionName='$EXPECTED_VERSION'"),
     'Android build verification/versionCode drift');
   const web=fs.readFileSync(path.join(root,'static/app.js'),'utf8');
   const app=fs.readFileSync(path.join(root,'mobile/src/Messenger.js'),'utf8');
