@@ -21,7 +21,7 @@ const update=read('mobile/src/AndroidUpdate.js');
 assert(update.includes("api('/api/mobile/release'"));
 assert(update.includes('release.version_code>installedCode'));
 assert(web.includes("data-act=\"android-download\""));
-assert(web.includes("api('/api/mobile/release')"));
+assert(web.includes("api('/api/mobile/release',"));
 assert(read('mobile/src/Messenger.js').includes('<AndroidUpdate/>'));
 assert(read('mobile/src/AdminDashboard.js').includes('<AndroidUpdate/>'));
 console.log('Native and web Android download catalog: PASS');

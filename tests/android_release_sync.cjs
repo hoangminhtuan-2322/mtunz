@@ -8,7 +8,7 @@ const server=read('app.py'),config=read('mobile/app.config.js');
 assert(web.includes('rail-android-download')&&web.includes('data-act="android-download"'));
 assert(web.includes("case 'android-download':await showAndroidDownload()"));
 assert(server.includes("@app.get('/api/mobile/release')"));
-assert(web.includes("api('/api/mobile/release')")&&native.includes("api('/api/mobile/release'"));
+assert(web.includes("api('/api/mobile/release',")&&native.includes("api('/api/mobile/release'"));
 assert(native.includes('release.version_code>installedCode'));
 assert(native.includes("Platform.OS!=='android'"));
 assert(native.includes('Linking.openURL(release.download_url)'));
