@@ -47,3 +47,17 @@ assert(backend.includes('mobile_push_receipts'), 'Persist push receipts across b
 assert(backend.includes("code=='DeviceNotRegistered'"), 'Prune invalid tokens after receipts');
 assert(backend.includes('RECEIPT_MIN_AGE_SECONDS = 15 * 60'), 'Allow Expo enough receipt time');
 console.log('FCM/Expo signing, native push readiness and receipt checks passed');
+
+const {MESSAGE_CATEGORY,QUICK_REPLY,OPEN_CHAT,parsePushResponse,combineReplyDraft}=require('../mobile/src/notificationActions');
+const binding='a'.repeat(64),response={actionIdentifier:QUICK_REPLY,userText:'  Xin chào  ',notification:{request:{content:{data:{kind:'dm',chat_id:42,session_binding:binding}}}}};
+assert.deepEqual(parsePushResponse(response,binding,'default'),{kind:'dm',scope:'dm',chatId:42,text:'Xin chào'});
+assert.equal(parsePushResponse(response,'b'.repeat(64),'default'),null);
+assert.equal(parsePushResponse({...response,userText:' '.repeat(5)},binding,'default'),null);
+assert.equal(parsePushResponse({...response,userText:'a'.repeat(2001)},binding,'default'),null);
+assert.equal(parsePushResponse({...response,actionIdentifier:'untrusted'},binding,'default'),null);
+assert.equal(combineReplyDraft('old','new'),'old\nnew');assert.equal(combineReplyDraft('x'.repeat(2000),'new'),null);
+assert(pushPanel.includes('setNotificationCategoryAsync(MESSAGE_CATEGORY'));
+assert(pushPanel.includes('opensAppToForeground:true'));
+assert(backend.includes(MESSAGE_CATEGORY)&&backend.includes('session_binding'));
+assert(mobile.includes('clearLastNotificationResponseAsync')&&mobile.includes('combineReplyDraft'));
+console.log('Notification actions, session binding, draft-only quick reply: PASS');

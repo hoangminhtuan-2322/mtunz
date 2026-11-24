@@ -4,6 +4,7 @@ Tokens are bound to revocable native sessions, not user IDs alone. A bounded
 worker sends generic notifications to the fixed Expo HTTPS gateway.
 """
 import asyncio
+import hashlib
 import logging
 import os
 import re
@@ -25,6 +26,20 @@ PUSH_BODY = {
     'test':'Đây là thông báo thử từ mtunz.',
     'support_reply':'Quản trị viên đã trả lời yêu cầu hỗ trợ của bạn.',
 }
+
+
+MESSAGE_CATEGORY = 'mtunz-message-actions-v1'
+
+def build_push_message(row, kind, chat_id):
+    # A one-way, domain-separated session binding prevents stale notifications
+    # from opening a chat under a later login. Never expose the bearer or its DB hash.
+    binding = hashlib.sha256(('mtunz-push-response:' + row['session_hash']).encode()).hexdigest()
+    message = {'to':row['token'],'sound':'default','title':'mtunz','body':PUSH_BODY[kind],
+               'data':{'kind':kind,'chat_id':chat_id,'session_binding':binding},
+               'channelId':'messages','ttl':60 if kind=='test' else 1800,'priority':'high'}
+    if kind in ('dm','group'):
+        message['categoryId'] = MESSAGE_CATEGORY
+    return message
 
 
 def install(core):
@@ -129,9 +144,7 @@ def install(core):
                 params+=(session,)
             rows=core.many(c,sql+' ORDER BY p.updated_at DESC LIMIT 12',params)
         recipients=[row for row in rows if row['session_hash'] not in foreground]
-        messages=[{'to':row['token'],'sound':'default','title':'mtunz','body':PUSH_BODY[kind],
-                   'data':{'kind':kind,'chat_id':chat_id},'channelId':'messages',
-                   'ttl':60 if kind=='test' else 1800,'priority':'high'} for row in recipients]
+        messages=[build_push_message(row,kind,chat_id) for row in recipients]
         if not messages:
             return False
         try:

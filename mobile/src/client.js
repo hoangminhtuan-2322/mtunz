@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import * as Notifications from 'expo-notifications';
 import {clearDraftVault} from './draftVault';
 
 export const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
@@ -71,6 +72,8 @@ export async function clearSession() {
   const token=await readSession().catch(()=>null);
   if(token)await clearDraftVault(token).catch(()=>{});
   await SecureStore.deleteItemAsync(STORE_KEY);
+  await Notifications.dismissAllNotificationsAsync().catch(()=>{});
+  await Notifications.clearLastNotificationResponseAsync().catch(()=>{});
 }
 
 export function wsUrl() {
