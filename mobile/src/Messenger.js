@@ -35,10 +35,28 @@ function Btn({children,onPress,quiet=false,disabled=false,danger=false,small=fal
     <Text style={[css.btnTxt,(quiet||danger)&&{color:P.text}]}>{children}</Text>
   </Pressable>;
 }
-function Field({value,onChangeText,placeholder,secureTextEntry=false,multiline=false,keyboardType}){
-  return <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
-    placeholderTextColor={P.soft} secureTextEntry={secureTextEntry} multiline={multiline}
-    keyboardType={keyboardType} style={[css.input,multiline&&{minHeight:72,textAlignVertical:'top'}]}/>;
+function Field({value,onChangeText,placeholder,secureTextEntry=false,revealPassword=false,multiline=false,keyboardType}){
+  const [visible,setVisible]=useState(false);
+  useEffect(()=>{if(!value||!revealPassword)setVisible(false);},[value,revealPassword]);
+  useEffect(()=>{
+    if(!revealPassword)return;
+    const sub=AppState.addEventListener('change',state=>{if(state!=='active')setVisible(false);});
+    return()=>sub.remove();
+  },[revealPassword]);
+  const field=<TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
+    placeholderTextColor={P.soft} secureTextEntry={secureTextEntry&&(!revealPassword||!visible)} multiline={multiline}
+    keyboardType={keyboardType} autoCapitalize={secureTextEntry?'none':undefined}
+    autoCorrect={secureTextEntry?false:undefined}
+    style={[css.input,revealPassword&&{paddingRight:56},multiline&&{minHeight:72,textAlignVertical:'top'}]}/>;
+  if(!revealPassword)return field;
+  return <View style={{position:'relative'}}>
+    {field}
+    <Pressable accessibilityRole="button" accessibilityLabel={visible?'Ẩn mật khẩu':'Hiển thị mật khẩu'}
+      accessibilityState={{selected:visible}} onPress={()=>setVisible(v=>!v)}
+      style={{position:'absolute',right:3,top:2,bottom:2,width:48,alignItems:'center',justifyContent:'center'}}>
+      <Ionicons name={visible?'eye-off-outline':'eye-outline'} size={22} color={P.soft}/>
+    </Pressable>
+  </View>;
 }
 function Section({title,children}){return <View style={css.section}><Text style={css.h2}>{title}</Text>{children}</View>;}
 function AccountGroup({title,children}){
@@ -1304,7 +1322,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {x==='display_name'?'Tên hiển thị':'Tên đăng nhập'}</Btn>)}</View>
       <Text style={css.muted}>Còn {identityQuota?.[identityKind]?.remaining??'?'} lượt đổi</Text>
       <Field value={displayName} onChangeText={setDisplayName} placeholder="Tên mới"/>
-      <Field value={secret} onChangeText={setSecret} secureTextEntry placeholder="Mật khẩu xác nhận"/>
+      <Field value={secret} onChangeText={setSecret} secureTextEntry revealPassword placeholder="Mật khẩu xác nhận"/>
       <Field value={pin} onChangeText={setPin} secureTextEntry placeholder="Mã PIN xác nhận"/>
       <Btn onPress={()=>perform('/api/me/identity/'+identityKind,'POST',{
         new_value:displayName,password:secret,pin},async()=>{setSecret('');setPin('');await loadSettings();})}>
