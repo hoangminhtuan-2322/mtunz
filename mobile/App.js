@@ -6,18 +6,35 @@ import {KeyboardProvider,KeyboardAvoidingView} from 'react-native-keyboard-contr
 import {api,API_ORIGIN,clearSession,readSession,saveSession,
   savePendingRegistration,readPendingRegistration,clearPendingRegistration} from './src/client';
 import Messenger from './src/Messenger';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import AdminDashboard from './src/AdminDashboard';
 import {shouldRetrySession} from './src/sessionRecovery';
 
 const C={bg:'#08111f',card:'#14243a',text:'#f4f8ff',muted:'#a5b6cf',
   accent:'#67bcff',border:'#2c4160',subtle:'#1b304c',success:'#70dabb'};
 function Input({value,onChangeText,placeholder,secret=false,number=false,label}) {
+  const canReveal=secret&&!number;
+  const [passwordVisible,setPasswordVisible]=useState(false);
+  useEffect(()=>{if(!value||!canReveal)setPasswordVisible(false);},[value,canReveal]);
+  useEffect(()=>{
+    if(!canReveal)return;
+    const sub=AppState.addEventListener('change',state=>{if(state!=='active')setPasswordVisible(false);});
+    return()=>sub.remove();
+  },[canReveal]);
   return <View style={styles.field}>
     {!!label&&<Text style={styles.fieldLabel}>{label}</Text>}
-    <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
-      placeholderTextColor={C.muted} secureTextEntry={secret} autoCapitalize="none"
-      autoCorrect={false} autoComplete={secret?'off':'off'}
-      keyboardType={number?'number-pad':'default'} style={styles.input}/>
+    <View style={styles.passwordWrap}>
+      <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
+        placeholderTextColor={C.muted} secureTextEntry={secret&&(!canReveal||!passwordVisible)} autoCapitalize="none"
+        autoCorrect={false} autoComplete={secret?'off':'off'}
+        keyboardType={number?'number-pad':'default'} style={[styles.input,canReveal&&styles.passwordInput]}/>
+      {canReveal&&<Pressable accessibilityRole="button"
+        accessibilityLabel={passwordVisible?'Ẩn mật khẩu':'Hiển thị mật khẩu'}
+        accessibilityState={{selected:passwordVisible}}
+        onPress={()=>setPasswordVisible(v=>!v)} style={styles.passwordToggle}>
+        <Ionicons name={passwordVisible?'eye-off-outline':'eye-outline'} size={22} color={C.muted}/>
+      </Pressable>}
+    </View>
   </View>;
 }
 function Button({children,onPress,disabled=false,quiet=false}) {
@@ -381,6 +398,9 @@ const styles=StyleSheet.create({
   title:{fontSize:24,lineHeight:30,fontWeight:'900',color:C.text,letterSpacing:-.5,flexShrink:1},
   muted:{fontSize:13,color:C.muted,lineHeight:20,flexShrink:1},
   field:{gap:7,minWidth:0,width:'100%'},
+  passwordWrap:{position:'relative',width:'100%',minWidth:0},
+  passwordInput:{paddingRight:56},
+  passwordToggle:{position:'absolute',right:3,top:0,bottom:0,width:48,alignItems:'center',justifyContent:'center'},
   fieldLabel:{fontSize:13,fontWeight:'800',color:'#d9e6f8'},
   input:{borderColor:'#375172',borderWidth:1,borderRadius:13,
     paddingHorizontal:14,minHeight:51,fontSize:15,color:C.text,backgroundColor:'#0b1728',
