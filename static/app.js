@@ -2674,7 +2674,7 @@ async function showAndroidDownload(){
  if(!valid){
    const previewUrl='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-preview-v1.1.0-code11-run45333101932/mtunz-android-preview-v1.1.0-code11.apk';
    modal({title:'Tải ứng dụng Android',description:'Bạn có thể tải bản Android thử nghiệm trong khi bản chính thức đang được hoàn thiện.',
-     content:'<div class="android-release-panel"><span class="eyebrow">BẢN THỬ NGHIỆM · PREVIEW</span><h3>mtunz 1.1.0</h3><p class="hint">Build 11 · 140,5 MB · Android Native</p><p class="hint">Cài song song với ứng dụng cũ. Chưa hỗ trợ thông báo đẩy khi đóng app; chưa kiểm thử đầy đủ trên điện thoại. Chỉ hỗ trợ Android, chưa hỗ trợ iOS.</p><p class="hint">Bản chính thức sẽ được ưu tiên tự động khi phát hành.</p></div>',
+     content:'<div class="android-release-panel"><span class="eyebrow">BẢN THỬ NGHIỆM · PREVIEW</span><h3>mtunz 1.1.0</h3><p class="hint">Build 11 · 140,5 MB · Android Native</p><p class="hint">Chưa hỗ trợ thông báo đẩy, chưa hỗ trợ IOS, chỉ hỗ trợ Android.</p><p class="hint">Bản chính thức sẽ được ưu tiên tự động khi phát hành.</p></div>',
      confirm:'Tải APK Preview',cancel:'Đóng',handler:()=>{window.location.assign(previewUrl);}});
    return;
  }
