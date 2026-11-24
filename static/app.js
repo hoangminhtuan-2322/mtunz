@@ -2672,8 +2672,10 @@ async function showAndroidDownload(){
    /^\d+\.\d+\.\d+$/.test(version)&&Number.isSafeInteger(code)&&code>0&&
    release.download_url==='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v'+version+'-code'+code+'/mtunz-android-v'+version+'-code'+code+'.apk';
  if(!valid){
-   modal({title:'Tải ứng dụng Android',description:release.unavailable_reason?'Tạm thời không kiểm tra được phiên bản. Vui lòng thử lại sau.':'Bản APK chính thức chưa được phát hành. Khi có bản mới, nút tải sẽ tự động xuất hiện.',
-     content:'<div class="android-release-panel"><strong>Android</strong><p class="hint">Hiện chỉ hỗ trợ Android. iOS chưa được hỗ trợ. Không cung cấp bản thử nghiệm thay cho bản chính thức.</p></div>',confirm:'Đóng',cancel:null});
+   const previewUrl='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-preview-v1.1.0-code11-run45333101932/mtunz-android-preview-v1.1.0-code11.apk';
+   modal({title:'Tải ứng dụng Android',description:'Bạn có thể tải bản Android thử nghiệm trong khi bản chính thức đang được hoàn thiện.',
+     content:'<div class="android-release-panel"><span class="eyebrow">BẢN THỬ NGHIỆM · PREVIEW</span><h3>mtunz 1.1.0</h3><p class="hint">Build 11 · 140,5 MB · Android Native</p><p class="hint">Cài song song với ứng dụng cũ. Chưa hỗ trợ thông báo đẩy khi đóng app; chưa kiểm thử đầy đủ trên điện thoại. Chỉ hỗ trợ Android, chưa hỗ trợ iOS.</p><p class="hint">Bản chính thức sẽ được ưu tiên tự động khi phát hành.</p></div>',
+     confirm:'Tải APK Preview',cancel:'Đóng',handler:()=>{window.location.assign(previewUrl);}});
    return;
  }
  const size=Number.isFinite(release.size_bytes)?(release.size_bytes/1048576).toFixed(1)+' MB':'';
