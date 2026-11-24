@@ -777,9 +777,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   }
   function cancelBatch(){
     if(sendRef.current||!room||!mediaBatch)return;
-    const key=conversationKey(room);
+    const key=conversationKey(room),expected=batchesRef.current.get(key);
     if(mediaBatch.started)Alert.alert('Bỏ lô đính kèm?','Tệp đã gửi sẽ không bị thu hồi. Tệp chưa xác nhận có thể đã tới máy chủ.',[
-      {text:'Tiếp tục',style:'cancel'},{text:'Bỏ lô',style:'destructive',onPress:()=>discardBatch(key)}]);
+      {text:'Tiếp tục',style:'cancel'},{text:'Bỏ lô',style:'destructive',onPress:()=>{if(!sendRef.current&&batchesRef.current.get(key)===expected)discardBatch(key);}}]);
     else discardBatch(key);
   }
   function replyToMessage(message){
