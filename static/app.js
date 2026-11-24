@@ -740,6 +740,7 @@ async function enterApp(resume=false){
 }
 function resetAuthAfterLogout(){
  // Remove typed or autofilled secrets from live DOM before switching screens.
+ maskVisiblePasswords();
  document.querySelectorAll('input[type="password"], input[data-manual-password]').forEach(input=>{input.value='';});
  v4FailedSends.clear();directSendQueues.clear();clearChatReads();v4ClearDraftTimers();
  state.user=null;state.selected=null;state.groupSelected=null;state.savedDevice=false;state.rememberedDevice=false;
