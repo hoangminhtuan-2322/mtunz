@@ -44,3 +44,16 @@ assert(workflow.includes('-dontwarn org.webrtc.Dav1dDecoder$Natives'),
   'Only suppress the known missing optional WebRTC decoder interface');
 assert(!calls.includes('WebView'),'Calls must not use a browser wrapper');
 console.log('Native WebRTC audio/video call source, signaling, permissions: PASS (device QA pending)');
+
+const {finishCall,appendCallHistory,formatCallDuration}=require('../mobile/src/callHistory');
+const invite={peerId:7,title:'Friend',direction:'incoming',startedAt:1000,connectedAt:null,signal:{secret:'not stored'}};
+assert.equal(finishCall(invite,'timeout',50000).status,'missed');
+assert.equal(finishCall(invite,'declined',2000).status,'declined');
+assert.equal(finishCall({...invite,direction:'outgoing'},'timeout',50000).status,'unanswered');
+const ended=finishCall({...invite,connectedAt:5000},'network',14000);
+assert.equal(ended.duration,9);assert.equal(ended.status,'interrupted');assert(!('signal' in ended));
+assert.equal(appendCallHistory(Array(60).fill(ended),ended).length,60);
+assert.equal(formatCallDuration(3661),'1:01:01');
+assert(calls.includes("endCall(true,'network')")&&calls.includes('disconnectTimer'));
+assert(chat.includes("dialog==='callHistory'")&&chat.includes('nativeCall.history.map'));
+console.log('Call duration, local history, missed calls and bounded disconnect recovery: PASS');

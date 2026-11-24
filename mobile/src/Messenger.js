@@ -13,7 +13,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
   saveSharedFile,uploadAttachment} from './media';
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
-import {useNativeCall,NativeCallOverlay} from './NativeCall';
+import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
@@ -586,7 +586,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
       current.onclose=()=>{
         if(wsRef.current!==current)return;
-        stopHeartbeat();endNativeCall(false);if(closed)return;
+        stopHeartbeat();endNativeCall(false,'network');if(closed)return;
         setConnection('offline');
         typingRef.current.active=false;
         if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}
@@ -1131,6 +1131,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Ionicons name="search-outline" color={P.accent} size={21}/></Pressable>}
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
+      {!room&&tab==='dm'&&<Pressable accessibilityRole="button" accessibilityLabel="Lịch sử cuộc gọi"
+        style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('callHistory');}}>
+        <Ionicons name="call-outline" color={P.accent} size={23}/></Pressable>}
       {!room&&<Pressable accessibilityRole="button" accessibilityLabel="Làm mới"
         style={css.headerAction} onPress={()=>refreshLists().catch(alertError)}>
         <Ionicons name="refresh-outline" color={P.accent} size={23}/></Pressable>}
@@ -1435,6 +1438,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             subtitle="Phiên đăng nhập và quyền truy cập"
             onPress={()=>{setDialog('security');loadDevices();}}/>
         </AccountGroup>
+        <AccountGroup title="Cuộc gọi">
+          <AccountRow symbol="◉" title="Lịch sử cuộc gọi" subtitle="Cuộc gọi đến, đi và bị nhỡ trong phiên này" onPress={()=>setDialog('callHistory')}/>
+        </AccountGroup>
         <AccountGroup title="Thông báo">
           <AccountRow symbol="▣" title="Thông báo trong ứng dụng"
             subtitle={noticesUnread?'Có '+noticesUnread+' thông báo chưa đọc':'Tin nhắn, lời mời và cập nhật'}
@@ -1628,6 +1634,25 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <Btn onPress={()=>perform('/api/me/identity/'+identityKind,'POST',{
         new_value:displayName,password:secret,pin},async()=>{setSecret('');setPin('');await loadSettings();})}>
         Đổi tên (mật khẩu + PIN)</Btn>
+    </ModalSheet>
+    <ModalSheet visible={dialog==='callHistory'} onClose={()=>setDialog('')} title="Lịch sử cuộc gọi">
+      <Text style={css.muted}>Lịch sử trên thiết bị trong phiên sử dụng hiện tại. Không bao gồm cuộc gọi khi app đã đóng.</Text>
+      {nativeCall.history.length>0&&<Btn quiet small onPress={()=>Alert.alert('Xóa lịch sử cuộc gọi?','Chỉ xóa danh sách cuộc gọi trong phiên này.',[
+        {text:'Hủy',style:'cancel'},{text:'Xóa',style:'destructive',onPress:nativeCall.clearHistory}])}>Xóa lịch sử</Btn>}
+      {!nativeCall.history.length&&<Text style={css.muted}>Chưa có cuộc gọi trong phiên này.</Text>}
+      {nativeCall.history.map((item,i)=>{
+        const friend=friends.find(f=>Number(f.other_id)===item.peerId&&f.state==='accepted'&&!f.archived&&!f.restricted);
+        return <View key={item.startedAt+':'+item.peerId+':'+i} style={css.rowCard}>
+          <Ionicons name={item.video?'videocam-outline':'call-outline'} size={24} color={item.status==='missed'?P.bad:P.accent}/>
+          <View style={{flex:1,minWidth:0,gap:4}}><Text style={css.strong} numberOfLines={1}>{friend?label(friend):item.title}</Text>
+            <Text style={[css.muted,item.status==='missed'&&{color:P.bad}]}>{item.direction==='incoming'?'Đến':'Đi'} · {callStatusLabel(item.status)}{item.duration?' · '+formatCallDuration(item.duration):''}</Text>
+            <Text style={css.muted}>{new Date(item.startedAt).toLocaleString('vi-VN')}</Text></View>
+          <Pressable accessibilityRole="button" accessibilityLabel="Gọi lại" disabled={!friend||connection!=='online'}
+            style={{opacity:friend&&connection==='online'?1:.4,padding:9}}
+            onPress={()=>{if(!friend)return;setDialog('');void nativeCall.startCall(item.peerId,label(friend),item.video);}}>
+            <Ionicons name="call" color={P.accent} size={22}/></Pressable>
+        </View>;
+      })}
     </ModalSheet>
     <ModalSheet visible={dialog==='notifications'} onClose={()=>setDialog('')} title="Thông báo">
       <View style={css.notificationHeader}>
