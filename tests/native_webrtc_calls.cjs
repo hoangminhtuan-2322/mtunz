@@ -31,5 +31,16 @@ assert(chat.includes('<NativeCallOverlay call={nativeCall}/>')&&
   chat.includes('nativeCall.startCall(room.id,roomTitle,true)')&&
   chat.includes('nativeCall.startCall(room.id,roomTitle,false)')&&
   chat.includes('onCallSignal(data)'),'Native chat must expose voice/video calls and receive signaling');
+assert(calls.includes('generationRef.current!==generation')&&calls.includes('local.getTracks().forEach(track=>track.stop())'),
+  'Late media permission results must not restart a cancelled call');
+assert(calls.includes('inviteTimerRef.current=setTimeout')&&calls.includes('incomingRef.current===invite'),
+  'Unanswered incoming invitations must expire without leaving a stale dialog');
+assert(calls.includes('pendingIce.current.size>=16')&&calls.includes('queue.length<MAX_ICE'),
+  'Untrusted signaling must not create unbounded candidate storage');
+const workflow=read('.github/workflows/android-apk.yml');
+assert(workflow.includes('-keep class com.oney.WebRTCModule.**')&&workflow.includes('-keep class org.webrtc.**'),
+  'Preserve JNI class names through the Android release shrinker');
+assert(workflow.includes('-dontwarn org.webrtc.Dav1dDecoder$Natives'),
+  'Only suppress the known missing optional WebRTC decoder interface');
 assert(!calls.includes('WebView'),'Calls must not use a browser wrapper');
 console.log('Native WebRTC audio/video call source, signaling, permissions: PASS (device QA pending)');
