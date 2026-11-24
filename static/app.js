@@ -866,17 +866,22 @@ function showAuthFieldError(form,fieldName,message){
  input.focus({preventScroll:true});
  return true;
 }
+function passwordEye(name){
+ return `<button type="button" class="password-eye" data-password-eye aria-controls="${esc(name)}" aria-label="Hiển thị mật khẩu" aria-pressed="false">${icon('eye',19)}</button>`;
+}
 function inputField(label,name,type='text',placeholder='',attr='',required=true){
  const kind=/(pin|code)/i.test(name)?'shield':/(password|new_value)/i.test(name)?'lock':name==='username'?'users':'chat';
+ const reveal=type==='password'&&/password/i.test(name);
  return `<div class="field auth-input-field"><label for="${name}">${esc(label)}</label>
- <div class="auth-input-wrap"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
- <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':''}></div></div>`;
+ <div class="auth-input-wrap${reveal?' password-eye-wrap':''}"><span class="auth-input-icon" aria-hidden="true">${icon(kind,18)}</span>
+ <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} ${required?'required':''}>${reveal?passwordEye(name):''}</div></div>`;
 }
 /* Plain form control for account settings/admin: no absolutely positioned icon.
    Do not use the decorative auth-input component outside the sign-in flow. */
 function secureSettingsField(label,name,type='text',placeholder='',attr=''){
+ const reveal=type==='password'&&/password/i.test(name);
  return `<div class="field secure-settings-field"><label for="${name}">${esc(label)}</label>
- <input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required></div>`;
+ ${reveal?'<div class="password-eye-wrap">':''}<input class="input" id="${name}" name="${name}" type="${type}" ${placeholder?`placeholder="${esc(placeholder)}"`:''} ${attr} required>${reveal?passwordEye(name)+'</div>':''}</div>`;
 }
 function authTabs(){return `<div class="auth-nav" role="group" aria-label="Điều hướng tài khoản">
  <button type="button" class="${state.mode==='login'?'active':''}" aria-pressed="${state.mode==='login'}" data-act="mode-login">${icon('lock',16)}<span>Đăng nhập</span></button>
@@ -2850,6 +2855,25 @@ window.addEventListener('pageshow',()=>{
  if(state.user)return;
  const input=$('form[data-form="login-password"] input[data-manual-password]');
  if(input){input.value='';input.readOnly=true;delete input.dataset.manuallyUnlocked;}
+});
+function setPasswordVisibility(button,visible){
+ const field=button.closest('.password-eye-wrap')?.querySelector('input');
+ if(!field||!/password/i.test(field.name)||!['password','text'].includes(field.type))return;
+ field.type=visible?'text':'password';
+ button.setAttribute('aria-pressed',String(visible));
+ button.setAttribute('aria-label',visible?'Ẩn mật khẩu':'Hiển thị mật khẩu');
+ button.classList.toggle('is-revealed',visible);
+}
+function maskVisiblePasswords(){
+ document.querySelectorAll('[data-password-eye][aria-pressed="true"]').forEach(button=>setPasswordVisibility(button,false));
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)maskVisiblePasswords();});
+window.addEventListener('pagehide',maskVisiblePasswords);
+window.addEventListener('pageshow',maskVisiblePasswords);
+document.addEventListener('click',event=>{
+ const button=event.target.closest('[data-password-eye]');
+ if(!button)return;
+ setPasswordVisibility(button,button.getAttribute('aria-pressed')!=='true');
 });
 document.addEventListener('click',async event=>{
  const btn=event.target.closest('[data-act]');if(!btn||btn.disabled)return;
