@@ -609,11 +609,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(scope==='world'){endpoint='/api/world/messages';Object.assign(data,{room_id:room.id,anonymous_name:social.world_anonymous?worldAlias.trim():''});}
       const result=await invoke(endpoint,'POST',data);
       removeSentDraft(originalRoom,submittedDraft);
-      stopTyping();
       if(roomRef.current?.scope===scope&&roomRef.current?.id===room.id){
+        if(!draftsRef.current[originalRoom])stopTyping();
         if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
         if(scope==='world'&&!result.message)loadWindow(room);
-        setDraft('');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
+        setDraft(draftsRef.current[originalRoom]||'');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
         scrollToLatest();
       }
       refreshLists().catch(()=>{});
@@ -994,7 +994,6 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           textAlignVertical="center" blurOnSubmit={false}
           onFocus={()=>scrollToLatest(false)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
-          editable={!sending}
           onChangeText={value=>{
             if(!reply?.edit_id)changeStoredDraft(conversationKey(room),value);
             sendTyping(value);
