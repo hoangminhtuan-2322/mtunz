@@ -1,3 +1,4 @@
+import AndroidUpdate from './AndroidUpdate';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
@@ -12,6 +13,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   saveSharedFile,uploadAttachment} from './media';
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
+import {useNativeCall,NativeCallOverlay} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
@@ -34,10 +36,28 @@ function Btn({children,onPress,quiet=false,disabled=false,danger=false,small=fal
     <Text style={[css.btnTxt,(quiet||danger)&&{color:P.text}]}>{children}</Text>
   </Pressable>;
 }
-function Field({value,onChangeText,placeholder,secureTextEntry=false,multiline=false,keyboardType}){
-  return <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
-    placeholderTextColor={P.soft} secureTextEntry={secureTextEntry} multiline={multiline}
-    keyboardType={keyboardType} style={[css.input,multiline&&{minHeight:72,textAlignVertical:'top'}]}/>;
+function Field({value,onChangeText,placeholder,secureTextEntry=false,revealPassword=false,multiline=false,keyboardType}){
+  const [visible,setVisible]=useState(false);
+  useEffect(()=>{if(!value||!revealPassword)setVisible(false);},[value,revealPassword]);
+  useEffect(()=>{
+    if(!revealPassword)return;
+    const sub=AppState.addEventListener('change',state=>{if(state!=='active')setVisible(false);});
+    return()=>sub.remove();
+  },[revealPassword]);
+  const field=<TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
+    placeholderTextColor={P.soft} secureTextEntry={secureTextEntry&&(!revealPassword||!visible)} multiline={multiline}
+    keyboardType={keyboardType} autoCapitalize={secureTextEntry?'none':undefined}
+    autoCorrect={secureTextEntry?false:undefined}
+    style={[css.input,revealPassword&&{paddingRight:56},multiline&&{minHeight:72,textAlignVertical:'top'}]}/>;
+  if(!revealPassword)return field;
+  return <View style={{position:'relative'}}>
+    {field}
+    <Pressable accessibilityRole="button" accessibilityLabel={visible?'Ẩn mật khẩu':'Hiển thị mật khẩu'}
+      accessibilityState={{selected:visible}} onPress={()=>setVisible(v=>!v)}
+      style={{position:'absolute',right:3,top:2,bottom:2,width:48,alignItems:'center',justifyContent:'center'}}>
+      <Ionicons name={visible?'eye-off-outline':'eye-outline'} size={22} color={P.soft}/>
+    </Pressable>
+  </View>;
 }
 function Section({title,children}){return <View style={css.section}><Text style={css.h2}>{title}</Text>{children}</View>;}
 function AccountGroup({title,children}){
@@ -210,6 +230,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     sendRef=useRef(false);
   roomRef.current=room;
   supportTicketRef.current=supportTicket;
+  const nativeCall=useNativeCall(wsRef,friends);
+  const onCallSignal=nativeCall.onSignal;
+  const endNativeCall=nativeCall.endCall;
   // Voice notes use the phone microphone only when explicitly requested.
   const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordState=useAudioRecorderState(recorder,400);
@@ -372,6 +395,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const schedule=kinds=>refreshQueue.schedule(kinds);
     const onEvent=event=>{
       let data;try{data=JSON.parse(event.data);}catch{return;}
+      if(typeof data.type==='string'&&data.type.startsWith('call-')){
+        void onCallSignal(data);return;
+      }
       const target=roomRef.current;
       if(data.type==='session-ended'||data.type==='account-sanction'){
         onExpired();return;
@@ -484,7 +510,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
       current.onclose=()=>{
         if(wsRef.current!==current)return;
-        stopHeartbeat();if(closed)return;
+        stopHeartbeat();endNativeCall(false);if(closed)return;
         setConnection('offline');
         typingRef.current.active=false;
         if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}
@@ -501,7 +527,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
     return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile,stopTyping,updateRemoteTyping]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{
@@ -788,6 +814,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     .includes(groupQuery.trim().toLocaleLowerCase('vi-VN')));
 
   return <View style={{flex:1,backgroundColor:P.bg}}>
+    <NativeCallOverlay call={nativeCall}/>
     <View style={css.top}>
       <Pressable accessibilityRole="button" accessibilityLabel={room?'Trở lại danh sách':'Về tin nhắn'}
         style={css.headerMark}
@@ -818,6 +845,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           </Text>
         </View>
       </View>
+      {!!room&&room.scope==='dm'&&<>
+        <Pressable accessibilityRole="button" accessibilityLabel={'Gọi thoại cho '+roomTitle}
+          disabled={connection!=='online'} style={css.headerAction}
+          onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,false);}}>
+          <Ionicons name="call-outline" color={connection==='online'?P.accent:P.soft} size={22}/>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={'Gọi video cho '+roomTitle}
+          disabled={connection!=='online'} style={css.headerAction}
+          onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,true);}}>
+          <Ionicons name="videocam-outline" color={connection==='online'?P.accent:P.soft} size={23}/>
+        </Pressable>
+      </>}
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
       {!room&&<Pressable accessibilityRole="button" accessibilityLabel="Làm mới"
@@ -1107,6 +1146,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             onPress={()=>{setDialog('notifications');refreshLists();}}/>
           <DevicePushSettings token={token} compact/>
         </AccountGroup>
+        <AccountGroup title="Ứng dụng"><AndroidUpdate/></AccountGroup>
         <AccountGroup title="Hỗ trợ">
           <AccountRow symbol="?" title="Trung tâm hỗ trợ"
             subtitle="Liên hệ quản trị viên hoặc gửi báo cáo"
@@ -1284,7 +1324,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {x==='display_name'?'Tên hiển thị':'Tên đăng nhập'}</Btn>)}</View>
       <Text style={css.muted}>Còn {identityQuota?.[identityKind]?.remaining??'?'} lượt đổi</Text>
       <Field value={displayName} onChangeText={setDisplayName} placeholder="Tên mới"/>
-      <Field value={secret} onChangeText={setSecret} secureTextEntry placeholder="Mật khẩu xác nhận"/>
+      <Field value={secret} onChangeText={setSecret} secureTextEntry revealPassword placeholder="Mật khẩu xác nhận"/>
       <Field value={pin} onChangeText={setPin} secureTextEntry placeholder="Mã PIN xác nhận"/>
       <Btn onPress={()=>perform('/api/me/identity/'+identityKind,'POST',{
         new_value:displayName,password:secret,pin},async()=>{setSecret('');setPin('');await loadSettings();})}>

@@ -71,6 +71,13 @@ async def invalid_request(request: Request, error: RequestValidationError):
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 
+@app.get('/api/mobile/release')
+def android_release_metadata():
+    from android_release_catalog import latest_android_release
+    return JSONResponse(latest_android_release(), headers={'Cache-Control': 'no-store'})
+
+
+
 def now():
     return int(time.time())
 

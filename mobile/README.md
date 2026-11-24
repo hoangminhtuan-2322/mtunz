@@ -100,3 +100,9 @@ Không dùng Preview `com.mtunz.web.preview` để thử FCM production; Preview
 ### Nâng cấp chat Native versionCode 11
 
 Bản tên hiển thị **1.1.0**, mã cập nhật **10** sử dụng React Native + bộ điều khiển bàn phím native `react-native-keyboard-controller` cho Android edge-to-edge; thanh soạn tin nằm trên IME/Gboard. Tin nhắn mới nhất ở offset 0 của danh sách đảo, gửi tin/mở bàn phím quay về tin cuối, khi cuộn đọc tin cũ có nút nhảy đến tin mới. Ảnh chỉ hiển thị hình và thời gian, không lộ tên file/dung lượng trong bong bóng; tài liệu khác vẫn có tên để tải. Icon thống nhất qua Ionicons. CI kiểm tra `tests/native_chat_quality.cjs` và quy tắc web/native parity vẫn bắt buộc. Cần xác minh thêm trên thiết bị MIUI/Android thực trước khi tuyên bố lỗi bàn phím được khắc phục hoàn toàn.
+
+
+### Đồng bộ tải xuống Android
+Website → Thêm → Tải Android và app → Cá nhân → Ứng dụng (Admin → Tổng quan) đọc cùng `GET /api/mobile/release`. Catalog chỉ chọn APK Android stable đã được xuất bản trên GitHub Releases, không sử dụng preview; cache tối đa 120 giây khi GitHub hoạt động. Khi chưa có release, giao diện báo chưa phát hành. Người dùng xác nhận cài đặt trên Android; iOS chưa được hỗ trợ.
+
+Sau khi hoàn tất Firebase/Expo FCM V1, kiểm thử thiết bị và cho phép phát hành tự động, đặt repository variable `MTUNZ_AUTO_ANDROID_RELEASE=true`. Khi main có thay đổi native, workflow build/ký bằng khóa cố định, kiểm tra thông tin push, package và chữ ký, sau đó publish APK vào GitHub Releases nếu vẫn là HEAD của main. VersionName lấy từ mobile/app.json; versionCode của release chính thức tự tăng ít nhất một so với release đã phát hành. Preview vẫn dùng code từ app.json và package riêng. Bản lỗi không thay thế link tải đang hoạt động. Có thể tắt auto release bằng cách đặt biến false, hoặc sử dụng workflow_dispatch với sign_release=true cho bản phát hành có kiểm soát. Không tự cài đặt APK trên thiết bị, không phát hành từ PR.

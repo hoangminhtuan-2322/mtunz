@@ -58,7 +58,7 @@ assert(push.includes('chưa kết nối Firebase/Expo Push'),
   'Do not falsely state FCM is connected');
 assert(push.includes("Thông báo trong ứng dụng vẫn có thể xem ở mục phía trên"),
   'Distinguish in-app notices from unavailable background push');
-assert.equal(cfg.version,'1.1.0');
-assert.equal(cfg.android.versionCode,11);
+assert.match(cfg.version,/^\d+\.\d+\.\d+$/);
+assert(Number.isInteger(cfg.android.versionCode)&&cfg.android.versionCode>=11);
 assert.equal(cfg.android.package,'com.mtunz.web');
-console.log('Compact account page, secure device management, true push readiness and versionCode 11: PASS');
+console.log('Compact account page, secure device management, true push readiness and versionCode contract: PASS');
