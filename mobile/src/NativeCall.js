@@ -13,6 +13,7 @@ const COLORS={bg:'#081626',panel:'#142c46',primary:'#74c4ff',text:'#f7fbff',mute
 export function useNativeCall(wsRef,friends){
   const contactsRef=useRef(friends);contactsRef.current=friends;
   const callRef=useRef(null),incomingRef=useRef(null),pendingIce=useRef(new Map()),startingRef=useRef(false);
+  const generationRef=useRef(0),inviteTimerRef=useRef(null);
   const [view,setView]=useState(null),[incoming,setIncoming]=useState(null);
   const transmit=useCallback((type,to,signal=null,video=false)=>{
     const socket=wsRef.current;
@@ -25,6 +26,8 @@ export function useNativeCall(wsRef,friends){
       remote:c.remote,status:c.status,muted:c.muted,cameraDisabled:c.cameraDisabled}:null);
   },[]);
   const endCall=useCallback((signal=true)=>{
+    ++generationRef.current;
+    if(inviteTimerRef.current){clearTimeout(inviteTimerRef.current);inviteTimerRef.current=null;}
     const c=callRef.current;callRef.current=null;startingRef.current=false;
     if(c){
       if(signal)transmit('call-hangup',c.peerId);
@@ -34,11 +37,17 @@ export function useNativeCall(wsRef,friends){
       try{c.pc?.close();}catch{}
       pendingIce.current.delete(c.peerId);
     }
+    const invite=incomingRef.current;
+    if(invite){if(signal&&!c)transmit('call-decline',invite.peerId);pendingIce.current.delete(invite.peerId);}
     incomingRef.current=null;setIncoming(null);setView(null);
   },[transmit]);
-  const setup=useCallback(async(peerId,title,video)=>{
+  const setup=useCallback(async(peerId,title,video,generation)=>{
     const local=await mediaDevices.getUserMedia({audio:true,video:!!video});
-    const pc=new RTCPeerConnection(ICE);
+    if(generationRef.current!==generation||AppState.currentState==='background'){
+      local.getTracks().forEach(track=>track.stop());return null;
+    }
+    let pc;
+    try{pc=new RTCPeerConnection(ICE);}catch(error){local.getTracks().forEach(track=>track.stop());throw error;}
     const remote=new MediaStream();
     const c={peerId,title,video,local,remote,pc,status:'Đang kết nối…',
       muted:false,cameraDisabled:false,timer:null,ice:[]};
@@ -84,40 +93,48 @@ export function useNativeCall(wsRef,friends){
     if(!friend){Alert.alert('Không thể gọi','Chỉ gọi được cho bạn bè đã kết nối.');return;}
     if(wsRef.current?.readyState!==WebSocket.OPEN){Alert.alert('Mất kết nối','Hãy kết nối lại trước khi gọi.');return;}
     startingRef.current=true;
+    const generation=++generationRef.current;
     try{
-      const c=await setup(Number(peerId),title||friend.display_name||friend.username||'Bạn bè',video);
+      const c=await setup(Number(peerId),title||friend.display_name||friend.username||'Bạn bè',video,generation);
+      if(!c||callRef.current!==c)return;
       c.status='Đang gọi…';update();
-      const offer=await c.pc.createOffer();await c.pc.setLocalDescription(offer);
+      const offer=await c.pc.createOffer();if(callRef.current!==c)return;
+      await c.pc.setLocalDescription(offer);if(callRef.current!==c)return;
       const signal=c.pc.localDescription?.toJSON?.()||offer;
       if(!transmit('call-offer',c.peerId,signal,video))throw Error('Mất kết nối với máy chủ.');
     }catch(error){
-      endCall(false);
-      Alert.alert('Không thể gọi',error?.message||'Không thể bật micro hoặc camera.');
-    }finally{startingRef.current=false;}
+      if(generationRef.current===generation){endCall(false);
+        Alert.alert('Không thể gọi',error?.message||'Không thể bật micro hoặc camera.');}
+    }finally{if(generationRef.current===generation)startingRef.current=false;}
   },[endCall,setup,transmit,update,wsRef]);
   const decline=useCallback(()=>{
     const invite=incomingRef.current;
     if(invite){transmit('call-decline',invite.peerId);pendingIce.current.delete(invite.peerId);}
-    incomingRef.current=null;setIncoming(null);
-  },[transmit]);
+    endCall(false);
+  },[transmit,endCall]);
   const accept=useCallback(async()=>{
     const invite=incomingRef.current;
     if(!invite||callRef.current||startingRef.current)return;
     startingRef.current=true;
+    const generation=++generationRef.current;
     try{
-      const c=await setup(invite.peerId,invite.title,invite.video);
+      const c=await setup(invite.peerId,invite.title,invite.video,generation);
+      if(!c||callRef.current!==c)return;
+      if(inviteTimerRef.current){clearTimeout(inviteTimerRef.current);inviteTimerRef.current=null;}
       incomingRef.current=null;setIncoming(null);
       await c.pc.setRemoteDescription(new RTCSessionDescription(invite.signal));
       const queued=pendingIce.current.get(invite.peerId)||[];
       pendingIce.current.delete(invite.peerId);
       for(const ice of queued)await c.pc.addIceCandidate(new RTCIceCandidate(ice));
-      const answer=await c.pc.createAnswer();await c.pc.setLocalDescription(answer);
+      if(callRef.current!==c)return;
+      const answer=await c.pc.createAnswer();if(callRef.current!==c)return;
+      await c.pc.setLocalDescription(answer);if(callRef.current!==c)return;
       if(!transmit('call-answer',invite.peerId,c.pc.localDescription?.toJSON?.()||answer))
         throw Error('Mất kết nối với máy chủ.');
     }catch(error){
-      const peerId=invite.peerId;endCall(false);transmit('call-decline',peerId);
-      Alert.alert('Không thể nghe máy',error?.message||'Kiểm tra quyền micro/camera.');
-    }finally{startingRef.current=false;}
+      if(generationRef.current===generation){endCall(false);transmit('call-decline',invite.peerId);
+        Alert.alert('Không thể nghe máy',error?.message||'Kiểm tra quyền micro/camera.');}
+    }finally{if(generationRef.current===generation)startingRef.current=false;}
   },[endCall,setup,transmit]);
   const onSignal=useCallback(async(data)=>{
     if(!data||!['call-offer','call-answer','call-ice','call-hangup','call-decline'].includes(data.type))return;
@@ -129,11 +146,17 @@ export function useNativeCall(wsRef,friends){
          !data.signal||data.signal.type!=='offer'){transmit('call-decline',from);return;}
       const invite={peerId:from,title:friend.display_name||friend.username||'Bạn bè',
         video:!!data.video,signal:data.signal};
-      incomingRef.current=invite;setIncoming(invite);return;
+      incomingRef.current=invite;setIncoming(invite);
+      inviteTimerRef.current=setTimeout(()=>{
+        if(incomingRef.current===invite){transmit('call-decline',from);endCall(false);}
+      },45000);
+      return;
     }
     const c=callRef.current;
     if(data.type==='call-ice'&&data.signal){
       if(!c||c.peerId!==from||!c.pc.remoteDescription){
+        if(!contactsRef.current.some(f=>Number(f.other_id)===from&&f.state==='accepted'))return;
+        if(pendingIce.current.size>=16&&!pendingIce.current.has(from))return;
         const queue=pendingIce.current.get(from)||[];
         if(queue.length<MAX_ICE)queue.push(data.signal);
         pendingIce.current.set(from,queue);return;
@@ -143,16 +166,17 @@ export function useNativeCall(wsRef,friends){
     }
     if(data.type==='call-hangup'||data.type==='call-decline'){
       if(c?.peerId===from)endCall(false);
-      else if(incomingRef.current?.peerId===from){incomingRef.current=null;setIncoming(null);pendingIce.current.delete(from);}
+      else if(incomingRef.current?.peerId===from)endCall(false);
       return;
     }
     if(data.type==='call-answer'&&c?.peerId===from&&data.signal?.type==='answer'){
       try{
         await c.pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+        if(callRef.current!==c)return;
         const queued=pendingIce.current.get(from)||[];
         pendingIce.current.delete(from);
         for(const ice of queued)await c.pc.addIceCandidate(new RTCIceCandidate(ice));
-      }catch{endCall(false);Alert.alert('Lỗi cuộc gọi','Không thể thiết lập kết nối thoại/video.');}
+      }catch{if(callRef.current===c){endCall(false);Alert.alert('Lỗi cuộc gọi','Không thể thiết lập kết nối thoại/video.');}}
     }
   },[endCall,transmit]);
   const toggleMic=useCallback(()=>{
@@ -164,7 +188,7 @@ export function useNativeCall(wsRef,friends){
     c.cameraDisabled=!c.cameraDisabled;c.local?.getVideoTracks().forEach(t=>{t.enabled=!c.cameraDisabled;});update();
   },[update]);
   useEffect(()=>{
-    const sub=AppState.addEventListener('change',state=>{if(state!=='active')endCall(true);});
+    const sub=AppState.addEventListener('change',state=>{if(state==='background')endCall(true);});
     return()=>{sub.remove();endCall(false);};
   },[endCall]);
   return {incoming,view,startCall,onSignal,decline,accept,endCall,toggleMic,toggleCamera};
