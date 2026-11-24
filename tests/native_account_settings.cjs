@@ -62,3 +62,16 @@ assert.match(cfg.version,/^\d+\.\d+\.\d+$/);
 assert(Number.isInteger(cfg.android.versionCode)&&cfg.android.versionCode>=11);
 assert.equal(cfg.android.package,'com.mtunz.web');
 console.log('Compact account page, secure device management, true push readiness and versionCode contract: PASS');
+
+const {lockOnResume,lockFlag}=require('../mobile/src/appLockPolicy');
+assert.equal(lockFlag(null),false);assert.equal(lockFlag('enabled'),true);assert.equal(lockFlag('corrupt'),null);
+assert.equal(lockOnResume(true,1000,30999),false);assert.equal(lockOnResume(true,1000,31000),true);
+assert.equal(lockOnResume(false,1000,40000),false);assert.equal(lockOnResume(true,1000,999),true);
+const gate=fs.readFileSync(path.join(root,'mobile/src/AppLockGate.js'),'utf8');
+const store=fs.readFileSync(path.join(root,'mobile/src/appLockStore.js'),'utf8');
+const appLockRoot=fs.readFileSync(path.join(root,'mobile/App.js'),'utf8');
+assert(store.includes('requireAuthentication:true')&&store.includes('canUseBiometricAuthentication'));
+assert(store.includes('if(!await verifyAppLock(token))'));
+assert(gate.includes('if(locked)return')&&gate.includes('lockOnResume'));
+assert.equal((appLockRoot.match(/<AppLockGate key=/g)||[]).length,2);
+console.log('App lock policy, secure biometric verification and user/admin gate: PASS (real device required)');

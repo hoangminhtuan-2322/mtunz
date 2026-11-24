@@ -1,5 +1,6 @@
 import AndroidUpdate from './AndroidUpdate';
 import StorageSettings from './StorageSettings';
+import {AppLockSettings} from './AppLockGate';
 import React,{useCallback,useEffect,useState} from 'react';
 import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
@@ -290,7 +291,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
     <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}if(tab==='audit'){void loadAudit(auditOffset);return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
-   {tab==='home'&&<Box><AndroidUpdate/><StorageSettings token={token}/></Box>}
+   {tab==='home'&&<Box><AndroidUpdate/><StorageSettings token={token}/><AppLockSettings/></Box>}
    {tab==='home'&&<Box>
     <Text style={s.head}>Thông báo quản trị</Text>
     <Text style={s.muted}>Nhận cảnh báo đăng ký chờ duyệt và yêu cầu hỗ trợ khi đóng ứng dụng.</Text>

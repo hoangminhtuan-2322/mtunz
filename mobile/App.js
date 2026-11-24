@@ -8,6 +8,7 @@ import {api,API_ORIGIN,clearSession,readSession,saveSession,
 import Messenger from './src/Messenger';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AdminDashboard from './src/AdminDashboard';
+import AppLockGate from './src/AppLockGate';
 import {shouldRetrySession} from './src/sessionRecovery';
 
 const C={bg:'#08111f',card:'#14243a',text:'#f4f8ff',muted:'#a5b6cf',
@@ -273,12 +274,16 @@ function AppContent() {
   </SafeAreaView>;
   if(user?.is_admin)return <SafeAreaView style={styles.root}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
-    <AdminDashboard token={token} onLogout={logout} onExpired={expired}/>
+    <AppLockGate key={token} token={token} onRecovery={logout}>
+      <AdminDashboard token={token} onLogout={logout} onExpired={expired}/>
+    </AppLockGate>
   </SafeAreaView>;
   if(user&&!user.onboarding_required)return <SafeAreaView style={styles.root}>
     <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
-    <Messenger key={token} token={token} user={user} onLogout={logout} onExpired={expired}
-      onProfile={refreshProfile}/>
+    <AppLockGate key={token} token={token} onRecovery={logout}>
+      <Messenger key={token} token={token} user={user} onLogout={logout} onExpired={expired}
+        onProfile={refreshProfile}/>
+    </AppLockGate>
   </SafeAreaView>;
   return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
     <KeyboardAvoidingView style={styles.authShell}
