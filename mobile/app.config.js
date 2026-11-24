@@ -16,6 +16,17 @@ module.exports = ({config}) => {
       throw new Error('The Firebase Android configuration does not match the mtunz package.');
   }
 
+  // CI assigns a monotonically increasing versionCode to each signed release.
+  // Development and independent previews retain the canonical app.json code.
+  const buildCode = process.env.MTUNZ_ANDROID_BUILD_CODE;
+  if (buildCode !== undefined) {
+    const code = Number(buildCode);
+    if (!/^[1-9]\d*$/.test(buildCode) || !Number.isSafeInteger(code) ||
+        code < config.android.versionCode || code > 2100000000)
+      throw new Error('Invalid signed Android build code.');
+    config.android = {...config.android, versionCode: code};
+  }
+
   if (projectId)
     config.extra = {...config.extra, eas: {...config.extra?.eas, projectId}};
   if (googleServicesFile)

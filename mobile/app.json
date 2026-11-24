@@ -1,16 +1,19 @@
 {
   "expo": {
     "name": "mtunz",
-    "slug": "mtunz-mobile",
+    "slug": "mtunz",
     "scheme": "mtunz",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "android": {
       "package": "com.mtunz.web",
-      "versionCode": 11,
+      "versionCode": 12,
       "permissions": [
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "RECORD_AUDIO",
+        "CAMERA",
+        "MODIFY_AUDIO_SETTINGS"
       ],
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
@@ -39,8 +42,16 @@
           "microphonePermission": "Cho phép mtunz ghi tin nhắn thoại khi bạn yêu cầu.",
           "enableBackgroundRecording": false
         }
+      ],
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Cho phép mtunz dùng camera để gọi video.",
+          "microphonePermission": "Cho phép mtunz dùng micro để gọi thoại và video."
+        }
       ]
     ],
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "owner": "mtunzs-team"
   }
 }

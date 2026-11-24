@@ -13,6 +13,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
   saveSharedFile,uploadAttachment} from './media';
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
+import {useNativeCall,NativeCallOverlay} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
@@ -229,6 +230,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     sendRef=useRef(false);
   roomRef.current=room;
   supportTicketRef.current=supportTicket;
+  const nativeCall=useNativeCall(wsRef,friends);
+  const onCallSignal=nativeCall.onSignal;
+  const endNativeCall=nativeCall.endCall;
   // Voice notes use the phone microphone only when explicitly requested.
   const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordState=useAudioRecorderState(recorder,400);
@@ -391,6 +395,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const schedule=kinds=>refreshQueue.schedule(kinds);
     const onEvent=event=>{
       let data;try{data=JSON.parse(event.data);}catch{return;}
+      if(typeof data.type==='string'&&data.type.startsWith('call-')){
+        void onCallSignal(data);return;
+      }
       const target=roomRef.current;
       if(data.type==='session-ended'||data.type==='account-sanction'){
         onExpired();return;
@@ -503,7 +510,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
       current.onclose=()=>{
         if(wsRef.current!==current)return;
-        stopHeartbeat();if(closed)return;
+        stopHeartbeat();endNativeCall(false);if(closed)return;
         setConnection('offline');
         typingRef.current.active=false;
         if(activeRef.current){retryTimer=setTimeout(connect,retryDelay);retryDelay=Math.min(30000,retryDelay*2);}
@@ -520,7 +527,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN)schedule();},15000);
     return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopHeartbeat();clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile,stopTyping,updateRemoteTyping]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{
@@ -807,6 +814,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     .includes(groupQuery.trim().toLocaleLowerCase('vi-VN')));
 
   return <View style={{flex:1,backgroundColor:P.bg}}>
+    <NativeCallOverlay call={nativeCall}/>
     <View style={css.top}>
       <Pressable accessibilityRole="button" accessibilityLabel={room?'Trở lại danh sách':'Về tin nhắn'}
         style={css.headerMark}
@@ -837,6 +845,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           </Text>
         </View>
       </View>
+      {!!room&&room.scope==='dm'&&<>
+        <Pressable accessibilityRole="button" accessibilityLabel={'Gọi thoại cho '+roomTitle}
+          disabled={connection!=='online'} style={css.headerAction}
+          onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,false);}}>
+          <Ionicons name="call-outline" color={connection==='online'?P.accent:P.soft} size={22}/>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={'Gọi video cho '+roomTitle}
+          disabled={connection!=='online'} style={css.headerAction}
+          onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,true);}}>
+          <Ionicons name="videocam-outline" color={connection==='online'?P.accent:P.soft} size={23}/>
+        </Pressable>
+      </>}
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
       {!room&&<Pressable accessibilityRole="button" accessibilityLabel="Làm mới"
