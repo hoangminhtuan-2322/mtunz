@@ -1170,6 +1170,8 @@ function appRail(){
           <span class="rail-icon" aria-hidden="true">${icon('dots',20)}</span><span class="rail-text">Thêm</span><span class="rail-more-chevron" aria-hidden="true">${icon('chevron',14)}</span></button>
         <div id="rail-more-items" class="rail-extra ${moreOpen?'is-open':''}" ${moreOpen?'':'hidden'}>
           ${secondary.map(item).join('')}
+          <button type="button" class="rail-btn rail-android-download" data-act="android-download" title="Tải ứng dụng Android" aria-label="Tải ứng dụng Android">
+            <span class="rail-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M12 7v8m-3-3 3 3 3-3M10 19h4"/></svg></span><span class="rail-text">Tải Android</span></button>
         </div>
       </div>
     </nav>
@@ -2661,10 +2663,30 @@ function grantDialog(tid){
   toast('Đã gửi mã khôi phục tới cuộc trò chuyện.','ok');await loadAdmin();}});
 }
 
+async function showAndroidDownload(){
+ let release;
+ try{release=await api('/api/mobile/release');}
+ catch{release={available:false,unavailable_reason:'catalog_unreachable'};}
+ const version=release.version,code=release.version_code;
+ const valid=release.available&&release.platform==='android'&&release.package==='com.mtunz.web'&&
+   /^\d+\.\d+\.\d+$/.test(version)&&Number.isSafeInteger(code)&&code>0&&
+   release.download_url==='https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v'+version+'-code'+code+'/mtunz-android-v'+version+'-code'+code+'.apk';
+ if(!valid){
+   modal({title:'Tải ứng dụng Android',description:release.unavailable_reason?'Tạm thời không kiểm tra được phiên bản. Vui lòng thử lại sau.':'Bản APK chính thức chưa được phát hành. Khi có bản mới, nút tải sẽ tự động xuất hiện.',
+     content:'<div class="android-release-panel"><strong>Android</strong><p class="hint">Hiện chỉ hỗ trợ Android. iOS chưa được hỗ trợ. Không cung cấp bản thử nghiệm thay cho bản chính thức.</p></div>',confirm:'Đóng',cancel:null});
+   return;
+ }
+ const size=Number.isFinite(release.size_bytes)?(release.size_bytes/1048576).toFixed(1)+' MB':'';
+ const day=release.published_at?new Date(release.published_at).toLocaleDateString('vi-VN'):'';
+ modal({title:'Tải ứng dụng Android',description:'Ứng dụng mtunz native, cùng tài khoản và tin nhắn với website. Chỉ hỗ trợ Android.',
+   content:`<div class="android-release-panel"><span class="eyebrow">PHIÊN BẢN CHÍNH THỨC</span><h3>mtunz ${esc(version)}</h3><p class="hint">Build ${code} · ${esc(size)} · ${esc(day)}</p>${release.stale?'<p class="hint">Đang hiển thị thông tin phiên bản đã xác nhận gần nhất.</p>':''}<p class="hint">Tải APK trên điện thoại Android, mở file và xác nhận cài đặt. Hệ thống Android sẽ kiểm tra chữ ký khi cập nhật.</p><p class="hint">iOS chưa được hỗ trợ.</p></div>`,
+   confirm:'Tải APK',cancel:'Đóng',handler:()=>{window.location.assign(release.download_url);}});
+}
 // ==== Centralized interactions (no inline event handlers, all user input escaped) ====
 async function clickAction(button){
  const act=button.dataset.act,id=Number(button.dataset.id),kind=button.dataset.kind;
  switch(act){
+  case 'android-download':await showAndroidDownload();break;
   case 'copy-member-id':{
     if(!state.user || state.user.is_admin)return;
     const accountId=String(state.user.public_id||state.user.id);
