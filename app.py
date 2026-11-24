@@ -546,7 +546,7 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     result.headers['Cache-Control'] = 'no-store'
     result.headers['X-Robots-Tag'] = 'noindex, nofollow'
-    result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss:; "
+    result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss: https://api.github.com; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
          "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; "
          "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")

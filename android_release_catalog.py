@@ -2,6 +2,7 @@
 import json
 import re
 import threading
+from pathlib import Path
 import time
 from urllib.request import Request, urlopen
 
@@ -44,6 +45,13 @@ def select_release(rows):
     return max(candidates, key=lambda item: item['version_code'], default={
         'available': False, 'platform': 'android', 'package': 'com.mtunz.web'})
 
+def verified_release_floor():
+    # Checked-in metadata from the actual published, signed APK; no secrets.
+    try:
+        return json.loads((Path(__file__).resolve().parent / 'static/android-release-floor.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'available': False, 'version_code': 0, 'platform': 'android', 'package': 'com.mtunz.web'}
+
 def latest_android_release():
     global _cached, _expires
     with _lock:
@@ -56,7 +64,9 @@ def latest_android_release():
                 rows = json.loads(response.read(2 * 1024 * 1024))
             if not isinstance(rows, list):
                 raise ValueError('Invalid release catalog')
-            _cached = select_release(rows)
+            live = select_release(rows)
+            floor = verified_release_floor()
+            _cached = live if live.get('version_code', 0) >= floor.get('version_code', 0) else {**floor, 'stale': True}
             _expires = time.monotonic() + 120
             return dict(_cached)
         except (OSError, ValueError, TypeError, AttributeError):
@@ -64,5 +74,4 @@ def latest_android_release():
             if _cached is not None:
                 _cached = {**_cached, 'stale': True}
                 return dict(_cached)
-            return {'available': False, 'platform': 'android', 'package': 'com.mtunz.web',
-                    'unavailable_reason': 'catalog_unreachable'}
+            return {**verified_release_floor(), 'stale': True, 'unavailable_reason': 'catalog_unreachable'}
