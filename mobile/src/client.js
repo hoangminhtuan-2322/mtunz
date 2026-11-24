@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import {clearDraftVault} from './draftVault';
 
 export const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
 const STORE_KEY = 'mtunz-native-session-v1';
@@ -67,6 +68,8 @@ export async function readSession() {
 }
 
 export async function clearSession() {
+  const token=await readSession().catch(()=>null);
+  if(token)await clearDraftVault(token).catch(()=>{});
   await SecureStore.deleteItemAsync(STORE_KEY);
 }
 

@@ -3,7 +3,7 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
-import {ActivityIndicator,Alert,AppState,FlatList,Image,Keyboard,
+import {ActivityIndicator,Alert,Animated,AppState,FlatList,Image,Keyboard,PanResponder,
   Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {KeyboardChatScrollView,KeyboardStickyView} from 'react-native-keyboard-controller';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -15,7 +15,8 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
-import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft} from './inboxTools';
+import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
+import {readDraftVault,writeDraftVault} from './draftVault';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
 
@@ -145,13 +146,28 @@ function Attachment({file,token,onOpen}){
     </View>
   </Pressable>;
 }
-function Message({item,own,token,onSelect,onOpen}){
+function Message({item,own,token,onSelect,onOpen,onReply,highlighted}){
   const deleted=!!(item.deleted_at||item.deleted);
+  const drag=useRef(new Animated.Value(0)).current;
+  const swipeRef=useRef(null);
+  swipeRef.current={enabled:!deleted&&!!onReply,reply:()=>onReply?.(item)};
+  const responder=useRef(null);
+  if(!responder.current)responder.current=PanResponder.create({
+    onMoveShouldSetPanResponderCapture:(_,g)=>swipeRef.current.enabled&&isReplySwipe(g,15),
+    onPanResponderMove:(_,g)=>drag.setValue(Math.max(0,Math.min(70,g.dx))),
+    onPanResponderRelease:(_,g)=>{
+      Animated.spring(drag,{toValue:0,useNativeDriver:true,speed:30,bounciness:0}).start();
+      if(swipeRef.current.enabled&&isReplySwipe(g,55))swipeRef.current.reply();
+    },
+    onPanResponderTerminate:()=>Animated.spring(drag,{toValue:0,useNativeDriver:true}).start(),
+    onPanResponderTerminationRequest:()=>true,
+  });
   const reactions=item.reactions||[];
   const reactionCounts=new Map();
   for(const r of reactions)reactionCounts.set(r.emoji,(reactionCounts.get(r.emoji)||0)+1);
-  return <Pressable onLongPress={()=>onSelect(item)} delayLongPress={330}
-    style={[css.bubble,own?css.bubbleMine:css.bubbleOther,
+  return <Animated.View {...responder.current.panHandlers} style={{transform:[{translateX:drag}]}}>
+    <Pressable onLongPress={()=>onSelect(item)} delayLongPress={330}
+    style={[css.bubble,own?css.bubbleMine:css.bubbleOther,highlighted&&css.foundBubble,
       item.attachment?.mime?.startsWith('image/')&&!item.body?.trim()&&!deleted&&css.photoBubble]}>
     {!own&&(item.display_name||item.username)&&<Text style={css.sender}>{item.display_name||item.username}</Text>}
     {item.reply_to&&<Text style={css.reply}>↪ Trả lời tin #{item.reply_to}</Text>}
@@ -170,7 +186,8 @@ function Message({item,own,token,onSelect,onOpen}){
       {own&&!item.read_at&&item.delivered_at&&<Text style={css.time}>✓✓</Text>}
       {own&&!item.delivered_at&&!item.read_at&&<Text style={css.time}>✓</Text>}
     </View>
-  </Pressable>;
+    </Pressable>
+  </Animated.View>;
 }
 
 function FriendPresenceBadge({friend,connected,clock}){
@@ -197,8 +214,19 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const [drafts,setDrafts]=useState({}),[refreshingInbox,setRefreshingInbox]=useState(false);
   const [searchBusy,setSearchBusy]=useState(false),[searchDone,setSearchDone]=useState(false),[searchError,setSearchError]=useState('');
   const draftsRef=useRef({}),searchSeqRef=useRef(0),inboxRefreshRef=useRef(false),preferenceBusyRef=useRef(false);
-  function changeStoredDraft(key,value){draftsRef.current=updateDraft(draftsRef.current,key,value);setDrafts(draftsRef.current);}
-  function removeSentDraft(key,value){draftsRef.current=clearSentDraft(draftsRef.current,key,value);setDrafts(draftsRef.current);}
+  const draftDirtyRef=useRef(new Set()),draftReadyRef=useRef(false),draftSaveTimer=useRef(null);
+  const inputRef=useRef(null),jumpRef=useRef(null),jumpTimer=useRef(null),jumpSeq=useRef(0),historyBusyRef=useRef(false);
+  const [highlightId,setHighlightId]=useState(null),[historyBusy,setHistoryBusy]=useState(false),[sendStage,setSendStage]=useState('');
+  function persistDrafts(){
+    clearTimeout(draftSaveTimer.current);
+    if(draftReadyRef.current)void writeDraftVault(token,draftsRef.current).catch(()=>{});
+  }
+  function scheduleDraftSave(){
+    clearTimeout(draftSaveTimer.current);
+    if(draftReadyRef.current)draftSaveTimer.current=setTimeout(persistDrafts,250);
+  }
+  function changeStoredDraft(key,value){draftDirtyRef.current.add(key);draftsRef.current=updateDraft(draftsRef.current,key,value);setDrafts(draftsRef.current);scheduleDraftSave();}
+  function removeSentDraft(key,value){draftDirtyRef.current.add(key);draftsRef.current=clearSentDraft(draftsRef.current,key,value);setDrafts(draftsRef.current);scheduleDraftSave();}
   const [inboxFilter,setInboxFilter]=useState('all'),[presenceClock,setPresenceClock]=useState(Date.now());
   const [newerMessages,setNewerMessages]=useState(false);
   const [tab,setTab]=useState('dm'),[room,setRoom]=useState(null),[friends,setFriends]=useState([]),
@@ -247,6 +275,23 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     sendRef=useRef(false);
   roomRef.current=room;
   supportTicketRef.current=supportTicket;
+  const replyRef=useRef(null);
+  replyRef.current=reply;
+  useEffect(()=>{
+    let active=true;
+    draftReadyRef.current=false;
+    readDraftVault(token).then(saved=>{
+      if(!active)return;
+      draftsRef.current=mergeHydratedDrafts(saved,draftsRef.current,draftDirtyRef.current);
+      setDrafts(draftsRef.current);draftReadyRef.current=true;
+      const key=conversationKey(roomRef.current);
+      if(key&&!draftDirtyRef.current.has(key)&&!replyRef.current?.edit_id)setDraft(draftsRef.current[key]||'');
+      persistDrafts();
+    }).catch(()=>{if(active)draftReadyRef.current=true;});
+    const sub=AppState.addEventListener('change',state=>{if(state!=='active')persistDrafts();});
+    return()=>{active=false;sub.remove();persistDrafts();clearTimeout(draftSaveTimer.current);};
+  },[token]);
+  useEffect(()=>()=>{clearTimeout(jumpTimer.current);jumpSeq.current++;},[]);
   const nativeCall=useNativeCall(wsRef,friends);
   const onCallSignal=nativeCall.onSignal;
   const endNativeCall=nativeCall.endCall;
@@ -390,7 +435,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   },[invoke]);
   const openRoom=useCallback(target=>{
     stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
-    searchSeqRef.current++;setSearchBusy(false);setDialog('');setSelection(null);
+    searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
@@ -570,7 +615,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result)onResponse(result);}).catch(()=>{});
     return()=>sub.remove();
   },[openRoom]);
-  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;setSearchBusy(false);
+  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
     roomRef.current=null;isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
@@ -588,9 +633,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const roomTitle=room?.scope==='dm'?label(peer):room?.scope==='group'?(group?.title||'Nhóm'):worldRooms.find(r=>r.id===room?.id)?.title||'Chat thế giới';
 
   async function doSend(){
-    if(!room||sending||(!draft.trim()&&!picked))return;
+    if(!room||sending||sendRef.current||(!draft.trim()&&!picked))return;
     if(room.scope==='world'&&draft.length>1200){setError('Tin nhắn thế giới tối đa 1200 ký tự.');return;}
-    setSending(true);sendRef.current=true;setError('');
+    setSending(true);sendRef.current=true;setError('');setSendStage(picked?'Đang tải tệp…':'Đang gửi tin nhắn…');
     const scope=room.scope,originalRoom=room.scope+':'+room.id,text=draft.trim();
     const submittedDraft=draft;
     const key=originalRoom+':'+text+':'+(picked?.uri||'');
@@ -602,6 +647,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         const file=await uploadAttachment(token,picked,nonce);
         attachmentId=file.id;uploadRef.current={key,id:attachmentId};
       }
+      setSendStage('Đang gửi tin nhắn…');
       const data={body:text,attachment_id:attachmentId||null};
       let endpoint='';
       if(scope==='dm'){endpoint='/api/messages';Object.assign(data,{recipient_id:room.id,reply_to:reply?.id||null,client_message_id:nonce});}
@@ -616,10 +662,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         setDraft(draftsRef.current[originalRoom]||'');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
         scrollToLatest();
       }
-      refreshLists().catch(()=>{});
+      persistDrafts();refreshLists().catch(()=>{});
     }catch(e){
-      alertError(e);setError((e.message||'Gửi thất bại')+' · Nhấn Gửi để thử lại, hệ thống giữ mã chống trùng.');
-    }finally{sendRef.current=false;setSending(false);}
+      if(conversationKey(roomRef.current)===originalRoom){
+        alertError(e);setError((e.message||'Gửi thất bại')+' · Nhấn Gửi để thử lại, hệ thống giữ mã chống trùng.');
+      }else if(e.status===401)onExpired();
+    }finally{sendRef.current=false;setSending(false);setSendStage('');}
   }
   async function toggleVoice(){
     if(voiceBusy||sending)return;
@@ -655,14 +703,22 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   }
   useEffect(()=>()=>clearTimeout(voiceDeadlineRef.current),[]);
   async function pick(kind){
+    if(sendRef.current||!room)return;
+    const key=conversationKey(room);
     try{const asset=kind==='media'?await chooseMedia():await chooseFile();
-      if(asset){setPicked(asset);nonceRef.current=null;uploadRef.current=null;}}
+      if(asset&&conversationKey(roomRef.current)===key&&!sendRef.current){setPicked(asset);nonceRef.current=null;uploadRef.current=null;}}
     catch(e){alertError(e);}
+  }
+  function replyToMessage(message){
+    if(!room||room.scope==='world'||sendRef.current||message.deleted_at||message.deleted)return;
+    if(reply?.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');
+    setReply(message);setSelection(null);
+    requestAnimationFrame(()=>inputRef.current?.focus());
   }
   async function action(message,what){
     const scope=room.scope,id=room.id;
     try{
-      if(what==='reply'){setReply(message);setSelection(null);return;}
+      if(what==='reply'){replyToMessage(message);return;}
       if(what==='copy'){await copyChatText(message.body);setSelection(null);return;}
       if(what==='edit'){setDraft(message.body);setReply({edit_id:message.id});setSelection(null);return;}
       if(what==='forward'){setDialog('forward');return;}
@@ -683,8 +739,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     }catch(e){alertError(e);}
   }
   async function sendEdit(){
-    const mid=reply?.edit_id;if(!mid||!draft.trim()||!room)return;
-    setSending(true);
+    const mid=reply?.edit_id;if(!mid||!draft.trim()||!room||sendRef.current)return;
+    sendRef.current=true;setSending(true);setSendStage('Đang lưu chỉnh sửa…');
     try{
       await invoke(room.scope==='dm'?'/api/messages/'+mid:
         '/api/groups/'+room.id+'/messages/'+mid,'PATCH',{body:draft.trim()});
@@ -692,10 +748,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         setDraft(draftsRef.current[conversationKey(room)]||'');setReply(null);
       }
     }catch(e){alertError(e);}
-    finally{setSending(false);}
+    finally{sendRef.current=false;setSending(false);setSendStage('');}
   }
   function loadOlder(){
-    if(!more||olderRef.current||loading||!messages.length||!room)return;
+    if(!more||olderRef.current||historyBusyRef.current||loading||!messages.length||!room)return;
     const oldest=Math.min(...messages.map(m=>Number(m.id)));
     if(!oldest||oldest<1)return;
     olderRef.current=true;loadWindow(room,oldest);
@@ -795,6 +851,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   // position while older history is loaded; follow live messages only if already
   // near the bottom, and always jump after a local send or input focus.
   function scrollToLatest(animated=true){
+    jumpRef.current=null;clearTimeout(jumpTimer.current);setHighlightId(null);
     isAtLatestRef.current=true;setNewerMessages(false);
     // The inverted list may not have measured a just-sent image or message yet.
     // Scroll on the next frame, then let onContentSizeChange finish positioning.
@@ -814,6 +871,53 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       else setNewerMessages(true);
     }
   },[messages,room?.scope,room?.id]);
+  function cancelHistoryJump(){
+    jumpSeq.current++;historyBusyRef.current=false;setHistoryBusy(false);
+    jumpRef.current=null;clearTimeout(jumpTimer.current);setHighlightId(null);
+  }
+  async function jumpToSearchResult(message){
+    const target=roomRef.current,id=Number(message.id);
+    if(!target||target.scope==='world'||!Number.isSafeInteger(id)||id<=0||historyBusyRef.current)return;
+    if(olderRef.current||loading){setSearchError('Đang tải hội thoại. Hãy thử lại khi hoàn tất.');return;}
+    const key=conversationKey(target),seq=++jumpSeq.current;
+    historyBusyRef.current=true;setHistoryBusy(true);setSearchError('');
+    const current=()=>seq===jumpSeq.current&&conversationKey(roomRef.current)===key;
+    try{
+      const found=await findHistory(messages,id,async before=>{
+        const result=await invoke(toQuery(route(target),{before:String(before)}));
+        return (result.messages||[]).map(sanitize);
+      },current,8);
+      if(!current())return;
+      if(found.rows.length)setMessages(old=>dedupe([...found.rows,...old]));
+      if(found.exhausted)setMore(false);
+      if(!found.found){setSearchError(found.exhausted?'Tin nhắn không còn trong lịch sử.':'Tin nhắn nằm xa hơn giới hạn tải nhanh. Hãy mở thêm lịch sử rồi thử lại.');return;}
+      searchSeqRef.current++;setSearchBusy(false);setDialog('');Keyboard.dismiss();
+      isAtLatestRef.current=false;setHighlightId(id);
+      jumpRef.current={id,key,attempts:0};
+    }catch(e){if(current())setSearchError(e.message||'Không tải được lịch sử.');}
+    finally{if(current()){historyBusyRef.current=false;setHistoryBusy(false);}}
+  }
+  useEffect(()=>{
+    const target=jumpRef.current;
+    if(!target||target.key!==conversationKey(room)||target.id!==highlightId)return;
+    const index=[...messages].reverse().findIndex(m=>Number(m.id)===target.id);
+    if(index<0)return;
+    clearTimeout(jumpTimer.current);
+    jumpTimer.current=setTimeout(()=>{
+      if(jumpRef.current!==target)return;
+      listRef.current?.scrollToIndex({index,animated:false,viewPosition:0.5});
+    },100);
+  },[messages,highlightId,room?.scope,room?.id]);
+  function recoverSearchScroll(info){
+    const target=jumpRef.current;
+    if(!target||target.key!==conversationKey(roomRef.current))return;
+    if(++target.attempts>4){jumpRef.current=null;setError('Đã tải tin nhắn, nhưng chưa thể cuộn đúng vị trí. Hãy thử tìm lại.');return;}
+    const index=[...messages].reverse().findIndex(m=>Number(m.id)===target.id);
+    if(index<0)return;
+    listRef.current?.scrollToOffset({offset:Math.max(0,index*info.averageItemLength),animated:false});
+    clearTimeout(jumpTimer.current);
+    jumpTimer.current=setTimeout(()=>{if(jumpRef.current===target)listRef.current?.scrollToIndex({index,animated:false,viewPosition:0.5});},180);
+  }
   // Do not wait for keyboardDidShow or drive keyboard position through JS.
   // Focus jumps to the latest message; the native IME animation handles movement.
 
@@ -856,7 +960,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     setSearchBusy(false);setSearchDone(false);setSearchError('');setDialog('search');
   }
   function closeMessageSearch(){
-    searchSeqRef.current++;setSearchBusy(false);setDialog('');
+    searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');
   }
   async function searchMessages(){
     const target=roomRef.current,query=searchText.trim();
@@ -933,6 +1037,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
         renderScrollComponent={renderChatScroll} style={css.chatListViewport}
+        onScrollToIndexFailed={recoverSearchScroll}
+        onScrollBeginDrag={()=>{jumpRef.current=null;clearTimeout(jumpTimer.current);}}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS==='ios'?'interactive':'none'}
         onScroll={event=>{
@@ -948,6 +1054,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         }}
         renderItem={({item})=><Message item={item} own={item.sender_id===user.id||item.is_mine}
           token={token} onSelect={room.scope==='world'?()=>{}:setSelection}
+          onReply={room.scope==='world'?null:replyToMessage} highlighted={highlightId===Number(item.id)}
           onOpen={openAttachment}/>}
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
         removeClippedSubviews={false} // avoid disappearing photo/video cells on Android
@@ -962,7 +1069,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Text style={css.jumpLatestText}>Tin nhắn mới</Text>
       </Pressable>}
       {!!reply&&<View style={css.replyBar}>
-        <Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời #'+reply.id}</Text>
+        <View style={{flex:1,minWidth:0,gap:3}}><Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời tin nhắn'}</Text>
+          {!reply.edit_id&&<Text style={css.strong} numberOfLines={1}>{reply.body||'Tệp đính kèm'}</Text>}</View>
         <Pressable onPress={()=>{setReply(null);if(reply.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
       {!!picked&&<View style={css.replyBar}>
@@ -981,6 +1089,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         }}><Text style={[css.muted,{paddingHorizontal:15,paddingVertical:4}]}>
           {social.world_anonymous?'Ẩn danh: '+(worldAlias.trim()||'Ẩn danh')+' · Đổi tên':'Đang hiện tên · Chọn ẩn danh'}
         </Text></Pressable>}
+      {!!sendStage&&<View style={css.sendStatus}><ActivityIndicator size="small" color={P.accent}/><Text style={css.muted}>{sendStage}</Text></View>}
       <View style={css.compose}>
         <Pressable accessibilityLabel="Gửi ảnh hoặc video" accessibilityRole="button"
           style={css.toolButton} onPress={()=>pick('media')}><Ionicons name="images-outline" size={21} color={P.accent}/></Pressable>
@@ -990,7 +1099,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           accessibilityRole="button" style={css.toolButton}
           onPress={toggleVoice} disabled={voiceBusy||sending}><Ionicons name={recordState.isRecording?'stop-circle':'mic-outline'} size={21}
               color={recordState.isRecording?P.bad:P.accent}/></Pressable>
-        <TextInput style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
+        <TextInput ref={inputRef} style={css.composeInput} multiline maxLength={room.scope==='world'?1200:2000}
           textAlignVertical="center" blurOnSubmit={false}
           onFocus={()=>scrollToLatest(false)}
           value={draft} placeholder="Tin nhắn…" placeholderTextColor={P.soft}
@@ -1319,9 +1428,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <Btn disabled={searchBusy||!searchText.trim()} onPress={searchMessages}>{searchBusy?'Đang tìm…':'Tìm kiếm'}</Btn>
       {!!searchError&&<Text style={css.muted}>{searchError}</Text>}
       {searchDone&&<Text style={css.muted}>{searchResults.length?searchResults.length+' kết quả':'Không tìm thấy tin nhắn phù hợp.'}</Text>}
+      {historyBusy&&<View style={css.sendStatus}><ActivityIndicator color={P.accent}/><Text style={css.muted}>Đang tìm vị trí tin nhắn…</Text></View>}
       {searchResults.map(m=><View key={m.id} style={css.rowCard}>
-        <View style={{flex:1,gap:5}}><Text style={css.strong}>{m.body||'Tin nhắn đính kèm'}</Text>
-          <Text style={css.muted}>{m.created_at?new Date(m.created_at*1000).toLocaleString('vi-VN'):'Tin #'+m.id}</Text></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Đi tới tin nhắn" disabled={historyBusy} onPress={()=>jumpToSearchResult(m)} style={{flex:1,gap:5}}><Text style={css.strong}>{m.body||'Tin nhắn đính kèm'}</Text>
+          <Text style={css.muted}>{m.created_at?new Date(m.created_at*1000).toLocaleString('vi-VN'):'Tin #'+m.id} · Nhấn để đi tới</Text></Pressable>
         {!!m.body&&<Pressable accessibilityRole="button" accessibilityLabel="Sao chép kết quả" onPress={()=>copyChatText(m.body).catch(alertError)}><Ionicons name="copy-outline" size={22} color={P.accent}/></Pressable>}
       </View>)}
     </ModalSheet>
@@ -1643,6 +1753,8 @@ const css=StyleSheet.create({
   bubble:{paddingVertical:11,paddingHorizontal:14,borderRadius:21,maxWidth:'84%',
     minWidth:86,marginVertical:4,gap:7,borderWidth:.5,borderColor:'#365675'},
   bubbleMine:{backgroundColor:P.mine,alignSelf:'flex-end',borderBottomRightRadius:7},
+  foundBubble:{borderWidth:2,borderColor:'#e9b95c'},
+  sendStatus:{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:13,paddingVertical:5,backgroundColor:P.bg},
   bubbleOther:{backgroundColor:'#1c334d',alignSelf:'flex-start',borderBottomLeftRadius:7},
   sender:{color:P.accent,fontSize:11,fontWeight:'800'},
   reply:{color:P.soft,fontSize:11},
