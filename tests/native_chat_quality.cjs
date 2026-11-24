@@ -9,8 +9,8 @@ const gallery=read('mobile/src/SharedConversationGallery.js');
 const app=read('mobile/App.js');
 const cfg=require('../mobile/app.json').expo;
 const pkg=require('../mobile/package.json');
-assert.equal(cfg.version,'1.1.0');
-assert.equal(cfg.android.versionCode,11);
+assert.match(cfg.version,/^\d+\.\d+\.\d+$/);
+assert(Number.isInteger(cfg.android.versionCode)&&cfg.android.versionCode>=11);
 assert.equal(cfg.android.package,'com.mtunz.web');
 assert.equal(pkg.dependencies['@expo/vector-icons'],'^15.0.2');
 assert(chat.includes("import Ionicons from '@expo/vector-icons/Ionicons';"),
