@@ -42,6 +42,15 @@ export async function chooseMedia() {
   return result.canceled ? null : selected(result.assets[0]);
 }
 
+export async function chooseMediaBatch() {
+  const result=await ImagePicker.launchImageLibraryAsync({
+    mediaTypes:['images','videos'],quality:0.75,allowsMultipleSelection:true,selectionLimit:8,
+  });
+  if(result.canceled)return null;
+  if(result.assets.length>8)throw Error('Chỉ chọn tối đa 8 ảnh/video mỗi lần.');
+  return result.assets.map(selected);
+}
+
 export async function chooseFile() {
   const result = await DocumentPicker.getDocumentAsync({copyToCacheDirectory:true,multiple:false});
   return result.canceled ? null : selected(result.assets[0]);

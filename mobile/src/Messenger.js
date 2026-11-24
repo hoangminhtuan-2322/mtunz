@@ -9,7 +9,7 @@ import {KeyboardChatScrollView,KeyboardStickyView} from 'react-native-keyboard-c
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {SafeAreaView,useSafeAreaInsets} from 'react-native-safe-area-context';
 import {API_ORIGIN,api,wsUrl} from './client';
-import {attachmentSource,avatarSource,chooseFile,chooseMedia,copyChatText,
+import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,copyChatText,
   saveSharedFile,uploadAttachment} from './media';
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
@@ -17,6 +17,7 @@ import {useNativeCall,NativeCallOverlay} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
+import {createMediaBatch,runMediaBatch} from './mediaBatch';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
 
@@ -217,6 +218,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const draftDirtyRef=useRef(new Set()),draftReadyRef=useRef(false),draftSaveTimer=useRef(null);
   const inputRef=useRef(null),jumpRef=useRef(null),jumpTimer=useRef(null),jumpSeq=useRef(0),historyBusyRef=useRef(false);
   const [highlightId,setHighlightId]=useState(null),[historyBusy,setHistoryBusy]=useState(false),[sendStage,setSendStage]=useState('');
+  const [mediaBatch,setMediaBatch]=useState(null);
+  const batchesRef=useRef(new Map()),pickerBusyRef=useRef(false);
+  function showBatch(key){if(conversationKey(roomRef.current)===key)setMediaBatch(batchesRef.current.get(key)||null);}
+  function discardBatch(key){batchesRef.current.delete(key);showBatch(key);}
   const onSearchTargetVisible=useRef(({viewableItems})=>{
     const target=jumpRef.current;
     if(target&&viewableItems.some(v=>v.isViewable&&Number(v.item?.id)===target.id)){
@@ -445,7 +450,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
-    setDraft(draftsRef.current[conversationKey(target)]||'');setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
+    setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     nonceRef.current=null;uploadRef.current=null;
     void loadWindow(target);
   },[loadWindow,stopTyping,updateRemoteTyping]);
@@ -640,7 +645,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const roomTitle=room?.scope==='dm'?label(peer):room?.scope==='group'?(group?.title||'Nhóm'):worldRooms.find(r=>r.id===room?.id)?.title||'Chat thế giới';
 
   async function doSend(){
-    if(!room||sending||sendRef.current||(!draft.trim()&&!picked))return;
+    if(!room||sending||sendRef.current)return;
+    if(mediaBatch){await sendMediaBatch();return;}
+    if(!draft.trim()&&!picked)return;
     if(room.scope==='world'&&draft.length>1200){setError('Tin nhắn thế giới tối đa 1200 ký tự.');return;}
     setSending(true);sendRef.current=true;setError('');setSendStage(picked?'Đang tải tệp…':'Đang gửi tin nhắn…');
     const scope=room.scope,originalRoom=room.scope+':'+room.id,text=draft.trim();
@@ -677,7 +684,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     }finally{sendRef.current=false;setSending(false);setSendStage('');}
   }
   async function toggleVoice(){
-    if(voiceBusy||sending)return;
+    if(voiceBusy||sending||sendRef.current||mediaBatch||reply?.edit_id)return;
     setVoiceBusy(true);
     try{
       if(recordState.isRecording){
@@ -710,11 +717,70 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   }
   useEffect(()=>()=>clearTimeout(voiceDeadlineRef.current),[]);
   async function pick(kind){
-    if(sendRef.current||!room)return;
-    const key=conversationKey(room);
-    try{const asset=kind==='media'?await chooseMedia():await chooseFile();
-      if(asset&&conversationKey(roomRef.current)===key&&!sendRef.current){setPicked(asset);nonceRef.current=null;uploadRef.current=null;}}
-    catch(e){alertError(e);}
+    if(sendRef.current||!room||pickerBusyRef.current||mediaBatch||recordState.isRecording||reply?.edit_id)return;
+    const key=conversationKey(room),multi=kind==='media'&&room.scope!=='world';
+    pickerBusyRef.current=true;
+    try{
+      const result=multi?await chooseMediaBatch():kind==='media'?await chooseMedia():await chooseFile();
+      if(!result||conversationKey(roomRef.current)!==key||sendRef.current)return;
+      const assets=multi?result:[result];
+      if(!assets.length)return;
+      if(assets.length===1){setPicked(assets[0]);}
+      else{
+        const batch=createMediaBatch(assets,()=>Crypto.randomUUID());
+        batchesRef.current.set(key,batch);showBatch(key);setPicked(null);
+      }
+      nonceRef.current=null;uploadRef.current=null;
+    }catch(e){alertError(e);}
+    finally{pickerBusyRef.current=false;}
+  }
+  async function sendMediaBatch(){
+    if(!room||room.scope==='world'||sendRef.current||reply?.edit_id)return;
+    const target=room,key=conversationKey(target),batch=batchesRef.current.get(key);
+    if(!batch)return;
+    if(!batch.started){
+      batch.started=true;batch.caption=draft.trim();batch.originalDraft=draft;batch.replyId=reply?.id||null;
+    }
+    sendRef.current=true;setSending(true);setError('');
+    const active=()=>conversationKey(roomRef.current)===key&&batchesRef.current.get(key)===batch;
+    try{
+      await runMediaBatch(batch,{
+        active,
+        upload:async(file,nonce)=>{const result=await uploadAttachment(token,file,nonce);return result.id;},
+        send:async(item,body,replyId)=>{
+          const data={body,attachment_id:item.attachmentId,client_message_id:item.nonce,reply_to:replyId};
+          if(target.scope==='dm')data.recipient_id=target.id;
+          return invoke(target.scope==='dm'?'/api/messages':'/api/groups/'+target.id+'/messages','POST',data);
+        },
+        progress:(stage,index,total)=>{if(active())setSendStage((stage==='upload'?'Đang tải ảnh/video ':'Đang gửi ')+index+'/'+total+'…');},
+        delivered:(result,index)=>{
+          if(index===0){
+            removeSentDraft(key,batch.originalDraft);persistDrafts();
+            if(active()){setDraft(draftsRef.current[key]||'');setReply(null);}
+          }
+          if(active()&&result.message){setMessages(old=>dedupe([...old,sanitize(result.message)]));scrollToLatest();}
+          if(active())setMediaBatch({...batch});
+        }
+      });
+      if(batch.items.every(item=>item.sent)){discardBatch(key);}
+      refreshLists().catch(()=>{});
+    }catch(e){
+      if(active()){setMediaBatch({...batch});setError((e.message||'Gửi thất bại')+' · Nhấn Gửi để tiếp tục các tệp còn lại, không gửi lại tệp đã xác nhận.');}
+    }finally{sendRef.current=false;setSending(false);setSendStage('');}
+  }
+  function removeBatchItem(index){
+    if(sendRef.current||!room||!mediaBatch||mediaBatch.started)return;
+    const key=conversationKey(room),batch=batchesRef.current.get(key);
+    if(!batch)return;
+    batch.items=batch.items.filter((_,i)=>i!==index);
+    if(!batch.items.length)discardBatch(key);else setMediaBatch({...batch});
+  }
+  function cancelBatch(){
+    if(sendRef.current||!room||!mediaBatch)return;
+    const key=conversationKey(room),expected=batchesRef.current.get(key);
+    if(mediaBatch.started)Alert.alert('Bỏ lô đính kèm?','Tệp đã gửi sẽ không bị thu hồi. Tệp chưa xác nhận có thể đã tới máy chủ.',[
+      {text:'Tiếp tục',style:'cancel'},{text:'Bỏ lô',style:'destructive',onPress:()=>{if(!sendRef.current&&batchesRef.current.get(key)===expected)discardBatch(key);}}]);
+    else discardBatch(key);
   }
   function replyToMessage(message){
     if(!room||room.scope==='world'||sendRef.current||message.deleted_at||message.deleted)return;
@@ -727,7 +793,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{
       if(what==='reply'){replyToMessage(message);return;}
       if(what==='copy'){await copyChatText(message.body);setSelection(null);return;}
-      if(what==='edit'){setDraft(message.body);setReply({edit_id:message.id});setSelection(null);return;}
+      if(what==='edit'){if(mediaBatch||sendRef.current)return;setDraft(message.body);setReply({edit_id:message.id});setSelection(null);return;}
       if(what==='forward'){setDialog('forward');return;}
       if(what==='save'){if(message.attachment)await saveSharedFile(message.attachment,token);return;}
       if(what==='pin'){await invoke('/api/chat/pins','POST',{scope,chat_id:id,message_id:message.id});setSelection(null);return;}
@@ -1082,6 +1148,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           {!reply.edit_id&&<Text style={css.strong} numberOfLines={1}>{reply.body||'Tệp đính kèm'}</Text>}</View>
         <Pressable onPress={()=>{setReply(null);if(reply.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
+      {!!mediaBatch&&<View style={css.batchPanel}>
+        <View style={css.hrow}><Text style={[css.strong,{flex:1}]}>{mediaBatch.items.filter(item=>!item.sent).length} tệp chờ gửi</Text>
+          <Pressable disabled={sending} accessibilityRole="button" accessibilityLabel="Bỏ lô đính kèm" onPress={cancelBatch}><Ionicons name="close-circle" size={23} color={P.accent}/></Pressable></View>
+        <ScrollView horizontal keyboardShouldPersistTaps="handled" showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8}}>
+          {mediaBatch.items.map((item,i)=>!item.sent&&<View key={item.nonce} style={css.batchTile}>
+            {item.file.type.startsWith('image/')?<Image source={{uri:item.file.uri}} style={css.batchPhoto}/>:<Ionicons name="videocam" size={26} color={P.accent}/>}
+            {!mediaBatch.started&&<Pressable disabled={sending} accessibilityRole="button" accessibilityLabel={'Bỏ tệp '+(i+1)} style={css.batchRemove} onPress={()=>removeBatchItem(i)}><Ionicons name="close-circle" size={20} color="#fff"/></Pressable>}
+          </View>)}
+        </ScrollView>
+        {mediaBatch.started&&<Text style={css.muted}>Tiếp tục lô đã chọn; nội dung mới đang nhập được giữ lại.</Text>}
+      </View>}
       {!!picked&&<View style={css.replyBar}>
         {picked.type?.startsWith('image/')?
           <><Image source={{uri:picked.uri}} style={css.pendingPhoto}/>
@@ -1089,7 +1166,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <><Ionicons name="attach-outline" size={19} color={P.accent}/>
             <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.name}</Text></>}
         <Pressable accessibilityRole="button" accessibilityLabel="Bỏ tệp đính kèm"
-          onPress={()=>{setPicked(null);uploadRef.current=null;}}>
+          disabled={sending} onPress={()=>{setPicked(null);uploadRef.current=null;}}>
           <Ionicons name="close-circle" size={22} color={P.accent}/></Pressable>
       </View>}
       {room.scope==='world'&&<Pressable accessibilityRole="button"
@@ -1119,8 +1196,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             setDraft(value);
           }}/>
         <Pressable accessibilityRole="button" accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}
-          disabled={sending||(!draft.trim()&&!picked)} onPress={reply?.edit_id?sendEdit:doSend}
-          style={[css.sendIconButton,(sending||(!draft.trim()&&!picked))&&css.disabled]}>
+          disabled={sending||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
+          style={[css.sendIconButton,(sending||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
           {sending?<ActivityIndicator size="small" color={P.bg}/>:
             <Ionicons name="send" size={20} color={P.bg}/>}
         </Pressable>
@@ -1764,6 +1841,9 @@ const css=StyleSheet.create({
   bubbleMine:{backgroundColor:P.mine,alignSelf:'flex-end',borderBottomRightRadius:7},
   foundBubble:{borderWidth:2,borderColor:'#e9b95c'},
   sendStatus:{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:13,paddingVertical:5,backgroundColor:P.bg},
+  batchPanel:{paddingHorizontal:13,paddingVertical:8,gap:7,backgroundColor:P.bg},
+  batchTile:{width:58,height:58,borderRadius:10,backgroundColor:P.card,alignItems:'center',justifyContent:'center',overflow:'hidden'},
+  batchPhoto:{width:58,height:58},batchRemove:{position:'absolute',right:1,top:1,backgroundColor:'#071320',borderRadius:12},
   bubbleOther:{backgroundColor:'#1c334d',alignSelf:'flex-start',borderBottomLeftRadius:7},
   sender:{color:P.accent,fontSize:11,fontWeight:'800'},
   reply:{color:P.soft,fontSize:11},

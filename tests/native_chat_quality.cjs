@@ -93,3 +93,20 @@ assert(read('mobile/src/client.js').includes('clearDraftVault(token)'));
  assert(!d.found&&!d.rows.length);
  console.log('Swipe, encrypted draft isolation, bounded history and send guard: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+const {createMediaBatch,runMediaBatch}=require('../mobile/src/mediaBatch');
+(async()=>{
+ let serial=0;const batch=createMediaBatch([{uri:'a'},{uri:'b'},{uri:'c'}],()=>String(++serial));
+ batch.caption='caption';batch.replyId=7;
+ let fail=true,uploads=[],sends=[];
+ const ctx={active:()=>true,upload:async(f,id)=>{uploads.push(id);return Number(id);},send:async(item,body,reply)=>{sends.push([item.nonce,body,reply]);if(item.nonce==='2'&&fail)throw Error('network');return {};},progress:()=>{},delivered:()=>{}};
+ await assert.rejects(runMediaBatch(batch,ctx));assert.deepEqual(batch.items.map(i=>i.sent),[true,false,false]);
+ fail=false;await runMediaBatch(batch,ctx);
+ assert.deepEqual(uploads,['1','2','3']);assert.deepEqual(sends,[['1','caption',7],['2','',null],['2','',null],['3','',null]]);
+ assert(batch.items.every(i=>i.sent));
+ const stop=createMediaBatch([{uri:'a'},{uri:'b'}],()=>String(++serial));let active=true;
+ await runMediaBatch(stop,{...ctx,active:()=>active,upload:async()=>{active=false;return 4;}});
+ assert.equal(stop.items[0].attachmentId,4);assert(!stop.items[0].sent);
+ assert(chat.includes('chooseMediaBatch')&&chat.includes('runMediaBatch(batch'));
+ console.log('Batch media resume and stable upload/send IDs: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});
