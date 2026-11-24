@@ -40,7 +40,8 @@ jobs:
     env:
       EXPO_PUBLIC_API_URL: https://mtunz.onrender.com
       CI: '1'
-      SIGNED_NATIVE_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.MTUNZ_AUTO_ANDROID_RELEASE == 'true') }}
+      # Main builds a signed QA candidate once FCM is configured; public publishing remains opt-in.
+      SIGNED_NATIVE_RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.sign_release && github.ref == 'refs/heads/main') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.EXPO_FCM_V1_READY == 'true') }}
     outputs:
       version: ${{ steps.android_version.outputs.name }}
       code: ${{ steps.android_version.outputs.code }}
