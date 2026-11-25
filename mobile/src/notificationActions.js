@@ -19,9 +19,14 @@ function parsePushResponse(response,binding,defaultAction){
   }
   return {kind:data.kind,scope,chatId,text:''};
 }
+function parseAdminPushResponse(response,binding,defaultAction){
+  const data=response?.notification?.request?.content?.data;
+  if(typeof binding!=='string'||! /^[a-f0-9]{64}$/.test(binding)||data?.session_binding!==binding||response?.actionIdentifier!==defaultAction)return null;
+  return data.kind==='registration'?'registrations':data.kind==='support'?'support':null;
+}
 function combineReplyDraft(existing,text){
   const draft=typeof existing==='string'?existing:'';
   const result=draft.trim()?draft+'\n'+text:text;
   return result.length<=2000?result:null;
 }
-module.exports={MESSAGE_CATEGORY,QUICK_REPLY,OPEN_CHAT,parsePushResponse,combineReplyDraft};
+module.exports={MESSAGE_CATEGORY,QUICK_REPLY,OPEN_CHAT,parsePushResponse,parseAdminPushResponse,combineReplyDraft};

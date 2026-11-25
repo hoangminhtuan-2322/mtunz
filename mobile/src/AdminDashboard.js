@@ -5,6 +5,8 @@ import React,{useCallback,useEffect,useState} from 'react';
 import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
+import * as Crypto from 'expo-crypto';
+import {parseAdminPushResponse} from './notificationActions';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {adminPresence} from './presence';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -121,23 +123,32 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   const timer=setInterval(()=>{if(AppState.currentState==='active'){connect();fetchNow();}},20000);
   const appSub=AppState.addEventListener('change',state=>{
    if(state==='active'){connect();fetchNow();}
-   else stop();
+   else {setPin('');stop();}
   });
   connect();fetchNow();
   return()=>{alive=false;clearInterval(timer);appSub.remove();stop();};
  },[refresh,token,onExpired]);
  useEffect(()=>{
   let active=true;
-  const open=response=>{
-   if(!active)return;
-   const kind=response?.notification.request.content.data?.kind;
-   if(kind==='registration')setTab('registrations');
-   if(kind==='support')setTab('support');
+  const handled=new Set();
+  const binding=Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,token)
+    .then(hash=>Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256,'mtunz-push-response:'+hash));
+  const open=async response=>{
+   const id=response?.notification?.request?.identifier;
+   if(!id||handled.has(id))return;
+   handled.add(id);if(handled.size>100)handled.delete(handled.values().next().value);
+   try{
+    const target=parseAdminPushResponse(response,await binding,Notifications.DEFAULT_ACTION_IDENTIFIER);
+    if(!active||!target)return;
+    const last=await Notifications.getLastNotificationResponseAsync();
+    if(last?.notification?.request?.identifier===id)await Notifications.clearLastNotificationResponseAsync();
+    if(active)setTab(target);
+   }catch{}
   };
-  const sub=Notifications.addNotificationResponseReceivedListener(open);
-  Notifications.getLastNotificationResponseAsync().then(value=>{if(value)open(value);}).catch(()=>{});
+  const sub=Notifications.addNotificationResponseReceivedListener(response=>{void open(response);});
+  Notifications.getLastNotificationResponseAsync().then(value=>{if(value&&active)void open(value);}).catch(()=>{});
   return()=>{active=false;sub.remove();};
- },[]);
+ },[token]);
  async function act(path,method,body,success){
   if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return false;}
   setBusy(true);setError('');setNotice('');
