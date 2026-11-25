@@ -61,3 +61,14 @@ assert(pushPanel.includes('opensAppToForeground:true'));
 assert(backend.includes(MESSAGE_CATEGORY)&&backend.includes('session_binding'));
 assert(mobile.includes('clearLastNotificationResponseAsync')&&mobile.includes('combineReplyDraft'));
 console.log('Notification actions, session binding, draft-only quick reply: PASS');
+
+const {MESSAGE_CHANNEL,summarizeNotificationChannel}=require('../mobile/src/notificationPreferences');
+assert.equal(MESSAGE_CHANNEL,'messages');
+assert.deepEqual(summarizeNotificationChannel(false,null),{permission:'denied',channel:'missing',sound:'unknown',vibration:'unknown'});
+assert.deepEqual(summarizeNotificationChannel(true,{importance:0,sound:null,enableVibrate:false}),{permission:'allowed',channel:'blocked',sound:'silent',vibration:'off'});
+assert.deepEqual(summarizeNotificationChannel(true,{importance:4,sound:'custom',enableVibrate:true}),{permission:'allowed',channel:'configured',sound:'custom',vibration:'on'});
+assert.equal(summarizeNotificationChannel(null,{}).sound,'unknown');
+assert(pushPanel.includes('getNotificationChannelAsync(MESSAGE_CHANNEL)')&&!pushPanel.includes('deleteNotificationChannelAsync'));
+assert(pushPanel.includes('enablePush(token,{prompt:false})')&&pushPanel.includes('operationBusy.current'));
+assert(backend.includes("'channelId':'messages'"));
+console.log('Android notification diagnostics, retained channel preferences and no background permission prompt: PASS');
