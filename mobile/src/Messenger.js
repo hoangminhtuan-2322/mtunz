@@ -21,6 +21,7 @@ import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,m
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
+import {createPendingSend,deliverPendingSend} from './pendingSend';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
 
@@ -221,7 +222,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const draftDirtyRef=useRef(new Set()),draftReadyRef=useRef(false),draftSaveTimer=useRef(null);
   const inputRef=useRef(null),jumpRef=useRef(null),jumpTimer=useRef(null),jumpSeq=useRef(0),historyBusyRef=useRef(false);
   const [highlightId,setHighlightId]=useState(null),[historyBusy,setHistoryBusy]=useState(false),[sendStage,setSendStage]=useState('');
-  const [mediaBatch,setMediaBatch]=useState(null);
+  const [mediaBatch,setMediaBatch]=useState(null),[pendingSend,setPendingSend]=useState(null);
+  const pendingSendsRef=useRef(new Map());
+  function showPending(key){if(conversationKey(roomRef.current)===key)setPendingSend(pendingSendsRef.current.get(key)||null);}
   const batchesRef=useRef(new Map()),pickerBusyRef=useRef(false);
   function showBatch(key){if(conversationKey(roomRef.current)===key)setMediaBatch(batchesRef.current.get(key)||null);}
   function discardBatch(key){batchesRef.current.delete(key);showBatch(key);}
@@ -282,7 +285,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
-    keyRef=useRef(null),nonceRef=useRef(null),uploadRef=useRef(null),olderRef=useRef(false),
+    keyRef=useRef(null),olderRef=useRef(false),
     listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
     isAtLatestRef=useRef(true),lastNewestIdRef=useRef(null),
     presenceVersionRef=useRef(0),presenceEventsRef=useRef(new Map()),
@@ -454,8 +457,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
-    setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
-    nonceRef.current=null;uploadRef.current=null;
+    setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
   },[loadWindow,stopTyping,updateRemoteTyping]);
 
@@ -681,45 +683,63 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   async function doSend(){
     if(!room||sending||sendRef.current)return;
-    if(mediaBatch){await sendMediaBatch();return;}
-    if(!draft.trim()&&!picked)return;
-    if(room.scope==='world'&&draft.length>1200){setError('Tin nhắn thế giới tối đa 1200 ký tự.');return;}
-    setSending(true);sendRef.current=true;setError('');setSendStage(picked?'Đang tải tệp…':'Đang gửi tin nhắn…');
-    const scope=room.scope,originalRoom=room.scope+':'+room.id,text=draft.trim();
-    const submittedDraft=draft;
-    const key=originalRoom+':'+text+':'+(picked?.uri||'');
-    const nonce=nonceRef.current?.key===key?nonceRef.current.id:Crypto.randomUUID();
-    nonceRef.current={key,id:nonce};
+    const target=room,originalRoom=conversationKey(target);
+    let pending=pendingSendsRef.current.get(originalRoom);
+    if(!pending&&mediaBatch){await sendMediaBatch();return;}
+    if(!pending){
+      if(!draft.trim()&&!picked)return;
+      if(target.scope==='world'&&draft.length>1200){setError('Tin nhắn thế giới tối đa 1200 ký tự.');return;}
+      if(pendingSendsRef.current.size>=12){setError('Có 12 hội thoại đang chờ xác nhận gửi. Hãy xử lý tin nhắn cũ trước.');return;}
+      pending=createPendingSend(target,draft,picked,reply?.id,social.world_anonymous?worldAlias.trim():'',Crypto.randomUUID());
+      pendingSendsRef.current.set(originalRoom,pending);showPending(originalRoom);
+      removeSentDraft(originalRoom,pending.originalDraft);persistDrafts();
+      setDraft(draftsRef.current[originalRoom]||'');setPicked(null);setReply(null);
+    }
+    if(pending.scope==='world'&&pending.attempted){
+      setError('Chat thế giới chưa chống gửi trùng. Kiểm tra tin nhắn trong hội thoại trước khi bỏ mục chờ và gửi lại.');return;
+    }
+    setSending(true);sendRef.current=true;setError('');
+    const active=()=>conversationKey(roomRef.current)===originalRoom&&pendingSendsRef.current.get(originalRoom)===pending;
     try{
-      let attachmentId=uploadRef.current?.key===key?uploadRef.current.id:null;
-      if(picked&&!attachmentId){
-        const file=await uploadAttachment(token,picked,nonce);
-        attachmentId=file.id;uploadRef.current={key,id:attachmentId};
-      }
-      setSendStage('Đang gửi tin nhắn…');
-      const data={body:text,attachment_id:attachmentId||null};
-      let endpoint='';
-      if(scope==='dm'){endpoint='/api/messages';Object.assign(data,{recipient_id:room.id,reply_to:reply?.id||null,client_message_id:nonce});}
-      if(scope==='group'){endpoint='/api/groups/'+room.id+'/messages';Object.assign(data,{reply_to:reply?.id||null,client_message_id:nonce});}
-      if(scope==='world'){endpoint='/api/world/messages';Object.assign(data,{room_id:room.id,anonymous_name:social.world_anonymous?worldAlias.trim():''});}
-      const result=await invoke(endpoint,'POST',data);
-      removeSentDraft(originalRoom,submittedDraft);
-      if(roomRef.current?.scope===scope&&roomRef.current?.id===room.id){
+      const result=await deliverPendingSend(pending,{
+        upload:async(file,nonce)=>{const uploaded=await uploadAttachment(token,file,nonce);return uploaded.id;},
+        send:(endpoint,data)=>invoke(endpoint,'POST',data),
+        progress:stage=>{if(active())setSendStage(stage==='upload'?'Đang tải tệp…':'Đang gửi tin nhắn…');}
+      });
+      pendingSendsRef.current.delete(originalRoom);
+      if(conversationKey(roomRef.current)===originalRoom){
         if(!draftsRef.current[originalRoom])stopTyping();
         if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
-        if(scope==='world'&&!result.message)loadWindow(room);
-        setDraft(draftsRef.current[originalRoom]||'');setPicked(null);setReply(null);nonceRef.current=null;uploadRef.current=null;
+        if(pending.scope==='world'&&!result.message)loadWindow(target);
+        setDraft(draftsRef.current[originalRoom]||'');setPendingSend(null);
         scrollToLatest();
       }
       persistDrafts();refreshLists().catch(()=>{});
     }catch(e){
-      if(conversationKey(roomRef.current)===originalRoom){
-        alertError(e);setError((e.message||'Gửi thất bại')+' · Nhấn Gửi để thử lại, hệ thống giữ mã chống trùng.');
-      }else if(e.status===401)onExpired();
+      if(e.status===401)onExpired();
+      else if(active()){
+        setPendingSend({...pending});
+        setError((e.message||'Gửi thất bại')+(pending.scope==='world'&&pending.attempted?
+          ' · Chưa xác nhận đã gửi. Kiểm tra hội thoại trước khi gửi lại.':
+          ' · Nhấn Thử lại để giữ nguyên nội dung và mã chống trùng.'));
+      }
     }finally{sendRef.current=false;setSending(false);setSendStage('');}
   }
+  function discardPending(){
+    if(!room||sendRef.current)return;
+    const key=conversationKey(room),expected=pendingSendsRef.current.get(key);
+    if(!expected)return;
+    Alert.alert('Bỏ tin nhắn chờ?', 'Tin nhắn có thể đã đến máy chủ dù chưa nhận được xác nhận. Thao tác này không thu hồi tin nhắn. Bản nháp mới được giữ lại. Nếu ô soạn thảo trống, nội dung cũ sẽ được khôi phục; tệp chờ sẽ bị bỏ.',[
+      {text:'Hủy',style:'cancel'},{text:'Bỏ mục chờ',style:'destructive',onPress:()=>{
+        if(sendRef.current||pendingSendsRef.current.get(key)!==expected)return;
+        pendingSendsRef.current.delete(key);
+        if(!draftsRef.current[key]&&expected.originalDraft){changeStoredDraft(key,expected.originalDraft);if(conversationKey(roomRef.current)===key)setDraft(expected.originalDraft);}
+        showPending(key);
+      }}
+    ]);
+  }
   async function toggleVoice(){
-    if(voiceBusy||sending||sendRef.current||mediaBatch||reply?.edit_id)return;
+    if(voiceBusy||sending||sendRef.current||pendingSend||mediaBatch||reply?.edit_id)return;
     setVoiceBusy(true);
     try{
       if(recordState.isRecording){
@@ -730,7 +750,6 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         if(!recorder.uri)throw Error('Không tìm thấy bản ghi âm.');
         const name='mtunz-voice-'+Date.now()+'.m4a';
         setPicked({uri:recorder.uri,name,type:'audio/mp4',size:recordState.fileSize||0});
-        uploadRef.current=null;nonceRef.current=null;
       }else{
         const permission=await AudioModule.requestRecordingPermissionsAsync();
         if(!permission.granted)throw Error('Chưa cấp quyền micro để ghi âm.');
@@ -752,12 +771,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   }
   useEffect(()=>()=>clearTimeout(voiceDeadlineRef.current),[]);
   async function pick(kind){
-    if(sendRef.current||!room||pickerBusyRef.current||mediaBatch||recordState.isRecording||reply?.edit_id)return;
+    if(sendRef.current||!room||pickerBusyRef.current||pendingSend||mediaBatch||recordState.isRecording||reply?.edit_id)return;
     const key=conversationKey(room),multi=kind==='media'&&room.scope!=='world';
     pickerBusyRef.current=true;
     try{
       const result=multi?await chooseMediaBatch():kind==='media'?await chooseMedia():await chooseFile();
-      if(!result||conversationKey(roomRef.current)!==key||sendRef.current)return;
+      if(!result||conversationKey(roomRef.current)!==key||sendRef.current||pendingSendsRef.current.has(key))return;
       const assets=multi?result:[result];
       if(!assets.length)return;
       if(assets.length===1){setPicked(assets[0]);}
@@ -765,7 +784,6 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         const batch=createMediaBatch(assets,()=>Crypto.randomUUID());
         batchesRef.current.set(key,batch);showBatch(key);setPicked(null);
       }
-      nonceRef.current=null;uploadRef.current=null;
     }catch(e){alertError(e);}
     finally{pickerBusyRef.current=false;}
   }
@@ -818,7 +836,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     else discardBatch(key);
   }
   function replyToMessage(message){
-    if(!room||room.scope==='world'||sendRef.current||message.deleted_at||message.deleted)return;
+    if(!room||room.scope==='world'||sendRef.current||pendingSend||message.deleted_at||message.deleted)return;
     if(reply?.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');
     setReply(message);setSelection(null);
     requestAnimationFrame(()=>inputRef.current?.focus());
@@ -828,7 +846,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{
       if(what==='reply'){replyToMessage(message);return;}
       if(what==='copy'){await copyChatText(message.body);setSelection(null);return;}
-      if(what==='edit'){if(mediaBatch||sendRef.current)return;setDraft(message.body);setReply({edit_id:message.id});setSelection(null);return;}
+      if(what==='edit'){if(mediaBatch||pendingSend||sendRef.current)return;setDraft(message.body);setReply({edit_id:message.id});setSelection(null);return;}
       if(what==='forward'){setDialog('forward');return;}
       if(what==='save'){if(message.attachment)await saveSharedFile(message.attachment,token);return;}
       if(what==='pin'){await invoke('/api/chat/pins','POST',{scope,chat_id:id,message_id:message.id});setSelection(null);return;}
@@ -1186,6 +1204,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           {!reply.edit_id&&<Text style={css.strong} numberOfLines={1}>{reply.body||'Tệp đính kèm'}</Text>}</View>
         <Pressable onPress={()=>{setReply(null);if(reply.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
+      {!!pendingSend&&<View style={css.batchPanel}>
+        <View style={css.hrow}><Ionicons name="time-outline" size={20} color={P.accent}/><Text style={[css.strong,{flex:1}]}>{sending?'Đang gửi':'Tin nhắn chờ xác nhận'}</Text>
+          <Pressable accessibilityRole="button" disabled={sending} onPress={discardPending}><Text style={css.link}>Bỏ</Text></Pressable></View>
+        {!!pendingSend.body&&<Text style={css.muted} numberOfLines={2}>{pendingSend.body}</Text>}
+        {!!pendingSend.file&&<Text style={css.muted}>{pendingSend.file.type?.startsWith('image/')?'Ảnh đính kèm':'Tệp đính kèm'}</Text>}
+        <Text style={css.muted}>{pendingSend.scope==='world'&&pendingSend.attempted?'Kiểm tra hội thoại trước khi gửi lại để tránh trùng.':'Nội dung chờ được giữ nguyên; bạn vẫn có thể soạn tin tiếp theo.'}</Text>
+        {!sending&&!(pendingSend.scope==='world'&&pendingSend.attempted)&&<Btn small onPress={doSend}>Thử lại</Btn>}
+      </View>}
       {!!mediaBatch&&<View style={css.batchPanel}>
         <View style={css.hrow}><Text style={[css.strong,{flex:1}]}>{mediaBatch.items.filter(item=>!item.sent).length} tệp chờ gửi</Text>
           <Pressable disabled={sending} accessibilityRole="button" accessibilityLabel="Bỏ lô đính kèm" onPress={cancelBatch}><Ionicons name="close-circle" size={23} color={P.accent}/></Pressable></View>
@@ -1204,7 +1230,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <><Ionicons name="attach-outline" size={19} color={P.accent}/>
             <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.name}</Text></>}
         <Pressable accessibilityRole="button" accessibilityLabel="Bỏ tệp đính kèm"
-          disabled={sending} onPress={()=>{setPicked(null);uploadRef.current=null;}}>
+          disabled={sending} onPress={()=>setPicked(null)}>
           <Ionicons name="close-circle" size={22} color={P.accent}/></Pressable>
       </View>}
       {room.scope==='world'&&<Pressable accessibilityRole="button"
@@ -1230,12 +1256,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onChangeText={value=>{
             if(!reply?.edit_id)changeStoredDraft(conversationKey(room),value);
             sendTyping(value);
-            if(value!==draft){nonceRef.current=null;if(value.trim()!==draft.trim())uploadRef.current=null;}
             setDraft(value);
           }}/>
         <Pressable accessibilityRole="button" accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}
-          disabled={sending||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
-          style={[css.sendIconButton,(sending||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
+          disabled={sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
+          style={[css.sendIconButton,(sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
           {sending?<ActivityIndicator size="small" color={P.bg}/>:
             <Ionicons name="send" size={20} color={P.bg}/>}
         </Pressable>
