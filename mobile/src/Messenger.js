@@ -692,14 +692,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(pendingSendsRef.current.size>=12){setError('Có 12 hội thoại đang chờ xác nhận gửi. Hãy xử lý tin nhắn cũ trước.');return;}
       pending=createPendingSend(target,draft,picked,reply?.id,social.world_anonymous?worldAlias.trim():'',Crypto.randomUUID());
       pendingSendsRef.current.set(originalRoom,pending);showPending(originalRoom);
-      setPicked(null);setReply(null);
+      removeSentDraft(originalRoom,pending.originalDraft);persistDrafts();
+      setDraft(draftsRef.current[originalRoom]||'');setPicked(null);setReply(null);
     }
     if(pending.scope==='world'&&pending.attempted){
       setError('Chat thế giới chưa chống gửi trùng. Kiểm tra tin nhắn trong hội thoại trước khi bỏ mục chờ và gửi lại.');return;
     }
     setSending(true);sendRef.current=true;setError('');
     const active=()=>conversationKey(roomRef.current)===originalRoom&&pendingSendsRef.current.get(originalRoom)===pending;
-    const submittedDraft=pending.originalDraft;
     try{
       const result=await deliverPendingSend(pending,{
         upload:async(file,nonce)=>{const uploaded=await uploadAttachment(token,file,nonce);return uploaded.id;},
@@ -707,7 +707,6 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         progress:stage=>{if(active())setSendStage(stage==='upload'?'Đang tải tệp…':'Đang gửi tin nhắn…');}
       });
       pendingSendsRef.current.delete(originalRoom);
-      removeSentDraft(originalRoom,submittedDraft);
       if(conversationKey(roomRef.current)===originalRoom){
         if(!draftsRef.current[originalRoom])stopTyping();
         if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
@@ -730,10 +729,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     if(!room||sendRef.current)return;
     const key=conversationKey(room),expected=pendingSendsRef.current.get(key);
     if(!expected)return;
-    Alert.alert('Bỏ tin nhắn chờ?', 'Tin nhắn có thể đã đến máy chủ dù chưa nhận được xác nhận. Thao tác này không thu hồi tin nhắn. Nội dung trong ô soạn thảo được giữ lại, tệp chờ sẽ bị bỏ.',[
+    Alert.alert('Bỏ tin nhắn chờ?', 'Tin nhắn có thể đã đến máy chủ dù chưa nhận được xác nhận. Thao tác này không thu hồi tin nhắn. Bản nháp mới được giữ lại. Nếu ô soạn thảo trống, nội dung cũ sẽ được khôi phục; tệp chờ sẽ bị bỏ.',[
       {text:'Hủy',style:'cancel'},{text:'Bỏ mục chờ',style:'destructive',onPress:()=>{
         if(sendRef.current||pendingSendsRef.current.get(key)!==expected)return;
-        pendingSendsRef.current.delete(key);showPending(key);
+        pendingSendsRef.current.delete(key);
+        if(!draftsRef.current[key]&&expected.originalDraft){changeStoredDraft(key,expected.originalDraft);if(conversationKey(roomRef.current)===key)setDraft(expected.originalDraft);}
+        showPending(key);
       }}
     ]);
   }
@@ -775,7 +776,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     pickerBusyRef.current=true;
     try{
       const result=multi?await chooseMediaBatch():kind==='media'?await chooseMedia():await chooseFile();
-      if(!result||conversationKey(roomRef.current)!==key||sendRef.current)return;
+      if(!result||conversationKey(roomRef.current)!==key||sendRef.current||pendingSendsRef.current.has(key))return;
       const assets=multi?result:[result];
       if(!assets.length)return;
       if(assets.length===1){setPicked(assets[0]);}

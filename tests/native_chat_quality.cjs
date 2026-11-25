@@ -72,7 +72,7 @@ let drafts=updateDraft({},'dm:1','hello');drafts=updateDraft(drafts,'group:1','g
 assert.equal(drafts['dm:1'],'hello');assert.equal(clearSentDraft(drafts,'dm:1','old'),drafts);
 assert.deepEqual(clearSentDraft(drafts,'dm:1','hello'),{'group:1':'group draft'});
 assert(chat.includes('onLongPress={()=>quickChatActions(item)}')&&chat.includes('onRefresh={refreshInbox}'));
-assert(chat.includes('searchSeqRef.current')&&chat.includes('removeSentDraft(originalRoom,submittedDraft)'));
+assert(chat.includes('searchSeqRef.current')&&chat.includes('removeSentDraft(originalRoom,pending.originalDraft)'));
 assert(chat.includes('KeyboardStickyView')&&chat.includes('KeyboardChatScrollView'));
 console.log('Native inbox filters, Vietnamese search, session drafts and quick actions passed.');
 
