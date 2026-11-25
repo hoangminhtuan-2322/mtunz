@@ -5,7 +5,7 @@ import {LIGHT_PALETTE,makeLightStyles,wallpaperColor} from './messengerTheme';
 import {useAppTheme} from './AppTheme';
 import StorageSettings from './StorageSettings';
 import {AppLockSettings} from './AppLockGate';
-import React,{useCallback,useEffect,useRef,useState} from 'react';
+import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
@@ -20,7 +20,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
-import {createRefreshQueue,mergeRecentWindow} from './realtime';
+import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
@@ -210,6 +210,8 @@ function Message({item,own,token,onSelect,onOpen,onReply,highlighted}){
   </Animated.View>;
 }
 
+const MemoMessage=React.memo(Message);
+const ignoreMessageSelection=()=>{};
 function FriendPresenceBadge({friend,connected,clock}){
   const {P,css}=useMessengerTheme();
   const presence=friendPresence(friend,connected,clock);
@@ -333,6 +335,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [rememberedDevices,setRememberedDevices]=useState([]),
     [sessionsLoading,setSessionsLoading]=useState(false),
     [sessionMessage,setSessionMessage]=useState('');
+  const newestFirst=useMemo(()=>[...messages].reverse(),[messages]);
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
@@ -451,7 +454,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         if(before)return dedupe([...next,...current]);
         // Keep live events received while the REST request was in flight.
         // Only the overlapping IDs should be replaced by the server snapshot.
-        return mergeRecentWindow(current,next);
+        return reuseMessageRows(current,mergeRecentWindow(current,next));
       });
       keyRef.current=key;
       if(next.length&&(!before || liveRef.current[key]===undefined))
@@ -543,7 +546,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(data.type==='message'&&target?.scope==='dm'){
         const m=data.message;
         if(m&&(m.sender_id===target.id||m.recipient_id===target.id)){
-          setMessages(old=>dedupe([...old,sanitize(m)]));
+          setMessages(old=>upsertMessage(old,sanitize(m)));
           if(m.sender_id!==user.id&&activeRef.current){
             invoke('/api/messages/delivered/'+target.id,'POST',{up_to:m.id}).catch(()=>{});
             invoke('/api/messages/read/'+target.id+'?up_to='+m.id,'POST').catch(()=>{});
@@ -561,7 +564,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         setPresenceClock(Date.now());
       }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
-        setMessages(old=>dedupe([...old,sanitize(data.message)]));
+        setMessages(old=>upsertMessage(old,sanitize(data.message)));
         if(activeRef.current&&data.message.sender_id!==user.id)
           invoke('/api/groups/'+target.id+'/read?up_to='+data.message.id,'POST').catch(()=>{});
       }
@@ -585,7 +588,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           {...m,[data.type==='read'?'read_at':'delivered_at']:data.at}:m));
       }
       if(data.type==='world-message'&&target?.scope==='world'&&data.message?.room_id===target.id)
-        setMessages(old=>dedupe([...old,sanitize(data.message)]));
+        setMessages(old=>upsertMessage(old,sanitize(data.message)));
       if(data.type==='world-message-removed'&&target?.scope==='world')loadWindow(target);
       if(data.type==='support-message'){
         const ticket=supportTicketRef.current;
@@ -727,10 +730,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   },[]);
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
   const peerStatus=friendPresence(peer,connection==='online',presenceClock);
-  async function openAttachment(file){
+  const openAttachment=useCallback(async file=>{
     if(file?.mime?.startsWith('image/')){setViewer(file);return;}
     await saveSharedFile(file,token).catch(alertError);
-  }
+  },[token,alertError]);
   const roomTitle=room?.scope==='dm'?label(peer):room?.scope==='group'?(group?.title||'Nhóm'):worldRooms.find(r=>r.id===room?.id)?.title||'Chat thế giới';
 
   async function doSend(){
@@ -761,7 +764,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       pendingSendsRef.current.delete(originalRoom);
       if(conversationKey(roomRef.current)===originalRoom){
         if(!draftsRef.current[originalRoom])stopTyping();
-        if(result.message)setMessages(old=>dedupe([...old,sanitize(result.message)]));
+        if(result.message)setMessages(old=>upsertMessage(old,sanitize(result.message)));
         if(pending.scope==='world'&&!result.message)loadWindow(target);
         setDraft(draftsRef.current[originalRoom]||'');setPendingSend(null);
         scrollToLatest();
@@ -863,7 +866,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             removeSentDraft(key,batch.originalDraft);persistDrafts();
             if(active()){setDraft(draftsRef.current[key]||'');setReply(null);}
           }
-          if(active()&&result.message){setMessages(old=>dedupe([...old,sanitize(result.message)]));scrollToLatest();}
+          if(active()&&result.message){setMessages(old=>upsertMessage(old,sanitize(result.message)));scrollToLatest();}
           if(active())setMediaBatch({...batch});
         }
       });
@@ -887,12 +890,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       {text:'Tiếp tục',style:'cancel'},{text:'Bỏ lô',style:'destructive',onPress:()=>{if(!sendRef.current&&batchesRef.current.get(key)===expected)discardBatch(key);}}]);
     else discardBatch(key);
   }
-  function replyToMessage(message){
+  const replyToMessage=useCallback(message=>{
     if(!room||room.scope==='world'||sendRef.current||pendingSend||message.deleted_at||message.deleted)return;
     if(reply?.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');
     setReply(message);setSelection(null);
     requestAnimationFrame(()=>inputRef.current?.focus());
-  }
+  },[room,pendingSend,reply?.edit_id]);
   async function action(message,what){
     const scope=room.scope,id=room.id;
     try{
@@ -930,7 +933,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   }
   function loadOlder(){
     if(!more||olderRef.current||historyBusyRef.current||loading||!messages.length||!room)return;
-    const oldest=Math.min(...messages.map(m=>Number(m.id)));
+    const oldest=Number(messages[0].id);
     if(!oldest||oldest<1)return;
     olderRef.current=true;loadWindow(room,oldest);
   }
@@ -1078,7 +1081,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   useEffect(()=>{
     const target=jumpRef.current;
     if(!target||target.key!==conversationKey(room)||target.id!==highlightId)return;
-    const index=[...messages].reverse().findIndex(m=>Number(m.id)===target.id);
+    const index=newestFirst.findIndex(m=>Number(m.id)===target.id);
     if(index<0)return;
     clearTimeout(jumpTimer.current);
     jumpTimer.current=setTimeout(()=>{
@@ -1090,7 +1093,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const target=jumpRef.current;
     if(!target||target.key!==conversationKey(roomRef.current))return;
     if(++target.attempts>4){jumpRef.current=null;setError('Đã tải tin nhắn, nhưng chưa thể cuộn đúng vị trí. Hãy thử tìm lại.');return;}
-    const index=[...messages].reverse().findIndex(m=>Number(m.id)===target.id);
+    const index=newestFirst.findIndex(m=>Number(m.id)===target.id);
     if(index<0)return;
     listRef.current?.scrollToOffset({offset:Math.max(0,index*info.averageItemLength),animated:false});
     clearTimeout(jumpTimer.current);
@@ -1102,12 +1105,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
     ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
-  const acceptedFriends=friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted);
-  const activeFriends=connection==='online'?acceptedFriends.filter(f=>f.online===true):[];
-  const unreadTotal=acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0);
-  const matchingFriends=filterInbox(friends,inboxQuery,inboxFilter,connection==='online');
-  const matchingGroups=groups.filter(g=>normalizeSearch(g.title).includes(normalizeSearch(groupQuery)));
-  const archivedCount=friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length;
+  const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted),[friends]);
+  const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
+  const unreadTotal=useMemo(()=>acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0),[acceptedFriends]);
+  const matchingFriends=useMemo(()=>filterInbox(friends,inboxQuery,inboxFilter,connection==='online'),[friends,inboxQuery,inboxFilter,connection]);
+  const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
+  const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length,[friends]);
+  const worldChat=room?.scope==='world';
+  const renderMessage=useCallback(({item})=><MemoMessage item={item} own={item.sender_id===user.id||item.is_mine}
+    token={token} onSelect={worldChat?ignoreMessageSelection:setSelection}
+    onReply={worldChat?null:replyToMessage} highlighted={highlightId===Number(item.id)}
+    onOpen={openAttachment}/>,[user.id,token,worldChat,replyToMessage,highlightId,openAttachment]);
   async function refreshInbox(){
     if(inboxRefreshRef.current)return;
     inboxRefreshRef.current=true;setRefreshingInbox(true);
@@ -1217,7 +1225,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     </Pressable>}
     {room?<View style={css.chatKeyboardArea}>
       {loading&&<ActivityIndicator color={P.accent}/>}
-      <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
+      <FlatList ref={listRef} inverted data={newestFirst} keyExtractor={m=>String(m.id)}
         renderScrollComponent={renderChatScroll} style={[css.chatListViewport,{backgroundColor:wallpaperColor(chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)),mode)}]}
         onScrollToIndexFailed={recoverSearchScroll}
         onViewableItemsChanged={onSearchTargetVisible} viewabilityConfig={searchViewabilityConfig}
@@ -1236,10 +1244,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           // Never pull someone away from older messages they are reading.
           if(isAtLatestRef.current)listRef.current?.scrollToOffset({offset:0,animated:false});
         }}
-        renderItem={({item})=><Message item={item} own={item.sender_id===user.id||item.is_mine}
-          token={token} onSelect={room.scope==='world'?()=>{}:setSelection}
-          onReply={room.scope==='world'?null:replyToMessage} highlighted={highlightId===Number(item.id)}
-          onOpen={openAttachment}/>}
+        renderItem={renderMessage}
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
         removeClippedSubviews={false} // avoid disappearing photo/video cells on Android
         contentContainerStyle={css.messageList}
