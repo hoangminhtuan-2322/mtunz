@@ -462,3 +462,16 @@ def test_split_notification_channel_routing_legacy_fallback():
         assert build_push_message(row,kind,1)['channelId']=='messages'
         assert build_push_message(dict(row,split_channels=0),kind,1)['channelId']=='messages'
         assert build_push_message(dict(row,split_channels=1),kind,1)['channelId']==channel
+
+
+def test_background_call_notice_is_generic_short_lived_callback_hint():
+    from mobile_push import build_push_message
+    row={'token':'ExpoPushToken[test-token]','session_hash':'a'*64,'split_channels':1}
+    notice=build_push_message(row,'call_notice',42)
+    assert notice['ttl']==30
+    assert notice['channelId']=='messages'
+    assert 'categoryId' not in notice
+    assert set(notice['data'])=={'kind','chat_id','session_binding'}
+    assert notice['data']['kind']=='call_notice' and notice['data']['chat_id']==42
+    assert row['session_hash'] not in str(notice)
+    assert 'signal' not in notice['data'] and 'sdp' not in notice['data']

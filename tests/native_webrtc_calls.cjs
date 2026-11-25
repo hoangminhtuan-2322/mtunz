@@ -69,3 +69,15 @@ assert(read('mobile/src/callVault.js').includes('retired.add(key)'));
 assert(read('mobile/src/client.js').includes('retireCallVault(token)'));
 assert(chat.includes('callFilter')&&calls.includes('appendCallVault(token,record)'));
 console.log('Encrypted local call vault, compact metadata, retention, filters and logout cleanup: PASS');
+
+const {parsePushResponse,QUICK_REPLY,OPEN_CHAT}=require('../mobile/src/notificationActions');
+const noticeBinding='a'.repeat(64),notice={actionIdentifier:'default',notification:{request:{content:{data:{kind:'call_notice',chat_id:7,session_binding:noticeBinding}}}}};
+assert.deepEqual(parsePushResponse(notice,noticeBinding,'default'),{kind:'call_notice',scope:'dm',chatId:7,text:''});
+assert.equal(parsePushResponse(notice,'b'.repeat(64),'default'),null);
+assert.equal(parsePushResponse({...notice,actionIdentifier:QUICK_REPLY},noticeBinding,'default'),null);
+assert.equal(parsePushResponse({...notice,actionIdentifier:OPEN_CHAT},noticeBinding,'default'),null);
+assert(backend.includes("throttle(ws,'native-call-notice-sender',5,60")&&backend.includes("enqueue_web_push(target,'call-notice'"));
+const pushBackend=read('mobile_push.py');
+assert(pushBackend.includes("0<=at-body<=30")&&pushBackend.includes("kind=='call_notice'")&&pushBackend.includes("core.has_block(c,uid,chat_id)"));
+assert(chat.includes("parsed.kind==='call_notice'")&&chat.includes("Nhấn nút gọi để gọi lại"));
+console.log('Short-lived background call notices, callback-only routing and session binding: PASS');
