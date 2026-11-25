@@ -1,12 +1,13 @@
 import AndroidUpdate from './AndroidUpdate';
 import StorageSettings from './StorageSettings';
 import {AppLockSettings} from './AppLockGate';
-import React,{useCallback,useEffect,useState} from 'react';
+import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
 import * as Crypto from 'expo-crypto';
 import {parseAdminPushResponse} from './notificationActions';
+import {maintenanceLabel,canCancelDeletion} from './adminSystemPolicy';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {adminPresence} from './presence';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -36,6 +37,8 @@ function Tile({title,value}){
 
 export default function AdminDashboard({token,onLogout,onExpired}){
  const {P,s,mode,ready:themeReady,saving:themeSaving,changeMode}=useAdminTheme();
+ const [maintenance,setMaintenance]=useState(null),[deletions,setDeletions]=useState([]),[systemLoading,setSystemLoading]=useState(false),[systemError,setSystemError]=useState('');
+ const systemSeq=useRef(0),systemActionBusy=useRef(false);
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
  const [audit,setAudit]=useState([]),[auditTotal,setAuditTotal]=useState(0),
   [auditOffset,setAuditOffset]=useState(0),[auditQuery,setAuditQuery]=useState(''),
@@ -155,6 +158,38 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   try{await call(path,method,{...body,admin_pin:pin});setPin('');setNotice(success||'Đã cập nhật.');await refresh().catch(e=>setError(e.message));return true;}
   catch(e){setError(e.message);return false;}
   finally{setBusy(false);}
+ }
+ const loadSystem=useCallback(async()=>{
+  const seq=++systemSeq.current;setSystemLoading(true);setSystemError('');
+  const results=await Promise.allSettled([call('/api/system/maintenance'),call('/api/admin/deletions')]);
+  if(seq!==systemSeq.current)return;
+  setMaintenance(results[0].status==='fulfilled'?results[0].value:null);
+  setDeletions(results[1].status==='fulfilled'?results[1].value.requests||[]:[]);
+  if(results.some(r=>r.status==='rejected'))setSystemError('Một phần dữ liệu hệ thống chưa tải được. Hãy làm mới.');
+  setSystemLoading(false);
+ },[call]);
+ useEffect(()=>{
+  if(tab!=='system')return;
+  void loadSystem();
+  const poll=setInterval(()=>{if(AppState.currentState==='active'&&!systemActionBusy.current)void loadSystem();},20000);
+  const sub=AppState.addEventListener('change',state=>{if(state==='active'&&!systemActionBusy.current)void loadSystem();});
+  return()=>{++systemSeq.current;clearInterval(poll);sub.remove();};
+ },[tab,loadSystem]);
+ function changeMaintenance(enabled){
+  if(!maintenance||systemLoading||busy||systemActionBusy.current)return;
+  Alert.alert('Xác nhận bảo mật',enabled?'Bật bảo trì sẽ thu hồi phiên của thành viên và chặn đăng nhập. Admin vẫn có quyền truy cập.':'Tắt bảo trì thủ công. Nếu lịch bảo trì đang có hiệu lực, thành viên vẫn chưa thể đăng nhập.',[
+    {text:'Hủy',style:'cancel'},{text:'Xác nhận',style:'destructive',onPress:async()=>{
+      if(systemActionBusy.current||AppState.currentState!=='active')return;systemActionBusy.current=true;
+      try{await act('/api/admin/security/maintenance','POST',{enabled},enabled?'Đã bật bảo trì.':'Đã tắt bảo trì thủ công.');await loadSystem();}finally{systemActionBusy.current=false;}
+    }}]);
+ }
+ function cancelDeletion(row){
+  if(systemLoading||busy||systemActionBusy.current||!canCancelDeletion(row,maintenance?.server_time))return;
+  Alert.alert('Xác nhận hủy yêu cầu xóa','Hủy yêu cầu xóa tài khoản @'+row.username+'? Máy chủ sẽ kiểm tra lại thời hạn và ghi nhật ký quản trị.',[
+    {text:'Không',style:'cancel'},{text:'Hủy yêu cầu xóa',onPress:async()=>{
+      if(systemActionBusy.current||AppState.currentState!=='active')return;systemActionBusy.current=true;
+      try{await act('/api/admin/users/'+row.user_id+'/delete/cancel','POST',{},'Đã hủy yêu cầu xóa tài khoản.');await loadSystem();}finally{systemActionBusy.current=false;}
+    }}]);
  }
  async function loadUsers(sort=userSort){
   const order=typeof sort==='string'&&['oldest','newest','activity'].includes(sort)?sort:userSort;
@@ -280,7 +315,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  const tabs=[['home','Tổng quan','grid-outline'],['registrations','Duyệt','checkmark-done-outline'],
   ['support','Hỗ trợ','headset-outline'],['approvals','Thiết bị','phone-portrait-outline'],
   ['users','Thành viên','people-outline'],['worldAdmin','Thế giới','earth-outline'],
-  ['audit','Nhật ký','receipt-outline']];
+  ['audit','Nhật ký','receipt-outline'],['system','Hệ thống','shield-checkmark-outline']];
  return <View style={{flex:1,backgroundColor:P.bg}}>
   <View style={s.top}><View style={s.adminBrandRow}>
     <Image source={require('../assets/brand-logo.png')} style={s.adminLogo} resizeMode="contain"/>
@@ -293,7 +328,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     contentContainerStyle={s.page}>
    <View style={s.hero}>
     <Text style={s.heroEyebrow}>QUẢN TRỊ MTUNZ</Text>
-    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':tab==='worldAdmin'?'Điều hành chat thế giới':tab==='audit'?'Nhật ký quản trị':'Quản lý thành viên'}</Text>
+    <Text style={s.heroTitle}>{tab==='home'?'Tổng quan hệ thống':tab==='registrations'?'Duyệt thành viên':tab==='support'?'Hỗ trợ khách hàng':tab==='approvals'?'Quản lý thiết bị':tab==='online'?'Người dùng đang online':tab==='worldAdmin'?'Điều hành chat thế giới':tab==='audit'?'Nhật ký quản trị':tab==='system'?'Điều hành hệ thống':'Quản lý thành viên'}</Text>
     <Text style={s.heroSub}>Theo dõi hoạt động và xử lý công việc trực tiếp trên điện thoại.</Text>
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:9,paddingBottom:12}}>
@@ -309,7 +344,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
     <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
-    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}if(tab==='audit'){void loadAudit(auditOffset);return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
+    <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}if(tab==='audit'){void loadAudit(auditOffset);return;}if(tab==='system'){void loadSystem();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box><Text style={s.head}>Giao diện</Text><Action label={mode==='light'?'Chuyển sang giao diện tối':'Chuyển sang giao diện sáng'} subtle disabled={!themeReady||themeSaving} onPress={()=>changeMode(mode==='light'?'dark':'light')}/></Box>}
    {tab==='home'&&<Box><AndroidUpdate/><StorageSettings token={token}/><AppLockSettings/></Box>}
@@ -335,6 +370,32 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     <Text style={s.muted}>Dữ liệu đọc trực tiếp từ cùng backend và cơ sở dữ liệu với website.</Text>
     <Action label="Mở quản trị nâng cao trên website" subtle onPress={()=>Linking.openURL(API_ORIGIN)}/>
    </Box>}
+   {tab==='system'&&<>
+    <Box>
+     <Text style={s.head}>Chế độ bảo trì</Text>
+     <Text style={s.label}>{maintenanceLabel(maintenance)}</Text>
+     {systemLoading&&<ActivityIndicator color={P.accent}/>}
+     {!!systemError&&<Text style={s.error}>{systemError}</Text>}
+     {!!maintenance?.schedule&&<View style={s.item}>
+       <Text style={s.label}>Lịch bảo trì</Text>
+       <Text style={s.muted}>Bắt đầu: {new Date(maintenance.schedule.starts_at*1000).toLocaleString('vi-VN')}</Text>
+       <Text style={s.muted}>Kết thúc: {new Date(maintenance.schedule.ends_at*1000).toLocaleString('vi-VN')}</Text>
+       <Text style={s.muted}>{maintenance.schedule.reason}</Text>
+     </View>}
+     <Text style={s.muted}>Thay đổi bảo trì thủ công áp dụng đồng thời cho website và Android. Lịch bảo trì hiện chỉ xem tại đây; quản lý lịch trên web.</Text>
+     <Action label={maintenance?.manual?'Tắt bảo trì thủ công':'Bật bảo trì thủ công'} disabled={!maintenance||systemLoading||busy} onPress={()=>changeMaintenance(!maintenance.manual)}/>
+    </Box>
+    <Box><Text style={s.head}>Tài khoản đang chờ xóa ({deletions.length})</Text>
+     <Text style={s.muted}>Danh sách trực tiếp từ máy chủ (tối đa 500). Chỉ hủy được yêu cầu còn trong thời hạn. Không xóa vĩnh viễn tại màn hình này.</Text>
+     {!systemLoading&&!systemError&&!deletions.length&&<Text style={s.muted}>Không có tài khoản đang chờ xóa.</Text>}
+     {deletions.map(row=><View key={String(row.user_id)} style={s.item}>
+       <Text style={s.label}>@{row.username}</Text>
+       <Text style={s.muted}>Yêu cầu: {new Date(row.requested_at*1000).toLocaleString('vi-VN')}</Text>
+       <Text style={s.muted}>Hạn xóa: {new Date(row.purge_at*1000).toLocaleString('vi-VN')}</Text>
+       <Action label="Hủy yêu cầu xóa" subtle disabled={systemLoading||busy||!canCancelDeletion(row,maintenance?.server_time)} onPress={()=>cancelDeletion(row)}/>
+     </View>)}
+    </Box>
+   </>}
    {tab==='online'&&<Box>
     <Action label={onlineProfile?'Về danh sách online':'Về tổng quan'} subtle
      onPress={()=>{if(onlineProfile)setOnlineProfile(null);else setTab('home');}}/>
@@ -494,7 +555,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
          onPress={changeWorldAvailability}/>
      </>:<Action label="Tải trạng thái chat thế giới" onPress={loadWorldAdmin}/>}
    </Box>}
-   {(tab==='registrations'||tab==='approvals'||tab==='support'||tab==='users'||tab==='worldAdmin')&&<Box>
+   {(tab==='registrations'||tab==='approvals'||tab==='support'||tab==='users'||tab==='worldAdmin'||tab==='system')&&<Box>
      <Text style={s.head}>Xác nhận bảo mật</Text>
      <Text style={s.muted}>Mọi thao tác thay đổi đều cần PIN Admin; không lưu PIN trong ứng dụng.</Text>
      <Field value={pin} onChangeText={setPin} placeholder="Mã PIN Admin" secret/>
