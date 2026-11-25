@@ -172,3 +172,6 @@ assert(app.includes("barStyle={themeMode==='light'?'dark-content':'light-content
 console.log('Shared appearance across auth, admin, lock and Messenger: PASS');
 
 assert(app.includes('mode:themeMode,ready:themeReady')&&app.includes("const [mode,setMode]=useState('login')"),'Separate auth-flow mode from appearance mode');
+
+assert(chat.includes('const MemoMessage=React.memo(Message)')&&chat.includes('data={newestFirst}')&&chat.includes('renderItem={renderMessage}'));
+assert(chat.includes('useMemo(()=>[...messages].reverse(),[messages])')&&chat.includes('upsertMessage(old,sanitize('));
