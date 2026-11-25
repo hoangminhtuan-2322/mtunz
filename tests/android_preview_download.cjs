@@ -27,7 +27,8 @@ async function check(server,rows,expected,stale=false){
 (async()=>{
  await check(new Error('offline'),new Error('rate limited'),floor,true);
  await check({available:false},[],floor,true);
- await check({...floor,version_code:11},[release(17),release(16)],{version_code:17,download_url:release(17).assets[0].browser_download_url});
+ await check({...floor,version_code:11},[release(30),release(29)],{version_code:30,download_url:release(30).assets[0].browser_download_url});
+ await check(floor,[release(20),release(19)],floor);
  await check(floor,[{...release(99),prerelease:true},{...release(98),draft:true}],floor);
  const invalid=release(100);invalid.assets[0].browser_download_url='https://example.com/evil.apk';
  await check({available:false},[invalid],floor,true);

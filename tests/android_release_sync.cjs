@@ -23,3 +23,13 @@ assert(workflow.includes('A newer main commit exists'));
 assert(read('mobile/src/Messenger.js').includes('<AndroidUpdate/>'));
 assert(read('mobile/src/AdminDashboard.js').includes('<AndroidUpdate/>'));
 console.log('Android release catalog, stable download navigation, native update and publishing contract: PASS');
+
+const publisher=read('.github/workflows/android-publish-latest.yml');
+const floor=JSON.parse(read('static/android-release-floor.json'));
+assert(web.includes('const floor='+JSON.stringify(floor)+';'),'Web and server fallback metadata must match');
+assert.equal(floor.version_code,21,'Fallback must use last verified published build, not unreleased build 30');
+assert(workflow.includes('group: mtunz-public-android-catalog')&&publisher.includes('group: mtunz-public-android-catalog'));
+assert(publisher.includes('[[ "$SHA" == "$HEAD" ]]')&&publisher.includes('[[ "$SOURCE_SHA" != "$HEAD" ]]'));
+assert(!publisher.includes('"$STATUS" == ahead'));
+assert(native.includes('r.version_code<=2100000000'));
+console.log('Consistent published fallback, serialized publication and current-main release guard: PASS');
