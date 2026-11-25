@@ -9,7 +9,7 @@ const installedCode=Number(Constants.expoConfig?.android?.versionCode||0);
 const BASE='https://github.com/hoangminhtuan-2322/mtunz/releases/download/';
 function validRelease(r){
   return r?.available===true&&r.platform==='android'&&r.package==='com.mtunz.web'&&
-    /^\d+\.\d+\.\d+$/.test(r.version)&&Number.isSafeInteger(r.version_code)&&r.version_code>0&&
+    /^\d+\.\d+\.\d+$/.test(r.version)&&Number.isSafeInteger(r.version_code)&&r.version_code>0&&r.version_code<=2100000000&&
     r.download_url===BASE+'android-v'+r.version+'-code'+r.version_code+'/mtunz-android-v'+r.version+'-code'+r.version_code+'.apk';
 }
 export default function AndroidUpdate(){
