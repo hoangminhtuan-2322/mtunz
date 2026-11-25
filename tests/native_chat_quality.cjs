@@ -132,6 +132,22 @@ assert.equal(new Set(CHAT_BACKGROUNDS.map(x=>x.id)).size,CHAT_BACKGROUNDS.length
 assert.equal(chatBackground('unknown').id,'midnight');
 assert.equal(chatBackground(null).id,'midnight');
 for(const item of CHAT_BACKGROUNDS){assert.match(item.color,/^#[0-9a-f]{6}$/);assert.equal(chatBackground(item.id),item);}
-assert(chat.includes('backgroundColor:chatBackground(backgroundId).color')&&chat.includes('readChatBackground()')&&chat.includes('saveChatBackground(id)'));
+assert(chat.includes('backgroundColor:chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)).color')&&chat.includes('readChatBackground()')&&chat.includes('saveChatBackground(id)'));
 assert(chat.includes('appearanceBusy.current')&&chat.includes('wallpaperEmpty'));
 console.log('Local chat background presets, fallback and keyboard-safe integration: PASS');
+
+const {sanitizeRoomBackgrounds,roomBackgroundId,changeRoomBackground,MAX_ROOM_BACKGROUNDS}=require('../mobile/src/chatAppearance');
+const rooms=changeRoomBackground({},'dm:1','forest');
+assert.equal(roomBackgroundId(rooms,'dm:1','sand'),'forest');
+assert.equal(roomBackgroundId(rooms,'group:1','sand'),'sand');
+assert.equal(roomBackgroundId(rooms,'world:1','mist'),'mist');
+assert.deepEqual(changeRoomBackground(rooms,'dm:1',null),{});
+assert.deepEqual(rooms,{'dm:1':'forest'});
+assert.deepEqual(sanitizeRoomBackgrounds({'dm:1':'forest','bad':'mist','group:2':'invalid','world:5':'plum'}),{'dm:1':'forest','world:5':'plum'});
+assert.throws(()=>changeRoomBackground({},'bad','forest'));
+const full=Object.fromEntries(Array.from({length:MAX_ROOM_BACKGROUNDS},(_,i)=>['dm:'+(i+1),'ocean']));
+assert.throws(()=>changeRoomBackground(full,'group:1','forest'),/limit/);
+assert.equal(changeRoomBackground(full,'dm:1','mist')['dm:1'],'mist');
+assert(chat.includes('appearanceAccountRef.current===account')&&chat.includes('conversationKey(roomRef.current)!==key'));
+assert(read('mobile/src/chatAppearanceStore.js').includes('mtunz-room-background-v1-'));
+console.log('Account-scoped per-conversation wallpaper overrides and bounded persistence: PASS');
