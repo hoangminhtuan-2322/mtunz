@@ -403,8 +403,8 @@ export default function AdminDashboard({token,onLogout,onExpired}){
      {!!systemError&&<Text style={s.error}>{systemError}</Text>}
      {!!maintenance?.schedule&&<View style={s.item}>
        <Text style={s.label}>Lịch bảo trì</Text>
-       <Text style={s.muted}>Bắt đầu: {new Date(maintenance.schedule.starts_at*1000).toLocaleString('vi-VN')}</Text>
-       <Text style={s.muted}>Kết thúc: {new Date(maintenance.schedule.ends_at*1000).toLocaleString('vi-VN')}</Text>
+       <Text style={s.muted}>Bắt đầu: {formatVietnamDateTime(maintenance.schedule.starts_at)+' (UTC+7)'}</Text>
+       <Text style={s.muted}>Kết thúc: {formatVietnamDateTime(maintenance.schedule.ends_at)+' (UTC+7)'}</Text>
        <Text style={s.muted}>{maintenance.schedule.reason}</Text>
      </View>}
      <Text style={s.muted}>Thay đổi bảo trì áp dụng đồng thời cho website và Android.</Text>
