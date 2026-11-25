@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage} = require('../mobile/src/realtime');
+const {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay} = require('../mobile/src/realtime');
 
 (async () => {
   const old = [{id: 1, body: 'old'}, {id: 2, body: 'outdated'}, {id: 7, body: 'new via socket'}];
@@ -46,5 +46,14 @@ const {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage} = r
   const interval=setInterval(()=>stream.schedule(['lists']),3);
   try{await new Promise(resolve=>setTimeout(resolve,150));assert(sustained.length>=1,'continuous updates must flush before traffic stops');}
   finally{clearInterval(interval);stream.stop();}
-  console.log('native realtime queue, stable row identity and window merge regression tests passed');
+  let starts=0,active=0,peak=0;const releases=[];
+  const refresh=createSerialRefresh(async()=>{starts++;active++;peak=Math.max(peak,active);await new Promise(resolve=>releases.push(resolve));active--;return starts;});
+  const first=refresh(),second=refresh(),third=refresh();
+  assert.equal(second,third);await Promise.resolve();assert.equal(starts,1);
+  releases.shift()();assert.equal(await first,1);await new Promise(resolve=>setImmediate(resolve));assert.equal(starts,2);
+  releases.shift()();assert.equal(await second,2);assert.equal(peak,1);
+  const failed=createSerialRefresh(()=>{throw Error('offline');});
+  await assert.rejects(failed(),/offline/);await assert.rejects(failed(),/offline/);
+  assert.equal(reconnectDelay(1200,0),960);assert.equal(reconnectDelay(1200,1),1440);assert.equal(reconnectDelay(30000,1),30000);
+  console.log('native realtime queue, stable rows, serial refresh and reconnect jitter regression tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

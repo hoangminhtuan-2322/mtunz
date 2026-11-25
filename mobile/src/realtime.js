@@ -69,4 +69,27 @@ function upsertMessage(previous,row){
   }
   return [...previous.slice(0,lo),row,...previous.slice(lo)];
 }
-module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage};
+// One in-flight refresh plus one trailing refresh. All callers queued during
+// an active request share the trailing result, so a mutation cannot be missed.
+function createSerialRefresh(work){
+  let running=false,queued=null;
+  function launch(batch){
+    running=true;
+    Promise.resolve().then(work).then(batch.resolve,batch.reject).finally(()=>{
+      if(queued){const next=queued;queued=null;launch(next);}
+      else running=false;
+    });
+  }
+  return function refresh(){
+    if(running&&queued)return queued.promise;
+    let resolve,reject;
+    const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+    const batch={promise,resolve,reject};
+    if(running)queued=batch;else launch(batch);
+    return promise;
+  };
+}
+function reconnectDelay(base,random=Math.random()){
+  return Math.min(30000,Math.max(600,Math.round(base*(0.8+Math.max(0,Math.min(1,random))*0.4))));
+}
+module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay};

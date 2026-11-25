@@ -82,12 +82,16 @@ function AppContent() {
     (async()=>{
       let restored=null;
       try{
-        const pending=await readPendingRegistration();
+        // Independent encrypted reads can run concurrently; damaged registration
+        // storage must not prevent recovery of an otherwise valid login.
+        const [pendingResult,sessionResult]=await Promise.allSettled([readPendingRegistration(),readSession()]);
+        const pending=pendingResult.status==='fulfilled'?pendingResult.value:null;
         if(pending&&mounted){
           setMode('register');setSignupToken(pending.token);
           setSignupUsername(pending.username);setSignupPhase('pending');
         }
-        restored=await readSession();
+        if(sessionResult.status==='rejected')throw sessionResult.reason;
+        restored=sessionResult.value;
         if(!restored||!mounted)return;
         const data=await api('/api/me',{token:restored});
         if(!mounted)return;
