@@ -110,3 +110,19 @@ const {createMediaBatch,runMediaBatch}=require('../mobile/src/mediaBatch');
  assert(chat.includes('chooseMediaBatch')&&chat.includes('runMediaBatch(batch'));
  console.log('Batch media resume and stable upload/send IDs: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+const {createPendingSend,deliverPendingSend}=require('../mobile/src/pendingSend');
+(async()=>{
+ const file={uri:'original',type:'image/jpeg'};
+ const item=createPendingSend({scope:'dm',id:42},'hello',file,7,'','stable-nonce');
+ file.uri='changed';let fail=true,uploads=0,attempts=[];
+ const ctx={progress:()=>{},upload:async(f,n)=>{assert.equal(f.uri,'original');assert.equal(n,'stable-nonce');uploads++;return 123;},
+ send:async(endpoint,data)=>{attempts.push([endpoint,data]);if(fail)throw Error('lost response');return {message:{id:9}};}};
+ await assert.rejects(deliverPendingSend(item,ctx));fail=false;await deliverPendingSend(item,ctx);
+ assert.equal(uploads,1);assert.deepEqual(attempts[0],attempts[1]);assert.equal(attempts[0][1].reply_to,7);
+ const world=createPendingSend({scope:'world',id:1},'hello',null,null,'anon','unused');
+ await deliverPendingSend(world,ctx);await assert.rejects(deliverPendingSend(world,ctx),/not idempotent/);
+ assert(chat.includes('pendingSendsRef.current.get(conversationKey(target))'));
+ assert(chat.includes('deliverPendingSend(pending')&&!chat.includes('nonceRef.current'));
+ console.log('Stable single-send identity, upload reuse, conversation isolation and non-idempotent world guard: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});
