@@ -158,5 +158,15 @@ const dark={bg:'#071320',card:'#11253a',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6
 const sample={bubbleMine:{backgroundColor:'#2760a6',maxWidth:'84%'},msg:{color:dark.text},btn:{backgroundColor:dark.accent},btnTxt:{color:dark.bg},composeInput:{backgroundColor:'#1b334f',color:dark.text},viewerAction:{backgroundColor:'#1c3656'}};
 const light=makeLightStyles(sample,dark);assert.equal(light.bubbleMine.backgroundColor,LIGHT_PALETTE.mine);assert.equal(light.bubbleMine.maxWidth,'84%');assert.equal(light.msg.color,LIGHT_PALETTE.text);assert.equal(light.btnTxt.color,'#ffffff');assert.equal(light.composeInput.backgroundColor,'#ffffff');assert.equal(light.viewerAction.backgroundColor,'#1c3656');assert.equal(sample.msg.color,dark.text);
 assert.equal(wallpaperColor(chatBackground('midnight'),'light'),LIGHT_PALETTE.bg);assert.equal(wallpaperColor(chatBackground('forest'),'light'),chatBackground('forest').color);
-assert(chat.includes('ThemeContext.Provider')&&chat.includes('saveMessengerTheme(next)')&&chat.includes('makeLightStyles(baseStyles,DARK_PALETTE)'));
+const appTheme=read('mobile/src/AppTheme.js');
+assert(appTheme.includes('ThemeContext.Provider')&&appTheme.includes('saveMessengerTheme(next)')&&chat.includes('makeLightStyles(baseStyles,DARK_PALETTE)'));
 console.log('Messenger light/dark palette, persisted mode, default wallpaper and fixed overlay: PASS');
+
+const {makeScreenLightStyles}=require('../mobile/src/messengerTheme');
+const screenSample={button:{backgroundColor:'#071320',minHeight:48},text:{color:'#fff',fontSize:16}};
+const screenLight=makeScreenLightStyles(screenSample,{button:{backgroundColor:LIGHT_PALETTE.accent}});
+assert.equal(screenLight.button.backgroundColor,LIGHT_PALETTE.accent);assert.equal(screenLight.button.minHeight,48);assert.equal(screenLight.text.color,LIGHT_PALETTE.text);assert.equal(screenSample.text.color,'#fff');
+assert(app.includes('<AppThemeProvider><AppContent/></AppThemeProvider>'));
+for(const path of ['mobile/App.js','mobile/src/AdminDashboard.js','mobile/src/AppLockGate.js','mobile/src/Messenger.js'])assert(read(path).includes('useAppTheme'),path);
+assert(app.includes("barStyle={mode==='light'?'dark-content':'light-content'}"));
+console.log('Shared appearance across auth, admin, lock and Messenger: PASS');

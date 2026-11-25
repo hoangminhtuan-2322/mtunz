@@ -8,23 +8,32 @@ import * as Notifications from 'expo-notifications';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {adminPresence} from './presence';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import {useAppTheme} from './AppTheme';
+import {LIGHT_PALETTE,makeScreenLightStyles} from './messengerTheme';
 
-const P={bg:'#071320',surface:'#11253a',line:'#294661',ink:'#f4f8ff',muted:'#a8bfd6',accent:'#6dbaff',danger:'#ff9393',green:'#73e0bd'};
+const DARK_ADMIN={bg:'#071320',surface:'#11253a',line:'#294661',ink:'#f4f8ff',muted:'#a8bfd6',accent:'#6dbaff',danger:'#ff9393',green:'#73e0bd'};
 
+const LIGHT_ADMIN={bg:LIGHT_PALETTE.bg,surface:LIGHT_PALETTE.card,line:LIGHT_PALETTE.border,ink:LIGHT_PALETTE.text,muted:LIGHT_PALETTE.soft,accent:LIGHT_PALETTE.accent,danger:LIGHT_PALETTE.bad,green:LIGHT_PALETTE.green};
+function useAdminTheme(){const theme=useAppTheme();return {...theme,P:theme.mode==='light'?LIGHT_ADMIN:DARK_ADMIN,s:theme.mode==='light'?lightStyles:darkStyles};}
 function Action({label,onPress,disabled=false,subtle=false}){
+ const {P,s}=useAdminTheme();
  return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
   style={[s.action,subtle&&s.subtle,disabled&&{opacity:.5}]}>
   <Text style={[s.actionText,subtle&&{color:P.ink}]}>{label}</Text></Pressable>;
 }
 function Field({placeholder,value,onChangeText,secret=false}){
+ const {P,s}=useAdminTheme();
  return <TextInput value={value} onChangeText={onChangeText} placeholder={placeholder}
    placeholderTextColor={P.muted} secureTextEntry={secret} autoCapitalize="none"
    style={s.input}/>;
 }
-function Box({children}){return <View style={s.panel}>{children}</View>;}
-function Tile({title,value}){return <View style={s.tile}><Text style={s.value}>{value??'—'}</Text><Text style={s.muted}>{title}</Text></View>;}
+function Box({children}){
+ const {P,s}=useAdminTheme();return <View style={s.panel}>{children}</View>;}
+function Tile({title,value}){
+ const {P,s}=useAdminTheme();return <View style={s.tile}><Text style={s.value}>{value??'—'}</Text><Text style={s.muted}>{title}</Text></View>;}
 
 export default function AdminDashboard({token,onLogout,onExpired}){
+ const {P,s,mode,ready:themeReady,saving:themeSaving,changeMode}=useAdminTheme();
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
  const [audit,setAudit]=useState([]),[auditTotal,setAuditTotal]=useState(0),
   [auditOffset,setAuditOffset]=useState(0),[auditQuery,setAuditQuery]=useState(''),
@@ -291,6 +300,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
     <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}if(tab==='audit'){void loadAudit(auditOffset);return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
+   {tab==='home'&&<Box><Text style={s.head}>Giao diện</Text><Action label={mode==='light'?'Chuyển sang giao diện tối':'Chuyển sang giao diện sáng'} subtle disabled={!themeReady||themeSaving} onPress={()=>changeMode(mode==='light'?'dark':'light')}/></Box>}
    {tab==='home'&&<Box><AndroidUpdate/><StorageSettings token={token}/><AppLockSettings/></Box>}
    {tab==='home'&&<Box>
     <Text style={s.head}>Thông báo quản trị</Text>
@@ -481,7 +491,8 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   </ScrollView>
  </View>;
 }
-const s=StyleSheet.create({
+const P=DARK_ADMIN;
+const baseStyles={
   top:{paddingHorizontal:15,paddingVertical:13,flexDirection:'row',
   justifyContent:'space-between',alignItems:'center',backgroundColor:'#0e2337',
   borderBottomWidth:1,borderColor:'#2b4967'},
@@ -531,4 +542,14 @@ const s=StyleSheet.create({
   sortText:{color:'#aac6dd',fontSize:12,fontWeight:'800'},
   sortTextActive:{color:'#fff'},
   value:{color:P.ink,fontSize:28,fontWeight:'900',letterSpacing:-.7},
-});
+};
+const darkStyles=StyleSheet.create(baseStyles);
+const lightStyles=StyleSheet.create(makeScreenLightStyles(baseStyles,{
+ top:{backgroundColor:'#ffffff'},panel:{backgroundColor:'#ffffff'},input:{backgroundColor:'#ffffff'},item:{backgroundColor:'#f3f7fc'},tile:{backgroundColor:'#e7eff8'},
+ hero:{backgroundColor:'#e1ebf7'},heroEyebrow:{color:LIGHT_ADMIN.accent},heroSub:{color:LIGHT_ADMIN.muted},adminBadge:{color:LIGHT_ADMIN.accent},
+ topMeta:{color:LIGHT_ADMIN.muted},muted:{color:LIGHT_ADMIN.muted},active:{backgroundColor:'#d3e9ff',borderColor:LIGHT_ADMIN.accent},
+ error:{backgroundColor:'#fce1e7',color:LIGHT_ADMIN.danger},success:{backgroundColor:'#e0f2ec',color:LIGHT_ADMIN.green},
+ action:{backgroundColor:LIGHT_ADMIN.accent},actionText:{color:'#ffffff'},subtle:{backgroundColor:'#e1ebf7'},
+ onlineLabel:{color:LIGHT_ADMIN.green},onlinePulse:{backgroundColor:LIGHT_ADMIN.green},offlinePulse:{backgroundColor:'#718398'},offlineLabel:{color:LIGHT_ADMIN.muted},activityExact:{color:LIGHT_ADMIN.muted},
+ sortActive:{backgroundColor:LIGHT_ADMIN.accent,borderColor:LIGHT_ADMIN.accent},sortTextActive:{color:'#ffffff'}
+}));

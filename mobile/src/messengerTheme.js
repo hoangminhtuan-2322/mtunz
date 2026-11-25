@@ -46,4 +46,17 @@ function makeLightStyles(source,dark){
   }));
 }
 function wallpaperColor(option,mode){return option.id==='midnight'&&mode==='light'?LIGHT_PALETTE.bg:option.color;}
-module.exports={LIGHT_PALETTE,normalizeTheme,makeLightStyles,wallpaperColor};
+// Explicit semantic color overrides for other screens; preserve all layout fields.
+function makeScreenLightStyles(source,overrides){
+  return Object.fromEntries(Object.entries(source).map(([name,style])=>{
+    const next={...style};
+    for(const key of Object.keys(next)){
+      if(typeof next[key]!=='string')continue;
+      if(key==='backgroundColor')next[key]='#e7eff8';
+      else if(/^border.*Color$/.test(key))next[key]=LIGHT_PALETTE.border;
+      else if(key==='color')next[key]=LIGHT_PALETTE.text;
+    }
+    return [name,{...next,...overrides[name]}];
+  }));
+}
+module.exports={LIGHT_PALETTE,normalizeTheme,makeLightStyles,wallpaperColor,makeScreenLightStyles};

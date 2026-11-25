@@ -1,7 +1,8 @@
 import AndroidUpdate from './AndroidUpdate';
 import {CHAT_BACKGROUNDS,chatBackground,roomBackgroundId,validRoomKey} from './chatAppearance';
-import {readChatBackground,saveChatBackground,readRoomBackgrounds,saveRoomBackground,readMessengerTheme,saveMessengerTheme} from './chatAppearanceStore';
-import {LIGHT_PALETTE,normalizeTheme,makeLightStyles,wallpaperColor} from './messengerTheme';
+import {readChatBackground,saveChatBackground,readRoomBackgrounds,saveRoomBackground} from './chatAppearanceStore';
+import {LIGHT_PALETTE,makeLightStyles,wallpaperColor} from './messengerTheme';
+import {useAppTheme} from './AppTheme';
 import StorageSettings from './StorageSettings';
 import {AppLockSettings} from './AppLockGate';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
@@ -29,8 +30,7 @@ import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
 
 const DARK_PALETTE={bg:'#071320',card:'#11253a',border:'#294661',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',mine:'#2760a6',bad:'#ff9eac',green:'#73e0bd'};
-const ThemeContext=React.createContext({mode:'dark',ready:false,saving:false,changeMode:()=>{}});
-function useMessengerTheme(){const theme=React.useContext(ThemeContext);return {...theme,P:theme.mode==='light'?LIGHT_PALETTE:DARK_PALETTE,css:theme.mode==='light'?lightStyles:darkStyles};}
+function useMessengerTheme(){const theme=useAppTheme();return {...theme,P:theme.mode==='light'?LIGHT_PALETTE:DARK_PALETTE,css:theme.mode==='light'?lightStyles:darkStyles};}
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
 const dedupe=rows=>order([...new Map(rows.map(m=>[m.id,m])).values()]);
 const label=f=>f?.nickname||f?.display_name||f?.username||f?.title||'Thành viên';
@@ -228,25 +228,7 @@ const ChatScrollView=React.forwardRef(function ChatScrollView({inverted,...props
     automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"/>;
 });
 
-export default function Messenger(props){
-  const [mode,setMode]=useState('dark'),[ready,setReady]=useState(false),[saving,setSaving]=useState(false);
-  const active=useRef(false),busy=useRef(false);
-  useEffect(()=>{
-    active.current=true;
-    readMessengerTheme().then(value=>{if(active.current){setMode(value);setReady(true);}})
-      .catch(()=>{if(active.current)setReady(true);});
-    return()=>{active.current=false;};
-  },[]);
-  async function changeMode(value){
-    if(!ready||busy.current)return;
-    const next=normalizeTheme(value);busy.current=true;setSaving(true);
-    try{await saveMessengerTheme(next);if(active.current)setMode(next);}
-    catch{if(active.current)Alert.alert('Giao diện','Không thể lưu giao diện. Vui lòng thử lại.');}
-    finally{busy.current=false;if(active.current)setSaving(false);}
-  }
-  return <ThemeContext.Provider value={{mode,ready,saving,changeMode}}><MessengerContent {...props}/></ThemeContext.Provider>;
-}
-function MessengerContent({token,user,onLogout,onExpired,onProfile}){
+export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const {P,css,mode,ready:themeReady,saving:themeSaving,changeMode}=useMessengerTheme();
   const {bottom:keyboardBottomInset}=useSafeAreaInsets();
   const [backgroundId,setBackgroundId]=useState('midnight');
@@ -1569,7 +1551,7 @@ function MessengerContent({token,user,onLogout,onExpired,onProfile}){
       </Pressable>)}</View>
     </>}
     <ModalSheet visible={dialog==='themeMode'} onClose={()=>setDialog('')} title="Chế độ sáng / tối">
-      <Text style={css.muted}>Áp dụng cho khu vực nhắn tin và cài đặt Messenger trên thiết bị này. Một số màn hình chuyên biệt vẫn dùng giao diện tối.</Text>
+      <Text style={css.muted}>Áp dụng cho Messenger, đăng nhập, Admin và khóa ứng dụng trên thiết bị này. Một số màn hình chuyên biệt vẫn dùng giao diện tối.</Text>
       {['light','dark'].map(value=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:mode===value,disabled:!themeReady||themeSaving}} disabled={!themeReady||themeSaving} style={[css.rowCard,mode===value&&css.wallpaperSelected]} onPress={()=>changeMode(value)}>
         <Ionicons name={value==='light'?'sunny-outline':'moon-outline'} size={24} color={P.accent}/>
         <Text style={[css.strong,{flex:1}]}>{value==='light'?'Giao diện sáng':'Giao diện tối'}</Text>

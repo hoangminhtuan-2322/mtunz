@@ -10,10 +10,15 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import AdminDashboard from './src/AdminDashboard';
 import AppLockGate from './src/AppLockGate';
 import {shouldRetrySession} from './src/sessionRecovery';
+import {AppThemeProvider,useAppTheme} from './src/AppTheme';
+import {LIGHT_PALETTE,makeScreenLightStyles} from './src/messengerTheme';
 
-const C={bg:'#08111f',card:'#14243a',text:'#f4f8ff',muted:'#a5b6cf',
+const DARK_AUTH={bg:'#08111f',card:'#14243a',text:'#f4f8ff',muted:'#a5b6cf',
   accent:'#67bcff',border:'#2c4160',subtle:'#1b304c',success:'#70dabb'};
+const LIGHT_AUTH={bg:LIGHT_PALETTE.bg,card:LIGHT_PALETTE.card,text:LIGHT_PALETTE.text,muted:LIGHT_PALETTE.soft,accent:LIGHT_PALETTE.accent,border:LIGHT_PALETTE.border,subtle:'#e1ebf7',success:LIGHT_PALETTE.green};
+function useAuthTheme(){const theme=useAppTheme();return {...theme,C:theme.mode==='light'?LIGHT_AUTH:DARK_AUTH,styles:theme.mode==='light'?lightStyles:darkStyles};}
 function Input({value,onChangeText,placeholder,secret=false,number=false,label}) {
+  const {C,styles}=useAuthTheme();
   const canReveal=secret&&!number;
   const [passwordVisible,setPasswordVisible]=useState(false);
   useEffect(()=>{if(!value||!canReveal)setPasswordVisible(false);},[value,canReveal]);
@@ -39,11 +44,13 @@ function Input({value,onChangeText,placeholder,secret=false,number=false,label})
   </View>;
 }
 function Button({children,onPress,disabled=false,quiet=false}) {
+  const {C,styles}=useAuthTheme();
   return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
     style={({pressed})=>[styles.button,quiet&&styles.quiet,pressed&&!disabled&&styles.pressed,disabled&&{opacity:.45}]}>
     <Text style={[styles.buttonText,quiet&&{color:C.text}]}>{children}</Text></Pressable>;
 }
 function AppContent() {
+  const {C,styles,mode,ready:themeReady,saving:themeSaving,changeMode}=useAuthTheme();
   const {width:screenWidth,height:screenHeight,fontScale}=useWindowDimensions();
   const compactAuth=screenWidth<390||fontScale>1.15;
   const shortAuth=screenHeight<720;
@@ -246,12 +253,12 @@ function AppContent() {
     catch(e){if(e.status===401)await expired();}
   },[token,expired]);
 
-  if(!ready)return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
+  if(!ready)return <SafeAreaView style={styles.root}><StatusBar barStyle={mode==='light'?'dark-content':'light-content'}/>
     <View style={styles.center}><ActivityIndicator color={C.accent}/>
       <Text style={styles.muted}>Đang xác minh phiên đăng nhập…</Text></View>
   </SafeAreaView>;
   if(recoverToken&&!user)return <SafeAreaView style={styles.root}>
-    <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+    <StatusBar barStyle={mode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
     <View style={styles.center}>
       <View style={[styles.card,{width:'90%',maxWidth:430}]}>
         <View style={styles.brandRow}>
@@ -273,19 +280,19 @@ function AppContent() {
     </View>
   </SafeAreaView>;
   if(user?.is_admin)return <SafeAreaView style={styles.root}>
-    <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+    <StatusBar barStyle={mode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
     <AppLockGate key={token} token={token} onRecovery={logout}>
       <AdminDashboard token={token} onLogout={logout} onExpired={expired}/>
     </AppLockGate>
   </SafeAreaView>;
   if(user&&!user.onboarding_required)return <SafeAreaView style={styles.root}>
-    <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+    <StatusBar barStyle={mode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
     <AppLockGate key={token} token={token} onRecovery={logout}>
       <Messenger key={token} token={token} user={user} onLogout={logout} onExpired={expired}
         onProfile={refreshProfile}/>
     </AppLockGate>
   </SafeAreaView>;
-  return <SafeAreaView style={styles.root}><StatusBar barStyle="light-content"/>
+  return <SafeAreaView style={styles.root}><StatusBar barStyle={mode==='light'?'dark-content':'light-content'}/>
     <KeyboardAvoidingView style={styles.authShell}
       behavior={Platform.OS==='android'?'height':'padding'} automaticOffset keyboardVerticalOffset={0}>
       <ScrollView style={styles.authScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
@@ -353,6 +360,7 @@ function AppContent() {
             <Text style={styles.infoText}>Tài khoản được bảo vệ bằng mật khẩu và PIN. Thiết bị Admin mới có thể cần phê duyệt.</Text></View>
         </View>
         <View style={styles.footer}>
+          <Button quiet disabled={!themeReady||themeSaving} onPress={()=>changeMode(mode==='light'?'dark':'light')}>{mode==='light'?'Chuyển sang giao diện tối':'Chuyển sang giao diện sáng'}</Button>
           <Text style={styles.footerText}>mtunz • Một không gian, nhiều kết nối</Text>
           <Text style={styles.server}>{API_ORIGIN||'Chưa cấu hình địa chỉ máy chủ'}</Text>
         </View>
@@ -369,11 +377,12 @@ export default function App(){
   // SafeAreaView remains the single owner of system-bar insets.
   return <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-      <AppContent/>
+      <AppThemeProvider><AppContent/></AppThemeProvider>
     </SafeAreaProvider>
   </KeyboardProvider>;
 }
-const styles=StyleSheet.create({
+const C=DARK_AUTH;
+const baseStyles={
   root:{flex:1,backgroundColor:C.bg},
   center:{flex:1,justifyContent:'center',alignItems:'center'},
   authShell:{flex:1,width:'100%',minWidth:0},
@@ -427,4 +436,13 @@ const styles=StyleSheet.create({
   footerText:{fontSize:12,color:C.muted,textAlign:'center'},
   server:{color:'#6c829f',fontSize:11,textAlign:'center',flexShrink:1},
   link:{color:C.accent,fontSize:13,fontWeight:'700'},
-});
+};
+const darkStyles=StyleSheet.create(baseStyles);
+const lightStyles=StyleSheet.create(makeScreenLightStyles(baseStyles,{
+ root:{backgroundColor:LIGHT_AUTH.bg},card:{backgroundColor:LIGHT_AUTH.card},
+ connected:{backgroundColor:'#e0f2ec',borderColor:'#acd3c5'},connectedText:{color:LIGHT_AUTH.success},onlineDot:{backgroundColor:LIGHT_AUTH.success},
+ introSub:{color:LIGHT_AUTH.muted},eyebrow:{color:LIGHT_AUTH.accent},muted:{color:LIGHT_AUTH.muted},
+ input:{backgroundColor:'#ffffff',color:LIGHT_AUTH.text},button:{backgroundColor:LIGHT_AUTH.accent},buttonText:{color:'#ffffff'},quiet:{backgroundColor:LIGHT_AUTH.subtle},
+ errorPanel:{backgroundColor:'#fce1e7',borderColor:'#e4aab6'},error:{color:LIGHT_PALETTE.bad},
+ infoIcon:{color:LIGHT_AUTH.accent},infoText:{color:LIGHT_AUTH.muted},footerText:{color:LIGHT_AUTH.muted},server:{color:LIGHT_AUTH.muted},link:{color:LIGHT_AUTH.accent}
+}));
