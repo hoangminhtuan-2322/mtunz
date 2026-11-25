@@ -69,6 +69,13 @@ assert.deepEqual(summarizeNotificationChannel(true,{importance:0,sound:null,enab
 assert.deepEqual(summarizeNotificationChannel(true,{importance:4,sound:'custom',enableVibrate:true}),{permission:'allowed',channel:'configured',sound:'custom',vibration:'on'});
 assert.equal(summarizeNotificationChannel(null,{}).sound,'unknown');
 assert(pushPanel.includes('getNotificationChannelAsync(MESSAGE_CHANNEL)')&&!pushPanel.includes('deleteNotificationChannelAsync'));
-assert(pushPanel.includes('enablePush(token,{prompt:false})')&&pushPanel.includes('operationBusy.current'));
+assert(pushPanel.includes('enablePush(token,{prompt:false,split:result.split_channels===true})')&&pushPanel.includes('operationBusy.current'));
 assert(backend.includes("'channelId':'messages'"));
 console.log('Android notification diagnostics, retained channel preferences and no background permission prompt: PASS');
+
+const {SPLIT_CHANNELS}=require('../mobile/src/notificationPreferences');
+assert.deepEqual(SPLIT_CHANNELS.map(x=>x.id),['mtunz-support-v1','mtunz-admin-v1']);
+assert(pushPanel.includes('split_channels:useSplit')&&pushPanel.includes('Bật phân loại')&&pushPanel.includes('getNotificationChannelAsync(channel.id)'));
+for(const id of SPLIT_CHANNELS.map(x=>x.id))assert(backend.includes(id));
+assert(backend.includes('split_channels: bool = False')&&backend.includes('sc.session_hash=p.session_hash'));
+console.log('Opt-in separate Android notification channels, backward compatibility: PASS');
