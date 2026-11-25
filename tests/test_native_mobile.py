@@ -452,3 +452,13 @@ def test_mobile_notification_message_actions_keep_private_body_and_bind_session(
     assert row['session_hash'] not in str(message)
     assert build_push_message(row,'group',42)['categoryId']==MESSAGE_CATEGORY
     assert 'categoryId' not in build_push_message(row,'support_reply',42)
+
+
+def test_split_notification_channel_routing_legacy_fallback():
+    from mobile_push import build_push_message
+    row={'token':'ExpoPushToken[test-token]','session_hash':'a'*64}
+    expected={'dm':'messages','group':'messages','test':'messages','support_reply':'mtunz-support-v1','registration':'mtunz-admin-v1','support':'mtunz-admin-v1'}
+    for kind, channel in expected.items():
+        assert build_push_message(row,kind,1)['channelId']=='messages'
+        assert build_push_message(dict(row,split_channels=0),kind,1)['channelId']=='messages'
+        assert build_push_message(dict(row,split_channels=1),kind,1)['channelId']==channel

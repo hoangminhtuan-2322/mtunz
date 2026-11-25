@@ -1,9 +1,12 @@
-import React,{useEffect,useState} from 'react';
-import {AppState,Linking,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import React,{useCallback,useEffect,useRef,useState} from 'react';
+import {Alert,AppState,Linking,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import {api} from './client';
 import {MESSAGE_CATEGORY,QUICK_REPLY,OPEN_CHAT} from './notificationActions';
+import {MESSAGE_CHANNEL,SPLIT_CHANNELS,summarizeNotificationChannel} from './notificationPreferences';
+import {useAppTheme} from './AppTheme';
+import {LIGHT_PALETTE,makeScreenLightStyles} from './messengerTheme';
 
 Notifications.setNotificationHandler({
   handleNotification:async()=>({
@@ -33,25 +36,54 @@ async function registerMessageActions(){
       options:{opensAppToForeground:true,isAuthenticationRequired:true}},
   ]);
 }
-async function enablePush(session){
+async function enablePush(session,{prompt=true,split=false}={}){
   const projectId=pushProjectId();
   if(!isPushConfigured())throw Error('APK chưa được liên kết Firebase/Expo. Hãy cập nhật bản có thông báo nền.');
   if(Platform.OS==='android'){
     await registerMessageActions().catch(()=>{});
-    await Notifications.setNotificationChannelAsync('messages',{
-      name:'Thông báo mtunz',importance:Notifications.AndroidImportance.HIGH,sound:'default',
-    });
+    // Android owns sound/vibration after creation. Never delete or reset an existing channel.
+    if(!await Notifications.getNotificationChannelAsync(MESSAGE_CHANNEL)){
+      await Notifications.setNotificationChannelAsync(MESSAGE_CHANNEL,{
+        name:'Thông báo mtunz',importance:Notifications.AndroidImportance.HIGH,sound:'default',enableVibrate:true,
+      });
+    }
+  }
+  const useSplit=split&&Platform.OS==='android'&&Number(Platform.Version)>=26;
+  if(useSplit){
+    for(const channel of SPLIT_CHANNELS){
+      if(!await Notifications.getNotificationChannelAsync(channel.id))await Notifications.setNotificationChannelAsync(channel.id,{name:channel.label,importance:Notifications.AndroidImportance.HIGH,sound:'default',enableVibrate:true});
+      if(!await Notifications.getNotificationChannelAsync(channel.id))throw Error('Không tạo được kênh '+channel.label);
+    }
   }
   const permission=await Notifications.getPermissionsAsync();
-  const result=permission.granted?permission:await Notifications.requestPermissionsAsync();
+  const result=permission.granted||!prompt?permission:await Notifications.requestPermissionsAsync();
   if(!result.granted)throw Error('Hãy cho phép mtunz gửi thông báo trong cài đặt của điện thoại.');
   const {data}=await Notifications.getExpoPushTokenAsync({projectId});
-  return api('/api/mobile/push',{token:session,method:'POST',data:{token:data}});
+  return api('/api/mobile/push',{token:session,method:'POST',data:{token:data,split_channels:useSplit}});
 }
 
 export default function DevicePushSettings({token,compact=false}){
   const readyForPush=isPushConfigured();
-  const [enabled,setEnabled]=useState(null);
+  const {mode}=useAppTheme();const styles=mode==='light'?lightStyles:darkStyles;
+  const androidChannels=Platform.OS==='android'&&Number(Platform.Version)>=26;
+  const [diagnostics,setDiagnostics]=useState(null),[diagnosticError,setDiagnosticError]=useState(false);
+  const diagnosticSeq=useRef(0);
+  const refreshDiagnostics=useCallback(async()=>{
+    if(!androidChannels)return;
+    const seq=++diagnosticSeq.current;
+    try{
+      const [permission,channel]=await Promise.all([Notifications.getPermissionsAsync(),Notifications.getNotificationChannelAsync(MESSAGE_CHANNEL)]);
+      if(seq===diagnosticSeq.current){setDiagnostics(summarizeNotificationChannel(permission.granted,channel));setDiagnosticError(false);}
+    }catch{if(seq===diagnosticSeq.current)setDiagnosticError(true);}
+  },[androidChannels]);
+  useEffect(()=>{
+    if(!androidChannels)return;
+    void refreshDiagnostics();
+    const sub=AppState.addEventListener('change',state=>{if(state==='active')void refreshDiagnostics();});
+    return()=>{diagnosticSeq.current++;sub.remove();};
+  },[androidChannels,refreshDiagnostics]);
+  const operationBusy=useRef(false);
+  const [enabled,setEnabled]=useState(null),[splitEnabled,setSplitEnabled]=useState(false);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
   const [expanded,setExpanded]=useState(false);
@@ -60,11 +92,12 @@ export default function DevicePushSettings({token,compact=false}){
     let active=true,lastAttempt=0;
     void registerMessageActions().catch(()=>{});
     const sync=async()=>{
-      lastAttempt=Date.now();
+      if(operationBusy.current)return;
+      operationBusy.current=true;setBusy(true);lastAttempt=Date.now();
       try{
         const result=await api('/api/mobile/push',{token});
         if(!active)return;
-        setEnabled(result.enabled);
+        setEnabled(result.enabled);setSplitEnabled(result.split_channels===true);
         if(result.enabled&&readyForPush){
           // Do not show an OS prompt on resume. Refresh the token only when
           // permission is already granted and this user opted in previously.
@@ -73,33 +106,40 @@ export default function DevicePushSettings({token,compact=false}){
           if(!permission.granted){
             setMessage('Android đã tắt quyền thông báo. Hãy bật lại trong cài đặt ứng dụng.');
           }else{
-            await enablePush(token);
-            if(active)setMessage('');
+            const updated=await enablePush(token,{prompt:false,split:result.split_channels===true});
+            if(active){setSplitEnabled(updated.split_channels===true);setMessage('');void refreshDiagnostics();}
           }
         }
       }catch(error){if(active)setMessage(error.message);}
+      finally{operationBusy.current=false;if(active)setBusy(false);}
     };
     sync();
     const sub=AppState.addEventListener('change',state=>{
       if(state==='active'&&Date.now()-lastAttempt>10*60*1000)sync();
     });
     return()=>{active=false;sub.remove();};
-  },[token,readyForPush]);
+  },[token,readyForPush,refreshDiagnostics]);
   async function run(action){
-    setBusy(true);setMessage('');
+    if(operationBusy.current)return;
+    operationBusy.current=true;setBusy(true);setMessage('');
     try{
-      if(action==='enable'){
-        const result=await enablePush(token);
-        setEnabled(result.enabled);
+      if(action==='enable'||action==='split-on'||action==='split-off'){
+        const result=await enablePush(token,{prompt:action==='enable',split:action==='split-on'});
+        setEnabled(result.enabled);setSplitEnabled(result.split_channels===true);
+        if(action==='split-on'&&!result.split_channels)setMessage('Máy chủ chưa hỗ trợ phân loại. Vẫn dùng kênh chung.');
       }else if(action==='disable'){
         const result=await api('/api/mobile/push',{token,method:'DELETE'});
-        setEnabled(result.enabled);
+        setEnabled(result.enabled);setSplitEnabled(false);
       }else{
         await api('/api/mobile/push/test',{token,method:'POST'});
         setMessage('Đã gửi yêu cầu. Kiểm tra thông báo trên thiết bị.');
       }
     }catch(error){setMessage(error.message);}
-    finally{setBusy(false);}
+    finally{operationBusy.current=false;setBusy(false);void refreshDiagnostics();}
+  }
+  function requestSplit(){
+    if(splitEnabled){void run('split-off');return;}
+    Alert.alert('Tách kênh thông báo?','Kênh hỗ trợ và Admin mới có âm thanh và rung mặc định. Cài đặt im lặng của kênh cũ không tự sao chép. Bạn có thể chỉnh từng kênh trong Android hoặc quay lại kênh chung.',[{text:'Hủy',style:'cancel'},{text:'Bật phân loại',onPress:()=>void run('split-on')}]);
   }
   const actions=!readyForPush?[]:enabled?[['test','Gửi thử thông báo'],['disable','Tắt thông báo nền']]:
     [['enable','Bật thông báo khi đóng app']];
@@ -128,13 +168,32 @@ export default function DevicePushSettings({token,compact=false}){
         <Text style={styles.label}>{label}</Text>
       </Pressable>)}
     </View>
-    {readyForPush&&Platform.OS==='android'&&<Pressable accessibilityRole="button" onPress={()=>Linking.openSettings().catch(()=>setMessage('Không mở được cài đặt Android.'))} style={styles.button}><Text style={styles.label}>Cài đặt thông báo Android</Text></Pressable>}
+    {androidChannels&&<View style={styles.diagnosticPanel}>
+      <Text style={styles.compactTitle}>Âm thanh và rung</Text>
+      {diagnosticError?<Text style={styles.warning}>Không đọc được cài đặt Android. Hãy kiểm tra trực tiếp trong cài đặt điện thoại.</Text>:diagnostics?<View style={styles.diagnosticRows}>
+        <Text style={styles.status}>Quyền thông báo: {diagnostics.permission==='allowed'?'Đã cấp':diagnostics.permission==='denied'?'Chưa cấp':'Chưa xác định'}</Text>
+        <Text style={styles.status}>Kênh mtunz: {diagnostics.channel==='blocked'?'Đang bị chặn':diagnostics.channel==='configured'?'Đã thiết lập':'Chưa tạo'}</Text>
+        <Text style={styles.status}>Âm thanh: {diagnostics.sound==='default'?'Mặc định':diagnostics.sound==='custom'?'Tùy chỉnh':diagnostics.sound==='silent'?'Tắt':'Chưa xác định'}</Text>
+        <Text style={styles.status}>Rung: {diagnostics.vibration==='on'?'Bật':diagnostics.vibration==='off'?'Tắt':'Chưa xác định'}</Text>
+      </View>:<Text style={styles.status}>Đang đọc cài đặt Android…</Text>}
+      <Text style={styles.status}>Chọn Thông báo → Thông báo mtunz trong cài đặt Android để đổi âm báo, rung hoặc chế độ im lặng. Trạng thái ở trên là kênh tin nhắn chung; chế độ Không làm phiền có thể ảnh hưởng.</Text>
+      <Pressable accessibilityRole="button" onPress={()=>Linking.openSettings().catch(()=>setMessage('Không mở được cài đặt Android.'))} style={styles.button}><Text style={styles.label}>Mở cài đặt âm thanh / rung</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={()=>void refreshDiagnostics()} style={styles.button}><Text style={styles.label}>Kiểm tra lại cài đặt</Text></Pressable>
+      {readyForPush&&enabled===true&&<>
+        <Text style={styles.compactTitle}>Phân loại thông báo: {splitEnabled?'Đang bật':'Đang dùng kênh chung'}</Text>
+        <Text style={styles.status}>Tin nhắn cá nhân / nhóm giữ kênh hiện có. Khi bật, phản hồi hỗ trợ và cảnh báo Admin dùng hai kênh riêng; chỉnh âm thanh và rung trong Android.</Text>
+        <Pressable accessibilityRole="button" disabled={busy} onPress={requestSplit} style={[styles.button,busy&&styles.busy]}><Text style={styles.label}>{splitEnabled?'Quay lại kênh chung':'Bật phân loại thông báo'}</Text></Pressable>
+      </>}
+    </View>}
+    {readyForPush&&Platform.OS==='android'&&!androidChannels&&<Pressable accessibilityRole="button" onPress={()=>Linking.openSettings().catch(()=>setMessage('Không mở được cài đặt Android.'))} style={styles.button}><Text style={styles.label}>Cài đặt thông báo Android</Text></Pressable>}
     {message?<Text accessibilityLiveRegion="polite" style={styles.status}>{message}</Text>:null}
     </View>}
   </View>;
 }
 
-const styles=StyleSheet.create({
+const baseStyles={
+  diagnosticPanel:{gap:8,padding:12,borderWidth:1,borderColor:'#42658d',borderRadius:14,backgroundColor:'#142b43'},
+  diagnosticRows:{gap:4},
   root:{gap:8,paddingVertical:6},
   compactRoot:{gap:0,paddingVertical:0},
   compactRow:{flexDirection:'row',minHeight:70,alignItems:'center',gap:12,
@@ -154,4 +213,9 @@ const styles=StyleSheet.create({
   label:{color:'#e4f2ff',fontWeight:'600'},
   status:{color:'#a5b6cf',lineHeight:19,flexShrink:1},
   warning:{color:'#ffd29b',lineHeight:20,flexShrink:1},
-});
+};
+const darkStyles=StyleSheet.create(baseStyles);
+const lightStyles=StyleSheet.create(makeScreenLightStyles(baseStyles,{
+  symbol:{backgroundColor:'#e7eff8'},symbolText:{color:LIGHT_PALETTE.accent},compactWarning:{color:'#884000'},
+  arrow:{color:LIGHT_PALETTE.soft},label:{color:LIGHT_PALETTE.accent},status:{color:LIGHT_PALETTE.soft},warning:{color:'#884000'},diagnosticPanel:{backgroundColor:'#f3f7fc'}
+}));
