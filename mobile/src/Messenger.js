@@ -1,4 +1,6 @@
 import AndroidUpdate from './AndroidUpdate';
+import {CHAT_BACKGROUNDS,chatBackground} from './chatAppearance';
+import {readChatBackground,saveChatBackground} from './chatAppearanceStore';
 import StorageSettings from './StorageSettings';
 import {AppLockSettings} from './AppLockGate';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
@@ -214,6 +216,22 @@ const ChatScrollView=React.forwardRef(function ChatScrollView({inverted,...props
 
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const {bottom:keyboardBottomInset}=useSafeAreaInsets();
+  const [backgroundId,setBackgroundId]=useState('midnight');
+  const [appearanceReady,setAppearanceReady]=useState(false),[appearanceSaving,setAppearanceSaving]=useState(false);
+  const appearanceActive=useRef(false),appearanceBusy=useRef(false);
+  useEffect(()=>{
+    appearanceActive.current=true;
+    readChatBackground().then(id=>{if(appearanceActive.current){setBackgroundId(id);setAppearanceReady(true);}})
+      .catch(()=>{if(appearanceActive.current)setAppearanceReady(true);});
+    return()=>{appearanceActive.current=false;};
+  },[]);
+  async function changeBackground(id){
+    if(!appearanceReady||appearanceBusy.current)return;
+    appearanceBusy.current=true;setAppearanceSaving(true);
+    try{await saveChatBackground(id);if(appearanceActive.current)setBackgroundId(id);}
+    catch{if(appearanceActive.current)Alert.alert('Giao diện','Không thể lưu hình nền. Vui lòng thử lại.');}
+    finally{appearanceBusy.current=false;if(appearanceActive.current)setAppearanceSaving(false);}
+  }
   const renderChatScroll=useCallback(props=><ChatScrollView {...props} inverted/>,[]);
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
   const [drafts,setDrafts]=useState({}),[refreshingInbox,setRefreshingInbox]=useState(false);
@@ -1165,7 +1183,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     {room?<View style={css.chatKeyboardArea}>
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
-        renderScrollComponent={renderChatScroll} style={css.chatListViewport}
+        renderScrollComponent={renderChatScroll} style={[css.chatListViewport,{backgroundColor:chatBackground(backgroundId).color}]}
         onScrollToIndexFailed={recoverSearchScroll}
         onViewableItemsChanged={onSearchTargetVisible} viewabilityConfig={searchViewabilityConfig}
         onScrollBeginDrag={()=>{jumpRef.current=null;clearTimeout(jumpTimer.current);}}
@@ -1190,7 +1208,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
         removeClippedSubviews={false} // avoid disappearing photo/video cells on Android
         contentContainerStyle={css.messageList}
-        ListEmptyComponent={!loading?<EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/>:null}
+        ListEmptyComponent={!loading?<View style={css.wallpaperEmpty}><EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/></View>:null}
         onEndReached={loadOlder} onEndReachedThreshold={0.25}
         maintainVisibleContentPosition={{minIndexForVisible:0}}/>
       <KeyboardStickyView offset={{closed:0,opened:keyboardBottomInset}} style={css.stickyComposer}>
@@ -1476,6 +1494,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             onPress={()=>{setDialog('notifications');refreshLists();}}/>
           <DevicePushSettings token={token} compact/>
         </AccountGroup>
+        <AccountGroup title="Giao diện"><AccountRow symbol="◉" title="Hình nền hội thoại" subtitle={chatBackground(backgroundId).label+' · Áp dụng trên thiết bị này'} onPress={()=>setDialog('appearance')}/></AccountGroup>
         <AccountGroup title="Ứng dụng"><AndroidUpdate/><StorageSettings token={token}/><AppLockSettings/></AccountGroup>
         <AccountGroup title="Hỗ trợ">
           <AccountRow symbol="?" title="Trung tâm hỗ trợ"
@@ -1497,6 +1516,21 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Text numberOfLines={1} style={[css.tabText,tab===id&&css.tabTextActive]}>{title}</Text>
       </Pressable>)}</View>
     </>}
+    <ModalSheet visible={dialog==='appearance'} onClose={()=>setDialog('')} title="Hình nền hội thoại">
+      <Text style={css.muted}>Chọn màu nền cho tất cả cuộc trò chuyện trên thiết bị này. Không thay đổi giao diện của người khác hoặc website.</Text>
+      {!appearanceReady&&<ActivityIndicator color={P.accent}/>}
+      <View style={css.wallpaperGrid}>{CHAT_BACKGROUNDS.map(option=><Pressable key={option.id}
+        accessibilityRole="button" accessibilityLabel={option.label} accessibilityState={{selected:backgroundId===option.id,disabled:!appearanceReady||appearanceSaving}}
+        disabled={!appearanceReady||appearanceSaving} onPress={()=>changeBackground(option.id)}
+        style={[css.wallpaperTile,backgroundId===option.id&&css.wallpaperSelected]}>
+        <View style={[css.wallpaperPreview,{backgroundColor:option.color}]}>
+          <View style={css.wallpaperPreviewOther}/><View style={css.wallpaperPreviewMine}/>
+        </View>
+        <Text style={css.strong}>{option.label}{backgroundId===option.id?' ✓':''}</Text>
+      </Pressable>)}</View>
+      {appearanceSaving&&<ActivityIndicator color={P.accent}/>}
+      <Btn quiet disabled={!appearanceReady||appearanceSaving||backgroundId==='midnight'} onPress={()=>changeBackground('midnight')}>Khôi phục mặc định</Btn>
+    </ModalSheet>
     <ModalSheet visible={!!selection&&dialog!=='forward'} onClose={()=>setSelection(null)} title="Tùy chọn tin nhắn">
       {selection&&<><Text style={css.muted} numberOfLines={3}>{selection.body||'Tệp đính kèm'}</Text>
         <View style={css.hrow}>{['👍','❤️','😂','😮','😢','🙏'].map(emoji=>
@@ -1957,6 +1991,13 @@ const css=StyleSheet.create({
   reactionText:{color:P.text,fontSize:13},
   chatKeyboardArea:{flex:1,minHeight:0},
   chatListViewport:{flex:1,minHeight:0},
+  wallpaperEmpty:{backgroundColor:P.bg,borderRadius:22},
+  wallpaperGrid:{flexDirection:'row',flexWrap:'wrap',gap:10},
+  wallpaperTile:{width:'47%',flexGrow:1,gap:8,padding:9,borderRadius:14,borderWidth:1,borderColor:P.border,backgroundColor:P.card},
+  wallpaperSelected:{borderColor:P.accent,borderWidth:2},
+  wallpaperPreview:{height:70,padding:10,gap:8,borderRadius:10,borderWidth:1,borderColor:P.border},
+  wallpaperPreviewOther:{height:13,width:'67%',borderRadius:8,backgroundColor:'#1c334d'},
+  wallpaperPreviewMine:{height:13,width:'52%',borderRadius:8,backgroundColor:P.mine,alignSelf:'flex-end'},
   stickyComposer:{flexShrink:0,zIndex:2,backgroundColor:P.bg},
   compose:{flexDirection:'row',gap:6,paddingHorizontal:10,paddingTop:11,paddingBottom:10,
     width:'100%',minWidth:0,alignItems:'flex-end',borderTopColor:'#2d4a64',

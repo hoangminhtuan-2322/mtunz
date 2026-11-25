@@ -126,3 +126,12 @@ const {createPendingSend,deliverPendingSend}=require('../mobile/src/pendingSend'
  assert(chat.includes('deliverPendingSend(pending')&&!chat.includes('nonceRef.current'));
  console.log('Stable single-send identity, upload reuse, conversation isolation and non-idempotent world guard: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+const {CHAT_BACKGROUNDS,chatBackground}=require('../mobile/src/chatAppearance');
+assert.equal(new Set(CHAT_BACKGROUNDS.map(x=>x.id)).size,CHAT_BACKGROUNDS.length);
+assert.equal(chatBackground('unknown').id,'midnight');
+assert.equal(chatBackground(null).id,'midnight');
+for(const item of CHAT_BACKGROUNDS){assert.match(item.color,/^#[0-9a-f]{6}$/);assert.equal(chatBackground(item.id),item);}
+assert(chat.includes('backgroundColor:chatBackground(backgroundId).color')&&chat.includes('readChatBackground()')&&chat.includes('saveChatBackground(id)'));
+assert(chat.includes('appearanceBusy.current')&&chat.includes('wallpaperEmpty'));
+console.log('Local chat background presets, fallback and keyboard-safe integration: PASS');
