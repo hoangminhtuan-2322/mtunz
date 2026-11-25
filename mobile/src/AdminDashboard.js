@@ -7,7 +7,7 @@ import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
 import * as Crypto from 'expo-crypto';
 import {parseAdminPushResponse} from './notificationActions';
-import {maintenanceLabel,canCancelDeletion} from './adminSystemPolicy';
+import {maintenanceLabel,canCancelDeletion,formatVietnamDateTime,validateSchedule} from './adminSystemPolicy';
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {adminPresence} from './presence';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -39,6 +39,8 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  const {P,s,mode,ready:themeReady,saving:themeSaving,changeMode}=useAdminTheme();
  const [maintenance,setMaintenance]=useState(null),[deletions,setDeletions]=useState([]),[systemLoading,setSystemLoading]=useState(false),[systemError,setSystemError]=useState('');
  const systemSeq=useRef(0),systemActionBusy=useRef(false);
+ const [scheduleStart,setScheduleStart]=useState(''),[scheduleEnd,setScheduleEnd]=useState(''),[scheduleReason,setScheduleReason]=useState('');
+ const pinRef=useRef('');
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
  const [audit,setAudit]=useState([]),[auditTotal,setAuditTotal]=useState(0),
   [auditOffset,setAuditOffset]=useState(0),[auditQuery,setAuditQuery]=useState(''),
@@ -126,7 +128,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   const timer=setInterval(()=>{if(AppState.currentState==='active'){connect();fetchNow();}},20000);
   const appSub=AppState.addEventListener('change',state=>{
    if(state==='active'){connect();fetchNow();}
-   else {setPin('');stop();}
+   else {pinRef.current='';setPin('');stop();}
   });
   connect();fetchNow();
   return()=>{alive=false;clearInterval(timer);appSub.remove();stop();};
@@ -153,9 +155,11 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   return()=>{active=false;sub.remove();};
  },[token]);
  async function act(path,method,body,success){
+  const pin=pinRef.current;
+  if(AppState.currentState!=='active')return false;
   if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return false;}
   setBusy(true);setError('');setNotice('');
-  try{await call(path,method,{...body,admin_pin:pin});setPin('');setNotice(success||'Đã cập nhật.');await refresh().catch(e=>setError(e.message));return true;}
+  try{await call(path,method,{...body,admin_pin:pin});pinRef.current='';setPin('');setNotice(success||'Đã cập nhật.');await refresh().catch(e=>setError(e.message));return true;}
   catch(e){setError(e.message);return false;}
   finally{setBusy(false);}
  }
@@ -181,6 +185,27 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     {text:'Hủy',style:'cancel'},{text:'Xác nhận',style:'destructive',onPress:async()=>{
       if(systemActionBusy.current||AppState.currentState!=='active')return;systemActionBusy.current=true;
       try{await act('/api/admin/security/maintenance','POST',{enabled},enabled?'Đã bật bảo trì.':'Đã tắt bảo trì thủ công.');await loadSystem();}finally{systemActionBusy.current=false;}
+    }}]);
+ }
+ function editSchedule(){
+  const schedule=maintenance?.schedule;
+  setScheduleStart(schedule?formatVietnamDateTime(schedule.starts_at):'');
+  setScheduleEnd(schedule?formatVietnamDateTime(schedule.ends_at):'');
+  setScheduleReason(schedule?.reason||'');
+ }
+ function saveSchedule(cancel=false){
+  if(!maintenance||systemLoading||busy||systemActionBusy.current)return;
+  const result=cancel?{data:{starts_at:0,ends_at:0,reason:''}}:validateSchedule(scheduleStart,scheduleEnd,scheduleReason,maintenance.server_time);
+  if(result.error){setSystemError(result.error);return;}
+  if(cancel&&!maintenance.schedule)return;
+  Alert.alert('Xác nhận bảo mật',cancel?'Hủy lịch bảo trì? Trạng thái bảo trì thủ công không thay đổi.':'Lưu lịch bảo trì '+formatVietnamDateTime(result.data.starts_at)+' đến '+formatVietnamDateTime(result.data.ends_at)+' (giờ Việt Nam)? Khi đến giờ, phiên thành viên sẽ bị thu hồi.',[
+    {text:'Không',style:'cancel'},{text:'Xác nhận',style:'destructive',onPress:async()=>{
+      if(systemActionBusy.current||AppState.currentState!=='active')return;systemActionBusy.current=true;
+      try{
+        const ok=await act('/api/admin/security/maintenance/schedule','POST',result.data,cancel?'Đã hủy lịch bảo trì.':'Đã lưu lịch bảo trì.');
+        if(ok){setScheduleStart('');setScheduleEnd('');setScheduleReason('');}
+        await loadSystem();
+      }finally{systemActionBusy.current=false;}
     }}]);
  }
  function cancelDeletion(row){
@@ -382,8 +407,18 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        <Text style={s.muted}>Kết thúc: {new Date(maintenance.schedule.ends_at*1000).toLocaleString('vi-VN')}</Text>
        <Text style={s.muted}>{maintenance.schedule.reason}</Text>
      </View>}
-     <Text style={s.muted}>Thay đổi bảo trì thủ công áp dụng đồng thời cho website và Android. Lịch bảo trì hiện chỉ xem tại đây; quản lý lịch trên web.</Text>
+     <Text style={s.muted}>Thay đổi bảo trì áp dụng đồng thời cho website và Android.</Text>
      <Action label={maintenance?.manual?'Tắt bảo trì thủ công':'Bật bảo trì thủ công'} disabled={!maintenance||systemLoading||busy} onPress={()=>changeMaintenance(!maintenance.manual)}/>
+    </Box>
+    <Box>
+     <Text style={s.head}>Thiết lập lịch bảo trì</Text>
+     <Text style={s.muted}>Giờ Việt Nam (UTC+7), mẫu YYYY-MM-DD HH:mm. Lịch trong 30 ngày tới, kéo dài 1 phút đến 7 ngày. Bắt buộc nhập lý do và PIN.</Text>
+     {!!maintenance?.schedule&&<Action label="Điền lịch hiện tại" subtle disabled={busy||systemLoading} onPress={editSchedule}/>}
+     <Field value={scheduleStart} onChangeText={setScheduleStart} placeholder="Bắt đầu: YYYY-MM-DD HH:mm"/>
+     <Field value={scheduleEnd} onChangeText={setScheduleEnd} placeholder="Kết thúc: YYYY-MM-DD HH:mm"/>
+     <Field value={scheduleReason} onChangeText={setScheduleReason} placeholder="Lý do bảo trì (tối đa 240 ký tự)"/>
+     <Action label="Lưu lịch bảo trì" disabled={!maintenance||systemLoading||busy} onPress={()=>saveSchedule(false)}/>
+     {!!maintenance?.schedule&&<Action label="Hủy lịch bảo trì" subtle disabled={systemLoading||busy} onPress={()=>saveSchedule(true)}/>}
     </Box>
     <Box><Text style={s.head}>Tài khoản đang chờ xóa ({deletions.length})</Text>
      <Text style={s.muted}>Danh sách trực tiếp từ máy chủ (tối đa 500). Chỉ hủy được yêu cầu còn trong thời hạn. Không xóa vĩnh viễn tại màn hình này.</Text>
@@ -558,7 +593,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {(tab==='registrations'||tab==='approvals'||tab==='support'||tab==='users'||tab==='worldAdmin'||tab==='system')&&<Box>
      <Text style={s.head}>Xác nhận bảo mật</Text>
      <Text style={s.muted}>Mọi thao tác thay đổi đều cần PIN Admin; không lưu PIN trong ứng dụng.</Text>
-     <Field value={pin} onChangeText={setPin} placeholder="Mã PIN Admin" secret/>
+     <Field value={pin} onChangeText={value=>{pinRef.current=value;setPin(value);}} placeholder="Mã PIN Admin" secret/>
    </Box>}
   </ScrollView>
  </View>;

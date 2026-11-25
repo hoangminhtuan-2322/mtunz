@@ -9,7 +9,7 @@ import Messenger from './src/Messenger';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AdminDashboard from './src/AdminDashboard';
 import AppLockGate from './src/AppLockGate';
-import {shouldRetrySession} from './src/sessionRecovery';
+import {shouldRetrySession,isMaintenanceError} from './src/sessionRecovery';
 import {AppThemeProvider,useAppTheme} from './src/AppTheme';
 import {LIGHT_PALETTE,makeScreenLightStyles} from './src/messengerTheme';
 
@@ -73,8 +73,8 @@ function AppContent() {
     setToken(null);setUser(null);setChallenge(null);setAdminApproval(null);setPassword('');setPin('');
   },[]);
 
-  const expired=useCallback(async()=>{
-    await clear();setError('Phiên đã hết hạn hoặc đã bị thu hồi. Vui lòng đăng nhập lại.');
+  const expired=useCallback(async(message)=>{
+    await clear();setMode('login');setError(typeof message==='string'&&message?message:'Phiên đã hết hạn hoặc đã bị thu hồi. Vui lòng đăng nhập lại.');
   },[clear]);
 
   useEffect(()=>{
@@ -102,7 +102,7 @@ function AppContent() {
         setToken(restored);setUser(data.user);
       }catch(e){
         if(mounted){
-          if(e.status===401||e.status===403||e.status===410)await clear();
+          if(isMaintenanceError(e)||e.status===401||e.status===403||e.status===410)await clear();
           else if(restored&&shouldRetrySession(e))setRecoverToken(restored);
           setError(e.message||'Không thể kiểm tra phiên. Hãy thử lại khi có mạng.');
         }
@@ -126,9 +126,9 @@ function AppContent() {
       setToken(recoverToken);setUser(result.user);setRecoverToken(null);
     }catch(e){
       if(run!==recoveryRunRef.current)return;
-      if(e.status===401||e.status===403||e.status===410){
+      if(isMaintenanceError(e)||e.status===401||e.status===403||e.status===410){
         await clear();
-        setError('Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.');
+        setError(isMaintenanceError(e)?e.message:'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại.');
       }else{
         setError(e.message||'Chưa thể kết nối máy chủ. Hãy thử lại khi có mạng.');
       }
@@ -254,7 +254,7 @@ function AppContent() {
   },[token,clear]);
   const refreshProfile=useCallback(async()=>{
     try{const data=await api('/api/me',{token});if(data.user)setUser(data.user);}
-    catch(e){if(e.status===401)await expired();}
+    catch(e){if(isMaintenanceError(e))await expired(e.message);else if(e.status===401)await expired();}
   },[token,expired]);
 
   if(!ready)return <SafeAreaView style={styles.root}><StatusBar barStyle={themeMode==='light'?'dark-content':'light-content'}/>

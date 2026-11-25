@@ -24,3 +24,11 @@ assert(validSessionToken('a'.repeat(64)));assert(!validSessionToken(undefined));
 assert(validResponseObject({}));assert(!validResponseObject([]));assert(!validResponseObject(null));
 assert(net.includes('validApiPath(path)')&&net.includes('validResponseObject(payload)')&&net.indexOf('payload=await res.json()')<net.indexOf('clearTimeout(timer)'));
 console.log('API route/origin/token guards and fail-closed JSON response handling: PASS');
+
+const {isMaintenanceError}=require('../mobile/src/sessionRecovery');
+assert(isMaintenanceError({status:503,code:'maintenance'}));assert(!isMaintenanceError({status:503}));assert(!isMaintenanceError({status:401,code:'maintenance'}));
+const chat=fs.readFileSync(path.join(root,'mobile/src/Messenger.js'),'utf8');
+assert(chat.includes("data.type==='maintenance-mode'")&&chat.includes("data.status?.active===true")&&chat.includes("e.code==='maintenance'"));
+assert(net.includes('new ApiError(message, res.status, detail?.code)'));
+assert(ui.includes('isMaintenanceError(e)')&&ui.includes('expired(e.message)'));
+console.log('Explicit maintenance forced logout and transient outage distinction: PASS');
