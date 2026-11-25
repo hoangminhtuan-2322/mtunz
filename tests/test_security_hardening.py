@@ -117,3 +117,8 @@ def test_revoked_websocket_cannot_receive_private_events_while_closing():
         assert 'revoked-session' not in hub.valid_session_until
 
     asyncio.run(check())
+
+
+def test_malformed_origin_is_rejected_without_server_error():
+    client=TestClient(app)
+    assert client.post('/api/username/check',json={'username':'safe_demo'},headers={'Origin':'https://[invalid'}).status_code==403

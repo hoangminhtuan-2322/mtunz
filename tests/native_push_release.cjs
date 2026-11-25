@@ -79,3 +79,13 @@ assert(pushPanel.includes('split_channels:useSplit')&&pushPanel.includes('Bật 
 for(const id of SPLIT_CHANNELS.map(x=>x.id))assert(backend.includes(id));
 assert(backend.includes('split_channels: bool = False')&&backend.includes('sc.session_hash=p.session_hash'));
 console.log('Opt-in separate Android notification channels, backward compatibility: PASS');
+
+const {parseAdminPushResponse}=require('../mobile/src/notificationActions');
+const adminNotice={actionIdentifier:'default',notification:{request:{content:{data:{kind:'registration',session_binding:binding}}}}};
+assert.equal(parseAdminPushResponse(adminNotice,binding,'default'),'registrations');
+assert.equal(parseAdminPushResponse(adminNotice,'b'.repeat(64),'default'),null);
+assert.equal(parseAdminPushResponse({...adminNotice,actionIdentifier:QUICK_REPLY},binding,'default'),null);
+assert.equal(parseAdminPushResponse(null,binding,'default'),null);
+const adminPanel=fs.readFileSync(path.join(root,'mobile/src/AdminDashboard.js'),'utf8');
+assert(adminPanel.includes('parseAdminPushResponse(response,await binding')&&adminPanel.includes("else {setPin('');stop();}"));
+console.log('Admin push session binding and background PIN clearing: PASS');
