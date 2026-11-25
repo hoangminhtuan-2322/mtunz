@@ -126,3 +126,49 @@ const {createPendingSend,deliverPendingSend}=require('../mobile/src/pendingSend'
  assert(chat.includes('deliverPendingSend(pending')&&!chat.includes('nonceRef.current'));
  console.log('Stable single-send identity, upload reuse, conversation isolation and non-idempotent world guard: PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+const {CHAT_BACKGROUNDS,chatBackground}=require('../mobile/src/chatAppearance');
+assert.equal(new Set(CHAT_BACKGROUNDS.map(x=>x.id)).size,CHAT_BACKGROUNDS.length);
+assert.equal(chatBackground('unknown').id,'midnight');
+assert.equal(chatBackground(null).id,'midnight');
+for(const item of CHAT_BACKGROUNDS){assert.match(item.color,/^#[0-9a-f]{6}$/);assert.equal(chatBackground(item.id),item);}
+assert(chat.includes('backgroundColor:wallpaperColor(chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)),mode)')&&chat.includes('readChatBackground()')&&chat.includes('saveChatBackground(id)'));
+assert(chat.includes('appearanceBusy.current')&&chat.includes('wallpaperEmpty'));
+console.log('Local chat background presets, fallback and keyboard-safe integration: PASS');
+
+const {sanitizeRoomBackgrounds,roomBackgroundId,changeRoomBackground,MAX_ROOM_BACKGROUNDS}=require('../mobile/src/chatAppearance');
+const rooms=changeRoomBackground({},'dm:1','forest');
+assert.equal(roomBackgroundId(rooms,'dm:1','sand'),'forest');
+assert.equal(roomBackgroundId(rooms,'group:1','sand'),'sand');
+assert.equal(roomBackgroundId(rooms,'world:1','mist'),'mist');
+assert.deepEqual(changeRoomBackground(rooms,'dm:1',null),{});
+assert.deepEqual(rooms,{'dm:1':'forest'});
+assert.deepEqual(sanitizeRoomBackgrounds({'dm:1':'forest','bad':'mist','group:2':'invalid','world:5':'plum'}),{'dm:1':'forest','world:5':'plum'});
+assert.throws(()=>changeRoomBackground({},'bad','forest'));
+const full=Object.fromEntries(Array.from({length:MAX_ROOM_BACKGROUNDS},(_,i)=>['dm:'+(i+1),'ocean']));
+assert.throws(()=>changeRoomBackground(full,'group:1','forest'),/limit/);
+assert.equal(changeRoomBackground(full,'dm:1','mist')['dm:1'],'mist');
+assert(chat.includes('appearanceAccountRef.current===account')&&chat.includes('conversationKey(roomRef.current)!==key'));
+assert(read('mobile/src/chatAppearanceStore.js').includes('mtunz-room-background-v1-'));
+console.log('Account-scoped per-conversation wallpaper overrides and bounded persistence: PASS');
+
+const {LIGHT_PALETTE,normalizeTheme,makeLightStyles,wallpaperColor}=require('../mobile/src/messengerTheme');
+assert.equal(normalizeTheme('invalid'),'dark');assert.equal(normalizeTheme('light'),'light');
+const dark={bg:'#071320',card:'#11253a',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',green:'#73e0bd',bad:'#ff9eac'};
+const sample={bubbleMine:{backgroundColor:'#2760a6',maxWidth:'84%'},msg:{color:dark.text},btn:{backgroundColor:dark.accent},btnTxt:{color:dark.bg},composeInput:{backgroundColor:'#1b334f',color:dark.text},viewerAction:{backgroundColor:'#1c3656'}};
+const light=makeLightStyles(sample,dark);assert.equal(light.bubbleMine.backgroundColor,LIGHT_PALETTE.mine);assert.equal(light.bubbleMine.maxWidth,'84%');assert.equal(light.msg.color,LIGHT_PALETTE.text);assert.equal(light.btnTxt.color,'#ffffff');assert.equal(light.composeInput.backgroundColor,'#ffffff');assert.equal(light.viewerAction.backgroundColor,'#1c3656');assert.equal(sample.msg.color,dark.text);
+assert.equal(wallpaperColor(chatBackground('midnight'),'light'),LIGHT_PALETTE.bg);assert.equal(wallpaperColor(chatBackground('forest'),'light'),chatBackground('forest').color);
+const appTheme=read('mobile/src/AppTheme.js');
+assert(appTheme.includes('ThemeContext.Provider')&&appTheme.includes('saveMessengerTheme(next)')&&chat.includes('makeLightStyles(baseStyles,DARK_PALETTE)'));
+console.log('Messenger light/dark palette, persisted mode, default wallpaper and fixed overlay: PASS');
+
+const {makeScreenLightStyles}=require('../mobile/src/messengerTheme');
+const screenSample={button:{backgroundColor:'#071320',minHeight:48},text:{color:'#fff',fontSize:16}};
+const screenLight=makeScreenLightStyles(screenSample,{button:{backgroundColor:LIGHT_PALETTE.accent}});
+assert.equal(screenLight.button.backgroundColor,LIGHT_PALETTE.accent);assert.equal(screenLight.button.minHeight,48);assert.equal(screenLight.text.color,LIGHT_PALETTE.text);assert.equal(screenSample.text.color,'#fff');
+assert(app.includes('<AppThemeProvider><AppContent/></AppThemeProvider>'));
+for(const path of ['mobile/App.js','mobile/src/AdminDashboard.js','mobile/src/AppLockGate.js','mobile/src/Messenger.js'])assert(read(path).includes('useAppTheme'),path);
+assert(app.includes("barStyle={themeMode==='light'?'dark-content':'light-content'}"));
+console.log('Shared appearance across auth, admin, lock and Messenger: PASS');
+
+assert(app.includes('mode:themeMode,ready:themeReady')&&app.includes("const [mode,setMode]=useState('login')"),'Separate auth-flow mode from appearance mode');

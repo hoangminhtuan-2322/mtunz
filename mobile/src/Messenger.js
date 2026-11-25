@@ -1,4 +1,8 @@
 import AndroidUpdate from './AndroidUpdate';
+import {CHAT_BACKGROUNDS,chatBackground,roomBackgroundId,validRoomKey} from './chatAppearance';
+import {readChatBackground,saveChatBackground,readRoomBackgrounds,saveRoomBackground} from './chatAppearanceStore';
+import {LIGHT_PALETTE,makeLightStyles,wallpaperColor} from './messengerTheme';
+import {useAppTheme} from './AppTheme';
 import StorageSettings from './StorageSettings';
 import {AppLockSettings} from './AppLockGate';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
@@ -25,7 +29,8 @@ import {createPendingSend,deliverPendingSend} from './pendingSend';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
 
-const P={bg:'#071320',card:'#11253a',border:'#294661',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',mine:'#2760a6',bad:'#ff9eac',green:'#73e0bd'};
+const DARK_PALETTE={bg:'#071320',card:'#11253a',border:'#294661',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',mine:'#2760a6',bad:'#ff9eac',green:'#73e0bd'};
+function useMessengerTheme(){const theme=useAppTheme();return {...theme,P:theme.mode==='light'?LIGHT_PALETTE:DARK_PALETTE,css:theme.mode==='light'?lightStyles:darkStyles};}
 const order=rows=>[...rows].sort((a,b)=>Number(a.id)-Number(b.id));
 const dedupe=rows=>order([...new Map(rows.map(m=>[m.id,m])).values()]);
 const label=f=>f?.nickname||f?.display_name||f?.username||f?.title||'Thành viên';
@@ -37,6 +42,7 @@ const route=room=>room.scope==='dm'?'/api/messages/'+room.id:
 const toQuery=(path,params)=>path+(path.includes('?')?'&':'?')+new URLSearchParams(params).toString();
 
 function Btn({children,onPress,quiet=false,disabled=false,danger=false,small=false}){
+  const {P,css}=useMessengerTheme();
   return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}
     style={({pressed})=>[css.btn,quiet&&css.ghost,danger&&css.danger,small&&css.smallBtn,
       pressed&&!disabled&&{opacity:.8},disabled&&css.disabled]}>
@@ -44,6 +50,7 @@ function Btn({children,onPress,quiet=false,disabled=false,danger=false,small=fal
   </Pressable>;
 }
 function Field({value,onChangeText,placeholder,secureTextEntry=false,revealPassword=false,multiline=false,keyboardType}){
+  const {P,css}=useMessengerTheme();
   const [visible,setVisible]=useState(false);
   useEffect(()=>{if(!value||!revealPassword)setVisible(false);},[value,revealPassword]);
   useEffect(()=>{
@@ -66,8 +73,10 @@ function Field({value,onChangeText,placeholder,secureTextEntry=false,revealPassw
     </Pressable>
   </View>;
 }
-function Section({title,children}){return <View style={css.section}><Text style={css.h2}>{title}</Text>{children}</View>;}
+function Section({title,children}){
+  const {P,css}=useMessengerTheme();return <View style={css.section}><Text style={css.h2}>{title}</Text>{children}</View>;}
 function AccountGroup({title,children}){
+  const {P,css}=useMessengerTheme();
  return <View style={css.accountGroup}>
   <Text style={css.accountGroupTitle}>{title}</Text>
   <View style={css.accountGroupBody}>{children}</View>
@@ -76,11 +85,12 @@ function AccountGroup({title,children}){
 const ACCOUNT_ICON={'◉':'person-outline','♢':'shield-checkmark-outline',
   '▣':'notifications-outline','?':'help-circle-outline','↪':'log-out-outline'};
 function AccountRow({symbol,title,subtitle,detail,onPress,danger=false}){
+  const {P,css}=useMessengerTheme();
  return <Pressable accessibilityRole="button" accessibilityLabel={title}
    onPress={onPress} style={({pressed})=>[css.accountRow,pressed&&{opacity:.76}]}>
    <View style={[css.accountSymbol,danger&&css.accountSymbolDanger]}>
      <Ionicons name={ACCOUNT_ICON[symbol]||'ellipse-outline'} size={21}
-       color={danger?'#ffb3ba':P.accent}/>
+       color={danger?P.bad:P.accent}/>
    </View>
    <View style={css.accountText}>
      <Text style={[css.accountTitle,danger&&css.accountDangerText]} numberOfLines={1}>{title}</Text>
@@ -91,6 +101,7 @@ function AccountRow({symbol,title,subtitle,detail,onPress,danger=false}){
  </Pressable>;
 }
 function EmptyState({symbol,title,subtitle}) {
+  const {P,css}=useMessengerTheme();
   return <View style={css.emptyPanel}>
     <View style={css.emptySymbol}><Text style={css.emptySymbolText}>{symbol}</Text></View>
     <Text style={css.emptyTitle}>{title}</Text>
@@ -98,6 +109,7 @@ function EmptyState({symbol,title,subtitle}) {
   </View>;
 }
 function ModalSheet({visible,onClose,title,children}){
+  const {P,css}=useMessengerTheme();
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={css.overlay}><View style={css.sheet}>
       <View style={css.hrow}><Text style={css.h2}>{title}</Text>
@@ -107,6 +119,7 @@ function ModalSheet({visible,onClose,title,children}){
   </Modal>;
 }
 function ConversationInfoSheet({title,avatar,onClose,children}){
+  const {P,css}=useMessengerTheme();
   return <Modal visible animationType="slide" onRequestClose={onClose}>
     <SafeAreaView style={css.detailsScreen}>
       <View style={css.detailsHeader}>
@@ -131,6 +144,7 @@ function ConversationInfoSheet({title,avatar,onClose,children}){
   </Modal>;
 }
 function Attachment({file,token,onOpen}){
+  const {P,css}=useMessengerTheme();
   if(!file)return null;
   if(file.mime?.startsWith('image/')){
     return <Pressable accessibilityRole="button" accessibilityLabel="Xem ảnh trong cuộc trò chuyện"
@@ -152,6 +166,7 @@ function Attachment({file,token,onOpen}){
   </Pressable>;
 }
 function Message({item,own,token,onSelect,onOpen,onReply,highlighted}){
+  const {P,css}=useMessengerTheme();
   const deleted=!!(item.deleted_at||item.deleted);
   const drag=useRef(new Animated.Value(0)).current;
   const swipeRef=useRef(null);
@@ -196,6 +211,7 @@ function Message({item,own,token,onSelect,onOpen,onReply,highlighted}){
 }
 
 function FriendPresenceBadge({friend,connected,clock}){
+  const {P,css}=useMessengerTheme();
   const presence=friendPresence(friend,connected,clock);
   if(!presence.short)return null;
   return <View style={css.chatPresenceRow}>
@@ -213,7 +229,42 @@ const ChatScrollView=React.forwardRef(function ChatScrollView({inverted,...props
 });
 
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
+  const {P,css,mode,ready:themeReady,saving:themeSaving,changeMode}=useMessengerTheme();
   const {bottom:keyboardBottomInset}=useSafeAreaInsets();
+  const [backgroundId,setBackgroundId]=useState('midnight');
+  const [roomAppearance,setRoomAppearance]=useState({account:null,values:{},ready:false});
+  const appearanceAccount=String(user.id);
+  const appearanceAccountRef=useRef(appearanceAccount);appearanceAccountRef.current=appearanceAccount;
+  const roomBackgrounds=roomAppearance.account===appearanceAccount?roomAppearance.values:{};
+  const roomAppearanceReady=roomAppearance.account===appearanceAccount&&roomAppearance.ready;
+  useEffect(()=>{
+    let active=true;
+    readRoomBackgrounds(appearanceAccount).then(values=>{if(active)setRoomAppearance({account:appearanceAccount,values,ready:true});})
+      .catch(()=>{if(active)setRoomAppearance({account:appearanceAccount,values:{},ready:false});});
+    return()=>{active=false;};
+  },[appearanceAccount]);
+  const [appearanceReady,setAppearanceReady]=useState(false),[appearanceSaving,setAppearanceSaving]=useState(false);
+  const appearanceActive=useRef(false),appearanceBusy=useRef(false);
+  useEffect(()=>{
+    appearanceActive.current=true;
+    readChatBackground().then(id=>{if(appearanceActive.current){setBackgroundId(id);setAppearanceReady(true);}})
+      .catch(()=>{if(appearanceActive.current)setAppearanceReady(true);});
+    return()=>{appearanceActive.current=false;};
+  },[]);
+  async function changeRoomWallpaper(key,id){
+    if(!roomAppearanceReady||appearanceBusy.current||!validRoomKey(key)||conversationKey(roomRef.current)!==key)return;
+    const account=appearanceAccount;appearanceBusy.current=true;setAppearanceSaving(true);
+    try{const values=await saveRoomBackground(account,key,id);if(appearanceActive.current&&appearanceAccountRef.current===account)setRoomAppearance({account,values,ready:true});}
+    catch(e){if(appearanceActive.current&&appearanceAccountRef.current===account)Alert.alert('Giao diện',e.message==='Wallpaper limit reached'?'Đã đạt giới hạn 48 hội thoại. Hãy bỏ một hình nền riêng trước.':'Không thể lưu hình nền. Vui lòng thử lại.');}
+    finally{appearanceBusy.current=false;if(appearanceActive.current)setAppearanceSaving(false);}
+  }
+  async function changeBackground(id){
+    if(!appearanceReady||appearanceBusy.current)return;
+    appearanceBusy.current=true;setAppearanceSaving(true);
+    try{await saveChatBackground(id);if(appearanceActive.current)setBackgroundId(id);}
+    catch{if(appearanceActive.current)Alert.alert('Giao diện','Không thể lưu hình nền. Vui lòng thử lại.');}
+    finally{appearanceBusy.current=false;if(appearanceActive.current)setAppearanceSaving(false);}
+  }
   const renderChatScroll=useCallback(props=><ChatScrollView {...props} inverted/>,[]);
   const [inboxQuery,setInboxQuery]=useState(''),[groupQuery,setGroupQuery]=useState('');
   const [drafts,setDrafts]=useState({}),[refreshingInbox,setRefreshingInbox]=useState(false);
@@ -1152,6 +1203,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Ionicons name="search-outline" color={P.accent} size={21}/></Pressable>}
       {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
+      {room?.scope==='world'&&<Pressable accessibilityRole="button" accessibilityLabel="Hình nền riêng" style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('roomAppearance');}}><Ionicons name="color-palette-outline" size={22} color={P.accent}/></Pressable>}
       {!room&&tab==='dm'&&<Pressable accessibilityRole="button" accessibilityLabel="Lịch sử cuộc gọi"
         style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('callHistory');}}>
         <Ionicons name="call-outline" color={P.accent} size={23}/></Pressable>}
@@ -1165,7 +1217,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     {room?<View style={css.chatKeyboardArea}>
       {loading&&<ActivityIndicator color={P.accent}/>}
       <FlatList ref={listRef} inverted data={[...messages].reverse()} keyExtractor={m=>String(m.id)}
-        renderScrollComponent={renderChatScroll} style={css.chatListViewport}
+        renderScrollComponent={renderChatScroll} style={[css.chatListViewport,{backgroundColor:wallpaperColor(chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)),mode)}]}
         onScrollToIndexFailed={recoverSearchScroll}
         onViewableItemsChanged={onSearchTargetVisible} viewabilityConfig={searchViewabilityConfig}
         onScrollBeginDrag={()=>{jumpRef.current=null;clearTimeout(jumpTimer.current);}}
@@ -1190,7 +1242,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         initialNumToRender={15} maxToRenderPerBatch={10} windowSize={7}
         removeClippedSubviews={false} // avoid disappearing photo/video cells on Android
         contentContainerStyle={css.messageList}
-        ListEmptyComponent={!loading?<EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/>:null}
+        ListEmptyComponent={!loading?<View style={css.wallpaperEmpty}><EmptyState symbol="✉" title="Chưa có tin nhắn" subtitle="Hãy gửi lời chào đầu tiên. Tin nhắn sẽ đồng bộ với website."/></View>:null}
         onEndReached={loadOlder} onEndReachedThreshold={0.25}
         maintainVisibleContentPosition={{minIndexForVisible:0}}/>
       <KeyboardStickyView offset={{closed:0,opened:keyboardBottomInset}} style={css.stickyComposer}>
@@ -1261,8 +1313,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Pressable accessibilityRole="button" accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}
           disabled={sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
           style={[css.sendIconButton,(sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
-          {sending?<ActivityIndicator size="small" color={P.bg}/>:
-            <Ionicons name="send" size={20} color={P.bg}/>}
+          {sending?<ActivityIndicator size="small" color={mode==='light'?'#ffffff':P.bg}/>:
+            <Ionicons name="send" size={20} color={mode==='light'?'#ffffff':P.bg}/>}
         </Pressable>
       </View>
       </KeyboardStickyView>
@@ -1351,7 +1403,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         ListEmptyComponent={<EmptyState symbol="♧" title={groupQuery?'Không tìm thấy nhóm':'Chưa có nhóm nào'}
           subtitle="Tạo nhóm riêng để trò chuyện cùng bạn bè."/>}
         renderItem={({item})=><Pressable style={css.chatRow} onPress={()=>openRoom({scope:'group',id:item.id})}>
-          <View style={[css.avatar,{backgroundColor:'#24466a'}]}>
+          <View style={[css.avatar,{backgroundColor:mode==='light'?'#dce9f6':'#24466a'}]}>
             <Text style={[css.avatarText,{fontSize:24}]}>▦</Text></View>
           <View style={css.chatCopy}><View style={css.chatTopLine}>
             <Text style={css.chatName} numberOfLines={1}>{item.title}</Text>
@@ -1476,6 +1528,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             onPress={()=>{setDialog('notifications');refreshLists();}}/>
           <DevicePushSettings token={token} compact/>
         </AccountGroup>
+        <AccountGroup title="Giao diện"><AccountRow symbol="◉" title="Chế độ sáng / tối" subtitle={mode==='light'?'Đang dùng giao diện sáng':'Đang dùng giao diện tối'} onPress={()=>setDialog('themeMode')}/><AccountRow symbol="◉" title="Hình nền hội thoại" subtitle={chatBackground(backgroundId).label+' · Áp dụng trên thiết bị này'} onPress={()=>setDialog('appearance')}/></AccountGroup>
         <AccountGroup title="Ứng dụng"><AndroidUpdate/><StorageSettings token={token}/><AppLockSettings/></AccountGroup>
         <AccountGroup title="Hỗ trợ">
           <AccountRow symbol="?" title="Trung tâm hỗ trợ"
@@ -1497,6 +1550,45 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Text numberOfLines={1} style={[css.tabText,tab===id&&css.tabTextActive]}>{title}</Text>
       </Pressable>)}</View>
     </>}
+    <ModalSheet visible={dialog==='themeMode'} onClose={()=>setDialog('')} title="Chế độ sáng / tối">
+      <Text style={css.muted}>Áp dụng cho Messenger, đăng nhập, Admin và khóa ứng dụng trên thiết bị này. Một số màn hình chuyên biệt vẫn dùng giao diện tối.</Text>
+      {['light','dark'].map(value=><Pressable key={value} accessibilityRole="button" accessibilityState={{selected:mode===value,disabled:!themeReady||themeSaving}} disabled={!themeReady||themeSaving} style={[css.rowCard,mode===value&&css.wallpaperSelected]} onPress={()=>changeMode(value)}>
+        <Ionicons name={value==='light'?'sunny-outline':'moon-outline'} size={24} color={P.accent}/>
+        <Text style={[css.strong,{flex:1}]}>{value==='light'?'Giao diện sáng':'Giao diện tối'}</Text>
+        {mode===value&&<Ionicons name="checkmark-circle" size={22} color={P.accent}/>}
+      </Pressable>)}
+      {(!themeReady||themeSaving)&&<ActivityIndicator color={P.accent}/>}
+    </ModalSheet>
+    <ModalSheet visible={dialog==='roomAppearance'&&!!room} onClose={()=>setDialog('')} title="Hình nền riêng">
+      <Text style={css.muted}>{roomTitle} · Chỉ áp dụng cho hội thoại này trên thiết bị của bạn.</Text>
+      {!roomAppearanceReady&&<Text style={css.muted}>Chưa đọc được cài đặt hình nền riêng. Vui lòng mở lại ứng dụng.</Text>}
+      <View style={css.wallpaperGrid}>{CHAT_BACKGROUNDS.map(option=>{
+        const key=conversationKey(room),selected=roomBackgrounds[key]===option.id;
+        return <Pressable key={option.id} accessibilityRole="button" accessibilityLabel={option.label}
+          accessibilityState={{selected,disabled:!roomAppearanceReady||appearanceSaving}} disabled={!roomAppearanceReady||appearanceSaving}
+          onPress={()=>changeRoomWallpaper(key,option.id)} style={[css.wallpaperTile,selected&&css.wallpaperSelected]}>
+          <View style={[css.wallpaperPreview,{backgroundColor:wallpaperColor(option,mode)}]}><View style={css.wallpaperPreviewOther}/><View style={css.wallpaperPreviewMine}/></View>
+          <Text style={css.strong}>{option.label}{selected?' ✓':''}</Text>
+        </Pressable>;
+      })}</View>
+      {appearanceSaving&&<ActivityIndicator color={P.accent}/>}
+      <Btn quiet disabled={!roomAppearanceReady||appearanceSaving||!roomBackgrounds[conversationKey(room)]} onPress={()=>changeRoomWallpaper(conversationKey(room),null)}>Dùng hình nền chung ({chatBackground(backgroundId).label})</Btn>
+    </ModalSheet>
+    <ModalSheet visible={dialog==='appearance'} onClose={()=>setDialog('')} title="Hình nền hội thoại">
+      <Text style={css.muted}>Chọn màu nền chung cho các cuộc trò chuyện chưa đặt nền riêng. Không thay đổi giao diện của người khác hoặc website.</Text>
+      {!appearanceReady&&<ActivityIndicator color={P.accent}/>}
+      <View style={css.wallpaperGrid}>{CHAT_BACKGROUNDS.map(option=><Pressable key={option.id}
+        accessibilityRole="button" accessibilityLabel={option.label} accessibilityState={{selected:backgroundId===option.id,disabled:!appearanceReady||appearanceSaving}}
+        disabled={!appearanceReady||appearanceSaving} onPress={()=>changeBackground(option.id)}
+        style={[css.wallpaperTile,backgroundId===option.id&&css.wallpaperSelected]}>
+        <View style={[css.wallpaperPreview,{backgroundColor:wallpaperColor(option,mode)}]}>
+          <View style={css.wallpaperPreviewOther}/><View style={css.wallpaperPreviewMine}/>
+        </View>
+        <Text style={css.strong}>{option.label}{backgroundId===option.id?' ✓':''}</Text>
+      </Pressable>)}</View>
+      {appearanceSaving&&<ActivityIndicator color={P.accent}/>}
+      <Btn quiet disabled={!appearanceReady||appearanceSaving||backgroundId==='midnight'} onPress={()=>changeBackground('midnight')}>Khôi phục mặc định</Btn>
+    </ModalSheet>
     <ModalSheet visible={!!selection&&dialog!=='forward'} onClose={()=>setSelection(null)} title="Tùy chọn tin nhắn">
       {selection&&<><Text style={css.muted} numberOfLines={3}>{selection.body||'Tệp đính kèm'}</Text>
         <View style={css.hrow}>{['👍','❤️','😂','😮','😢','🙏'].map(emoji=>
@@ -1522,6 +1614,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     {dialog==='info'&&<ConversationInfoSheet title={roomTitle}
       avatar={room?.scope==='dm'?avatarSource(peer?.avatar_url,token):null}
       onClose={()=>setDialog('')}>
+      <Btn quiet onPress={()=>setDialog('roomAppearance')}>Hình nền riêng của hội thoại</Btn>
       {room?.scope==='dm'&&<>
         <View style={css.detailsCard}>
           <Text style={css.detailsSectionTitle}>Biệt danh</Text>
@@ -1776,10 +1869,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <View style={css.hrow}>
           <Pressable accessibilityRole="button" accessibilityLabel="Đóng ảnh"
             onPress={()=>setViewer(null)} style={css.viewerAction}>
-            <Ionicons name="close" size={23} color={P.text}/></Pressable>
+            <Ionicons name="close" size={23} color="#f4f8ff"/></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Lưu hoặc chia sẻ ảnh"
             onPress={()=>saveSharedFile(viewer,token).catch(alertError)} style={css.viewerAction}>
-            <Ionicons name="download-outline" size={23} color={P.text}/></Pressable>
+            <Ionicons name="download-outline" size={23} color="#f4f8ff"/></Pressable>
         </View>
         {!!viewer&&<Image source={attachmentSource(viewer,token)}
           style={{flex:1,width:'100%'}} resizeMode="contain"/>}
@@ -1788,7 +1881,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   </View>;
 }
 
-const css=StyleSheet.create({
+const P=DARK_PALETTE;
+const baseStyles={
   btn:{backgroundColor:P.accent,paddingVertical:12,paddingHorizontal:15,alignItems:'center',
     justifyContent:'center',borderRadius:12,minHeight:45},
   ghost:{backgroundColor:'#213751',borderWidth:1,borderColor:P.border},
@@ -1957,6 +2051,13 @@ const css=StyleSheet.create({
   reactionText:{color:P.text,fontSize:13},
   chatKeyboardArea:{flex:1,minHeight:0},
   chatListViewport:{flex:1,minHeight:0},
+  wallpaperEmpty:{backgroundColor:P.bg,borderRadius:22},
+  wallpaperGrid:{flexDirection:'row',flexWrap:'wrap',gap:10},
+  wallpaperTile:{width:'47%',flexGrow:1,gap:8,padding:9,borderRadius:14,borderWidth:1,borderColor:P.border,backgroundColor:P.card},
+  wallpaperSelected:{borderColor:P.accent,borderWidth:2},
+  wallpaperPreview:{height:70,padding:10,gap:8,borderRadius:10,borderWidth:1,borderColor:P.border},
+  wallpaperPreviewOther:{height:13,width:'67%',borderRadius:8,backgroundColor:'#1c334d'},
+  wallpaperPreviewMine:{height:13,width:'52%',borderRadius:8,backgroundColor:P.mine,alignSelf:'flex-end'},
   stickyComposer:{flexShrink:0,zIndex:2,backgroundColor:P.bg},
   compose:{flexDirection:'row',gap:6,paddingHorizontal:10,paddingTop:11,paddingBottom:10,
     width:'100%',minWidth:0,alignItems:'flex-end',borderTopColor:'#2d4a64',
@@ -2034,4 +2135,6 @@ const css=StyleSheet.create({
   profileInitial:{fontSize:30,color:P.text,fontWeight:'900'},
   profileName:{fontSize:20,fontWeight:'900',color:P.text,letterSpacing:-.4},
 
-});
+};
+const darkStyles=StyleSheet.create(baseStyles);
+const lightStyles=StyleSheet.create(makeLightStyles(baseStyles,DARK_PALETTE));
