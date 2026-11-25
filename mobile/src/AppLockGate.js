@@ -69,7 +69,7 @@ export function AppLockSettings(){
     <View style={s.row}><Ionicons name="finger-print-outline" size={23} color="#6dbaff"/><Text style={s.title}>Khóa ứng dụng</Text></View>
     <Text style={s.muted}>{gate.enabled?'Đang bật · Yêu cầu xác minh khi mở lại sau 30 giây rời ứng dụng.':'Chưa bật · Dùng sinh trắc học của Android để bảo vệ khi mở ứng dụng.'}</Text>
     {!gate.supported&&!gate.enabled&&<Text style={s.warning}>Thiết bị chưa có sinh trắc học đủ mạnh. Hãy thiết lập trong Android.</Text>}
-    <Text style={s.muted}>Khóa cục bộ theo phiên; không thay thế mật khẩu, PIN hay quyền Admin. Khi khóa, hội thoại đang mở sẽ đóng; tệp chưa gửi và lịch sử cuộc gọi trong phiên có thể mất.</Text>
+    <Text style={s.muted}>Khóa cục bộ theo phiên; không thay thế mật khẩu, PIN hay quyền Admin. Khi khóa, hội thoại đang mở sẽ đóng; tệp chưa gửi có thể mất. Lịch sử cuộc gọi đã lưu được giữ lại.</Text>
     <View style={s.row}>
       <Pressable accessibilityRole="button" disabled={gate.busy||(!gate.enabled&&!gate.supported)} style={[s.secondary,(gate.busy||(!gate.enabled&&!gate.supported))&&{opacity:.5}]} onPress={()=>void gate.run(gate.enabled?'disable':'enable')}><Text style={s.link}>{gate.busy?'Đang xác minh…':gate.enabled?'Tắt khóa':'Bật khóa'}</Text></Pressable>
       {gate.enabled&&<Pressable accessibilityRole="button" disabled={gate.busy} style={s.secondary} onPress={gate.lock}><Text style={s.link}>Khóa ngay</Text></Pressable>}

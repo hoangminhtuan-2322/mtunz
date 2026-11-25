@@ -307,7 +307,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return()=>{active=false;sub.remove();persistDrafts();clearTimeout(draftSaveTimer.current);};
   },[token]);
   useEffect(()=>()=>{clearTimeout(jumpTimer.current);jumpSeq.current++;},[]);
-  const nativeCall=useNativeCall(wsRef,friends);
+  const nativeCall=useNativeCall(wsRef,friends,token);
+  const [callFilter,setCallFilter]=useState('all');
   const onCallSignal=nativeCall.onSignal;
   const endNativeCall=nativeCall.endCall;
   // Voice notes use the phone microphone only when explicitly requested.
@@ -1441,7 +1442,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             onPress={()=>{setDialog('security');loadDevices();}}/>
         </AccountGroup>
         <AccountGroup title="Cuộc gọi">
-          <AccountRow symbol="◉" title="Lịch sử cuộc gọi" subtitle="Cuộc gọi đến, đi và bị nhỡ trong phiên này" onPress={()=>setDialog('callHistory')}/>
+          <AccountRow symbol="◉" title="Lịch sử cuộc gọi" subtitle="Cuộc gọi đến, đi và bị nhỡ đã lưu trên máy" onPress={()=>setDialog('callHistory')}/>
         </AccountGroup>
         <AccountGroup title="Thông báo">
           <AccountRow symbol="▣" title="Thông báo trong ứng dụng"
@@ -1638,11 +1639,14 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         Đổi tên (mật khẩu + PIN)</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='callHistory'} onClose={()=>setDialog('')} title="Lịch sử cuộc gọi">
-      <Text style={css.muted}>Lịch sử trên thiết bị trong phiên sử dụng hiện tại. Không bao gồm cuộc gọi khi app đã đóng.</Text>
-      {nativeCall.history.length>0&&<Btn quiet small onPress={()=>Alert.alert('Xóa lịch sử cuộc gọi?','Chỉ xóa danh sách cuộc gọi trong phiên này.',[
+      <Text style={css.muted}>Lịch sử được mã hóa trên thiết bị theo phiên đăng nhập, giữ lại khi khóa hoặc khởi động lại app. Không bao gồm cuộc gọi khi app đã đóng và không đồng bộ sang web.</Text>
+      <View style={css.filterRow}>{[['all','Tất cả'],['missed','Cuộc gọi nhỡ'],['incoming','Cuộc gọi đến'],['outgoing','Cuộc gọi đi']].map(([key,title])=><Pressable key={key} accessibilityRole="button" accessibilityState={{selected:callFilter===key}} style={[css.filterChip,callFilter===key&&css.filterChipActive]} onPress={()=>setCallFilter(key)}><Text style={[css.filterText,callFilter===key&&css.filterTextActive]}>{title}</Text></Pressable>)}</View>
+      {nativeCall.historyLoading&&<ActivityIndicator color={P.accent}/>}
+      {!!nativeCall.historyError&&<Text style={[css.muted,{color:P.bad}]}>{nativeCall.historyError}</Text>}
+      {nativeCall.history.length>0&&<Btn quiet small onPress={()=>Alert.alert('Xóa lịch sử cuộc gọi?','Xóa lịch sử cuộc gọi đã lưu trên thiết bị của phiên này, không xóa tin nhắn.',[
         {text:'Hủy',style:'cancel'},{text:'Xóa',style:'destructive',onPress:nativeCall.clearHistory}])}>Xóa lịch sử</Btn>}
-      {!nativeCall.history.length&&<Text style={css.muted}>Chưa có cuộc gọi trong phiên này.</Text>}
-      {nativeCall.history.map((item,i)=>{
+      {!nativeCall.historyLoading&&!nativeCall.history.some(item=>callFilter==='all'||(callFilter==='missed'?item.status==='missed':item.direction===callFilter))&&<Text style={css.muted}>Không có cuộc gọi phù hợp.</Text>}
+      {nativeCall.history.filter(item=>callFilter==='all'||(callFilter==='missed'?item.status==='missed':item.direction===callFilter)).map((item,i)=>{
         const friend=friends.find(f=>Number(f.other_id)===item.peerId&&f.state==='accepted'&&!f.archived&&!f.restricted);
         return <View key={item.startedAt+':'+item.peerId+':'+i} style={css.rowCard}>
           <Ionicons name={item.video?'videocam-outline':'call-outline'} size={24} color={item.status==='missed'?P.bad:P.accent}/>

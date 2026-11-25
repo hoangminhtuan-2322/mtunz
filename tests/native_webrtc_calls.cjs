@@ -55,5 +55,17 @@ assert.equal(ended.duration,9);assert.equal(ended.status,'interrupted');assert(!
 assert.equal(appendCallHistory(Array(60).fill(ended),ended).length,60);
 assert.equal(formatCallDuration(3661),'1:01:01');
 assert(calls.includes("endCall(true,'network')")&&calls.includes('disconnectTimer'));
-assert(chat.includes("dialog==='callHistory'")&&chat.includes('nativeCall.history.map'));
+assert(chat.includes("dialog==='callHistory'")&&chat.includes('nativeCall.history.filter'));
 console.log('Call duration, local history, missed calls and bounded disconnect recovery: PASS');
+
+const {encodeCallHistory,decodeCallHistory}=require('../mobile/src/callHistory');
+const encoded=encodeCallHistory(Array.from({length:60},(_,i)=>({...ended,startedAt:1770000000000+i,peerId:9007199254740000-i,title:'Private title',signal:{secret:'never store'}})));
+assert(encoded.length<=1800);assert(!encoded.includes('Private title')&&!encoded.includes('secret'));
+const decoded=decodeCallHistory(encoded);
+assert(decoded.length>0&&decoded.length<=60);assert.equal(decoded[0].peerId,9007199254740000);assert.equal(decoded[0].status,'interrupted');
+assert.deepEqual(decodeCallHistory('[[0,1,1,0,0,0]]'),[]);
+assert.throws(()=>decodeCallHistory('{bad'));
+assert(read('mobile/src/callVault.js').includes('retired.add(key)'));
+assert(read('mobile/src/client.js').includes('retireCallVault(token)'));
+assert(chat.includes('callFilter')&&calls.includes('appendCallVault(token,record)'));
+console.log('Encrypted local call vault, compact metadata, retention, filters and logout cleanup: PASS');

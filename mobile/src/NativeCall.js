@@ -2,6 +2,7 @@ import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {Alert,AppState,Modal,Pressable,StyleSheet,Text,View} from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {finishCall,formatCallDuration,callStatusLabel,appendCallHistory} from './callHistory';
+import {readCallVault,appendCallVault,clearCallVault} from './callVault';
 import {mediaDevices,MediaStream,RTCPeerConnection,RTCIceCandidate,RTCSessionDescription,RTCView} from 'react-native-webrtc';
 
 const ICE={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]};
@@ -11,12 +12,29 @@ const COLORS={bg:'#081626',panel:'#142c46',primary:'#74c4ff',text:'#f7fbff',mute
 // Uses the same authenticated WebSocket signaling protocol as static/extras.js.
 // Calls are intentionally foreground-only. STUN works on many networks, but
 // production reliability behind restrictive NAT requires a separately managed TURN service.
-export function useNativeCall(wsRef,friends){
+export function useNativeCall(wsRef,friends,token){
   const contactsRef=useRef(friends);contactsRef.current=friends;
   const callRef=useRef(null),incomingRef=useRef(null),pendingIce=useRef(new Map()),startingRef=useRef(false);
   const generationRef=useRef(0),inviteTimerRef=useRef(null);
   const [view,setView]=useState(null),[incoming,setIncoming]=useState(null),[history,setHistory]=useState([]);
-  const clearHistory=useCallback(()=>setHistory([]),[]);
+  const [historyLoading,setHistoryLoading]=useState(true),[historyError,setHistoryError]=useState('');
+  const aliveRef=useRef(false);
+  useEffect(()=>{
+    aliveRef.current=true;
+    let current=true;
+    readCallVault(token).then(rows=>{if(current)setHistory(rows);}).catch(()=>{if(current)setHistoryError('Không đọc được lịch sử đã lưu.');})
+      .finally(()=>{if(current)setHistoryLoading(false);});
+    return()=>{current=false;aliveRef.current=false;};
+  },[token]);
+  const recordCall=useCallback(record=>{
+    // Serialized storage operations survive unmount when the app lock engages.
+    appendCallVault(token,record).then(rows=>{if(aliveRef.current){setHistory(rows);setHistoryError('');}})
+      .catch(()=>{if(aliveRef.current){setHistory(old=>appendCallHistory(old,record));setHistoryError('Một cuộc gọi chưa lưu được; lịch sử có thể thiếu sau khi mở lại app.');}});
+  },[token]);
+  const clearHistory=useCallback(async()=>{
+    try{await clearCallVault(token);if(aliveRef.current){setHistory([]);setHistoryError('');}}
+    catch{if(aliveRef.current)setHistoryError('Không xóa được lịch sử trên thiết bị. Hãy thử lại.');}
+  },[token]);
   const transmit=useCallback((type,to,signal=null,video=false)=>{
     const socket=wsRef.current;
     if(!socket||socket.readyState!==WebSocket.OPEN)return false;
@@ -32,7 +50,7 @@ export function useNativeCall(wsRef,friends){
     if(inviteTimerRef.current){clearTimeout(inviteTimerRef.current);inviteTimerRef.current=null;}
     const c=callRef.current,invite=incomingRef.current;callRef.current=null;startingRef.current=false;
     const record=finishCall(c||invite,reason,Date.now());
-    if(record)setHistory(old=>appendCallHistory(old,record));
+    if(record)recordCall(record);
     if(c){
       if(signal)transmit('call-hangup',c.peerId);
       if(c.timer)clearTimeout(c.timer);
@@ -44,7 +62,7 @@ export function useNativeCall(wsRef,friends){
     }
     if(invite){if(signal&&!c)transmit('call-decline',invite.peerId);pendingIce.current.delete(invite.peerId);}
     incomingRef.current=null;setIncoming(null);setView(null);
-  },[transmit]);
+  },[transmit,recordCall]);
   const setup=useCallback(async(peerId,title,video,generation,invite=null)=>{
     const local=await mediaDevices.getUserMedia({audio:true,video:!!video});
     if(generationRef.current!==generation||AppState.currentState==='background'){
@@ -203,7 +221,7 @@ export function useNativeCall(wsRef,friends){
     const sub=AppState.addEventListener('change',state=>{if(state==='background')endCall(true,'background');});
     return()=>{sub.remove();endCall(false);};
   },[endCall]);
-  return {incoming,view,startCall,onSignal,decline,accept,endCall,toggleMic,toggleCamera,history,clearHistory};
+  return {incoming,view,startCall,onSignal,decline,accept,endCall,toggleMic,toggleCamera,history,clearHistory,historyLoading,historyError};
 }
 
 export function NativeCallOverlay({call}){
