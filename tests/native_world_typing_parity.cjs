@@ -6,7 +6,7 @@ const server=fs.readFileSync(root+'/world_chat.py','utf8');
 const profile=fs.readFileSync(root+'/social_profile.py','utf8');
 for(const needle of [
   'world_anonymous:!social.world_anonymous',
-  "anonymous_name:social.world_anonymous?worldAlias.trim():''",
+  "social.world_anonymous?worldAlias.trim():''",
   'item.display_name||item.username',
   "type:'typing',to:target.id,on",
   "type:'group-typing',group_id:target.id,on",
@@ -17,7 +17,7 @@ for(const needle of [
   "data.type==='world-rooms-updated'",
   "if(requested!==listRequestRef.current)return",
   "data.type==='presence'",
-  "uploadAttachment(token,picked,nonce)"
+  "uploadAttachment(token,file,nonce)"
 ])assert(chat.includes(needle),'Missing native parity: '+needle);
 assert(server.includes("anonymous_name:str=Field(default='',max_length=24)"));
 assert(profile.includes("world_anonymous: bool|None=None"));
@@ -38,3 +38,8 @@ for(const required of ["'/api/support/tickets'","sendSupportMessage","createSupp
 assert(support.includes("owner_id=u['id'] if u else None"),
   'Support must authorize with server-resolved account ownership');
 console.log('native authenticated support sync assertions passed');
+
+const pending=fs.readFileSync(root+'/mobile/src/pendingSend.js','utf8');
+assert(pending.includes('anonymous_name:item.alias'));
+assert(chat.includes('createPendingSend(target,draft,picked,reply?.id,social.world_anonymous?worldAlias.trim():\'\',Crypto.randomUUID())'));
+assert(pending.includes('await upload(item.file,item.nonce)'));

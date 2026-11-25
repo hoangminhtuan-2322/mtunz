@@ -61,3 +61,31 @@ assert(pushPanel.includes('opensAppToForeground:true'));
 assert(backend.includes(MESSAGE_CATEGORY)&&backend.includes('session_binding'));
 assert(mobile.includes('clearLastNotificationResponseAsync')&&mobile.includes('combineReplyDraft'));
 console.log('Notification actions, session binding, draft-only quick reply: PASS');
+
+const {MESSAGE_CHANNEL,summarizeNotificationChannel}=require('../mobile/src/notificationPreferences');
+assert.equal(MESSAGE_CHANNEL,'messages');
+assert.deepEqual(summarizeNotificationChannel(false,null),{permission:'denied',channel:'missing',sound:'unknown',vibration:'unknown'});
+assert.deepEqual(summarizeNotificationChannel(true,{importance:0,sound:null,enableVibrate:false}),{permission:'allowed',channel:'blocked',sound:'silent',vibration:'off'});
+assert.deepEqual(summarizeNotificationChannel(true,{importance:4,sound:'custom',enableVibrate:true}),{permission:'allowed',channel:'configured',sound:'custom',vibration:'on'});
+assert.equal(summarizeNotificationChannel(null,{}).sound,'unknown');
+assert(pushPanel.includes('getNotificationChannelAsync(MESSAGE_CHANNEL)')&&!pushPanel.includes('deleteNotificationChannelAsync'));
+assert(pushPanel.includes('enablePush(token,{prompt:false,split:result.split_channels===true})')&&pushPanel.includes('operationBusy.current'));
+assert(backend.includes("'channelId':'messages'"));
+console.log('Android notification diagnostics, retained channel preferences and no background permission prompt: PASS');
+
+const {SPLIT_CHANNELS}=require('../mobile/src/notificationPreferences');
+assert.deepEqual(SPLIT_CHANNELS.map(x=>x.id),['mtunz-support-v1','mtunz-admin-v1']);
+assert(pushPanel.includes('split_channels:useSplit')&&pushPanel.includes('Bật phân loại')&&pushPanel.includes('getNotificationChannelAsync(channel.id)'));
+for(const id of SPLIT_CHANNELS.map(x=>x.id))assert(backend.includes(id));
+assert(backend.includes('split_channels: bool = False')&&backend.includes('sc.session_hash=p.session_hash'));
+console.log('Opt-in separate Android notification channels, backward compatibility: PASS');
+
+const {parseAdminPushResponse}=require('../mobile/src/notificationActions');
+const adminNotice={actionIdentifier:'default',notification:{request:{content:{data:{kind:'registration',session_binding:binding}}}}};
+assert.equal(parseAdminPushResponse(adminNotice,binding,'default'),'registrations');
+assert.equal(parseAdminPushResponse(adminNotice,'b'.repeat(64),'default'),null);
+assert.equal(parseAdminPushResponse({...adminNotice,actionIdentifier:QUICK_REPLY},binding,'default'),null);
+assert.equal(parseAdminPushResponse(null,binding,'default'),null);
+const adminPanel=fs.readFileSync(path.join(root,'mobile/src/AdminDashboard.js'),'utf8');
+assert(adminPanel.includes('parseAdminPushResponse(response,await binding')&&adminPanel.includes("else {pinRef.current='';setPin('');stop();}"));
+console.log('Admin push session binding and background PIN clearing: PASS');

@@ -4,4 +4,5 @@ function shouldRetrySession(error){
   const status=Number(error?.status||0);
   return status===0||status===408||status===429||status>=500;
 }
-module.exports={shouldRetrySession};
+function isMaintenanceError(error){return error?.status===503&&error?.code==='maintenance';}
+module.exports={shouldRetrySession,isMaintenanceError};

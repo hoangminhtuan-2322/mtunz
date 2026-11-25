@@ -25,10 +25,12 @@ PUSH_BODY = {
     'support':'Có yêu cầu hỗ trợ hoặc tin nhắn hỗ trợ mới.',
     'test':'Đây là thông báo thử từ mtunz.',
     'support_reply':'Quản trị viên đã trả lời yêu cầu hỗ trợ của bạn.',
+    'call_notice':'Có yêu cầu gọi. Mở mtunz để xem hội thoại hoặc gọi lại.',
 }
 
 
 MESSAGE_CATEGORY = 'mtunz-message-actions-v1'
+SPLIT_CHANNELS = {'registration':'mtunz-admin-v1', 'support':'mtunz-admin-v1', 'support_reply':'mtunz-support-v1'}
 
 def build_push_message(row, kind, chat_id):
     # A one-way, domain-separated session binding prevents stale notifications
@@ -36,7 +38,14 @@ def build_push_message(row, kind, chat_id):
     binding = hashlib.sha256(('mtunz-push-response:' + row['session_hash']).encode()).hexdigest()
     message = {'to':row['token'],'sound':'default','title':'mtunz','body':PUSH_BODY[kind],
                'data':{'kind':kind,'chat_id':chat_id,'session_binding':binding},
-               'channelId':'messages','ttl':60 if kind=='test' else 1800,'priority':'high'}
+               'channelId':'messages','ttl':30 if kind=='call_notice' else 60 if kind=='test' else 1800,'priority':'high'}
+    # Existing clients and devices that never opted in keep the original channel.
+    try:
+        split = row['split_channels'] == 1
+    except (KeyError, IndexError):
+        split = False
+    if split:
+        message['channelId'] = SPLIT_CHANNELS.get(kind, 'messages')
     if kind in ('dm','group'):
         message['categoryId'] = MESSAGE_CATEGORY
     return message
@@ -52,6 +61,11 @@ def install(core):
             updated_at BIGINT NOT NULL
         )''')
         c.execute('CREATE INDEX IF NOT EXISTS mobile_push_user_idx ON mobile_push_tokens(user_id)')
+        # Additive table keeps existing registrations and supports SQLite/Postgres.
+        c.execute('''CREATE TABLE IF NOT EXISTS mobile_push_split_channels (
+            token TEXT PRIMARY KEY REFERENCES mobile_push_tokens(token) ON DELETE CASCADE,
+            session_hash TEXT NOT NULL
+        )''')
         # Ticket acceptance is not notification delivery. Persist Expo receipt IDs
         # so FCM failures can be noticed after Render restarts.
         c.execute('''CREATE TABLE IF NOT EXISTS mobile_push_receipts (
@@ -64,6 +78,7 @@ def install(core):
 
     class Register(BaseModel):
         token: str = Field(min_length=30, max_length=220)
+        split_channels: bool = False
 
     def native_session_hash(request):
         # Only native bearer-authenticated sessions may register push tokens.
@@ -82,7 +97,9 @@ def install(core):
         with db() as c:
             enabled=bool(one(c,'SELECT 1 FROM mobile_push_tokens WHERE session_hash=? AND user_id=?',
                              (sid,user['id'])))
-        return {'enabled':enabled}
+            split=bool(one(c,'''SELECT 1 FROM mobile_push_split_channels sc JOIN mobile_push_tokens p
+                ON p.token=sc.token AND p.session_hash=sc.session_hash WHERE p.session_hash=? AND p.user_id=?''',(sid,user['id'])))
+        return {'enabled':enabled, **({'split_channels':True} if split else {})}
 
     @app.post('/api/mobile/push')
     def enable_push(request: Request, body: Register):
@@ -97,10 +114,14 @@ def install(core):
                          session_hash=excluded.session_hash,
                          user_id=excluded.user_id,updated_at=excluded.updated_at''',
                       (body.token,sid,user['id'],core.now()))
+            # Explicit capability, never inherited by a different login or older client.
+            c.execute('DELETE FROM mobile_push_split_channels WHERE token=?',(body.token,))
+            if body.split_channels:
+                c.execute('INSERT INTO mobile_push_split_channels(token,session_hash) VALUES(?,?)',(body.token,sid))
             # A native session registers only its most recent push token.
             c.execute('DELETE FROM mobile_push_tokens WHERE session_hash=? AND token<>?',
                       (sid,body.token))
-        return {'enabled':True}
+        return {'enabled':True, **({'split_channels':True} if body.split_channels else {})}
 
     @app.delete('/api/mobile/push')
     def disable_push(request: Request):
@@ -121,6 +142,16 @@ def install(core):
     def send_mobile(uid, kind, chat_id, body, foreground, session=None):
         at=core.now()
         with db() as c:
+            if kind=='call_notice':
+                # Expire queued hints and recheck authorization after asynchronous dispatch.
+                if type(body) is not int or not 0<=at-body<=30 or not core.friends(c,uid,chat_id) or core.has_block(c,uid,chat_id) or not core.v6_feature_on(c,'calls'):
+                    return False
+                if one(c,"SELECT 1 FROM settings WHERE key='emergency_lockdown' AND value='1'"):
+                    return False
+                if one(c,'SELECT 1 FROM account_deletion_requests WHERE user_id=?',(chat_id,)) or one(c,"SELECT 1 FROM users WHERE id=? AND sanction_kind IS NOT NULL AND (sanction_until IS NULL OR sanction_until>?)",(chat_id,at)):
+                    return False
+                if any(ws in core.hub.foreground for ws in core.hub.users.get(uid,())):
+                    return False
             if kind in ('dm','group'):
                 if kind=='dm' and (core.has_block(c,uid,chat_id) or not core.friends(c,uid,chat_id)):
                     return False
@@ -137,7 +168,7 @@ def install(core):
                         AND (sanction_until IS NULL OR sanction_until>?)""",(uid,at)):
                 return False
             # Keep tokens tied to a session, including for the one-device test.
-            sql='SELECT p.token,p.session_hash,p.updated_at FROM mobile_push_tokens p JOIN sessions s ON s.token_hash=p.session_hash AND s.user_id=p.user_id WHERE p.user_id=? AND s.expires_at>?'
+            sql='SELECT p.token,p.session_hash,p.updated_at,CASE WHEN sc.token IS NULL THEN 0 ELSE 1 END AS split_channels FROM mobile_push_tokens p JOIN sessions s ON s.token_hash=p.session_hash AND s.user_id=p.user_id LEFT JOIN mobile_push_split_channels sc ON sc.token=p.token AND sc.session_hash=p.session_hash WHERE p.user_id=? AND s.expires_at>?'
             params=(uid,at)
             if session:
                 sql+=' AND p.session_hash=?'
@@ -277,6 +308,12 @@ def install(core):
             return
         foreground=frozenset(core.hub.session_hashes[ws] for ws in core.hub.users.get(uid,())
                              if ws in core.hub.foreground and ws in core.hub.session_hashes)
+        if event=='call-notice':
+            sender=data.get('from_id')
+            created=data.get('created_at')
+            if not foreground and type(sender) is int and sender>0 and type(created) is int:
+                queue.put_nowait((uid,'call_notice',sender,created,foreground))
+            return
         admin_kind=admin_alert_kind(event,data)
         if admin_kind:
             queue.put_nowait((uid,admin_kind,data.get('ticket_id',0),'',foreground))

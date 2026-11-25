@@ -14,3 +14,21 @@ for(const expected of ['setRecoverToken(restored)','recoverSession','AppState.ad
 const net=fs.readFileSync(path.join(root,'mobile/src/client.js'),'utf8');
 assert(net.includes("const STORE_KEY = 'mtunz-native-session-v1'"),'Session stored securely unchanged');
 console.log('Native temporary outage, recovery retry, and invalid-session policies passed');
+
+const {validApiOrigin,validApiPath,validSessionToken,validResponseObject}=require('../mobile/src/apiSecurity');
+assert(validApiOrigin('https://mtunz.onrender.com'));assert(validApiOrigin('http://localhost:8000',true));
+for(const origin of ['http://mtunz.onrender.com','https://user@evil.test','https://mtunz.onrender.com?x','https://mtunz.onrender.com#x','https://mtunz.onrender.com:99999','https://a..b'])assert(!validApiOrigin(origin),origin);
+for(const route of ['/api/me','/api/search/messages?q=hello%20world','/api/groups/42/messages?after=1'])assert(validApiPath(route),route);
+for(const route of ['https://evil.test/api/me','//evil.test','/api/../admin','/api/%2e%2e/admin','/api/a%2fb','/api/a\\b','/api/me#frag','/api/me\n'])assert(!validApiPath(route),route);
+assert(validSessionToken('a'.repeat(64)));assert(!validSessionToken(undefined));assert(!validSessionToken('x'.repeat(129)));
+assert(validResponseObject({}));assert(!validResponseObject([]));assert(!validResponseObject(null));
+assert(net.includes('validApiPath(path)')&&net.includes('validResponseObject(payload)')&&net.indexOf('payload=await res.json()')<net.indexOf('clearTimeout(timer)'));
+console.log('API route/origin/token guards and fail-closed JSON response handling: PASS');
+
+const {isMaintenanceError}=require('../mobile/src/sessionRecovery');
+assert(isMaintenanceError({status:503,code:'maintenance'}));assert(!isMaintenanceError({status:503}));assert(!isMaintenanceError({status:401,code:'maintenance'}));
+const chat=fs.readFileSync(path.join(root,'mobile/src/Messenger.js'),'utf8');
+assert(chat.includes("data.type==='maintenance-mode'")&&chat.includes("data.status?.active===true")&&chat.includes("e.code==='maintenance'"));
+assert(net.includes('new ApiError(message, res.status, detail?.code)'));
+assert(ui.includes('isMaintenanceError(e)')&&ui.includes('expired(e.message)'));
+console.log('Explicit maintenance forced logout and transient outage distinction: PASS');

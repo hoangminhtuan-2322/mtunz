@@ -318,6 +318,9 @@ jobs:
     needs: native-android
     if: ${{ needs.native-android.result == 'success' && needs.native-android.outputs.signed == 'true' && github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.publish_release) || (github.event_name == 'push' && vars.MTUNZ_AUTO_ANDROID_RELEASE == 'true')) }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: mtunz-public-android-catalog
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

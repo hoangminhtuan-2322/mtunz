@@ -55,5 +55,45 @@ assert.equal(ended.duration,9);assert.equal(ended.status,'interrupted');assert(!
 assert.equal(appendCallHistory(Array(60).fill(ended),ended).length,60);
 assert.equal(formatCallDuration(3661),'1:01:01');
 assert(calls.includes("endCall(true,'network')")&&calls.includes('disconnectTimer'));
-assert(chat.includes("dialog==='callHistory'")&&chat.includes('nativeCall.history.map'));
+assert(chat.includes("dialog==='callHistory'")&&chat.includes('nativeCall.history.filter'));
 console.log('Call duration, local history, missed calls and bounded disconnect recovery: PASS');
+
+const {encodeCallHistory,decodeCallHistory}=require('../mobile/src/callHistory');
+const encoded=encodeCallHistory(Array.from({length:60},(_,i)=>({...ended,startedAt:1770000000000+i,peerId:9007199254740000-i,title:'Private title',signal:{secret:'never store'}})));
+assert(encoded.length<=1800);assert(!encoded.includes('Private title')&&!encoded.includes('secret'));
+const decoded=decodeCallHistory(encoded);
+assert(decoded.length>0&&decoded.length<=60);assert.equal(decoded[0].peerId,9007199254740000);assert.equal(decoded[0].status,'interrupted');
+assert.deepEqual(decodeCallHistory('[[0,1,1,0,0,0]]'),[]);
+assert.throws(()=>decodeCallHistory('{bad'));
+assert(read('mobile/src/callVault.js').includes('retired.add(key)'));
+assert(read('mobile/src/client.js').includes('retireCallVault(token)'));
+assert(chat.includes('callFilter')&&calls.includes('appendCallVault(token,record)'));
+console.log('Encrypted local call vault, compact metadata, retention, filters and logout cleanup: PASS');
+
+const {parsePushResponse,QUICK_REPLY,OPEN_CHAT}=require('../mobile/src/notificationActions');
+const noticeBinding='a'.repeat(64),notice={actionIdentifier:'default',notification:{request:{content:{data:{kind:'call_notice',chat_id:7,session_binding:noticeBinding}}}}};
+assert.deepEqual(parsePushResponse(notice,noticeBinding,'default'),{kind:'call_notice',scope:'dm',chatId:7,text:''});
+assert.equal(parsePushResponse(notice,'b'.repeat(64),'default'),null);
+assert.equal(parsePushResponse({...notice,actionIdentifier:QUICK_REPLY},noticeBinding,'default'),null);
+assert.equal(parsePushResponse({...notice,actionIdentifier:OPEN_CHAT},noticeBinding,'default'),null);
+assert(backend.includes("throttle(ws,'native-call-notice-sender',5,60")&&backend.includes("enqueue_web_push(target,'call-notice'"));
+const pushBackend=read('mobile_push.py');
+assert(pushBackend.includes("0<=at-body<=30")&&pushBackend.includes("kind=='call_notice'")&&pushBackend.includes("core.has_block(c,uid,chat_id)"));
+assert(chat.includes("parsed.kind==='call_notice'")&&chat.includes("Nhấn nút gọi để gọi lại"));
+console.log('Short-lived background call notices, callback-only routing and session binding: PASS');
+
+const {secondsRemaining,offerDisposition,validIce,freshIce}=require('../mobile/src/callSignalPolicy');
+const offer={type:'offer',sdp:'v=0'},invitePolicy={peerId:7,signal:offer};
+assert.equal(secondsRemaining(1000,1000),45);assert.equal(secondsRemaining(1000,46500),0);
+assert.equal(offerDisposition({friend:true,peerId:7,signal:offer}),'invite');
+assert.equal(offerDisposition({friend:true,peerId:7,signal:offer,invite:invitePolicy}),'ignore');
+assert.equal(offerDisposition({friend:true,peerId:7,signal:offer,active:{peerId:7}}),'ignore');
+assert.equal(offerDisposition({friend:true,peerId:8,signal:offer,invite:invitePolicy}),'decline');
+assert.equal(offerDisposition({friend:false,peerId:7,signal:offer}),'decline');
+assert.equal(offerDisposition({friend:true,peerId:7,signal:{type:'offer'}}),'ignore');
+const ice={candidate:'candidate:1',sdpMid:'0',sdpMLineIndex:0};
+assert(validIce(ice));assert(!validIce({...ice,sdpMLineIndex:-1}));assert(!validIce({...ice,candidate:'x'.repeat(8193)}));
+assert.deepEqual(freshIce([{at:1,signal:ice},{at:50000,signal:ice},{at:60000,signal:ice}],50001),[{at:50000,signal:ice}]);
+assert(calls.includes('c.applyingAnswer||c.pc.remoteDescription')&&calls.includes('pendingIce.current.clear()'));
+assert(calls.includes('disabled={accepting}')&&calls.includes('secondsRemaining(incoming.startedAt'));
+console.log('Duplicate invitation/answer guards, bounded expiring ICE, accept state and countdown: PASS');

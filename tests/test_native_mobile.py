@@ -452,3 +452,70 @@ def test_mobile_notification_message_actions_keep_private_body_and_bind_session(
     assert row['session_hash'] not in str(message)
     assert build_push_message(row,'group',42)['categoryId']==MESSAGE_CATEGORY
     assert 'categoryId' not in build_push_message(row,'support_reply',42)
+
+
+def test_split_notification_channel_routing_legacy_fallback():
+    from mobile_push import build_push_message
+    row={'token':'ExpoPushToken[test-token]','session_hash':'a'*64}
+    expected={'dm':'messages','group':'messages','test':'messages','support_reply':'mtunz-support-v1','registration':'mtunz-admin-v1','support':'mtunz-admin-v1'}
+    for kind, channel in expected.items():
+        assert build_push_message(row,kind,1)['channelId']=='messages'
+        assert build_push_message(dict(row,split_channels=0),kind,1)['channelId']=='messages'
+        assert build_push_message(dict(row,split_channels=1),kind,1)['channelId']==channel
+
+
+def test_background_call_notice_is_generic_short_lived_callback_hint():
+    from mobile_push import build_push_message
+    row={'token':'ExpoPushToken[test-token]','session_hash':'a'*64,'split_channels':1}
+    notice=build_push_message(row,'call_notice',42)
+    assert notice['ttl']==30
+    assert notice['channelId']=='messages'
+    assert 'categoryId' not in notice
+    assert set(notice['data'])=={'kind','chat_id','session_binding'}
+    assert notice['data']['kind']=='call_notice' and notice['data']['chat_id']==42
+    assert row['session_hash'] not in str(notice)
+    assert 'signal' not in notice['data'] and 'sdp' not in notice['data']
+
+
+def test_native_rejects_conflicting_cookie_and_bearer_credentials():
+    from starlette.websockets import WebSocketDisconnect
+    admin=logged_admin()
+    browser=register_user(admin,'mixed_cookie_member')
+    register_user(admin,'mixed_bearer_member')
+    client,headers=native_login('mixed_bearer_member')
+    assert client.get('/api/me',headers=headers).json()['user']['username']=='mixed_bearer_member'
+    client.cookies.update(browser.cookies)
+    assert client.get('/api/me',headers=headers).status_code==400
+    assert client.post('/api/auth/logout',headers=headers).status_code==400
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client.websocket_connect('/ws',headers=headers):
+            pass
+    assert caught.value.code==1008
+    client.cookies.clear()
+    assert client.get('/api/me',headers=headers).json()['user']['username']=='mixed_bearer_member'
+    assert browser.get('/api/me').json()['user']['username']=='mixed_cookie_member'
+
+
+def test_revoked_native_socket_rechecks_session_on_heartbeat(monkeypatch):
+    import importlib
+    from starlette.websockets import WebSocketDisconnect
+    core=importlib.import_module('app')
+    monkeypatch.setattr(core,'SOCKET_SESSION_RECHECK_SECONDS',0)
+    admin=logged_admin()
+    register_user(admin,'heartbeat_revoke_member')
+    client,headers=native_login('heartbeat_revoke_member')
+    token=headers['Authorization'][7:]
+    with client.websocket_connect('/ws',headers=headers) as ws:
+        with db() as c:
+            c.execute('DELETE FROM sessions WHERE token_hash=?',(core.digest(token),))
+        ws.send_json({'type':'presence-heartbeat'})
+        with pytest.raises(WebSocketDisconnect) as caught:
+            ws.receive_json()
+        assert caught.value.code==1008
+    # Invalid native tokens cannot silently become guest WebSocket sessions,
+    # even when the native HTTP client has acquired a guest cookie.
+    assert client.cookies.get('g')
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client.websocket_connect('/ws',headers=headers):
+            pass
+    assert caught.value.code==1008

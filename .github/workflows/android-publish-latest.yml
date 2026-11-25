@@ -33,8 +33,8 @@ jobs:
             [[ "$RUN" =~ ^[0-9]+$ && "$SHA" =~ ^[a-f0-9]{40}$ ]] || continue
             ARTIFACT="$(gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" --jq '.artifacts[] | select(.expired==false and (.name | test("^mtunz-NATIVE-[0-9]+\\.[0-9]+\\.[0-9]+-RELEASE-fixed-key$"))) | .name' | head -1)"
             [[ -n "$ARTIFACT" ]] || continue
-            STATUS="$(gh api "repos/$GH_REPO/compare/$SHA...main" --jq '.status')"
-            [[ "$STATUS" == ahead || "$STATUS" == identical ]] || continue
+            HEAD="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+            [[ "$SHA" == "$HEAD" ]] || continue
             echo "run=$RUN" >> "$GITHUB_OUTPUT"
             echo "sha=$SHA" >> "$GITHUB_OUTPUT"
             echo "artifact=$ARTIFACT" >> "$GITHUB_OUTPUT"
@@ -75,6 +75,11 @@ jobs:
           VERSION="$(printf '%s\n' "$PACKAGE_LINE" | sed -n "s/.*versionName='\\([0-9]*\\.[0-9]*\\.[0-9]*\\)'.*/\\1/p")"
           [[ "$CODE" =~ ^[1-9][0-9]{0,9}$ && "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$CODE" -le 2100000000 && "$ARTIFACT_NAME" == "mtunz-NATIVE-$VERSION-RELEASE-fixed-key" ]]
+          HEAD="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$SOURCE_SHA" != "$HEAD" ]]; then
+            echo '::notice::A newer main commit exists; not publishing this APK.'
+            exit 0
+          fi
           MAX="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[] | select(.draft==false and .prerelease==false) | .tag_name' | awk -F'-code' '/^android-v[0-9]+\.[0-9]+\.[0-9]+-code[1-9][0-9]*$/ {print $2}' | sort -n | tail -1)"
           if [[ -n "$MAX" && "$CODE" -le "$MAX" ]]; then
             echo "::notice::Build $CODE is already published or older."

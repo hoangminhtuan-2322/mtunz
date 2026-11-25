@@ -3,22 +3,27 @@ import * as Notifications from 'expo-notifications';
 import {clearDraftVault} from './draftVault';
 import {retireMediaCache} from './mediaCache';
 import {retireAppLock} from './appLockStore';
+import {retireCallVault} from './callVault';
+import {validApiOrigin,validApiPath,validSessionToken,validResponseObject} from './apiSecurity';
 
 export const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
 const STORE_KEY = 'mtunz-native-session-v1';
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = typeof code==='string'?code:null;
   }
 }
 
 export async function api(path, { token = null, method = 'GET', data, signal, timeoutMs = 30000 } = {}) {
-  if (!/^https:\/\/[^/]+$/.test(API_ORIGIN) && !(__DEV__ && /^http:\/\/[^/]+$/.test(API_ORIGIN))) {
+  if (!validApiOrigin(API_ORIGIN,__DEV__)) {
     throw new ApiError('Chưa cấu hình EXPO_PUBLIC_API_URL hợp lệ (HTTPS).', 0);
   }
+  if(!validApiPath(path))throw new ApiError('Đường dẫn API không hợp lệ.',0);
+  if(token!==null&&!validSessionToken(token))throw new ApiError('Phiên đăng nhập không hợp lệ.',401);
   const headers = { Accept: 'application/json' };
   if (data !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = 'Bearer ' + token;
@@ -28,12 +33,15 @@ export async function api(path, { token = null, method = 'GET', data, signal, ti
   const abort=()=>controller.abort();
   if(signal?.aborted)abort();
   else signal?.addEventListener?.('abort',abort,{once:true});
-  let res;
+  let res,payload;
   try {
     res = await fetch(API_ORIGIN + path, {
       method, headers, body: data === undefined ? undefined : JSON.stringify(data),
       signal: controller.signal,
     });
+    // Keep timeout active until the response body has been consumed.
+    // Never interpret malformed success responses as a valid empty object.
+    payload=await res.json().catch(error=>{if(controller.signal.aborted)throw error;return null;});
   } catch {
     if(timedOut)throw new ApiError('Máy chủ phản hồi quá chậm. Kiểm tra mạng rồi thử lại.',0);
     if(signal?.aborted)throw new ApiError('Yêu cầu đã được hủy.',0);
@@ -42,17 +50,19 @@ export async function api(path, { token = null, method = 'GET', data, signal, ti
     clearTimeout(timer);
     signal?.removeEventListener?.('abort',abort);
   }
-  const payload = await res.json().catch(() => ({}));
+  if(timedOut||signal?.aborted)throw new ApiError(timedOut?'Máy chủ phản hồi quá chậm.':'Yêu cầu đã được hủy.',0);
   if (!res.ok) {
-    const detail = payload.detail;
+    const detail = payload?.detail;
     const message = typeof detail === 'string' ? detail
       : (detail && typeof detail.message === 'string' ? detail.message : 'Yêu cầu thất bại.');
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, detail?.code);
   }
+  if(!validResponseObject(payload))throw new ApiError('Phản hồi máy chủ không hợp lệ. Hãy thử lại.',0);
   return payload;
 }
 
 export async function saveSession(token) {
+  if(!validSessionToken(token)||!validApiOrigin(API_ORIGIN,__DEV__))throw new ApiError('Không thể lưu phiên không hợp lệ.',0);
   await SecureStore.setItemAsync(STORE_KEY, JSON.stringify({ origin: API_ORIGIN, token }), {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   });
@@ -63,7 +73,7 @@ export async function readSession() {
   if (!raw) return null;
   try {
     const saved = JSON.parse(raw);
-    return saved.origin === API_ORIGIN && /^[A-Za-z0-9_-]{30,128}$/.test(saved.token)
+    return saved.origin === API_ORIGIN && validSessionToken(saved.token)
       ? saved.token : null;
   } catch {
     return null;
@@ -72,7 +82,7 @@ export async function readSession() {
 
 export async function clearSession() {
   const token=await readSession().catch(()=>null);
-  if(token){await retireAppLock(token).catch(()=>{});await retireMediaCache(token).catch(()=>{});await clearDraftVault(token).catch(()=>{});}
+  if(token){await retireAppLock(token).catch(()=>{});await retireCallVault(token).catch(()=>{});await retireMediaCache(token).catch(()=>{});await clearDraftVault(token).catch(()=>{});}
   await SecureStore.deleteItemAsync(STORE_KEY);
   await Notifications.dismissAllNotificationsAsync().catch(()=>{});
   await Notifications.clearLastNotificationResponseAsync().catch(()=>{});
