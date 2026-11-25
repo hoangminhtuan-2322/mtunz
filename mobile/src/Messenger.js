@@ -405,14 +405,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       setTyping(false);remoteTypingRef.current=null;
     },5000);
   },[]);
+  const sessionExitRef=useRef(false);
+  const exitSession=useCallback(message=>{if(sessionExitRef.current)return;sessionExitRef.current=true;onExpired(message);},[onExpired]);
   const alertError=useCallback(e=>{
-    if(e?.status===401){onExpired();return;}
+    if(e?.status===503&&e?.code==='maintenance'){exitSession(e.message);return;}
+    if(e?.status===401){exitSession();return;}
     setError(e?.message||'Không thể hoàn tất thao tác.');
-  },[onExpired]);
+  },[exitSession]);
   const invoke=useCallback(async(path,method='GET',data)=>{
     try{return await api(path,{token,method,data});}
-    catch(e){if(e.status===401)onExpired();throw e;}
-  },[token,onExpired]);
+    catch(e){if(e.status===503&&e.code==='maintenance')exitSession(e.message);else if(e.status===401)exitSession();throw e;}
+  },[token,exitSession]);
   const refreshLists=useMemo(()=>createSerialRefresh(async()=>{
     const requested=++listRequestRef.current;
     const presenceBefore=presenceVersionRef.current;
@@ -540,8 +543,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         void onCallSignal(data);return;
       }
       const target=roomRef.current;
+      if(data.type==='maintenance-mode'||(data.type==='maintenance-status'&&data.status?.active===true)){
+        const reason=typeof data.reason==='string'?data.reason.trim():'';
+        exitSession('Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'+(reason?' '+reason:''));return;
+      }
       if(data.type==='session-ended'||data.type==='account-sanction'){
-        onExpired();return;
+        exitSession();return;
       }
       if(data.type==='typing'&&target?.scope==='dm'&&data.from_id===target.id){
         updateRemoteTyping(data.on);return;
@@ -675,7 +682,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN){schedule();if(!retryTimer&&socket?.readyState!==WebSocket.CONNECTING)connect();}},15000);
     return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopConnectTimer();stopHeartbeat();clearInterval(check);
       sub.remove();socket?.close();wsRef.current=null;};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,onExpired,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,exitSession,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{

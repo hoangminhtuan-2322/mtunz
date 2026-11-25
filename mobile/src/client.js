@@ -10,10 +10,11 @@ export const API_ORIGIN = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace
 const STORE_KEY = 'mtunz-native-session-v1';
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, code = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = typeof code==='string'?code:null;
   }
 }
 
@@ -54,7 +55,7 @@ export async function api(path, { token = null, method = 'GET', data, signal, ti
     const detail = payload?.detail;
     const message = typeof detail === 'string' ? detail
       : (detail && typeof detail.message === 'string' ? detail.message : 'Yêu cầu thất bại.');
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, detail?.code);
   }
   if(!validResponseObject(payload))throw new ApiError('Phản hồi máy chủ không hợp lệ. Hãy thử lại.',0);
   return payload;
