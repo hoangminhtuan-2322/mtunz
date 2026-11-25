@@ -512,7 +512,9 @@ def test_revoked_native_socket_rechecks_session_on_heartbeat(monkeypatch):
         with pytest.raises(WebSocketDisconnect) as caught:
             ws.receive_json()
         assert caught.value.code==1008
-    # Invalid native tokens cannot silently become guest WebSocket sessions.
+    # Invalid native tokens cannot silently become guest WebSocket sessions,
+    # even when the native HTTP client has acquired a guest cookie.
+    assert client.cookies.get('g')
     with pytest.raises(WebSocketDisconnect) as caught:
         with client.websocket_connect('/ws',headers=headers):
             pass

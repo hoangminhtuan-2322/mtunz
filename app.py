@@ -2460,12 +2460,12 @@ async def websocket_events(ws:WebSocket):
         if (actual.scheme, actual.netloc) != (expected_scheme, expected_host):
             await ws.close(code=1008)
             return
-    await ws.accept()
     sid=request_session_token(ws)
     gid=ws.cookies.get('g')
     if gid and (len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}',gid)):
         gid = None
     uid=None
+    paused=False
     if sid:
         with db() as c:
             r=one(c,'''SELECT u.id,u.is_admin,u.sanction_kind,u.sanction_until,u.needs_display_name FROM sessions s
@@ -2476,8 +2476,20 @@ async def websocket_events(ws:WebSocket):
             if not paused and r and not r['needs_display_name'] and (not r['sanction_kind'] or
                     (r['sanction_until'] and r['sanction_until']<=now())):
                 uid=r['id']
+    # Validate bearer sessions before upgrading the transport. Maintenance is
+    # the only exception: the client needs the explicit notice before closing.
+    if uid is None and has_authorization:
         if paused:
+            await ws.accept()
             await hub.send([ws], {'type':'maintenance-mode'})
+        await ws.close(code=1008)
+        return
+    if uid is None and not gid and not paused:
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    if paused:
+        await hub.send([ws], {'type':'maintenance-mode'})
     if uid is not None:
         was_online=bool(hub.users.get(uid))
         hub.users[uid].add(ws)
