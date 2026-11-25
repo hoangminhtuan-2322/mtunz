@@ -443,6 +443,7 @@ MAX_WEBSOCKET_EVENT = 16 * 1024
 MAX_WEBSOCKET_EVENTS_PER_WINDOW = 100
 # Idle timeout for heartbeat-aware web/native sockets. Older clients retain protocol keepalive.
 PRESENCE_HEARTBEAT_TIMEOUT = 20
+SOCKET_SESSION_RECHECK_SECONDS = 6
 
 
 def throttle(request: Request, scope: str, limit: int, window: int, identity: str = ''):
@@ -469,6 +470,10 @@ def throttle(request: Request, scope: str, limit: int, window: int, identity: st
 
 @app.middleware('http')
 async def cookies_and_origin(request: Request, call_next):
+    # Never let a cookie silently change the identity of a bearer request.
+    if request.url.path.startswith('/api/') and conflicting_credentials(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({'detail':'Thông tin phiên đăng nhập xung đột.'},status_code=400,headers={'Cache-Control':'no-store'})
     # Cookies are HttpOnly and SameSite=Lax; require consistent browser provenance
     # for state-changing calls, including browsers which omit an Origin header.
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
@@ -486,7 +491,10 @@ async def cookies_and_origin(request: Request, call_next):
         expected_host = b.netloc if b else request.headers.get('host', '')
         for supplied in (origin, referer if not origin else None):
             if supplied:
-                a = urlsplit(supplied)
+                try:
+                    a = urlsplit(supplied)
+                except ValueError:
+                    return reject('Nguồn yêu cầu không hợp lệ.')
                 if (a.scheme, a.netloc) != (expected_scheme, expected_host):
                     return reject('Nguồn yêu cầu không hợp lệ.')
         # Reject oversized JSON and uploads early, before parsing or allocating.
@@ -641,16 +649,25 @@ def require_member_service(c, lock=False):
         raise HTTPException(503,{'code':'maintenance','message':detail})
 
 
-def request_session_token(request):
-    """Browser HttpOnly session cookie or native bearer session from same database."""
-    cookie=request.cookies.get('s')
-    if cookie:return cookie
+def bearer_token(request):
     header=request.headers.get('authorization','')
-    if header.startswith('Bearer '):
-        token=header[7:]
-        if re.fullmatch(r'[A-Za-z0-9_-]{30,128}',token):
-            return token
+    if header.startswith('Bearer ') and re.fullmatch(r'[A-Za-z0-9_-]{30,128}',header[7:]):
+        return header[7:]
     return None
+
+
+def conflicting_credentials(request):
+    cookie=request.cookies.get('s')
+    return bool(cookie and request.headers.get('authorization') is not None and cookie!=bearer_token(request))
+
+
+def request_session_token(request):
+    """Browser HttpOnly cookie or explicit native bearer; never mix identities."""
+    if conflicting_credentials(request):
+        return None
+    if request.headers.get('authorization') is not None:
+        return bearer_token(request)
+    return request.cookies.get('s') or None
 
 
 def current_user(request: Request, require=True, *, allow_deletion=False):
@@ -2403,20 +2420,34 @@ async def notify_presence(uid,online,last_seen=None):
         await hub.user(other,'presence',user_id=uid,online=bool(online),last_seen=stamp)
 
 
+def socket_session_valid(c,session_hash,uid):
+    row=one(c,'''SELECT u.is_admin,u.needs_display_name,u.sanction_kind,u.sanction_until
+                 FROM sessions s JOIN users u ON u.id=s.user_id
+                 WHERE s.token_hash=? AND s.user_id=? AND s.expires_at>?
+                 AND NOT EXISTS(SELECT 1 FROM account_deletion_requests WHERE user_id=u.id)''',
+            (session_hash,uid,now()))
+    return bool(row and not row['needs_display_name'] and
+                (not row['sanction_kind'] or row['sanction_until'] and row['sanction_until']<=now()) and
+                (row['is_admin'] or not maintenance_enabled(c)))
+
+
 @app.websocket('/ws')
 async def websocket_events(ws:WebSocket):
     origin = ws.headers.get('origin')
     # Browsers send Origin for websocket upgrades. A public deployment refuses
     # cookie-authenticated browser connections without an origin check.
-    auth=ws.headers.get('authorization','')
-    native_token=(auth[7:] if auth.startswith('Bearer ')
-                  and re.fullmatch(r'[A-Za-z0-9_-]{30,128}',auth[7:]) else None)
-    # Keep Origin enforcement for browser cookie connections. Native client
-    # uses a revocable bearer session validated against the same DB.
-    if PUBLIC_MODE and not origin and not native_token:
+    native_token=bearer_token(ws)
+    has_authorization=ws.headers.get('authorization') is not None
+    cookie=ws.cookies.get('s')
+    if conflicting_credentials(ws) or (has_authorization and not native_token):
         await ws.close(code=1008)
         return
-    if origin and not native_token:
+    # Keep Origin enforcement for browser cookie connections. Native client
+    # uses a revocable bearer session validated against the same DB.
+    if PUBLIC_MODE and not origin and (cookie or not native_token):
+        await ws.close(code=1008)
+        return
+    if origin and (cookie or not native_token):
         from urllib.parse import urlsplit
         try:
             actual = urlsplit(origin)
@@ -2430,7 +2461,7 @@ async def websocket_events(ws:WebSocket):
             await ws.close(code=1008)
             return
     await ws.accept()
-    sid=ws.cookies.get('s') or native_token
+    sid=request_session_token(ws)
     gid=ws.cookies.get('g')
     if gid and (len(gid) > 100 or not re.fullmatch(r'[A-Za-z0-9_-]{16,100}',gid)):
         gid = None
@@ -2459,7 +2490,7 @@ async def websocket_events(ws:WebSocket):
             c.execute('UPDATE users SET last_seen=? WHERE id=? AND (last_seen IS NULL OR last_seen<?)',
                       (timestamp,uid,timestamp))
         if not was_online:await notify_presence(uid,True,last_seen=timestamp)
-    elif gid:
+    elif gid and not has_authorization:
         hub.guests[gid].add(ws)
     else:
         await ws.close(code=1008)
@@ -2467,6 +2498,7 @@ async def websocket_events(ws:WebSocket):
     try:
         activity = []
         last_session_activity = now()
+        last_session_check = time.monotonic()
         heartbeat_enabled = False
         while True:
             # Heartbeat-aware browser/native clients should not remain online
@@ -2481,6 +2513,19 @@ async def websocket_events(ws:WebSocket):
                 except (RuntimeError, OSError, asyncio.TimeoutError):
                     pass
                 break
+            if uid is not None:
+                # A detached socket cannot act even if transport closure is delayed.
+                if hub.session_hashes.get(ws)!=digest(sid):
+                    await ws.close(code=1008)
+                    break
+                if time.monotonic()-last_session_check>=SOCKET_SESSION_RECHECK_SECONDS:
+                    with db() as c:
+                        valid=socket_session_valid(c,digest(sid),uid)
+                    last_session_check=time.monotonic()
+                    if not valid:
+                        hub.detach_session(ws)
+                        await ws.close(code=1008)
+                        break
             if uid is not None and now() - last_session_activity >= 120:
                 with db() as c:
                     timestamp=now()
