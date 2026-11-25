@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import {chatBackground,sanitizeRoomBackgrounds,changeRoomBackground} from './chatAppearance';
+import {normalizeTheme} from './messengerTheme';
 const KEY='mtunz-chat-background-v1';
 let queue=Promise.resolve();
 function serialize(work){const next=queue.catch(()=>{}).then(work);queue=next.catch(()=>{});return next;}
@@ -26,3 +27,7 @@ export function saveRoomBackground(userId,key,id){
     return next;
   });
 }
+
+const THEME_KEY='mtunz-messenger-theme-v1';
+export function readMessengerTheme(){return serialize(async()=>normalizeTheme(await SecureStore.getItemAsync(THEME_KEY)));}
+export function saveMessengerTheme(mode){return serialize(()=>SecureStore.setItemAsync(THEME_KEY,normalizeTheme(mode),{keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY}));}

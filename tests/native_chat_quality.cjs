@@ -132,7 +132,7 @@ assert.equal(new Set(CHAT_BACKGROUNDS.map(x=>x.id)).size,CHAT_BACKGROUNDS.length
 assert.equal(chatBackground('unknown').id,'midnight');
 assert.equal(chatBackground(null).id,'midnight');
 for(const item of CHAT_BACKGROUNDS){assert.match(item.color,/^#[0-9a-f]{6}$/);assert.equal(chatBackground(item.id),item);}
-assert(chat.includes('backgroundColor:chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)).color')&&chat.includes('readChatBackground()')&&chat.includes('saveChatBackground(id)'));
+assert(chat.includes('backgroundColor:wallpaperColor(chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)),mode)')&&chat.includes('readChatBackground()')&&chat.includes('saveChatBackground(id)'));
 assert(chat.includes('appearanceBusy.current')&&chat.includes('wallpaperEmpty'));
 console.log('Local chat background presets, fallback and keyboard-safe integration: PASS');
 
@@ -151,3 +151,12 @@ assert.equal(changeRoomBackground(full,'dm:1','mist')['dm:1'],'mist');
 assert(chat.includes('appearanceAccountRef.current===account')&&chat.includes('conversationKey(roomRef.current)!==key'));
 assert(read('mobile/src/chatAppearanceStore.js').includes('mtunz-room-background-v1-'));
 console.log('Account-scoped per-conversation wallpaper overrides and bounded persistence: PASS');
+
+const {LIGHT_PALETTE,normalizeTheme,makeLightStyles,wallpaperColor}=require('../mobile/src/messengerTheme');
+assert.equal(normalizeTheme('invalid'),'dark');assert.equal(normalizeTheme('light'),'light');
+const dark={bg:'#071320',card:'#11253a',text:'#f4f8ff',soft:'#a8bfd6',accent:'#6dbaff',green:'#73e0bd',bad:'#ff9eac'};
+const sample={bubbleMine:{backgroundColor:'#2760a6',maxWidth:'84%'},msg:{color:dark.text},btn:{backgroundColor:dark.accent},btnTxt:{color:dark.bg},composeInput:{backgroundColor:'#1b334f',color:dark.text},viewerAction:{backgroundColor:'#1c3656'}};
+const light=makeLightStyles(sample,dark);assert.equal(light.bubbleMine.backgroundColor,LIGHT_PALETTE.mine);assert.equal(light.bubbleMine.maxWidth,'84%');assert.equal(light.msg.color,LIGHT_PALETTE.text);assert.equal(light.btnTxt.color,'#ffffff');assert.equal(light.composeInput.backgroundColor,'#ffffff');assert.equal(light.viewerAction.backgroundColor,'#1c3656');assert.equal(sample.msg.color,dark.text);
+assert.equal(wallpaperColor(chatBackground('midnight'),'light'),LIGHT_PALETTE.bg);assert.equal(wallpaperColor(chatBackground('forest'),'light'),chatBackground('forest').color);
+assert(chat.includes('ThemeContext.Provider')&&chat.includes('saveMessengerTheme(next)')&&chat.includes('makeLightStyles(baseStyles,DARK_PALETTE)'));
+console.log('Messenger light/dark palette, persisted mode, default wallpaper and fixed overlay: PASS');
