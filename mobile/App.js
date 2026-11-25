@@ -50,7 +50,7 @@ function Button({children,onPress,disabled=false,quiet=false}) {
     <Text style={[styles.buttonText,quiet&&{color:C.text}]}>{children}</Text></Pressable>;
 }
 function AppContent() {
-  const {C,styles,mode,ready:themeReady,saving:themeSaving,changeMode}=useAuthTheme();
+  const {C,styles,mode:themeMode,ready:themeReady,saving:themeSaving,changeMode}=useAuthTheme();
   const {width:screenWidth,height:screenHeight,fontScale}=useWindowDimensions();
   const compactAuth=screenWidth<390||fontScale>1.15;
   const shortAuth=screenHeight<720;
@@ -253,12 +253,12 @@ function AppContent() {
     catch(e){if(e.status===401)await expired();}
   },[token,expired]);
 
-  if(!ready)return <SafeAreaView style={styles.root}><StatusBar barStyle={mode==='light'?'dark-content':'light-content'}/>
+  if(!ready)return <SafeAreaView style={styles.root}><StatusBar barStyle={themeMode==='light'?'dark-content':'light-content'}/>
     <View style={styles.center}><ActivityIndicator color={C.accent}/>
       <Text style={styles.muted}>Đang xác minh phiên đăng nhập…</Text></View>
   </SafeAreaView>;
   if(recoverToken&&!user)return <SafeAreaView style={styles.root}>
-    <StatusBar barStyle={mode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
+    <StatusBar barStyle={themeMode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
     <View style={styles.center}>
       <View style={[styles.card,{width:'90%',maxWidth:430}]}>
         <View style={styles.brandRow}>
@@ -280,19 +280,19 @@ function AppContent() {
     </View>
   </SafeAreaView>;
   if(user?.is_admin)return <SafeAreaView style={styles.root}>
-    <StatusBar barStyle={mode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
+    <StatusBar barStyle={themeMode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
     <AppLockGate key={token} token={token} onRecovery={logout}>
       <AdminDashboard token={token} onLogout={logout} onExpired={expired}/>
     </AppLockGate>
   </SafeAreaView>;
   if(user&&!user.onboarding_required)return <SafeAreaView style={styles.root}>
-    <StatusBar barStyle={mode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
+    <StatusBar barStyle={themeMode==='light'?'dark-content':'light-content'} backgroundColor={C.bg}/>
     <AppLockGate key={token} token={token} onRecovery={logout}>
       <Messenger key={token} token={token} user={user} onLogout={logout} onExpired={expired}
         onProfile={refreshProfile}/>
     </AppLockGate>
   </SafeAreaView>;
-  return <SafeAreaView style={styles.root}><StatusBar barStyle={mode==='light'?'dark-content':'light-content'}/>
+  return <SafeAreaView style={styles.root}><StatusBar barStyle={themeMode==='light'?'dark-content':'light-content'}/>
     <KeyboardAvoidingView style={styles.authShell}
       behavior={Platform.OS==='android'?'height':'padding'} automaticOffset keyboardVerticalOffset={0}>
       <ScrollView style={styles.authScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
@@ -360,7 +360,7 @@ function AppContent() {
             <Text style={styles.infoText}>Tài khoản được bảo vệ bằng mật khẩu và PIN. Thiết bị Admin mới có thể cần phê duyệt.</Text></View>
         </View>
         <View style={styles.footer}>
-          <Button quiet disabled={!themeReady||themeSaving} onPress={()=>changeMode(mode==='light'?'dark':'light')}>{mode==='light'?'Chuyển sang giao diện tối':'Chuyển sang giao diện sáng'}</Button>
+          <Button quiet disabled={!themeReady||themeSaving} onPress={()=>changeMode(themeMode==='light'?'dark':'light')}>{themeMode==='light'?'Chuyển sang giao diện tối':'Chuyển sang giao diện sáng'}</Button>
           <Text style={styles.footerText}>mtunz • Một không gian, nhiều kết nối</Text>
           <Text style={styles.server}>{API_ORIGIN||'Chưa cấu hình địa chỉ máy chủ'}</Text>
         </View>

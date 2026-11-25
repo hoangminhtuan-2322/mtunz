@@ -168,5 +168,7 @@ const screenLight=makeScreenLightStyles(screenSample,{button:{backgroundColor:LI
 assert.equal(screenLight.button.backgroundColor,LIGHT_PALETTE.accent);assert.equal(screenLight.button.minHeight,48);assert.equal(screenLight.text.color,LIGHT_PALETTE.text);assert.equal(screenSample.text.color,'#fff');
 assert(app.includes('<AppThemeProvider><AppContent/></AppThemeProvider>'));
 for(const path of ['mobile/App.js','mobile/src/AdminDashboard.js','mobile/src/AppLockGate.js','mobile/src/Messenger.js'])assert(read(path).includes('useAppTheme'),path);
-assert(app.includes("barStyle={mode==='light'?'dark-content':'light-content'}"));
+assert(app.includes("barStyle={themeMode==='light'?'dark-content':'light-content'}"));
 console.log('Shared appearance across auth, admin, lock and Messenger: PASS');
+
+assert(app.includes('mode:themeMode,ready:themeReady')&&app.includes("const [mode,setMode]=useState('login')"),'Separate auth-flow mode from appearance mode');
