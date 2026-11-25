@@ -25,6 +25,7 @@ PUSH_BODY = {
     'support':'Có yêu cầu hỗ trợ hoặc tin nhắn hỗ trợ mới.',
     'test':'Đây là thông báo thử từ mtunz.',
     'support_reply':'Quản trị viên đã trả lời yêu cầu hỗ trợ của bạn.',
+    'call_notice':'Có yêu cầu gọi. Mở mtunz để xem hội thoại hoặc gọi lại.',
 }
 
 
@@ -37,7 +38,7 @@ def build_push_message(row, kind, chat_id):
     binding = hashlib.sha256(('mtunz-push-response:' + row['session_hash']).encode()).hexdigest()
     message = {'to':row['token'],'sound':'default','title':'mtunz','body':PUSH_BODY[kind],
                'data':{'kind':kind,'chat_id':chat_id,'session_binding':binding},
-               'channelId':'messages','ttl':60 if kind=='test' else 1800,'priority':'high'}
+               'channelId':'messages','ttl':30 if kind=='call_notice' else 60 if kind=='test' else 1800,'priority':'high'}
     # Existing clients and devices that never opted in keep the original channel.
     try:
         split = row['split_channels'] == 1
@@ -141,6 +142,16 @@ def install(core):
     def send_mobile(uid, kind, chat_id, body, foreground, session=None):
         at=core.now()
         with db() as c:
+            if kind=='call_notice':
+                # Expire queued hints and recheck authorization after asynchronous dispatch.
+                if type(body) is not int or not 0<=at-body<=30 or not core.friends(c,uid,chat_id) or core.has_block(c,uid,chat_id) or not core.v6_feature_on(c,'calls'):
+                    return False
+                if one(c,"SELECT 1 FROM settings WHERE key='emergency_lockdown' AND value='1'"):
+                    return False
+                if one(c,'SELECT 1 FROM account_deletion_requests WHERE user_id=?',(chat_id,)) or one(c,"SELECT 1 FROM users WHERE id=? AND sanction_kind IS NOT NULL AND (sanction_until IS NULL OR sanction_until>?)",(chat_id,at)):
+                    return False
+                if any(ws in core.hub.foreground for ws in core.hub.users.get(uid,())):
+                    return False
             if kind in ('dm','group'):
                 if kind=='dm' and (core.has_block(c,uid,chat_id) or not core.friends(c,uid,chat_id)):
                     return False
@@ -297,6 +308,12 @@ def install(core):
             return
         foreground=frozenset(core.hub.session_hashes[ws] for ws in core.hub.users.get(uid,())
                              if ws in core.hub.foreground and ws in core.hub.session_hashes)
+        if event=='call-notice':
+            sender=data.get('from_id')
+            created=data.get('created_at')
+            if not foreground and type(sender) is int and sender>0 and type(created) is int:
+                queue.put_nowait((uid,'call_notice',sender,created,foreground))
+            return
         admin_kind=admin_alert_kind(event,data)
         if admin_kind:
             queue.put_nowait((uid,admin_kind,data.get('ticket_id',0),'',foreground))

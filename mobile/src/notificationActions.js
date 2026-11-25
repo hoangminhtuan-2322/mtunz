@@ -6,6 +6,10 @@ function parsePushResponse(response,binding,defaultAction){
   if(typeof binding!=='string'||!/^[a-f0-9]{64}$/.test(binding)||data.session_binding!==binding||
     !Number.isSafeInteger(chatId)||chatId<=0)return null;
   if(action!==defaultAction&&action!==OPEN_CHAT&&action!==QUICK_REPLY)return null;
+  if(data.kind==='call_notice'){
+    if(action!==defaultAction)return null;
+    return {kind:'call_notice',scope:'dm',chatId,text:''};
+  }
   const scope=data.kind==='dm'?'dm':data.kind==='group'?'group':null;
   if(!scope&&!(data.kind==='support_reply'&&action===defaultAction))return null;
   if(action===QUICK_REPLY){

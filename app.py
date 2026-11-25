@@ -2546,6 +2546,16 @@ async def websocket_events(ws:WebSocket):
                     blob=msg.get('signal')
                     if len(json.dumps(blob))<14000:
                         await hub.user(target,msg['type'],from_id=uid,signal=blob,video=bool(msg.get('video')))
+                        # A call notice is a short-lived callback hint, not a persisted SDP or live invite.
+                        if msg['type']=='call-offer' and isinstance(blob,dict) and blob.get('type')=='offer' and isinstance(blob.get('sdp'),str) and blob['sdp']:
+                            if not any(s in hub.foreground for s in hub.users.get(target, ())):
+                                try:
+                                    throttle(ws,'native-call-notice-sender',5,60,str(uid))
+                                    throttle(ws,'native-call-notice-pair',1,45,f'{uid}:{target}')
+                                except HTTPException:
+                                    pass  # Suppress push spam, not live WebRTC signaling.
+                                else:
+                                    enqueue_web_push(target,'call-notice',frozenset(),{'from_id':uid,'created_at':now()})
     except (WebSocketDisconnect,RuntimeError,ValueError):
         pass
     finally:

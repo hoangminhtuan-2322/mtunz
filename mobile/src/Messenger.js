@@ -698,6 +698,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             changeStoredDraft(key,merged);persistDrafts();
           }
           openRoom(target);
+          if(parsed.kind==='call_notice')setError('Đây là cảnh báo yêu cầu gọi trước đó. Nhấn nút gọi để gọi lại nếu cần.');
           if(text)requestAnimationFrame(()=>{if(active&&conversationKey(roomRef.current)===key)inputRef.current?.focus();});
           return;
         }
@@ -1757,7 +1758,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         Đổi tên (mật khẩu + PIN)</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='callHistory'} onClose={()=>setDialog('')} title="Lịch sử cuộc gọi">
-      <Text style={css.muted}>Lịch sử được mã hóa trên thiết bị theo phiên đăng nhập, giữ lại khi khóa hoặc khởi động lại app. Không bao gồm cuộc gọi khi app đã đóng và không đồng bộ sang web.</Text>
+      <Text style={css.muted}>Lịch sử được mã hóa trên thiết bị theo phiên đăng nhập, giữ lại khi khóa hoặc khởi động lại app. Không bao gồm các cảnh báo yêu cầu gọi khi app đã đóng và không đồng bộ sang web.</Text>
       <View style={css.filterRow}>{[['all','Tất cả'],['missed','Cuộc gọi nhỡ'],['incoming','Cuộc gọi đến'],['outgoing','Cuộc gọi đi']].map(([key,title])=><Pressable key={key} accessibilityRole="button" accessibilityState={{selected:callFilter===key}} style={[css.filterChip,callFilter===key&&css.filterChipActive]} onPress={()=>setCallFilter(key)}><Text style={[css.filterText,callFilter===key&&css.filterTextActive]}>{title}</Text></Pressable>)}</View>
       {nativeCall.historyLoading&&<ActivityIndicator color={P.accent}/>}
       {!!nativeCall.historyError&&<Text style={[css.muted,{color:P.bad}]}>{nativeCall.historyError}</Text>}
