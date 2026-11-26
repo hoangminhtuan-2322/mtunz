@@ -12,7 +12,10 @@ from video_storage import PART_BYTES, MAX_VIDEO_BYTES
 def test_large_video_disabled_without_configuration(monkeypatch):
     monkeypatch.delenv('MTUNZ_R2_ENABLED',raising=False)
     admin=logged_admin()
-    assert admin.get('/api/video-uploads/config').json()=={'enabled':False,'max_bytes':16*1024*1024}
+    try:
+        assert admin.get('/api/video-uploads/config').json()=={'enabled':False,'max_bytes':16*1024*1024}
+    finally:
+        assert admin.post('/api/auth/logout').status_code==200
 
 def test_owner_reservation_resume_and_completion(monkeypatch):
     admin=logged_admin()
