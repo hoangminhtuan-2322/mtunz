@@ -1016,7 +1016,7 @@ function renderAuth(){
        </svg>
        ${authTabs()}
        <section class="auth-screen" aria-live="polite">${screenMarkup}</section>
-       <button type="button" class="btn ghost full auth-android-download" data-act="android-download">${icon('download',16)} Tải ứng dụng Android</button>
+       <button type="button" class="btn ghost full auth-android-download" data-act="android-download">Tải ứng dụng Android</button>
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
    </main></div>`;
