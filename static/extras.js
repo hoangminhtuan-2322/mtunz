@@ -245,8 +245,13 @@ async function loadGroupMessages(scroll=true){
   let result=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
   if(!current())return;
   // Keep the latest group window even with a large unread backlog.
-  const incoming=new Map(result.messages.map(message=>[message.id,message]));
-  for(const message of state.groupMessages){
+  const ctx={owner:uid,scope:'group',chat_id:gid};
+  if(privateHideRevisionChanged(ctx,result)){
+   state.groupMessages=[];
+   if(box){delete box.dataset.expandedHistory;delete box.dataset.historyDone;}
+  }
+  const incoming=new Map(result.messages.filter(m=>privateHideVisible(ctx,m)).map(message=>[message.id,message]));
+  for(const message of state.groupMessages.filter(m=>privateHideVisible(ctx,m))){
    const fetched=incoming.get(message.id),prior=existing.get(message.id);
    if(!fetched&&(prior!==message||$('#chat-messages')?.dataset.expandedHistory))incoming.set(message.id,message);
    else if(fetched&&prior)mergeThreadUpdate(fetched,message,prior);
@@ -390,6 +395,20 @@ async function showSearch(){
  }});
 }
 const reactionsInFlight=new Set();
+const privateHideVersions=new Map();
+const privateHideEvents=new Map();
+function privateHideKey(ctx){return ctx.owner+':'+ctx.scope+':'+ctx.chat_id;}
+function privateHideVisible(ctx,m){
+ const entry=privateHideEvents.get(privateHideKey(ctx));
+ return !entry||m.id<=0||(!entry.ids.has(Number(m.id))&&Number(m.id)>entry.through);
+}
+function privateHideRevisionChanged(ctx,response){
+ if(response.private_hide_revision===undefined)return false;
+ const key=privateHideKey(ctx),revision=Number(response.private_hide_revision);
+ const previous=privateHideVersions.get(key);
+ privateHideVersions.set(key,revision);
+ return previous!==undefined&&previous!==revision;
+}
 function privateChatContext(){
  const scope=state.tab==='groups'?'group':state.tab==='messages'?'dm':null;
  const chat_id=scope==='group'?state.groupSelected:state.selected;
@@ -397,9 +416,15 @@ function privateChatContext(){
 }
 function applyPrivateHide(change){
  const ctx=privateChatContext();
+ if(state.user){
+  const key=privateHideKey({owner:state.user.id,scope:change.scope,chat_id:change.chat_id});
+  const entry=privateHideEvents.get(key)||{ids:new Set(),through:0};
+  for(const id of change.message_ids||[])entry.ids.add(Number(id));
+  entry.through=Math.max(entry.through,Number(change.through_id||0));
+  privateHideEvents.set(key,entry);
+ }
  if(ctx&&ctx.scope===change.scope&&ctx.chat_id===change.chat_id){
-  const ids=new Set(change.message_ids||[]);
-  const keep=m=>m.id<=0||(!ids.has(m.id)&&m.id>Number(change.through_id||0));
+  const keep=m=>privateHideVisible(ctx,m);
   if(ctx.scope==='group'){
    ++groupHistoryRequest;
    state.groupMessages=state.groupMessages.filter(keep);
