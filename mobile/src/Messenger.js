@@ -1,3 +1,4 @@
+import FishingLife from './FishingLife';
 import AndroidUpdate from './AndroidUpdate';
 import {CHAT_BACKGROUNDS,chatBackground,roomBackgroundId,validRoomKey} from './chatAppearance';
 import {readChatBackground,saveChatBackground,readRoomBackgrounds,saveRoomBackground} from './chatAppearanceStore';
@@ -1124,7 +1125,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
     ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
-  const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
+  const currentTab=tab==='fishing'?'Fishing Life':tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
   const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted),[friends]);
   const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
   const unreadTotal=useMemo(()=>acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0),[acceptedFriends]);
@@ -1518,6 +1519,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Text style={css.link}>›</Text>
         </Pressable>)}
       </ScrollView>}
+      {tab==='fishing'&&<FishingLife token={token} onExpired={onExpired} onBack={()=>setTab('settings')}/>}
       {tab==='settings'&&<ScrollView keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false} contentContainerStyle={css.accountPage}>
         <View style={css.accountHero}>
@@ -1555,6 +1557,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <DevicePushSettings token={token} compact/>
         </AccountGroup>
         <AccountGroup title="Giao diện"><AccountRow symbol="◉" title="Chế độ sáng / tối" subtitle={mode==='light'?'Đang dùng giao diện sáng':'Đang dùng giao diện tối'} onPress={()=>setDialog('themeMode')}/><AccountRow symbol="◉" title="Hình nền hội thoại" subtitle={chatBackground(backgroundId).label+' · Áp dụng trên thiết bị này'} onPress={()=>setDialog('appearance')}/></AccountGroup>
+        <AccountGroup title="Giải trí"><AccountRow symbol="🎣" title="Fishing Life" subtitle="Câu cá · Cửa hàng · Bộ sưu tập" onPress={()=>setTab('fishing')}/></AccountGroup>
         <AccountGroup title="Ứng dụng"><AndroidUpdate/><StorageSettings token={token}/><AppLockSettings/></AccountGroup>
         <AccountGroup title="Hỗ trợ">
           <AccountRow symbol="?" title="Trung tâm hỗ trợ"

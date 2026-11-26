@@ -711,7 +711,7 @@ async function enterApp(resume=false){
    typeof loadMessageRequests==='function'?loadMessageRequests(false).catch(()=>{}):null
   ]);
   state.accountDeletion=deletion;
-  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support'];
+  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support','fishing'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
    state.friends.some(f=>f.other_id===previous.selected&&f.state==='accepted')){
@@ -1155,7 +1155,7 @@ function renderSideItems(){
 }
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
-  const secondary=[['restricted','shield','Danh sách hạn chế'],
+  const secondary=[['fishing','group','Câu cá'],['restricted','shield','Danh sách hạn chế'],
     ['archive','archive','Đã lưu trữ'],['support','inbox','Hỗ trợ'],
     ...(state.worldData?.status?.open?[['world','group','Chat thế giới']]:[])];
   const moreOpen=!!state.railMoreOpen || secondary.some(([tab])=>state.tab===tab);
@@ -1666,6 +1666,7 @@ function settingsContent(){
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>
    <div class="rail-settings-actions">
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="fishing">🎣 Fishing Life</button>
      <button class="btn ghost sm mobile-android-download" type="button" data-act="android-download">${icon('download',16)} Tải Android</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
@@ -1775,6 +1776,7 @@ function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
+  state.tab==='fishing'?fishingPage():
   state.tab==='world'?(typeof worldPage==='function'?worldPage():worldComingSoon()):
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='archive'?`${memberHeader('Lưu trữ','Tin nhắn được cất giữ an toàn')}<div class="main-body">${archiveContent()}</div>`:
@@ -1784,7 +1786,9 @@ function renderApp(){
   state.tab==='settings'?`${memberHeader('Cài đặt','Bảo mật và tùy chọn hệ thống') }<div class="main-body">${settingsContent()}</div>`:
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
- root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-mode':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ const existingFishing=state.tab==='fishing'&&$('#fishing-game')?.dataset.owner===String(state.user?.id)?$('#fishing-game'):null;
+ root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-mode':''} ${state.tab==='fishing'?'fishing-mode':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ if(state.tab==='fishing'){if(existingFishing)$('#fishing-game')?.replaceWith(existingFishing);fishingMount();}
  const sidebar=$('#side-items');
  if(sidebar)sidebar.sidebarMarkup=sidebar.innerHTML;
  const header=$('#chat-header');
