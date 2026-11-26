@@ -8,6 +8,7 @@ import hashlib
 import logging
 import os
 import re
+import secrets
 import requests
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
@@ -60,6 +61,9 @@ def install(core):
             user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             updated_at BIGINT NOT NULL
         )''')
+        token_columns={r['name'] for r in c.execute('PRAGMA table_info(mobile_push_tokens)')}
+        if 'registration_id' not in token_columns:
+            c.execute("ALTER TABLE mobile_push_tokens ADD COLUMN registration_id TEXT NOT NULL DEFAULT ''")
         c.execute('CREATE INDEX IF NOT EXISTS mobile_push_user_idx ON mobile_push_tokens(user_id)')
         # Additive table keeps existing registrations and supports SQLite/Postgres.
         c.execute('''CREATE TABLE IF NOT EXISTS mobile_push_split_channels (
@@ -74,6 +78,9 @@ def install(core):
             session_hash TEXT NOT NULL,
             created_at BIGINT NOT NULL
         )''')
+        receipt_columns={r['name'] for r in c.execute('PRAGMA table_info(mobile_push_receipts)')}
+        if 'registration_id' not in receipt_columns:
+            c.execute("ALTER TABLE mobile_push_receipts ADD COLUMN registration_id TEXT NOT NULL DEFAULT ''")
         c.execute('CREATE INDEX IF NOT EXISTS mobile_push_receipts_time_idx ON mobile_push_receipts(created_at)')
 
     class Register(BaseModel):
@@ -109,11 +116,14 @@ def install(core):
         if not TOKEN_PATTERN.fullmatch(body.token):
             raise HTTPException(422, 'Mã thông báo thiết bị không hợp lệ.')
         with db() as c:
-            c.execute('''INSERT INTO mobile_push_tokens(token,session_hash,user_id,updated_at)
-                         VALUES(?,?,?,?) ON CONFLICT(token) DO UPDATE SET
+            # Distinguish registrations even if token, session and wall-clock second match.
+            registration_id=secrets.token_hex(16)
+            c.execute('''INSERT INTO mobile_push_tokens(token,session_hash,user_id,updated_at,registration_id)
+                         VALUES(?,?,?,?,?) ON CONFLICT(token) DO UPDATE SET
                          session_hash=excluded.session_hash,
-                         user_id=excluded.user_id,updated_at=excluded.updated_at''',
-                      (body.token,sid,user['id'],core.now()))
+                         user_id=excluded.user_id,updated_at=excluded.updated_at,
+                         registration_id=excluded.registration_id''',
+                      (body.token,sid,user['id'],core.now(),registration_id))
             # Explicit capability, never inherited by a different login or older client.
             c.execute('DELETE FROM mobile_push_split_channels WHERE token=?',(body.token,))
             if body.split_channels:
@@ -168,7 +178,7 @@ def install(core):
                         AND (sanction_until IS NULL OR sanction_until>?)""",(uid,at)):
                 return False
             # Keep tokens tied to a session, including for the one-device test.
-            sql='SELECT p.token,p.session_hash,p.updated_at,CASE WHEN sc.token IS NULL THEN 0 ELSE 1 END AS split_channels FROM mobile_push_tokens p JOIN sessions s ON s.token_hash=p.session_hash AND s.user_id=p.user_id LEFT JOIN mobile_push_split_channels sc ON sc.token=p.token AND sc.session_hash=p.session_hash WHERE p.user_id=? AND s.expires_at>?'
+            sql='SELECT p.token,p.session_hash,p.updated_at,p.registration_id,CASE WHEN sc.token IS NULL THEN 0 ELSE 1 END AS split_channels FROM mobile_push_tokens p JOIN sessions s ON s.token_hash=p.session_hash AND s.user_id=p.user_id LEFT JOIN mobile_push_split_channels sc ON sc.token=p.token AND sc.session_hash=p.session_hash WHERE p.user_id=? AND s.expires_at>?'
             params=(uid,at)
             if session:
                 sql+=' AND p.session_hash=?'
@@ -197,13 +207,13 @@ def install(core):
                     receipt_id=item.get('id')
                     if isinstance(receipt_id,str) and 1<=len(receipt_id)<=128:
                         with db() as c:
-                            c.execute('''INSERT INTO mobile_push_receipts(receipt_id,token,session_hash,created_at)
-                                         VALUES(?,?,?,?) ON CONFLICT(receipt_id) DO NOTHING''',
-                                      (receipt_id,recipient['token'],recipient['session_hash'],at))
+                            c.execute('''INSERT INTO mobile_push_receipts(receipt_id,token,session_hash,created_at,registration_id)
+                                         VALUES(?,?,?,?,?) ON CONFLICT(receipt_id) DO NOTHING''',
+                                      (receipt_id,recipient['token'],recipient['session_hash'],at,recipient['registration_id']))
                 elif (item.get('details') or {}).get('error')=='DeviceNotRegistered':
                     with db() as c:
-                        c.execute('DELETE FROM mobile_push_tokens WHERE token=? AND session_hash=? AND updated_at=?',
-                                  (recipient['token'],recipient['session_hash'],recipient['updated_at']))
+                        c.execute('DELETE FROM mobile_push_tokens WHERE token=? AND session_hash=? AND registration_id=?',
+                                  (recipient['token'],recipient['session_hash'],recipient['registration_id']))
             return accepted
         except (requests.RequestException,ValueError,TypeError,AttributeError):
             LOG.warning('Native push gateway unavailable')
@@ -216,7 +226,7 @@ def install(core):
         with db() as c:
             c.execute('DELETE FROM mobile_push_receipts WHERE created_at<?',
                       (at-RECEIPT_MAX_AGE_SECONDS,))
-            rows=core.many(c,'''SELECT receipt_id,token,session_hash FROM mobile_push_receipts
+            rows=core.many(c,'''SELECT receipt_id,token,session_hash,registration_id FROM mobile_push_receipts
                              WHERE created_at<=? ORDER BY created_at LIMIT 100''',
                            (at-RECEIPT_MIN_AGE_SECONDS,))
         if not rows:
@@ -245,10 +255,12 @@ def install(core):
             if receipt['status']=='error':
                 code=(receipt.get('details') or {}).get('error') or 'Unknown'
                 if code=='DeviceNotRegistered':
-                    # A newer login may own this token; do not remove it.
+                    # Only invalidate the exact registration that produced this receipt.
+                    # Legacy receipts have no generation and cannot safely revoke a newer registration.
                     with db() as c:
-                        c.execute('DELETE FROM mobile_push_tokens WHERE token=? AND session_hash=?',
-                                  (row['token'],row['session_hash']))
+                        if row['registration_id']:
+                            c.execute('DELETE FROM mobile_push_tokens WHERE token=? AND session_hash=? AND registration_id=?',
+                                      (row['token'],row['session_hash'],row['registration_id']))
                 elif code in ('MismatchSenderId','InvalidCredentials'):
                     LOG.error('Expo FCM credentials problem: %s. Check Firebase and EAS config.',code)
                 else:
