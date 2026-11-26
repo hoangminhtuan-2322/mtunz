@@ -242,9 +242,7 @@ async function loadGroupMessages(scroll=true){
   const path=`/api/groups/${gid}/messages`;
   let result=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
   if(!current())return;
-  if(box?.dataset.openingChat==='true'&&result.first_unread_id&&!result.messages.some(m=>m.id===result.first_unread_id))
-   result=await api(path+'?unread_window=1');
-  if(!current())return;
+  // Keep the latest group window even with a large unread backlog.
   const incoming=new Map(result.messages.map(message=>[message.id,message]));
   for(const message of state.groupMessages){
    const fetched=incoming.get(message.id),prior=existing.get(message.id);

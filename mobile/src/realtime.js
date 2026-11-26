@@ -143,4 +143,40 @@ function applyReceipt(rows,userId,kind,upTo,at){
   return changed?next:rows;
 }
 function reuseEqualPayload(previous,next){return equalPayload(previous,next)?previous:next;}
-module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload};
+// Track only events received while a REST history request is outstanding.
+// Each request has an independent bounded journal. A room switch invalidates
+// outstanding journals; never apply another room's updates to fetched history.
+function createHistoryJournal(limit=512){
+  const pending=new Set();
+  return {
+    begin(){const request={events:[],overflow:false};pending.add(request);return request;},
+    record(event){for(const request of pending){if(request.overflow)continue;
+      if(request.events.length>=limit){request.overflow=true;request.events=[];}
+      else request.events.push(event);
+    }},
+    finish(request){pending.delete(request);return request.overflow?null:request.events;},
+    reset(){for(const request of pending){request.overflow=true;request.events=[];}pending.clear();}
+  };
+}
+function applyHistoryEvent(rows,event,userId){
+  if(event.kind==='receipt')return applyReceipt(rows,userId,event.type,event.upTo,event.at);
+  let changed=false;
+  const next=rows.map(row=>{
+    if(Number(row.id)!==Number(event.id))return row;
+    let updated=row;
+    if(event.kind==='edit'){
+      updated={...row,body:event.body,deleted_at:event.deletedAt,edited_at:event.editedAt,
+        attachment:event.deletedAt?null:row.attachment,reactions:event.deletedAt?[]:row.reactions};
+    }else if(event.kind==='reaction'&&!row.deleted_at){
+      const reactions=row.reactions||[],found=reactions.some(r=>r.user_id===event.userId&&r.emoji===event.emoji);
+      if(found===event.active)return row;
+      const others=reactions.filter(r=>!(r.user_id===event.userId&&r.emoji===event.emoji));
+      updated={...row,reactions:event.active?[...others,{user_id:event.userId,emoji:event.emoji}]:others};
+    }
+    if(equalPayload(row,updated))return row;
+    changed=true;return updated;
+  });
+  return changed?next:rows;
+}
+function replayHistoryEvents(rows,events,userId){return events.reduce((current,event)=>applyHistoryEvent(current,event,userId),rows);}
+module.exports = {createHistoryJournal,applyHistoryEvent,replayHistoryEvents,createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload};

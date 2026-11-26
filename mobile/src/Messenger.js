@@ -20,7 +20,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
-import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload} from './realtime';
+import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload,createHistoryJournal,applyHistoryEvent,replayHistoryEvents} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
@@ -349,6 +349,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     supportTicketRef=useRef(null),
     sendRef=useRef(false);
   if(!roomWindowRef.current)roomWindowRef.current=createRoomWindowGuard();
+  const historyJournalRef=useRef(null);if(!historyJournalRef.current)historyJournalRef.current=createHistoryJournal();
   roomRef.current=room;
   supportTicketRef.current=supportTicket;
   const replyRef=useRef(null);
@@ -458,15 +459,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const request=guard.begin(key,before);
     if(!request)return;
     if(!before)setLoading(true);
+    const journal=historyJournalRef.current,tracking=journal.begin();
     try{
       const path=route(target);
       const url=before?toQuery(path,{before:String(before)}):path;
       const response=await invoke(url);
       if(!guard.accepts(request)||conversationKey(roomRef.current)!==key)return;
-      const next=(response.messages||[]).map(sanitize);
+      const events=journal.finish(tracking);
+      if(events===null){setError('Hội thoại cập nhật liên tục. Hãy làm mới để tải lịch sử chính xác.');return;}
+      const next=replayHistoryEvents((response.messages||[]).map(sanitize),events,user.id);
       setMessages(current=>{
         if(!guard.current(request))return current;
-        if(before)return dedupe([...next,...current]);
+        if(before)return reuseMessageRows(current,dedupe([...next,...current]));
         // Keep live events received while the REST request was in flight.
         // Only the overlapping IDs should be replaced by the server snapshot.
         return reuseMessageRows(current,mergeRecentWindow(current,next));
@@ -486,7 +490,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         }
       }
     }catch(e){if(guard.accepts(request))alertError(e);}
-    finally{if(!before&&guard.accepts(request))setLoading(false);guard.finish(request);}
+    finally{journal.finish(tracking);if(!before&&guard.accepts(request))setLoading(false);guard.finish(request);}
   },[invoke,alertError,user.id]);
 
   // Reconcile every unseen batch when a socket reconnects after network loss.
@@ -502,9 +506,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     let page=0,moreAfter=false;
     try{
       do{
-        const result=await invoke(toQuery(route(target),{after:String(cursor)}));
+        const journal=historyJournalRef.current,tracking=journal.begin();
+        let result,events;
+        try{result=await invoke(toQuery(route(target),{after:String(cursor)}));}finally{events=journal.finish(tracking);}
         if(!current())return;
-        const rows=(result.messages||[]).map(sanitize);
+        if(events===null){await loadWindow(target);return;}
+        const rows=replayHistoryEvents((result.messages||[]).map(sanitize),events,user.id);
         if(!rows.length)break;
         setMessages(old=>guard.current(visit)?reuseMessageRows(old,dedupe([...old,...rows])):old);
         cursor=Number(rows[rows.length-1].id);
@@ -518,7 +525,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
       await loadWindow(target);
     }catch(e){if(current()){alertError(e);await loadWindow(target);}}
-  },[invoke,loadWindow,alertError]);
+  },[invoke,loadWindow,alertError,user.id]);
 
   const loadInbox=useMemo(()=>createSerialRefresh(async()=>{
     const results=await Promise.allSettled([invoke('/api/message-requests'),invoke('/api/blocks')]);
@@ -530,7 +537,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     const key=conversationKey(target);
-    roomWindowRef.current.reset(key);liveRef.current={[key]:0};
+    roomWindowRef.current.reset(key);historyJournalRef.current.reset();liveRef.current={[key]:0};
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
@@ -601,20 +608,20 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
       if(data.type==='message-updated'&&target?.scope==='dm'&&data.peer_id===target.id||
          data.type==='group-message-updated'&&target?.scope==='group'&&data.group_id===target.id){
-        setMessages(old=>old.map(m=>m.id===data.message_id?
-          {...m,body:data.body,deleted_at:data.deleted_at,edited_at:data.edited_at,
-           attachment:data.deleted_at?null:m.attachment,reactions:data.deleted_at?[]:m.reactions}:m));
+        const patch={kind:'edit',id:data.message_id,body:data.body,deletedAt:data.deleted_at,editedAt:data.edited_at};
+        historyJournalRef.current.record(patch);
+        setMessages(old=>applyHistoryEvent(old,patch,user.id));
       }
       if(data.type==='message-reaction'&&target?.scope==='dm'&&data.peer_id===target.id||
          data.type==='group-message-reaction'&&target?.scope==='group'&&data.group_id===target.id){
-        setMessages(old=>old.map(m=>{
-          if(m.id!==data.message_id)return m;
-          const others=(m.reactions||[]).filter(r=>!(r.user_id===data.user_id&&r.emoji===data.emoji));
-          return {...m,reactions:data.active?[...others,{user_id:data.user_id,emoji:data.emoji}]:others};
-        }));
+        const patch={kind:'reaction',id:data.message_id,userId:data.user_id,emoji:data.emoji,active:!!data.active};
+        historyJournalRef.current.record(patch);
+        setMessages(old=>applyHistoryEvent(old,patch,user.id));
       }
       if(data.type==='read'&&target?.scope==='dm'&&data.by===target.id||
          data.type==='delivered'&&target?.scope==='dm'&&data.by===target.id){
+        const patch={kind:'receipt',type:data.type,upTo:data.up_to,at:data.at};
+        historyJournalRef.current.record(patch);
         setMessages(old=>applyReceipt(old,user.id,data.type,data.up_to,data.at));
       }
       if(data.type==='world-message'&&target?.scope==='world'&&data.message?.room_id===target.id)
@@ -767,7 +774,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return()=>{active=false;sub.remove();};
   },[openRoom,token,invoke,alertError,cancelVoice]);
   const jumpBack=()=>{Keyboard.dismiss();cancelVoice();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
-    roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);isAtLatestRef.current=true;lastNewestIdRef.current=null;
+    roomWindowRef.current.reset(null);historyJournalRef.current.reset();roomRef.current=null;setLoading(false);isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
     const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
@@ -812,7 +819,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       pendingSendsRef.current.delete(originalRoom);
       if(conversationKey(roomRef.current)===originalRoom){
         if(!draftsRef.current[originalRoom])stopTyping();
-        if(result.message)setMessages(old=>upsertMessage(old,sanitize(result.message)));
+        if(result.message)setMessages(old=>old.some(row=>row.id===result.message.id)?old:upsertMessage(old,sanitize(result.message)));
         if(pending.scope==='world'&&!result.message)loadWindow(target);
         setDraft(draftsRef.current[originalRoom]||'');setPendingSend(null);
         scrollToLatest();
@@ -901,7 +908,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             removeSentDraft(key,batch.originalDraft);persistDrafts();
             if(active()){setDraft(draftsRef.current[key]||'');setReply(null);}
           }
-          if(active()&&result.message){setMessages(old=>upsertMessage(old,sanitize(result.message)));scrollToLatest();}
+          if(active()&&result.message){setMessages(old=>old.some(row=>row.id===result.message.id)?old:upsertMessage(old,sanitize(result.message)));scrollToLatest();}
           if(active())setMediaBatch({...batch});
         }
       });
@@ -1102,8 +1109,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const current=()=>guard.current(visit)&&seq===jumpSeq.current&&conversationKey(roomRef.current)===key;
     try{
       const found=await findHistory(messages,id,async before=>{
-        const result=await invoke(toQuery(route(target),{before:String(before)}));
-        return (result.messages||[]).map(sanitize);
+        const journal=historyJournalRef.current,tracking=journal.begin();
+        let result,events;
+        try{result=await invoke(toQuery(route(target),{before:String(before)}));}finally{events=journal.finish(tracking);}
+        if(events===null)throw Error('Lịch sử vừa thay đổi. Hãy thử tìm lại.');
+        return replayHistoryEvents((result.messages||[]).map(sanitize),events,user.id);
       },current,8);
       if(!current())return;
       if(found.rows.length)setMessages(old=>dedupe([...found.rows,...old]));

@@ -79,15 +79,9 @@ function finishChatHistory(box,result,opening,scroll,paint){
   box.dataset.moreAfter=String(!!result.more_after);
   if(result.more_after)box.dataset.expandedHistory='true';
  }
- if(opening&&result.first_unread_id){
-  pauseChatFollow(box);
-  paint(false);
-  pauseChatFollow(box);
-  const mark=box.querySelector('.chat-unread-marker');
-  if(mark)mark.scrollIntoView({block:'start',behavior:'instant'});
-  else settleChatEnd(box);
-  updateLatestButton(box);
- }else paint(scroll||opening);
+ // Unread markers remain available while browsing older history, but must not
+ // override the requested latest-message landing position.
+ paint(scroll||opening);
 }
 async function bringChatLatest(){
  const box=$('#chat-messages'),ctx=activeWorkflowChat();

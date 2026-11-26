@@ -1590,8 +1590,7 @@ async function loadMessages(scroll=true){
   const path='/api/messages/'+friend;
   let r=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
   if(!current())return;
-  if(box?.dataset.openingChat==='true'&&r.first_unread_id&&!r.messages.some(m=>m.id===r.first_unread_id))r=await api(path+'?unread_window=1');
-  if(!current())return;
+  // Opening a conversation always keeps the latest window; unread history is available by scrolling up.
   const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
   for(const message of r.messages){
    const realtime=known.get(message.id);

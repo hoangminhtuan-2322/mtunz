@@ -95,3 +95,25 @@ const updated=applyReceipt(receiptRows,7,'read',2,100);
 assert.equal(updated[0],receiptRows[0]);assert.equal(updated[1].read_at,100);assert.equal(updated[2],receiptRows[2]);
 assert.equal(reuseEqualPayload(receiptRows,JSON.parse(JSON.stringify(receiptRows))),receiptRows);
 console.log('Foreground-only timers, stale timer callbacks and stable receipt/list references: PASS');
+
+{
+ const {createHistoryJournal,applyHistoryEvent,replayHistoryEvents}=require('../mobile/src/realtime');
+ const journal=createHistoryJournal(3);
+ const a=journal.begin(),b=journal.begin();
+ const original=[{id:8,sender_id:1,body:'old',reactions:[],read_at:0}];
+ const reaction={kind:'reaction',id:8,userId:2,emoji:'❤',active:true};
+ journal.record(reaction);
+ const first=replayHistoryEvents(original,journal.finish(a),1);
+ assert.equal(first[0].reactions.length,1);
+ assert.equal(applyHistoryEvent(first,reaction,1),first,'duplicate reaction must preserve row identity');
+ journal.record({kind:'edit',id:8,body:'edited',deletedAt:null,editedAt:10});
+ journal.record({kind:'receipt',type:'read',upTo:8,at:12});
+ const second=replayHistoryEvents(original,journal.finish(b),1);
+ assert.equal(second[0].body,'edited');assert.equal(second[0].read_at,12);assert.equal(second[0].reactions.length,1);
+ const removed=applyHistoryEvent(second,{kind:'edit',id:8,body:'',deletedAt:15,editedAt:10},1);
+ assert.equal(removed[0].attachment,null);assert.equal(removed[0].reactions.length,0);
+ assert.equal(applyHistoryEvent(removed,reaction,1),removed,'reactions cannot resurrect deleted content');
+ const stale=journal.begin();journal.reset();assert.equal(journal.finish(stale),null);
+ const flood=journal.begin();for(let i=0;i<4;i++)journal.record(reaction);assert.equal(journal.finish(flood),null);
+ console.log('Concurrent history/event journal, duplicate reaction, receipt, deletion and room reset: PASS');
+}

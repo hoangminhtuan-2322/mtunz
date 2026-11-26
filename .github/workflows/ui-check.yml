@@ -24,6 +24,8 @@ jobs:
         run: |
           node --check static/app.js
           node --check static/extras.js
+          node --check static/chat-workflow.js
+          node tests/chat_latest_landing.cjs
           node tests/push_worker.cjs
           node --check static/premium.js
           node --check static/admin-console.js
