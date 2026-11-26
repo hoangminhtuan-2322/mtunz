@@ -1379,7 +1379,8 @@ async function loadOlderChat(box=$('#chat-messages')){
   const page=await api(path+'?before='+first.id);
   if(!box.isConnected||state.user?.id!==owner||box!==$('#chat-messages'))return;
   const current=rows(),ids=new Set(current.map(message=>message.id));
-  const older=page.messages.filter(message=>!ids.has(message.id));
+  const ctx={owner,scope:group?'group':'dm',chat_id:id};
+  const older=page.messages.filter(message=>!ids.has(message.id)&&privateHideVisible(ctx,message));
   if(page.messages.length<70||!older.length)box.dataset.historyDone='true';
   if(older.length){
    const anchor=document.getElementById('msg-'+(group?'group':'dm')+'-'+first.id);
@@ -1592,8 +1593,13 @@ async function loadMessages(scroll=true){
   let r=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
   if(!current())return;
   // Opening a conversation always keeps the latest window; unread history is available by scrolling up.
-  const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
-  for(const message of r.messages){
+  const ctx={owner:userId,scope:'dm',chat_id:friend};
+  if(privateHideRevisionChanged(ctx,r)){
+   state.messages=state.messages.filter(m=>m.id<=0);
+   if(box){delete box.dataset.expandedHistory;delete box.dataset.historyDone;}
+  }
+  const known=new Map(state.messages.filter(m=>m.id>0&&privateHideVisible(ctx,m)).map(m=>[m.id,m]));
+  for(const message of r.messages.filter(m=>privateHideVisible(ctx,m))){
    const realtime=known.get(message.id);
    const prior=existing.get(message.id);
    if(realtime&&!prior)continue;
