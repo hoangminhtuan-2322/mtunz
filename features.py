@@ -153,6 +153,11 @@ def install(core):
                 scope TEXT NOT NULL CHECK(scope IN ('dm','group')),
                 chat_id BIGINT NOT NULL, message_id BIGINT NOT NULL,
                 PRIMARY KEY(user_id,scope,chat_id,message_id))''')
+            c.execute('''CREATE TABLE IF NOT EXISTS private_conversation_deletions (
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scope TEXT NOT NULL CHECK(scope IN ('dm','group')),
+                chat_id BIGINT NOT NULL, through_id BIGINT NOT NULL,
+                PRIMARY KEY(user_id,scope,chat_id))''')
             column('messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('group_messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('attachments','file_content','BLOB')
@@ -770,15 +775,18 @@ def install(core):
     async def list_groups(request:Request):
         u=current_user(request)
         with db() as c:
-            rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,gm.alert_mode,gm.mute_until,
+            rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,gm.alert_mode,gm.mute_until,d.through_id AS deleted_through,
                            (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
                            (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.deleted_at IS NULL AND m.sender_id!=? AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=gm.user_id AND h.scope='group' AND h.chat_id=g.id AND h.message_id=m.id)) AS unread
                            FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
+                           LEFT JOIN private_conversation_deletions d ON d.user_id=gm.user_id AND d.scope='group' AND d.chat_id=g.id
                            WHERE gm.user_id=? ORDER BY g.id DESC''',(u['id'],u['id']))
             for g in rows:
                 last=one(c,'''SELECT m.id,m.body,m.sender_id,m.created_at,m.deleted_at,m.attachment_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username
                           FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=? AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=m.group_id AND h.message_id=m.id) ORDER BY m.id DESC LIMIT 1''',(g['id'],u['id']))
                 g['last_message']=dict(last) if last else None
+                cutoff=g.pop('deleted_through')
+                g['conversation_deleted']=cutoff is not None and not (last and last['id']>cutoff)
             rows.sort(key=lambda g:g['last_message']['created_at'] if g['last_message'] else g['created_at'],reverse=True)
         return {'groups':rows}
 
@@ -1050,6 +1058,14 @@ def install(core):
                 cutoff=one(c,f'SELECT MAX(id) AS n FROM {table} WHERE {where}',args)['n'] or 0
                 where+=' AND id<=?'
                 args+=(cutoff,)
+                c.execute('''INSERT INTO private_conversation_deletions(user_id,scope,chat_id,through_id)
+                    VALUES(?,?,?,?) ON CONFLICT(user_id,scope,chat_id) DO UPDATE
+                    SET through_id=CASE WHEN excluded.through_id>private_conversation_deletions.through_id
+                    THEN excluded.through_id ELSE private_conversation_deletions.through_id END''',
+                    (uid,body.scope,body.chat_id,cutoff))
+                if body.scope=='dm':
+                    c.execute('UPDATE chat_preferences SET pinned=0,archived=0 WHERE user_id=? AND other_id=?',
+                              (uid,body.chat_id))
             c.execute(f'''INSERT INTO private_message_hides(user_id,scope,chat_id,message_id)
                           SELECT ?,?,?,id FROM {table} WHERE {where}
                           ON CONFLICT(user_id,scope,chat_id,message_id) DO NOTHING''',
@@ -1058,7 +1074,7 @@ def install(core):
                           AND message_id IN (SELECT message_id FROM private_message_hides
                               WHERE user_id=? AND scope=? AND chat_id=?)''',
                       (uid,body.scope,body.chat_id,uid,body.scope,body.chat_id))
-        change={'scope':body.scope,'chat_id':body.chat_id,'message_ids':ids,'through_id':cutoff}
+        change={'scope':body.scope,'chat_id':body.chat_id,'message_ids':ids,'through_id':cutoff,'conversation_deleted':body.clear}
         await hub.user(uid,'private-messages-hidden',**change)
         return {'ok':True,**change}
 
