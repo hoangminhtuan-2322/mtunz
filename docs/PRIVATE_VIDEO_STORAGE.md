@@ -38,3 +38,6 @@ Release blockers:
 
 Unit tests use simulated storage and offline SDK signing; they do not create an
 R2 bucket, upload user data, or prove actual provider-side behavior.
+
+## Phase 2 integration
+Owner-scoped API, database quota lock, durable cleanup, web/Android multipart clients and authenticated ranged playback proxy are implemented in source. Set MTUNZ_R2_ENABLED=1 only after private-bucket integration and physical device tests. Until then, the existing 16 MiB path remains in use. Retry resumes a live upload attempt; persistence across app termination/browser reload and HD transcoding are not implemented. R2 playback currently streams through Render using bounded chunks, not direct signed GET. Existing account erasure queues remote cleanup; storage must remain configured until pending deletions finish. Keep a dedicated private bucket, abort incomplete uploads via lifecycle, and reconcile costs. Browser CORS must allow PUT from the exact mtunz origin. No production credentials or real bucket are configured by this commit.

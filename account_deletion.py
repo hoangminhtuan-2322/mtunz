@@ -143,6 +143,9 @@ def delete_user_records(c, uid: int) -> dict:
     )
     c.execute('DELETE FROM reactions WHERE user_id=?', (uid,))
     c.execute('DELETE FROM group_members WHERE user_id=?', (uid,))
+    # Preserve a durable cleanup record and its quota until R2 erasure is confirmed.
+    c.execute("UPDATE video_uploads SET state='cleanup',cleanup_after=0 WHERE owner_id=? AND state='ready'",(uid,))
+    c.execute("UPDATE video_uploads SET state='cleanup',cleanup_after=expires_at+360 WHERE owner_id=? AND state IN ('reserved','active')",(uid,))
     c.execute('DELETE FROM attachments WHERE owner_id=?', (uid,))
 
     # Session tokens, friends, blocks and all per-user preferences.

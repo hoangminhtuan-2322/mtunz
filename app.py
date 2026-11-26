@@ -525,7 +525,7 @@ async def cookies_and_origin(request: Request, call_next):
                      '/api/registration/request','/api/registration/complete',
                      '/api/me/profile','/api/me/social')
             or (path.startswith('/api/chats/') and path.endswith(('/nickname','/alerts')))
-            or path.startswith(('/api/messages','/api/scheduled-messages',
+            or path.startswith(('/api/video-uploads','/api/messages','/api/scheduled-messages',
                                 '/api/groups','/api/message-requests',
                                 '/api/world/polls/','/api/chat/pins',
                                 '/api/chat/forward','/api/chat/disappear/',
@@ -554,7 +554,9 @@ async def cookies_and_origin(request: Request, call_next):
     result.headers['X-Permitted-Cross-Domain-Policies'] = 'none'
     result.headers['Cache-Control'] = 'no-store'
     result.headers['X-Robots-Tag'] = 'noindex, nofollow'
-    result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss: https://api.github.com; "
+    r2_account=os.getenv('MTUNZ_R2_ACCOUNT_ID','')
+    r2_connect=(' https://'+r2_account+'.r2.cloudflarestorage.com') if re.fullmatch(r'[a-fA-F0-9]{32}',r2_account) else ''
+    result.headers['Content-Security-Policy'] = ("default-src 'self'; connect-src 'self' ws: wss: https://api.github.com"+r2_connect+"; "
          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
          "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; "
          "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
@@ -2634,6 +2636,8 @@ from mobile_api import install as _install_mobile_api
 _install_mobile_api(_sys.modules[__name__])
 from features import install as _install_extra_features
 _install_extra_features(_sys.modules[__name__])
+from video_upload_api import install as _install_video_uploads
+_install_video_uploads(_sys.modules[__name__])
 from chat_library import alert_allowed, history_window, install as _install_chat_library
 _install_chat_library(_sys.modules[__name__])
 from web_notifications import install as _install_web_notifications

@@ -805,7 +805,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const active=()=>conversationKey(roomRef.current)===originalRoom&&pendingSendsRef.current.get(originalRoom)===pending;
     try{
       const result=await deliverPendingSend(pending,{
-        upload:async(file,nonce)=>{const uploaded=await uploadAttachment(token,file,nonce);return uploaded.id;},
+        upload:async(file,nonce)=>{const uploaded=await uploadAttachment(token,file,nonce,percent=>{if(active())setSendStage('Đang tải video '+percent+'%');});return uploaded.id;},
         send:(endpoint,data)=>invoke(endpoint,'POST',data),
         progress:stage=>{if(active())setSendStage(stage==='upload'?'Đang tải tệp…':'Đang gửi tin nhắn…');}
       });
@@ -889,7 +889,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     try{
       await runMediaBatch(batch,{
         active,
-        upload:async(file,nonce)=>{const result=await uploadAttachment(token,file,nonce);return result.id;},
+        upload:async(file,nonce)=>{const result=await uploadAttachment(token,file,nonce,percent=>{if(active())setSendStage('Đang tải video '+percent+'%');});return result.id;},
         send:async(item,body,replyId)=>{
           const data={body,attachment_id:item.attachmentId,client_message_id:item.nonce,reply_to:replyId};
           if(target.scope==='dm')data.recipient_id=target.id;

@@ -140,11 +140,63 @@ function uploadPanel(){
    <button type="button" class="btn ghost sm" data-workflow-upload="cancel">${busy?'Hủy tải':'Bỏ tệp'}</button></div>`;
 }
 function repaintUploadPanel(){const extra=$('#compose-extra');if(extra)extra.innerHTML=composerExtras();}
+async function uploadLargeVideo(file,ctx,retry){
+ const attempt=retry||{file,ctx,key:v4Nonce()};
+ const controller=new AbortController(),signal=controller.signal;
+ Object.assign(attempt,{status:'busy',error:'',large:true,xhr:{abort:()=>controller.abort()}});
+ workflowUpload=attempt;state.uploading=true;repaintUploadPanel();
+ const current=()=>workflowUpload===attempt&&workflowCurrent(ctx)&&!signal.aborted;
+ const ensure=()=>{if(!current())throw Error('Đã hủy tải video.');};
+ const progress=(bytes)=>{
+  if(!current())return;
+  const percent=Math.min(99,Math.floor(bytes/file.size*100));
+  const bar=$('.compose-upload-status progress'),label=$('[data-upload-label]');
+  if(bar)bar.value=percent;if(label)label.textContent=percent+'%';
+ };
+ try{
+  const root='/api/video-uploads';
+  const config=await api(root+'/config',{signal});ensure();
+  if(!config.enabled)throw Error('Kho video lớn chưa kích hoạt. Hiện chỉ gửi video tối đa 16 MB.');
+  const session=await api(root,{method:'POST',signal,data:{client_key:attempt.key,name:file.name,mime:file.type,size:file.size}});
+  attempt.videoId=session.upload_id;ensure();
+  let attachment=session.attachment;
+  if(!attachment){
+   const done=new Set(session.completed_parts),step=session.part_bytes;
+   if(step!==8*1024*1024||session.size!==file.size)throw Error('Phiên tải không hợp lệ.');
+   for(let start=0,n=1;start<file.size;start+=step,n++){
+    ensure();const end=Math.min(start+step,file.size);
+    if(!done.has(n)){
+     const signed=await api(root+'/'+session.upload_id+'/parts/'+n,{method:'POST',signal});ensure();
+     if(signed.bytes!==end-start||!/^https:\/\/[a-f0-9]{32}\.r2\.cloudflarestorage\.com\//i.test(signed.url))throw Error('Liên kết tải không hợp lệ.');
+     const response=await fetch(signed.url,{method:'PUT',body:file.slice(start,end),signal,credentials:'omit',redirect:'error',referrerPolicy:'no-referrer'});
+     if(!response.ok)throw Error('Mất kết nối khi tải video. Thử lại để tiếp tục.');
+    }
+    progress(end);
+   }
+   ensure();attachment=(await api(root+'/'+session.upload_id+'/complete',{method:'POST',signal})).attachment;
+  }
+  ensure();if(!attachment?.id)throw Error('Video chưa sẵn sàng.');
+  state.pendingAttachment=attachment;workflowUpload=null;toast('Video gốc đã sẵn sàng để gửi.','ok');return true;
+ }catch(error){
+  if(current()){attempt.status='failed';attempt.error=error.message||'Không thể tải video.';}
+  else if(workflowUpload===attempt)workflowUpload=null;
+  return false;
+ }finally{
+  if(workflowUpload===attempt||workflowUpload===null){state.uploading=false;repaintUploadPanel();}
+ }
+}
+function cancelLargeVideo(attempt){
+ if(attempt.videoId)void api('/api/video-uploads/'+attempt.videoId,{method:'DELETE'}).catch(()=>{});
+}
 function sendAttachment(file,ctx=activeWorkflowChat(),retry=null){
  if(!workflowCurrent(ctx))return Promise.resolve(false);
  abortStaleWorkflowUpload();
  if(workflowUpload?.status==='busy')return Promise.reject(Error('Đang tải tệp. Bạn có thể hủy lần tải này.'));
  const video=/^video\/(mp4|webm)$/i.test(file.type);
+ if(video&&file.size>16*1024*1024){
+  if(file.size>500*1024*1024)return Promise.reject(Error('Video vượt giới hạn 500 MB.'));
+  return uploadLargeVideo(file,ctx,retry);
+ }
  const maxBytes=(video?16:2)*1024*1024;
  if(file.size>maxBytes)return Promise.reject(Error('Tệp vượt giới hạn '+(video?16:2)+' MB.'));
  // Send the selected video unchanged; never compress or transcode it here.
@@ -282,6 +334,7 @@ document.addEventListener('click',async event=>{
   const action=button.dataset.workflowUpload,attempt=workflowUpload;
   if(action&&attempt&&workflowCurrent(attempt.ctx)){
    if(action==='retry')await sendAttachment(attempt.file,attempt.ctx,attempt);
+   else if(attempt.large){attempt.xhr.abort();cancelLargeVideo(attempt);workflowUpload=null;state.uploading=false;repaintUploadPanel();}
    else if(attempt.status==='busy')attempt.xhr.abort();
    else {workflowUpload=null;repaintUploadPanel();}
   }
