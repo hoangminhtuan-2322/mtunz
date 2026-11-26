@@ -21,7 +21,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload,createHistoryJournal,applyHistoryEvent,replayHistoryEvents} from './realtime';
-import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
+import {conversationKey,filterInbox,filterGroupInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
@@ -1210,8 +1210,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&!f.conversation_deleted),[friends]);
   const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
   const unreadTotal=useMemo(()=>acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0),[acceptedFriends]);
-  const matchingFriends=useMemo(()=>filterInbox(friends.filter(f=>!f.conversation_deleted||inboxQuery.trim()),inboxQuery,inboxFilter,connection==='online'),[friends,inboxQuery,inboxFilter,connection]);
-  const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>(!g.conversation_deleted||query)&&normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
+  const matchingFriends=useMemo(()=>filterInbox(friends,inboxQuery,inboxFilter,connection==='online'),[friends,inboxQuery,inboxFilter,connection]);
+  const matchingGroups=useMemo(()=>filterGroupInbox(groups,groupQuery),[groups,groupQuery]);
   const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted&&!f.conversation_deleted).length,[friends]);
   const worldChat=room?.scope==='world';
   const {compactHeader,compactComposer}=chatLayout(width,fontScale,room?.scope);

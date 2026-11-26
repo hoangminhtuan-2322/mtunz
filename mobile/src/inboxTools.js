@@ -4,9 +4,16 @@ function conversationKey(room){return room?room.scope+':'+room.id:'';}
 function normalizeSearch(value){return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[đĐ]/g,'d').toLocaleLowerCase('vi-VN').trim();}
 function updateDraft(drafts,key,value){if(!key)return drafts;const next={...drafts};delete next[key];if(value.trim())next[key]=value;return next;}
 function clearSentDraft(drafts,key,value){return drafts[key]===value?updateDraft(drafts,key,''):drafts;}
+function visibleConversation(item,query){
+  return !item.conversation_deleted||!!normalizeSearch(query);
+}
+function filterGroupInbox(groups,query){
+  const q=normalizeSearch(query);
+  return groups.filter(g=>visibleConversation(g,q)&&normalizeSearch(g.title).includes(q));
+}
 function filterInbox(friends,query,filter,connected){
   const q=normalizeSearch(query);
-  return friends.filter(f=>f.state==='accepted'&&!f.restricted&&
+  return friends.filter(f=>f.state==='accepted'&&!f.restricted&&visibleConversation(f,q)&&
     (filter==='archived'?!!f.archived:!f.archived)&&
     [f.nickname,f.display_name,f.username].some(v=>normalizeSearch(v).includes(q))&&
     (filter==='unread'?Number(f.unread||0)>0:filter==='online'?connected&&f.online===true:filter==='pinned'?!!f.pinned:true))
@@ -40,4 +47,4 @@ async function findHistory(existing,id,fetchPage,active,maxPages=8){
   }
   return {found:false,rows,exhausted:false};
 }
-module.exports={conversationKey,normalizeSearch,updateDraft,clearSentDraft,filterInbox,sanitizeDrafts,mergeHydratedDrafts,isReplySwipe,findHistory};
+module.exports={conversationKey,normalizeSearch,updateDraft,clearSentDraft,filterInbox,filterGroupInbox,sanitizeDrafts,mergeHydratedDrafts,isReplySwipe,findHistory};
