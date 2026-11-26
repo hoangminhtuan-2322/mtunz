@@ -43,8 +43,33 @@ jobs:
         run: python tests/smoke_postgres.py
       - name: Install matching PostgreSQL backup tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y postgresql-client-16
-          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+          # pg_dump must be at least as new as the PostgreSQL 16 server.
+          # Prefer a preinstalled client; the latest runner's distro may not
+          # provide the version-specific postgresql-client-16 package.
+          client=""
+          for tool in /usr/lib/postgresql/*/bin/pg_dump "$(command -v pg_dump || true)"; do
+            [ -x "$tool" ] || continue
+            major=$("$tool" --version | grep -oE '[0-9]+' | head -1)
+            if [ "$major" -ge 16 ] && [ -x "$(dirname "$tool")/pg_restore" ]; then
+              client="$(dirname "$tool")"
+              break
+            fi
+          done
+          if [ -z "$client" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y postgresql-client
+            for tool in /usr/lib/postgresql/*/bin/pg_dump; do
+              [ -x "$tool" ] || continue
+              major=$("$tool" --version | grep -oE '[0-9]+' | head -1)
+              if [ "$major" -ge 16 ] && [ -x "$(dirname "$tool")/pg_restore" ]; then
+                client="$(dirname "$tool")"
+                break
+              fi
+            done
+          fi
+          test -n "$client"
+          "$client/pg_dump" --version
+          "$client/pg_restore" --version
+          echo "$client" >> "$GITHUB_PATH"
       - name: Verify logical backup and restore into separate disposable database
         run: python tests/smoke_backup_restore.py

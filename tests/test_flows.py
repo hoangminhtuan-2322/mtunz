@@ -46,7 +46,9 @@ def register_user(admin,name,pw='GreatPassword123',pin='1234'):
     guest.get('/')
     digits=int.from_bytes(hashlib.sha256(name.encode('utf-8')).digest()[:6],'big') % 1_000_000_000
     phone='0'+str(digits).zfill(9)
-    assert guest.post('/api/registration/request',json={'username':name,'phone':phone,'email':'demo@example.com'}).json()['status']=='pending'
+    registration=guest.post('/api/registration/request',json={'username':name,'phone':phone,'email':'demo@example.com'})
+    assert registration.status_code==200, registration.text
+    assert registration.json()['status']=='pending', registration.text
     assert guest.post('/api/registration/complete',json={'username':name,'password':pw,'pin':pin,'pin_length':len(pin),'accepted_terms':True}).status_code==403
     pending=[r for r in admin.get('/api/admin/registrations').json()['registrations'] if r['username']==name][0]
     assert admin.post(f'/api/admin/registrations/{pending["id"]}/decision',json={'approve':True,'admin_pin':'2345'}).status_code==200

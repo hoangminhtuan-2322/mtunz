@@ -526,8 +526,8 @@ def test_old_push_receipt_cannot_revoke_reregistered_token(monkeypatch):
     import mobile_push
     from requests import Response
     admin=logged_admin()
-    register_user(admin,'native_receipt_reregister')
-    native,headers=native_login('native_receipt_reregister')
+    register_user(admin,'native_receipt_retry')
+    native,headers=native_login('native_receipt_retry')
     token='ExpoPushToken['+('W'*28)+']'
     assert native.post('/api/mobile/push',headers=headers,json={'token':token}).status_code==200
     with db() as c:
