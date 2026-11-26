@@ -1,7 +1,9 @@
 import AndroidUpdate from './AndroidUpdate';
 import StorageSettings from './StorageSettings';
 import {AppLockSettings} from './AppLockGate';
-import React,{useCallback,useEffect,useRef,useState} from 'react';
+import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import {createSerialRefresh,createForegroundTicker,reuseEqualPayload} from './realtime';
+import {createSelectionGuard,createActionGate} from './adminRequestGuard';
 import {ActivityIndicator,Alert,AppState,Image,Linking,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {api,API_ORIGIN,wsUrl} from './client';
 import * as Notifications from 'expo-notifications';
@@ -41,6 +43,9 @@ export default function AdminDashboard({token,onLogout,onExpired}){
  const systemSeq=useRef(0),systemActionBusy=useRef(false);
  const [scheduleStart,setScheduleStart]=useState(''),[scheduleEnd,setScheduleEnd]=useState(''),[scheduleReason,setScheduleReason]=useState('');
  const pinRef=useRef('');
+ const actionGate=useMemo(createActionGate,[]),ticketGuard=useMemo(createSelectionGuard,[]),userGuard=useMemo(createSelectionGuard,[]),auditGuard=useMemo(createSelectionGuard,[]);
+ const draftRef=useRef('');
+ const [threadLoading,setThreadLoading]=useState(false),[syncPartial,setSyncPartial]=useState(false);
  const [onlineUsers,setOnlineUsers]=useState([]),[onlineProfile,setOnlineProfile]=useState(null);
  const [audit,setAudit]=useState([]),[auditTotal,setAuditTotal]=useState(0),
   [auditOffset,setAuditOffset]=useState(0),[auditQuery,setAuditQuery]=useState(''),
@@ -60,18 +65,26 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    try{return await api(path,{token,method,data});}
    catch(e){if(e.status===401)onExpired();throw e;}
  },[token,onExpired]);
- const refresh=useCallback(async()=>{
+ const refresh=useMemo(()=>createSerialRefresh(async()=>{
   const paths=['/api/admin/stats','/api/admin/registrations','/api/admin/tickets','/api/admin/login-approvals'];
   const tasks=await Promise.allSettled(paths.map(path=>call(path)));
-  if(tasks[0].status==='fulfilled')setStats(tasks[0].value);
-  if(tasks[1].status==='fulfilled')setRegistration(tasks[1].value.registrations||[]);
-  if(tasks[2].status==='fulfilled'){setTickets(tasks[2].value.tickets||[]);setSupportPaused(!!tasks[2].value.paused);}
-  if(tasks[3].status==='fulfilled')setApprovals(tasks[3].value.pending||[]);
-  if(tasks.every(x=>x.status==='rejected'))throw tasks[0].reason;
-  setLastRefresh(Date.now());
- },[call]);
- useEffect(()=>{
-  let alive=true,ws=null,heartbeatTimer=null,reconnectTimer=null,retryMs=1000;
+  if(tasks[0].status==='fulfilled')setStats(old=>reuseEqualPayload(old,tasks[0].value));
+  if(tasks[1].status==='fulfilled')setRegistration(old=>reuseEqualPayload(old,tasks[1].value.registrations||[]));
+  if(tasks[2].status==='fulfilled'){const rows=tasks[2].value.tickets||[];setTickets(old=>reuseEqualPayload(old,rows));setSupportPaused(!!tasks[2].value.paused);setTicket(old=>old?(rows.find(row=>row.id===old.id)||old):null);}
+  if(tasks[3].status==='fulfilled')setApprovals(old=>reuseEqualPayload(old,tasks[3].value.pending||[]));
+   setSyncPartial(tasks.some(x=>x.status==='rejected'));
+   if(tasks.every(x=>x.status==='rejected'))throw tasks[0].reason;
+   if(tasks.every(x=>x.status==='fulfilled'))setLastRefresh(Date.now());
+  }),[call]);
+ const loadThread=useMemo(()=>createSerialRefresh(async()=>{
+   const request=ticketGuard.request();if(!request)return;
+   setThreadLoading(true);
+   try{const r=await call('/api/admin/tickets/'+request.key+'/messages');if(ticketGuard.accepts(request))setThread(r.messages||[]);}
+   catch(e){if(ticketGuard.accepts(request))setError(e.message);}
+   finally{if(ticketGuard.accepts(request))setThreadLoading(false);}
+  }),[call,ticketGuard]);
+  useEffect(()=>{
+   let alive=true,ws=null,heartbeatTimer=null,reconnectTimer=null,retryMs=1000;
   const stopHeartbeat=()=>{clearInterval(heartbeatTimer);heartbeatTimer=null;};
   const stopRetry=()=>{if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}};
   const fetchNow=()=>refresh().catch(e=>{if(alive)setError(e.message);});
@@ -79,7 +92,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    stopHeartbeat();stopRetry();
    if(!ws)return;
    reportPushVisibility(ws,false);
-   ws.close();ws=null;
+   const previous=ws;ws=null;try{previous.close();}catch{}
   };
   function connect(){
    if(!alive||AppState.currentState!=='active')return;
@@ -115,6 +128,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
      if(data.type==='registration-updated'&&data.new_request)setNotice('Có tài khoản mới chờ duyệt.');
      if(data.type==='support-updated'&&data.new_request)setNotice('Có phiếu hỗ trợ mới.');
      if(data.type==='support-message'&&!data.message?.from_admin)setNotice('Có tin nhắn hỗ trợ mới.');
+      if(data.type==='support-message'&&ticketGuard.visit()?.key===data.ticket_id)void loadThread();
      if(['registration-updated','support-updated','support-message','admin-approval-request','admin-security-updated'].includes(data.type))
       fetchNow();
     };
@@ -125,14 +139,14 @@ export default function AdminDashboard({token,onLogout,onExpired}){
      }
    }
   }
-  const timer=setInterval(()=>{if(AppState.currentState==='active'){connect();fetchNow();}},20000);
-  const appSub=AppState.addEventListener('change',state=>{
-   if(state==='active'){connect();fetchNow();}
-   else {pinRef.current='';setPin('');stop();}
-  });
-  connect();fetchNow();
-  return()=>{alive=false;clearInterval(timer);appSub.remove();stop();};
- },[refresh,token,onExpired]);
+  const timer=createForegroundTicker(()=>{connect();fetchNow();},20000);
+   const appSub=AppState.addEventListener('change',state=>{
+    if(state==='active'){timer.start();connect();fetchNow();void loadThread();}
+    else {timer.stop();pinRef.current='';setPin('');stop();}
+   });
+   if(AppState.currentState==='active'){timer.start();connect();fetchNow();}
+   return()=>{alive=false;timer.stop();appSub.remove();stop();};
+  },[refresh,token,onExpired,ticketGuard,loadThread]);
  useEffect(()=>{
   let active=true;
   const handled=new Set();
@@ -158,10 +172,11 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   const pin=pinRef.current;
   if(AppState.currentState!=='active')return false;
   if(!pin.trim()){setError('Nhập PIN Admin để xác nhận thao tác.');return false;}
-  setBusy(true);setError('');setNotice('');
-  try{await call(path,method,{...body,admin_pin:pin});pinRef.current='';setPin('');setNotice(success||'Đã cập nhật.');await refresh().catch(e=>setError(e.message));return true;}
-  catch(e){setError(e.message);return false;}
-  finally{setBusy(false);}
+  if(!actionGate.enter())return false;
+   pinRef.current='';setPin('');setBusy(true);setError('');setNotice('');
+   try{await call(path,method,{...body,admin_pin:pin});setNotice(success||'Đã cập nhật.');await refresh().catch(e=>setError(e.message));return true;}
+   catch(e){setError(e.message);return false;}
+   finally{actionGate.leave();setBusy(false);}
  }
  const loadSystem=useCallback(async()=>{
   const seq=++systemSeq.current;setSystemLoading(true);setSystemError('');
@@ -226,9 +241,9 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   }catch(e){setError(e.message);}finally{setLoading(false);}
  }
  async function viewUser(item){
-  setError('');
-  try{setSelectedUser((await call('/api/admin/users/'+item.id+'/details')).user);}
-  catch(e){setError(e.message);}
+  userGuard.select(item.id);const request=userGuard.request();setSelectedUser(null);setSanctionReason('');setError('');
+   try{const result=await call('/api/admin/users/'+item.id+'/details');if(userGuard.accepts(request))setSelectedUser(result.user);}
+   catch(e){if(userGuard.accepts(request))setError(e.message);}
  }
  async function loadAudit(offset=0){
   setAuditLoading(true);setError('');
@@ -240,8 +255,9 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   }catch(e){setError(e.message);}finally{setAuditLoading(false);}
  }
  async function openAudit(item){
-  try{const result=await call('/api/admin/audit/'+item.id);setAuditDetail(result.event||null);}
-  catch(e){setError(e.message);}
+  auditGuard.select(item.id);const request=auditGuard.request();setAuditDetail(null);
+   try{const result=await call('/api/admin/audit/'+item.id);if(auditGuard.accepts(request))setAuditDetail(result.event||null);}
+   catch(e){if(auditGuard.accepts(request))setError(e.message);}
  }
  async function loadWorldAdmin(){
   try{setWorldConfig((await call('/api/admin/world')).config);}
@@ -281,9 +297,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
     }}]);
  }
  async function viewTicket(item){
-  setTicket(item);setThread([]);setDraft('');setError('');
-  try{const r=await call('/api/admin/tickets/'+item.id+'/messages');setThread(r.messages||[]);}
-  catch(e){setError(e.message);}
+  ticketGuard.select(item.id);setTicket(item);setThread([]);draftRef.current='';setDraft('');setError('');setThreadLoading(true);await loadThread();
  }
  async function loadOnline(){
   setError('');setLoading(true);
@@ -335,6 +349,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   const timer=setInterval(poll,30000);
   return()=>{cancelled=true;clearInterval(timer);};
  },[tab,call,userSort,query,users.length]);
+ function closeTicket(){ticketGuard.select(null);setTicket(null);setThread([]);setThreadLoading(false);draftRef.current='';setDraft('');}
  const pending=registration.filter(x=>x.status==='pending');
  const liveTickets=tickets.filter(x=>x.status==='open');
  const tabs=[['home','Tổng quan','grid-outline'],['registrations','Duyệt','checkmark-done-outline'],
@@ -368,7 +383,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
    {error?<Text style={s.error}>{error}</Text>:null}
    {notice?<Text style={s.success}>{notice}</Text>:null}
    <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
-    <Text style={s.muted}>{lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
+    <Text style={s.muted}>{syncPartial?'Một phần dữ liệu chưa đồng bộ':lastRefresh?'Đã đồng bộ · '+new Date(lastRefresh).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'Đang kết nối…'}</Text>
     <Action label={loading?'Đang tải…':'Làm mới'} subtle disabled={loading} onPress={()=>{if(tab==='online'){void loadOnline();return;}if(tab==='worldAdmin'){void loadWorldAdmin();return;}if(tab==='audit'){void loadAudit(auditOffset);return;}if(tab==='system'){void loadSystem();return;}setLoading(true);refresh().catch(e=>setError(e.message)).finally(()=>setLoading(false));}}/>
    </View>
    {tab==='home'&&<Box><Text style={s.head}>Giao diện</Text><Action label={mode==='light'?'Chuyển sang giao diện tối':'Chuyển sang giao diện sáng'} subtle disabled={!themeReady||themeSaving} onPress={()=>changeMode(mode==='light'?'dark':'light')}/></Box>}
@@ -490,15 +505,18 @@ export default function AdminDashboard({token,onLogout,onExpired}){
          }}])}/>
     {ticket?<><Text style={s.label}>Yêu cầu #{ticket.id}</Text>
       <Text style={s.muted}>{ticket.kind} • {ticket.status}</Text>
+      {threadLoading&&<ActivityIndicator color={P.accent}/>}
       {thread.map((msg,i)=><View key={msg.id||i} style={s.item}>
        <Text style={s.muted}>{msg.from_admin?'Admin':'Khách hàng'}</Text><Text style={s.label}>{msg.body}</Text>
       </View>)}
-      <Field placeholder="Trả lời hỗ trợ" value={draft} onChangeText={setDraft}/>
+      <Field placeholder="Trả lời hỗ trợ" value={draft} onChangeText={value=>{draftRef.current=value;setDraft(value);}}/>
       <Action label="Gửi phản hồi" disabled={busy||!draft.trim()} onPress={async()=>{
-       if(!draft.trim())return;
-       const ok=await act('/api/admin/tickets/'+ticket.id+'/messages','POST',{body:draft.trim()},'Đã gửi phản hồi.');
-       if(!ok)return; // Never erase a failed support reply.
-       try{const x=await call('/api/admin/tickets/'+ticket.id+'/messages');setThread(x.messages||[]);setDraft('');}catch(e){setError(e.message);}
+       const visit=ticketGuard.visit(),sent=draftRef.current;
+       if(!visit||visit.key!==ticket.id||!sent.trim())return;
+       const ok=await act('/api/admin/tickets/'+ticket.id+'/messages','POST',{body:sent.trim()},'Đã gửi phản hồi.');
+       if(!ok||!ticketGuard.current(visit))return; // Never erase a failed support reply.
+       if(draftRef.current===sent){draftRef.current='';setDraft('');}
+       await loadThread();
       }}/>
       <Action label="Đóng yêu cầu" subtle disabled={busy} onPress={()=>act('/api/admin/tickets/'+ticket.id+'/status','POST',{status:'closed'},'Đã đóng yêu cầu.')}/>
       {(ticket.status==='closed'||ticket.status==='spam')&&<Action
@@ -506,9 +524,9 @@ export default function AdminDashboard({token,onLogout,onExpired}){
         onPress={()=>Alert.alert('Xóa cuộc trò chuyện','Xóa vĩnh viễn tin nhắn của phiếu hỗ trợ này?',
           [{text:'Hủy',style:'cancel'},{text:'Xóa',style:'destructive',onPress:async()=>{
             const ok=await act('/api/admin/tickets/'+ticket.id,'DELETE',{},'Đã xóa cuộc trò chuyện.');
-            if(ok){setTicket(null);setThread([]);}
+            if(ok&&ticketGuard.visit()?.key===ticket.id)closeTicket();
           }}])}/>}
-      <Action label="Quay lại danh sách" subtle onPress={()=>{setTicket(null);setThread([]);}}/>
+      <Action label="Quay lại danh sách" subtle onPress={closeTicket}/>
      </>:tickets.slice(0,60).map(item=><Pressable key={item.id} style={s.item} onPress={()=>viewTicket(item)}>
        <Text style={s.label}>#{item.id} • {item.kind||'Hỗ trợ'}</Text>
        <Text numberOfLines={2} style={s.muted}>{item.claim||'Không có nội dung'}</Text>
@@ -526,7 +544,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
        <Text style={s.label}>Sự kiện #{auditDetail.id} · {auditDetail.action}</Text>
        <Text style={s.muted}>@{auditDetail.admin_username} · {new Date(auditDetail.created_at*1000).toLocaleString('vi-VN')}</Text>
        <Text style={s.muted} selectable>{auditDetail.detail||'Không có thông tin bổ sung.'}</Text>
-       <Action subtle label="Đóng chi tiết" onPress={()=>setAuditDetail(null)}/>
+       <Action subtle label="Đóng chi tiết" onPress={()=>{auditGuard.select(null);setAuditDetail(null);}}/>
      </View>}
      {audit.length===0&&!auditLoading?<Text style={s.muted}>Không có thao tác phù hợp.</Text>:null}
      {audit.map(item=><Pressable key={item.id} accessibilityRole="button" style={s.item}

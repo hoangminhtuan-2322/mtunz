@@ -10,7 +10,7 @@ for(const required of [
   "'/api/admin/world'","'/api/admin/world/config'",
   "Alert.alert('Xác nhận bảo mật'","if(!pin.trim())",
   "ticket.status==='closed'||ticket.status==='spam'",
-  "if(ok){setTicket(null);setThread([]);}",
+  "if(ok&&ticketGuard.visit()?.key===ticket.id)closeTicket();",
 ])assert(admin.includes(required),'Missing PIN-gated admin UI: '+required);
 for(const api of ["@app.patch('/api/admin/support/intake')","@app.delete('/api/admin/tickets/{tid}')",
 "@app.post('/api/admin/users/{uid}/sanction')"])assert(server.includes(api),'Missing backend endpoint: '+api);
@@ -45,3 +45,18 @@ assert(validateSchedule('2027-01-02 08:30','2027-01-02 09:30','Kiểm tra',start
 assert(admin.includes("'/api/admin/security/maintenance/schedule','POST'")&&admin.includes('starts_at:0,ends_at:0'));
 assert(admin.includes('const pin=pinRef.current')&&admin.includes("pinRef.current='';setPin('');stop();"));
 console.log('Native maintenance scheduling, Vietnam timezone validation and fresh PIN guard: PASS');
+
+const {createSelectionGuard,createActionGate}=require('../mobile/src/adminRequestGuard');
+const selections=createSelectionGuard();
+selections.select(1);const a=selections.visit(),old=selections.request();
+selections.select(2);selections.select(1);
+assert(!selections.current(a)&&!selections.accepts(old));
+const first=selections.request(),second=selections.request();assert(!selections.accepts(first)&&selections.accepts(second));
+selections.select(null);assert(!selections.accepts(second));assert.equal(selections.request(),null);
+const gate=createActionGate();assert(gate.enter());assert(!gate.enter());gate.leave();assert(gate.enter());gate.leave();
+assert(admin.includes('if(!actionGate.enter())return false'));
+assert(admin.includes('if(!ok||!ticketGuard.current(visit))return'));
+assert(admin.includes('if(draftRef.current===sent)'));
+assert(admin.includes('ticketGuard.accepts(request)')&&admin.includes('userGuard.accepts(request)')&&admin.includes('auditGuard.accepts(request)'));
+assert(admin.includes('Một phần dữ liệu chưa đồng bộ')&&admin.includes('createSerialRefresh(async()=>'));
+console.log('Admin mutation exclusion, stale selection protection, draft preservation and partial refresh status: PASS');
