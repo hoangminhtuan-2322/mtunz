@@ -679,7 +679,7 @@ def install(core):
                     ident=old['id']
                 else:
                     if hosted:
-                        used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=? AND stored_name NOT LIKE \'r2-%\'',(u['id'],))['total']
+                        used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=? AND substr(stored_name,1,3)<>?',(u['id'],'r2-'))['total']
                         if used + total > HOSTED_ATTACHMENT_QUOTA:
                             raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')
                     content=path.read_bytes() if hosted else None

@@ -5,6 +5,7 @@ foreign-key records and user-owned message/file data are cleaned up. Preserve
 groups with surviving members by transferring ownership; remove empty groups.
 """
 from __future__ import annotations
+import time
 
 
 def delete_user_records(c, uid: int) -> dict:
@@ -145,7 +146,7 @@ def delete_user_records(c, uid: int) -> dict:
     c.execute('DELETE FROM group_members WHERE user_id=?', (uid,))
     # Preserve a durable cleanup record and its quota until R2 erasure is confirmed.
     c.execute("UPDATE video_uploads SET state='cleanup',cleanup_after=0 WHERE owner_id=? AND state='ready'",(uid,))
-    c.execute("UPDATE video_uploads SET state='cleanup',cleanup_after=expires_at+360 WHERE owner_id=? AND state IN ('reserved','active')",(uid,))
+    c.execute("UPDATE video_uploads SET state='cleanup',cleanup_after=? WHERE owner_id=? AND state IN ('reserved','active')",(int(time.time())+360,uid))
     c.execute('DELETE FROM attachments WHERE owner_id=?', (uid,))
 
     # Session tokens, friends, blocks and all per-user preferences.

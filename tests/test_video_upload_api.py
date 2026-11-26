@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import pytest
 os.environ.setdefault('DATA_DIR', tempfile.mkdtemp(prefix='mtunz_video_api_'))
 from fastapi.testclient import TestClient
-from app import app, db
 from test_flows import logged_admin, register_user
+from app import app, db
 import video_upload_api as video
 from video_storage import PART_BYTES, MAX_VIDEO_BYTES
 

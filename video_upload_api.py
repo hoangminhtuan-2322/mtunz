@@ -66,7 +66,7 @@ def reserve(core,uid,client_key,name,mime,size,store):
             return old['upload_key']
         own=core.one(c,'SELECT COALESCE(SUM(size),0) AS total FROM video_uploads WHERE owner_id=?',(uid,))['total']
         total=core.one(c,'SELECT COALESCE(SUM(size),0) AS total FROM video_uploads')['total']
-        try:check_quota(size,own,total)
+        try:check_quota(size,int(own),int(total))
         except ValueError:raise HTTPException(413,'Đã hết dung lượng video cho phép.') from None
         key=store.new_key()
         upload_key=key.split('/')[1]
@@ -120,6 +120,8 @@ def snapshot(core,c,row,store):
         except Exception as exc:
             # Completion may have succeeded remotely before the DB commit.
             if not missing(exc):raise
+            store.verify_object(row['object_key'],row['size'],row['mime'])
+            result['completed_parts']=list(expected)
     return result
 
 
