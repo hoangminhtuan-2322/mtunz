@@ -1,13 +1,14 @@
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+import pytest
+sync_playwright=pytest.importorskip('playwright.sync_api').sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
 
 def test_fishing_layout():
     with sync_playwright() as p:
         browser=p.chromium.launch()
-        page=browser.new_page()
         for width,height in [(320,568),(375,667),(768,1024),(1024,768),(1440,900)]:
+            page=browser.new_page()
             page.set_viewport_size({'width':width,'height':height})
             page.set_content('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}.fishing-shell{height:100vh;box-sizing:border-box}</style><main class="fishing-shell"><div id="fishing-game"></div></main>')
             page.add_style_tag(path=str(ROOT/'static/fishing-life.css'))
@@ -28,4 +29,5 @@ def test_fishing_layout():
             assert result['cols']==(2 if width>=1024 else 1),(width,result)
             assert result['side']==(width>=1024),(width,result)
             assert result['height']>=44,(width,result)
+            page.close()
         browser.close()
