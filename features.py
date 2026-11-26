@@ -868,7 +868,8 @@ def install(core):
             sql+=" AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=m.group_id AND h.message_id=m.id)"
             rows,more_after=history_window(c,many,sql,(gid,u['id']),before,after,latest or not unread_window,unread,'m.id')
             result=message_page(c,rows,'group')
-        return {'messages':result,'first_unread_id':unread,'more_after':more_after}
+            hide_revision=one(c,"SELECT COUNT(*) AS n FROM private_message_hides WHERE user_id=? AND scope='group' AND chat_id=?",(u['id'],gid))['n']
+        return {'messages':result,'first_unread_id':unread,'more_after':more_after,'private_hide_revision':hide_revision}
 
     @app.post('/api/groups/{gid}/messages')
     async def send_group(request:Request,gid:int,body:GroupMessage):
