@@ -87,5 +87,5 @@ assert.equal(parseAdminPushResponse(adminNotice,'b'.repeat(64),'default'),null);
 assert.equal(parseAdminPushResponse({...adminNotice,actionIdentifier:QUICK_REPLY},binding,'default'),null);
 assert.equal(parseAdminPushResponse(null,binding,'default'),null);
 const adminPanel=fs.readFileSync(path.join(root,'mobile/src/AdminDashboard.js'),'utf8');
-assert(adminPanel.includes('parseAdminPushResponse(response,await binding')&&adminPanel.includes("else {pinRef.current='';setPin('');stop();}"));
+assert(adminPanel.includes('parseAdminPushResponse(response,await binding')&&adminPanel.includes("else {timer.stop();pinRef.current='';setPin('');stop();}"));
 console.log('Admin push session binding and background PIN clearing: PASS');
