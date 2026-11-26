@@ -282,3 +282,53 @@ def test_shared_media_hub_filters_are_authorized_and_paginated():
        'body':'', 'attachment_id':None})
     assert group_media.status_code==422
     assert stranger.get(f'/api/chats/group/{gid}/shared?kind=images').status_code==403
+
+
+def test_private_delete_dm_and_group(monkeypatch):
+    admin,alice,bob,a,b=setup_pair()
+    eve=register_user(admin,'feature_eve')
+    events=[]
+    async def record_event(uid,kind,**data):
+        events.append((uid,kind,data))
+    monkeypatch.setattr(hub,'user',record_event)
+
+    def hide(client,scope,chat_id,ids=(),clear=False):
+        return client.post('/api/chat/hide',json={
+            'scope':scope,'chat_id':chat_id,'message_ids':list(ids),'clear':clear})
+
+    def ids(client,path):
+        result=client.get(path)
+        assert result.status_code==200,result.text
+        return [m['id'] for m in result.json()['messages']]
+
+    first=alice.post('/api/messages',json={'recipient_id':b,'body':'privatehide https://example.org'}).json()['message']['id']
+    second=bob.post('/api/messages',json={'recipient_id':a,'body':'privatehide second'}).json()['message']['id']
+    assert hide(eve,'dm',a,[first]).status_code in (403,404)
+    assert hide(bob,'dm',a,[first,second+1000000]).status_code==404
+    assert ids(bob,f'/api/messages/{a}')==[first,second]
+    assert hide(bob,'dm',a,[first]).status_code==200
+    assert hide(bob,'dm',a,[first]).status_code==200
+    assert ids(bob,f'/api/messages/{a}')==[second]
+    assert ids(alice,f'/api/messages/{b}')==[first,second]
+    assert bob.get('/api/search/messages',params={'other_id':a,'q':'privatehide'}).json()['results'][0]['id']==second
+    assert [m['id'] for m in bob.get('/api/chat/search/v6',params={'scope':'dm','chat_id':a,'q':'privatehide'}).json()['results']]==[second]
+    assert bob.get(f'/api/chats/dm/{a}/context/{first}').status_code==404
+    assert bob.get(f'/api/chats/dm/{a}/shared',params={'kind':'links'}).json()['items']==[]
+    assert all(uid==b for uid,kind,_ in events if kind=='private-messages-hidden')
+    assert hide(bob,'dm',a,clear=True).status_code==200
+    assert ids(bob,f'/api/messages/{a}')==[]
+    assert ids(alice,f'/api/messages/{b}')==[first,second]
+    third=alice.post('/api/messages',json={'recipient_id':b,'body':'new after clear'}).json()['message']['id']
+    assert ids(bob,f'/api/messages/{a}')==[third]
+    assert alice.delete(f'/api/messages/{third}').status_code==200
+    assert bob.get(f'/api/messages/{a}').json()['messages'][0]['deleted_at']
+
+    gid=alice.post('/api/groups',json={'title':'Private hide group','member_ids':[b]}).json()['id']
+    group_ids=[alice.post(f'/api/groups/{gid}/messages',json={'body':f'group private {i}'}).json()['message']['id'] for i in range(3)]
+    assert hide(eve,'group',gid,group_ids).status_code==403
+    assert hide(bob,'group',gid,group_ids[:2]).status_code==200
+    assert ids(bob,f'/api/groups/{gid}/messages')==group_ids[2:]
+    assert ids(alice,f'/api/groups/{gid}/messages')==group_ids
+    assert hide(bob,'group',gid,clear=True).status_code==200
+    assert ids(bob,f'/api/groups/{gid}/messages')==[]
+    assert ids(alice,f'/api/groups/{gid}/messages')==group_ids
