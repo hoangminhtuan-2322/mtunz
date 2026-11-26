@@ -1217,6 +1217,7 @@ function convoHeader(f){if(!f)return '';
  <button type="button" class="btn ghost sm" data-v4-act="schedule-list" title="Tin nhắn hẹn giờ">⏰ <span class="button-word">Đã hẹn</span></button>
  <button class="btn ghost sm" data-act="call-audio" data-id="${f.other_id}" title="Gọi thoại">${icon('phone',15)}</button>
  <button class="btn ghost sm" data-act="call-video" data-id="${f.other_id}" title="Gọi video">${icon('video',15)}</button>
+ <button type="button" class="btn ghost sm" data-act="private-delete-menu" title="Quản lý xóa tin nhắn">${icon('trash',16)}</button>
  <button class="btn ghost sm" data-act="mute-chat" data-id="${f.other_id}" title="${f.muted?'Bật':'Tắt'} thông báo">${icon('mute',15)}</button>
  <button class="btn ghost sm" data-act="pin-chat" data-id="${f.other_id}" title="${f.pinned?'Bỏ ghim':'Ghim'} hội thoại">${icon('check',15)} <span class="button-word">${f.pinned?'Bỏ ghim':'Ghim'}</span></button>
  <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}" title="${f.archived?'Bỏ lưu trữ':'Lưu trữ'} hội thoại">${icon('archive',15)}</button>
