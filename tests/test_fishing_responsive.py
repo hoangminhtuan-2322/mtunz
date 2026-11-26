@@ -10,6 +10,8 @@ def test_fishing_layout():
         for width,height in [(320,568),(375,667),(768,1024),(1024,768),(1440,900)]:
             page=browser.new_page()
             page.set_viewport_size({'width':width,'height':height})
+            page.route('https://fishing.test/**', lambda route: route.fulfill(content_type='image/svg+xml', path=str(ROOT/'static/fishing-art'/route.request.url.rsplit('/',1)[-1])) if '/static/fishing-art/' in route.request.url else route.fulfill(content_type='text/html',body='<!doctype html><html></html>'))
+            page.goto('https://fishing.test/')
             page.set_content('<meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0}.fishing-shell{height:100vh;box-sizing:border-box}</style><main class="fishing-shell"><div id="fishing-game"></div></main>')
             page.add_style_tag(path=str(ROOT/'static/fishing-life.css'))
             page.evaluate("""() => {
@@ -21,6 +23,10 @@ def test_fishing_layout():
             page.evaluate('fishingMount()')
             page.locator('[data-fish=cast]').wait_for()
             assert page.locator('.fish-scene').get_attribute('src')=='/static/fishing-art/scene-0.svg'
+            page.wait_for_function("document.querySelector('.fish-scene').naturalWidth > 0")
+            if width==320:
+                assets=[f'{kind}-{i}.svg' for kind,count in [('scene',3),('fish',30),('rod',5)] for i in range(count)]
+                assert page.evaluate("""async names => (await Promise.all(names.map(name => new Promise(resolve=>{const i=new Image();i.onload=()=>resolve(i.naturalWidth>0);i.onerror=()=>resolve(false);i.src='/static/fishing-art/'+name;})))).every(Boolean)""",assets)
             page.wait_for_function("!document.querySelector('[data-fish=cast]').disabled")
             result=page.evaluate("""() => {
               const host=document.querySelector('.fishing-shell'),g=document.querySelector('#fishing-game'),a=document.querySelector('.fish-hero'),b=document.querySelector('.fish-side'),btn=document.querySelector('[data-fish=cast]');

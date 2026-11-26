@@ -46,3 +46,5 @@
 @container (max-width:540px){.fish-scene{max-height:166px}.fish-casting .fish-scene{max-height:112px}.fish-art{width:48px;height:38px}.fish-art-large{width:82px;height:58px}.fish-location{font-size:.7rem;top:5px;left:5px;padding:4px 6px}}
 @media(max-height:540px){.fish-casting .fish-scene{max-height:80px}}
 @media(prefers-reduced-motion:reduce){.fish-bobber,.fish-ripple,.fish-reward{animation:none!important}}
+
+.fish-line{position:absolute;left:40.2%;top:46%;height:26%;width:1px;background:#fff7dd99;pointer-events:none}.fish-swimmer{position:absolute;left:48%;top:78%;width:22px;height:8px;background:#102c39;opacity:.24;border-radius:60% 45% 45% 60%;pointer-events:none;animation:fish-swim 3s ease-in-out infinite alternate}.fish-swimmer:after{content:"";position:absolute;left:-6px;top:0;border-right:8px solid #102c39;border-top:4px solid transparent;border-bottom:4px solid transparent}.fish-bite .fish-swimmer{animation-duration:.6s}@keyframes fish-swim{from{transform:translateX(-10px)}to{transform:translateX(15px)}}@media(prefers-reduced-motion:reduce){.fish-swimmer{animation:none!important}}
