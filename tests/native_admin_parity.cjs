@@ -60,3 +60,17 @@ assert(admin.includes('if(draftRef.current===sent)'));
 assert(admin.includes('ticketGuard.accepts(request)')&&admin.includes('userGuard.accepts(request)')&&admin.includes('auditGuard.accepts(request)'));
 assert(admin.includes('Một phần dữ liệu chưa đồng bộ')&&admin.includes('createSerialRefresh(async()=>'));
 console.log('Admin mutation exclusion, stale selection protection, draft preservation and partial refresh status: PASS');
+
+const replySource=admin.slice(admin.indexOf('async function sendSupportReply('),admin.indexOf('async function act('));
+assert(replySource.includes("call('/api/admin/tickets/'+ticketId+'/messages','POST',{body})"));
+assert(!replySource.includes('admin_pin')&&!replySource.includes('pinRef'));
+assert(admin.includes('const ok=await sendSupportReply(ticket.id,sent.trim());'));
+const privileged=admin.slice(admin.indexOf('async function act('),admin.indexOf('const loadSystem='));
+assert(privileged.includes("if(!pin.trim())")&&privileged.includes('admin_pin:pin'));
+const replyRoute=server.slice(server.indexOf('async def admin_send_ticket('),server.indexOf('class RecoveryGrantIn'));
+assert(replyRoute.includes('require_admin(request)')&&!replyRoute.includes('verify_admin_pin_stepup'));
+assert(replyRoute.includes("admin_log(c,admin['id'],'support_reply'"));
+const web=fs.readFileSync(path.join(root,'static/app.js'),'utf8');
+const replyCase=web.slice(web.indexOf("case 'admin-ticket-reply':"),web.indexOf("case 'admin-broadcast':",web.indexOf("case 'admin-ticket-reply':")));
+assert(replyCase.includes('messages`,{body}')&&!replyCase.includes('adminProof')&&!replyCase.includes('modal('));
+console.log('Support replies need an Admin session, while sensitive actions retain PIN protection.');

@@ -218,3 +218,22 @@ assert(chat.includes("dialog==='compactChatActions'")&&chat.includes("dialog==='
 assert(chat.includes('toolButton:{width:44,height:44')&&chat.includes('headerAction:{minWidth:47,minHeight:44'));
 assert(chat.includes('accessibilityLabel="Thông tin hội thoại"'));
 console.log('Responsive chat header/composer, large text, full action access and touch targets: PASS');
+
+// Deleted inbox threads disappear by default, but contacts/groups remain searchable.
+const {filterGroupInbox}=require('../mobile/src/inboxTools');
+const removed={other_id:5,state:'accepted',display_name:'Bạn đã xóa',conversation_deleted:true,unread:0};
+const afterDelete=[...fixture,removed];
+assert.deepEqual(filterInbox(afterDelete,'','all',true).map(f=>f.other_id),[1,2]);
+assert(!filterInbox(afterDelete,'   ','all',true).some(f=>f.other_id===5));
+assert.deepEqual(filterInbox(afterDelete,'ban da xoa','all',true).map(f=>f.other_id),[5]);
+const afterNewMessage=afterDelete.map(f=>f.other_id===5?{...f,conversation_deleted:false,last_message:{created_at:10},unread:1}:f);
+assert(filterInbox(afterNewMessage,'','unread',true).some(f=>f.other_id===5));
+const groups=[{id:7,title:'Nhóm cũ',conversation_deleted:true},{id:8,title:'Nhóm mới',conversation_deleted:false}];
+assert.deepEqual(filterGroupInbox(groups,'').map(g=>g.id),[8]);
+assert.deepEqual(filterGroupInbox(groups,'nhom cu').map(g=>g.id),[7]);
+assert.deepEqual(filterGroupInbox(groups.map(g=>({...g,conversation_deleted:false})), '').map(g=>g.id),[7,8]);
+assert(chat.includes("onPress:()=>confirmDeleteConversation({scope:'dm',id:friend.other_id})"));
+assert(chat.includes("onLongPress={()=>confirmDeleteConversation({scope:'group',id:item.id})}"));
+assert(chat.includes("invoke('/api/chat/hide','POST'"));
+assert(chat.includes("data.type==='private-messages-hidden'")&&chat.includes('applyPrivateHide(data)'));
+console.log('Native conversation deletion, search and new-message reopening: PASS');

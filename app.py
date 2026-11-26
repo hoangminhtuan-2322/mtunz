@@ -1344,13 +1344,15 @@ async def get_friends(request: Request):
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
                  last.body AS last_body, last.created_at AS last_created,
-                 last.sender_id AS last_sender,
+                 last.sender_id AS last_sender,last.id AS last_id,d.through_id AS deleted_through,
                  (SELECT count(*) FROM messages
                    WHERE f.state='accepted' AND recipient_id=? AND sender_id=u.id AND read_at IS NULL
-                   AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)) AS unread
+                   AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)
+                   AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=messages.recipient_id AND h.scope='dm' AND h.chat_id=messages.sender_id AND h.message_id=messages.id)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
+          LEFT JOIN private_conversation_deletions d ON d.user_id=CASE WHEN f.u1=u.id THEN f.u2 ELSE f.u1 END AND d.scope='dm' AND d.chat_id=u.id
           LEFT JOIN restrictions r ON r.owner_id=? AND r.other_id=u.id
           LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
           LEFT JOIN messages last ON last.id=(
@@ -1358,11 +1360,12 @@ async def get_friends(request: Request):
               WHERE f.state='accepted' AND ((m.sender_id=? AND m.recipient_id=u.id)
                   OR (m.sender_id=u.id AND m.recipient_id=?))
                 AND (m.expires_at IS NULL OR m.expires_at>?) AND m.deleted_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=u.id AND h.message_id=m.id)
               ORDER BY m.id DESC LIMIT 1)
           WHERE f.u1=? OR f.u2=?
           ORDER BY f.created_at DESC
         ''',(u['id'],now(),u['id'],u['id'],u['id'],u['id'],
-             u['id'],u['id'],now(),u['id'],u['id']))
+             u['id'],u['id'],now(),u['id'],u['id'],u['id']))
         for r in allrows:
             accepted=r['state']=='accepted'
             visibility=r.pop('profile_visibility')
@@ -1379,6 +1382,9 @@ async def get_friends(request: Request):
             r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
                              if r.pop('avatar_attachment_id') and can_view_avatar else None)
             r.pop('show_online',None)
+            cutoff=r.pop('deleted_through')
+            last_id=r.pop('last_id')
+            r['conversation_deleted']=accepted and cutoff is not None and not (last_id and last_id>cutoff)
             last_created=r.pop('last_created')
             last_body=r.pop('last_body')
             last_sender=r.pop('last_sender')
@@ -1498,13 +1504,17 @@ async def message_history(request:Request,other_id:int,before:int=Query(0,ge=0,l
         params=[u['id'],other_id,other_id,u['id']]
         sql+=' AND (expires_at IS NULL OR expires_at>?)'
         params.append(now())
+        sql+=" AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=? AND h.message_id=messages.id)"
+        params.extend((u['id'],other_id))
         unread=None
         if not before and not after and not latest:
             unread=one(c,'''SELECT MIN(id) AS id FROM messages WHERE sender_id=? AND recipient_id=?
-                            AND deleted_at IS NULL AND read_at IS NULL AND (expires_at IS NULL OR expires_at>?)''',
-                       (other_id,u['id'],params[-1]))['id']
+                            AND deleted_at IS NULL AND read_at IS NULL AND (expires_at IS NULL OR expires_at>?)
+                            AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=? AND h.message_id=messages.id)''',
+                       (other_id,u['id'],params[4],u['id'],other_id))['id']
         rows,more_after=history_window(c,many,sql,params,before,after,latest or not unread_window,unread)
         result=message_page(c,rows,viewer_id=u['id'])
+        hide_revision=one(c,"SELECT COUNT(*) AS n FROM private_message_hides WHERE user_id=? AND scope='dm' AND chat_id=?",(u['id'],other_id))['n']
         # Hide read receipts when the reader opted out or restricted the sender.
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
         if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
@@ -1512,7 +1522,7 @@ async def message_history(request:Request,other_id:int,before:int=Query(0,ge=0,l
                 if item['sender_id']==u['id']:
                     item['read_at']=None
                     item['delivered_at']=None
-    return {'messages':result,'first_unread_id':unread,'more_after':more_after}
+    return {'messages':result,'first_unread_id':unread,'more_after':more_after,'private_hide_revision':hide_revision}
 
 
 @app.post('/api/messages')
@@ -2180,21 +2190,20 @@ async def delete_support_ticket(request:Request,tid:int,body:DeleteSupportTicket
     return {'ok':True}
 
 
-class AdminSupportMessage(SupportMessage):
-    admin_pin:str=Field(default='',max_length=6)
-
-
 @app.post('/api/admin/tickets/{tid}/messages')
-async def admin_send_ticket(request:Request,tid:int,body:AdminSupportMessage):
+async def admin_send_ticket(request:Request,tid:int,body:SupportMessage):
     admin=require_admin(request)
-    verify_admin_pin_stepup(request,admin,body.admin_pin)
+    throttle(request,'admin-support-reply',90,60,str(admin['id']))
+    message=body.body.strip()
+    if not message:
+        raise HTTPException(422,'Tin nhắn không được để trống.')
     with db() as c:
         lock_support_write(c)
         t=support_ticket(c,tid,lock=True)
         if t['status']!='open':raise HTTPException(409,'Hãy mở lại phiếu trước khi trả lời.')
         cur=c.execute('INSERT INTO ticket_messages(ticket_id,from_admin,body,created_at) VALUES(?,1,?,?)',
-                      (tid,body.body.strip(),now()))
-        msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':1,'body':body.body.strip(),'created_at':now()}
+                      (tid,message,now()))
+        msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':1,'body':message,'created_at':now()}
         admin_log(c,admin['id'],'support_reply',str(tid))
     await hub.guest(t['guest_id'],'support-message',ticket_id=tid,message=msg)
     if t['owner_id']:

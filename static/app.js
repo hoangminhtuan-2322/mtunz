@@ -1122,18 +1122,18 @@ async function refreshFriends(redraw=true){
 function chatContactName(f){return f.nickname||f.display_name||f.username;}
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
-  return `<button type="button" class="side-item ${active?'active':''}" data-act="open-chat"
+  return `<div class="private-chat-list-row" style="display:flex;align-items:center"><button type="button" style="flex:1;min-width:0" class="side-item ${active?'active':''}" data-act="open-chat"
     data-id="${f.other_id}" aria-current="${active?'true':'false'}"
     aria-label="Mở trò chuyện với ${esc(chatContactName(f))}">
    ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(chatContactName(f))}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
-   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
+   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button><button type="button" class="btn ghost sm" data-act="delete-conversation" data-scope="dm" data-id="${f.other_id}" aria-label="Xóa cuộc trò chuyện" title="Xóa cuộc trò chuyện">${icon('trash',16)}</button></div>`;
 }
 function sideBody(){
   const accepted=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived);
   const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
   const q=state.sideFilter||'';
   const normalized=q.toLocaleLowerCase('vi');
-  const filtered=accepted.filter(x=>[chatContactName(x),x.display_name||x.username].some(name=>String(name||'').toLocaleLowerCase('vi').includes(normalized)));
+  const filtered=accepted.filter(x=>(!x.conversation_deleted||normalized.trim())&&[chatContactName(x),x.display_name||x.username].some(name=>String(name||'').toLocaleLowerCase('vi').includes(normalized)));
   const visibleLimit=Math.max(60,Number(state.sidebarVisibleCount)||60);
   const visible=filtered.slice(0,visibleLimit);
   return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
@@ -1217,6 +1217,7 @@ function convoHeader(f){if(!f)return '';
  <button type="button" class="btn ghost sm" data-v4-act="schedule-list" title="Tin nhắn hẹn giờ">⏰ <span class="button-word">Đã hẹn</span></button>
  <button class="btn ghost sm" data-act="call-audio" data-id="${f.other_id}" title="Gọi thoại">${icon('phone',15)}</button>
  <button class="btn ghost sm" data-act="call-video" data-id="${f.other_id}" title="Gọi video">${icon('video',15)}</button>
+ <button type="button" class="btn ghost sm" data-act="private-delete-menu" title="Quản lý xóa tin nhắn">${icon('trash',16)}</button>
  <button class="btn ghost sm" data-act="mute-chat" data-id="${f.other_id}" title="${f.muted?'Bật':'Tắt'} thông báo">${icon('mute',15)}</button>
  <button class="btn ghost sm" data-act="pin-chat" data-id="${f.other_id}" title="${f.pinned?'Bỏ ghim':'Ghim'} hội thoại">${icon('check',15)} <span class="button-word">${f.pinned?'Bỏ ghim':'Ghim'}</span></button>
  <button class="btn ghost sm" data-act="archive-chat" data-id="${f.other_id}" title="${f.archived?'Bỏ lưu trữ':'Lưu trữ'} hội thoại">${icon('archive',15)}</button>
@@ -1378,7 +1379,8 @@ async function loadOlderChat(box=$('#chat-messages')){
   const page=await api(path+'?before='+first.id);
   if(!box.isConnected||state.user?.id!==owner||box!==$('#chat-messages'))return;
   const current=rows(),ids=new Set(current.map(message=>message.id));
-  const older=page.messages.filter(message=>!ids.has(message.id));
+  const ctx={owner,scope:group?'group':'dm',chat_id:id};
+  const older=page.messages.filter(message=>!ids.has(message.id)&&privateHideVisible(ctx,message));
   if(page.messages.length<70||!older.length)box.dataset.historyDone='true';
   if(older.length){
    const anchor=document.getElementById('msg-'+(group?'group':'dm')+'-'+first.id);
@@ -1591,8 +1593,13 @@ async function loadMessages(scroll=true){
   let r=await api(path+(box?.dataset.historyReady==='true'?'?latest=1':''));
   if(!current())return;
   // Opening a conversation always keeps the latest window; unread history is available by scrolling up.
-  const known=new Map(state.messages.filter(m=>m.id>0).map(m=>[m.id,m]));
-  for(const message of r.messages){
+  const ctx={owner:userId,scope:'dm',chat_id:friend};
+  if(privateHideRevisionChanged(ctx,r)){
+   state.messages=state.messages.filter(m=>m.id<=0);
+   if(box){delete box.dataset.expandedHistory;delete box.dataset.historyDone;}
+  }
+  const known=new Map(state.messages.filter(m=>m.id>0&&privateHideVisible(ctx,m)).map(m=>[m.id,m]));
+  for(const message of r.messages.filter(m=>privateHideVisible(ctx,m))){
    const realtime=known.get(message.id);
    const prior=existing.get(message.id);
    if(realtime&&!prior)continue;
@@ -1642,7 +1649,7 @@ function friendsContent(){
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
 }
 function archiveContent(){
- const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived);
+ const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived&&!f.conversation_deleted);
  return `<div class="section-wrap"><span class="eyebrow">TIN NHẮN ĐÃ CẤT GIỮ</span>
  <h1 class="section-title">Hội thoại lưu trữ</h1>
  <p class="section-lead">Ẩn cuộc trò chuyện khỏi hộp thư chính nhưng không xóa tin nhắn. Có thể mở lại bất cứ lúc nào.</p>
@@ -1853,6 +1860,7 @@ world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và qu�
 reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
 let adminLoadSequence=0;
 let adminTicketSequence=0;
+const adminSupportRepliesInFlight=new Set();
 async function loadAdmin(){
  if(!state.user?.is_admin)return;
  const owner=state.user.id,tab=state.adminTab,request=++adminLoadSequence;
@@ -3147,10 +3155,24 @@ document.addEventListener('submit',async event=>{
    case 'admin-ticket-reply':{
     const ticket=Number(form.dataset.ticketId),body=val('body');
     if(!ticket||!body)return;
-    modal({title:`Gửi phản hồi cho phiếu #${ticket}`,content:adminProofFields(),confirm:'Gửi phản hồi',handler:async host=>{
-     await post(`/api/admin/tickets/${ticket}/messages`,{body,...adminProofValue(host)});
-     if(state.adminTab==='tickets'&&state.adminTicket===ticket)await loadAdmin();
-    }});
+    const owner=state.user?.id,sequence=adminTicketSequence,replyKey=owner+':'+ticket;
+    if(!state.user?.is_admin||adminSupportRepliesInFlight.has(replyKey))break;
+    adminSupportRepliesInFlight.add(replyKey);
+    const current=()=>state.user?.id===owner&&state.adminTab==='tickets'&&state.adminTicket===ticket&&adminTicketSequence===sequence;
+    try{
+     const result=await post(`/api/admin/tickets/${ticket}/messages`,{body});
+     if(current()){
+      const input=document.querySelector('form[data-form="admin-ticket-reply"] input[name="body"]');
+      if(input?.value.trim()===body)input.value='';
+      if(result.message&&!state.adminTicketMessages.some(m=>m.id===result.message.id)){
+       state.adminTicketMessages.push(result.message);
+       const thread=$('#admin-ticket-messages');
+       if(thread){thread.innerHTML=renderTicketBubbles(state.adminTicketMessages);thread.scrollTop=thread.scrollHeight;}
+      }
+      input?.focus();
+     }
+     toast('Đã gửi phản hồi.','ok');
+    }finally{adminSupportRepliesInFlight.delete(replyKey);}
     break;
    }
    case 'admin-broadcast':{

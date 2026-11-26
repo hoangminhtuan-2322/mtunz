@@ -168,6 +168,15 @@ export default function AdminDashboard({token,onLogout,onExpired}){
   Notifications.getLastNotificationResponseAsync().then(value=>{if(value&&active)void open(value);}).catch(()=>{});
   return()=>{active=false;sub.remove();};
  },[token]);
+ async function sendSupportReply(ticketId,body){
+  if(AppState.currentState!=='active'||!actionGate.enter())return false;
+  setBusy(true);setError('');setNotice('');
+  try{
+   await call('/api/admin/tickets/'+ticketId+'/messages','POST',{body});
+   setNotice('Đã gửi phản hồi.');return true;
+  }catch(e){setError(e.message);return false;}
+  finally{actionGate.leave();setBusy(false);}
+ }
  async function act(path,method,body,success){
   const pin=pinRef.current;
   if(AppState.currentState!=='active')return false;
@@ -513,7 +522,7 @@ export default function AdminDashboard({token,onLogout,onExpired}){
       <Action label="Gửi phản hồi" disabled={busy||!draft.trim()} onPress={async()=>{
        const visit=ticketGuard.visit(),sent=draftRef.current;
        if(!visit||visit.key!==ticket.id||!sent.trim())return;
-       const ok=await act('/api/admin/tickets/'+ticket.id+'/messages','POST',{body:sent.trim()},'Đã gửi phản hồi.');
+       const ok=await sendSupportReply(ticket.id,sent.trim());
        if(!ok||!ticketGuard.current(visit))return; // Never erase a failed support reply.
        if(draftRef.current===sent){draftRef.current='';setDraft('');}
        await loadThread();

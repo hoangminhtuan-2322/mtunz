@@ -21,7 +21,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
 import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload,createHistoryJournal,applyHistoryEvent,replayHistoryEvents} from './realtime';
-import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
+import {conversationKey,filterInbox,filterGroupInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
@@ -312,6 +312,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [messages,setMessages]=useState([]),[more,setMore]=useState(false),
     [draft,setDraft]=useState(''),[picked,setPicked]=useState(null),
     [reply,setReply]=useState(null),[selection,setSelection]=useState(null),
+    [privateDeleteIds,setPrivateDeleteIds]=useState([]),
     [dialog,setDialog]=useState(''),[friendQuery,setFriendQuery]=useState(''),
     [results,setResults]=useState([]),[nickname,setNickname]=useState(''),[groupTitle,setGroupTitle]=useState(''),
     [groupCandidates,setGroupCandidates]=useState([]),[groupDetail,setGroupDetail]=useState(null),
@@ -453,6 +454,35 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     }catch(e){alertError(e);}
   },[invoke,alertError,user.bio]);
 
+  const hiddenRef=useRef({key:null,ids:new Set(),through:0});
+  const hideRevisionRef=useRef({key:null,value:0});
+  const filterPrivateRows=useCallback((rows,key)=>{
+    const hidden=hiddenRef.current;
+    return hidden.key===key?rows.filter(m=>Number(m.id)<=0||(!hidden.ids.has(Number(m.id))&&Number(m.id)>hidden.through)):rows;
+  },[]);
+  const applyPrivateHide=useCallback(change=>{
+    if(change.conversation_deleted){
+      if(change.scope==='group')setGroups(old=>old.map(g=>g.id===change.chat_id?{...g,conversation_deleted:true,last_message:null,unread:0}:g));
+      else setFriends(old=>old.map(f=>f.other_id===change.chat_id?{...f,conversation_deleted:true,last_message:null,unread:0,pinned:false,archived:false}:f));
+    }
+    const target=roomRef.current;
+    if(!target||target.scope!==change.scope||target.id!==change.chat_id)return;
+    const key=conversationKey(target);
+    if(hiddenRef.current.key!==key)hiddenRef.current={key,ids:new Set(),through:0};
+    const hidden=hiddenRef.current;
+    for(const id of change.message_ids||[])hidden.ids.add(Number(id));
+    hidden.through=Math.max(hidden.through,Number(change.through_id||0));
+    setMessages(old=>filterPrivateRows(old,key));
+    const hiddenId=id=>id>0&&(hidden.ids.has(Number(id))||Number(id)<=hidden.through);
+    setSelection(old=>old&&hiddenId(old.id)?null:old);
+    setReply(old=>old&&hiddenId(old.id||old.edit_id)?null:old);
+    setSearchResults(old=>old.filter(m=>!hiddenId(m.id)));
+    if(change.conversation_deleted){
+      Keyboard.dismiss();
+      roomWindowRef.current.reset(null);historyJournalRef.current.reset();roomRef.current=null;
+      setLoading(false);setRoom(null);setMessages([]);setSelection(null);setDialog('');setReply(null);setPrivateDeleteIds([]);
+    }
+  },[filterPrivateRows]);
   const loadWindow=useCallback(async(target,before=0)=>{
     if(!target)return;
     const key=conversationKey(target),guard=roomWindowRef.current;
@@ -467,13 +497,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(!guard.accepts(request)||conversationKey(roomRef.current)!==key)return;
       const events=journal.finish(tracking);
       if(events===null){setError('Hội thoại cập nhật liên tục. Hãy làm mới để tải lịch sử chính xác.');return;}
-      const next=replayHistoryEvents((response.messages||[]).map(sanitize),events,user.id);
+      const next=filterPrivateRows(replayHistoryEvents((response.messages||[]).map(sanitize),events,user.id),key);
+      const revision=Number(response.private_hide_revision||0);
+      const resetForHide=!before&&target.scope!=='world'&&hideRevisionRef.current.key===key&&hideRevisionRef.current.value!==revision;
+      if(!before&&target.scope!=='world')hideRevisionRef.current={key,value:revision};
       setMessages(current=>{
         if(!guard.current(request))return current;
-        if(before)return reuseMessageRows(current,dedupe([...next,...current]));
+        if(before)return reuseMessageRows(current,filterPrivateRows(dedupe([...next,...current]),key));
+        if(resetForHide)return reuseMessageRows(current,dedupe([...next,...current.filter(m=>Number(m.id)<=0)]));
         // Keep live events received while the REST request was in flight.
         // Only the overlapping IDs should be replaced by the server snapshot.
-        return reuseMessageRows(current,mergeRecentWindow(current,next));
+        return reuseMessageRows(current,filterPrivateRows(mergeRecentWindow(current,next),key));
       });
       keyRef.current=key;
       if(next.length&&(!before || liveRef.current[key]===undefined))
@@ -491,7 +525,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
     }catch(e){if(guard.accepts(request))alertError(e);}
     finally{journal.finish(tracking);if(!before&&guard.accepts(request))setLoading(false);guard.finish(request);}
-  },[invoke,alertError,user.id]);
+  },[invoke,alertError,user.id,filterPrivateRows]);
 
   // Reconcile every unseen batch when a socket reconnects after network loss.
   // A latest-only refresh would silently skip messages during longer outages.
@@ -511,7 +545,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         try{result=await invoke(toQuery(route(target),{after:String(cursor)}));}finally{events=journal.finish(tracking);}
         if(!current())return;
         if(events===null){await loadWindow(target);return;}
-        const rows=replayHistoryEvents((result.messages||[]).map(sanitize),events,user.id);
+        const rows=filterPrivateRows(replayHistoryEvents((result.messages||[]).map(sanitize),events,user.id),key);
         if(!rows.length)break;
         setMessages(old=>guard.current(visit)?reuseMessageRows(old,dedupe([...old,...rows])):old);
         cursor=Number(rows[rows.length-1].id);
@@ -525,7 +559,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
       await loadWindow(target);
     }catch(e){if(current()){alertError(e);await loadWindow(target);}}
-  },[invoke,loadWindow,alertError,user.id]);
+  },[invoke,loadWindow,alertError,user.id,filterPrivateRows]);
 
   const loadInbox=useMemo(()=>createSerialRefresh(async()=>{
     const results=await Promise.allSettled([invoke('/api/message-requests'),invoke('/api/blocks')]);
@@ -538,6 +572,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     const key=conversationKey(target);
     roomWindowRef.current.reset(key);historyJournalRef.current.reset();liveRef.current={[key]:0};
+    hiddenRef.current={key,ids:new Set(),through:0};hideRevisionRef.current={key,value:0};setPrivateDeleteIds([]);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
@@ -568,6 +603,9 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         void onCallSignal(data);return;
       }
       const target=roomRef.current;
+      if(data.type==='private-messages-hidden'){
+        applyPrivateHide(data);schedule(['lists']);return;
+      }
       if(data.type==='maintenance-mode'||(data.type==='maintenance-status'&&data.status?.active===true)){
         const reason=typeof data.reason==='string'?data.reason.trim():'';
         exitSession('Hệ thống đang bảo trì. Vui lòng đăng nhập lại sau.'+(reason?' '+reason:''));return;
@@ -584,7 +622,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(data.type==='message'&&target?.scope==='dm'){
         const m=data.message;
         if(m&&(m.sender_id===target.id||m.recipient_id===target.id)){
-          setMessages(old=>upsertMessage(old,sanitize(m)));
+          setMessages(old=>filterPrivateRows(upsertMessage(old,sanitize(m)),conversationKey(target)));
           if(m.sender_id!==user.id&&activeRef.current){
             invoke('/api/messages/delivered/'+target.id,'POST',{up_to:m.id}).catch(()=>{});
             invoke('/api/messages/read/'+target.id+'?up_to='+m.id,'POST').catch(()=>{});
@@ -602,7 +640,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         setPresenceClock(Date.now());
       }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
-        setMessages(old=>upsertMessage(old,sanitize(data.message)));
+        setMessages(old=>filterPrivateRows(upsertMessage(old,sanitize(data.message)),conversationKey(target)));
         if(activeRef.current&&data.message.sender_id!==user.id)
           invoke('/api/groups/'+target.id+'/read?up_to='+data.message.id,'POST').catch(()=>{});
       }
@@ -715,7 +753,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     });
     return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopConnectTimer();stopHeartbeat();check.stop();
       sub.remove();const previous=socket;socket=null;wsRef.current=null;try{previous?.close();}catch{};};
-  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,exitSession,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
+  },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,exitSession,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall,applyPrivateHide]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
   useEffect(()=>{
@@ -938,6 +976,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     setReply(message);setSelection(null);
     requestAnimationFrame(()=>inputRef.current?.focus());
   },[room,pendingSend,reply?.edit_id]);
+  async function hidePrivate(target,ids,clear=false){
+    try{
+      const result=await invoke('/api/chat/hide','POST',{scope:target.scope,chat_id:target.id,message_ids:ids,clear});
+      applyPrivateHide(result);
+      if(conversationKey(roomRef.current)===conversationKey(target)){
+        setSelection(null);setDialog('');setPrivateDeleteIds([]);
+      }
+      refreshLists().catch(alertError);
+    }catch(e){alertError(e);}
+  }
   async function action(message,what){
     const scope=room.scope,id=room.id;
     try{
@@ -947,6 +995,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(what==='forward'){setDialog('forward');return;}
       if(what==='save'){if(message.attachment)await saveSharedFile(message.attachment,token);return;}
       if(what==='pin'){await invoke('/api/chat/pins','POST',{scope,chat_id:id,message_id:message.id});setSelection(null);return;}
+      if(what==='hide-private'){
+        const target={scope,id};
+        setSelection(null);
+        Alert.alert('Xóa chỉ phía tôi','Tin nhắn sẽ biến mất trên tài khoản của bạn. Người khác vẫn xem được.',[
+          {text:'Hủy',style:'cancel'},{text:'Xóa phía tôi',style:'destructive',onPress:()=>hidePrivate(target,[message.id])}]);
+        return;
+      }
       if(what==='delete'){
         Alert.alert('Thu hồi tin nhắn','Tin nhắn sẽ bị thu hồi trên web và app.',[
           {text:'Hủy',style:'cancel'},{text:'Thu hồi',style:'destructive',onPress:async()=>{
@@ -1152,12 +1207,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
     ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
-  const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted),[friends]);
+  const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&!f.conversation_deleted),[friends]);
   const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
   const unreadTotal=useMemo(()=>acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0),[acceptedFriends]);
   const matchingFriends=useMemo(()=>filterInbox(friends,inboxQuery,inboxFilter,connection==='online'),[friends,inboxQuery,inboxFilter,connection]);
-  const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
-  const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length,[friends]);
+  const matchingGroups=useMemo(()=>filterGroupInbox(groups,groupQuery),[groups,groupQuery]);
+  const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted&&!f.conversation_deleted).length,[friends]);
   const worldChat=room?.scope==='world';
   const {compactHeader,compactComposer}=chatLayout(width,fontScale,room?.scope);
   const renderMessage=useCallback(({item})=><MemoMessage item={item} own={item.sender_id===user.id||item.is_mine}
@@ -1169,13 +1224,19 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     inboxRefreshRef.current=true;setRefreshingInbox(true);
     try{await refreshLists();}finally{inboxRefreshRef.current=false;setRefreshingInbox(false);}
   }
+  function confirmDeleteConversation(target){
+    Alert.alert('Xóa cuộc trò chuyện?','Cuộc trò chuyện và lịch sử cũ sẽ biến mất khỏi danh sách của bạn trên mọi thiết bị. Người khác vẫn giữ tin nhắn. Tin mới sẽ tạo lại cuộc trò chuyện.',[
+      {text:'Hủy',style:'cancel'},{text:'Xóa cuộc trò chuyện',style:'destructive',onPress:()=>hidePrivate(target,[],true)}
+    ]);
+  }
   function quickChatActions(friend){
     Keyboard.dismiss();
     Alert.alert(label(friend),'Quản lý cuộc trò chuyện',[
       {text:friend.pinned?'Bỏ ghim':'Ghim lên đầu',onPress:()=>quickPreference(friend,'pinned')},
       {text:friend.archived?'Khôi phục':'Lưu trữ',onPress:()=>quickPreference(friend,'archived')},
-      {text:'Tùy chọn khác',onPress:()=>Alert.alert(label(friend),'Thông báo cuộc trò chuyện',[
+      {text:'Tùy chọn khác',onPress:()=>Alert.alert(label(friend),'Quản lý cuộc trò chuyện',[
         {text:'Hủy',style:'cancel'},{text:friend.muted?'Bật thông báo':'Tắt thông báo',onPress:()=>quickPreference(friend,'muted')},
+        {text:'Xóa cuộc trò chuyện',style:'destructive',onPress:()=>confirmDeleteConversation({scope:'dm',id:friend.other_id})},
       ])},
     ],{cancelable:true});
   }
@@ -1460,7 +1521,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </View>}
         ListEmptyComponent={<EmptyState symbol="♧" title={groupQuery?'Không tìm thấy nhóm':'Chưa có nhóm nào'}
           subtitle="Tạo nhóm riêng để trò chuyện cùng bạn bè."/>}
-        renderItem={({item})=><Pressable style={css.chatRow} onPress={()=>openRoom({scope:'group',id:item.id})}>
+        renderItem={({item})=><Pressable style={css.chatRow} onLongPress={()=>confirmDeleteConversation({scope:'group',id:item.id})} delayLongPress={350} onPress={()=>openRoom({scope:'group',id:item.id})}>
           <View style={[css.avatar,{backgroundColor:mode==='light'?'#dce9f6':'#24466a'}]}>
             <Text style={[css.avatarText,{fontSize:24}]}>▦</Text></View>
           <View style={css.chatCopy}><View style={css.chatTopLine}>
@@ -1657,9 +1718,23 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <Btn quiet onPress={()=>action(selection,'pin')}>Ghim / bỏ ghim</Btn>
         <Btn quiet onPress={()=>action(selection,'forward')}>Chuyển tiếp</Btn>
         {!!selection.attachment&&<Btn quiet onPress={()=>action(selection,'save')}>Xem hoặc lưu tệp</Btn>}
+        {selection.id>0&&<Btn danger onPress={()=>action(selection,'hide-private')}>Xóa chỉ phía tôi</Btn>}
+        {selection.id>0&&<Btn quiet onPress={()=>{setPrivateDeleteIds([selection.id]);setSelection(null);setDialog('privateDelete');}}>Chọn nhiều tin nhắn</Btn>}
         {selection.sender_id===user.id&&<><Btn quiet onPress={()=>action(selection,'edit')}>Sửa tin nhắn</Btn>
           <Btn danger onPress={()=>action(selection,'delete')}>Thu hồi trên mọi thiết bị</Btn></>}
       </>}
+    </ModalSheet>
+    <ModalSheet visible={dialog==='privateDelete'} onClose={()=>{setDialog('');setPrivateDeleteIds([]);}} title="Xóa tin nhắn phía tôi">
+      <Text style={css.muted}>Chọn tối đa 100 tin đã tải. Người khác vẫn giữ nguyên tin nhắn.</Text>
+      {messages.filter(m=>m.id>0).slice(-100).map(m=><Btn quiet key={m.id}
+        onPress={()=>setPrivateDeleteIds(old=>old.includes(m.id)?old.filter(id=>id!==m.id):old.length<100?[...old,m.id]:old)}>
+        {privateDeleteIds.includes(m.id)?'☑':'☐'} {String(m.deleted_at?'Tin nhắn đã thu hồi':m.body||'Tệp đính kèm').slice(0,80)}
+      </Btn>)}
+      <Btn danger disabled={!privateDeleteIds.length} onPress={()=>{
+        const target=room;const ids=[...privateDeleteIds];
+        if(target)Alert.alert('Xóa tin đã chọn?',`Xóa ${ids.length} tin nhắn chỉ phía bạn.`,[
+          {text:'Hủy',style:'cancel'},{text:'Xóa',style:'destructive',onPress:()=>hidePrivate(target,ids)}]);
+      }}>Xóa {privateDeleteIds.length} tin đã chọn</Btn>
     </ModalSheet>
     <ModalSheet visible={dialog==='forward'} onClose={()=>{setDialog('');setSelection(null);}} title="Chuyển tiếp đến">
       {[...friends.filter(f=>f.state==='accepted').map(f=>({scope:'dm',id:f.other_id,name:label(f)})),
@@ -1673,6 +1748,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       avatar={room?.scope==='dm'?avatarSource(peer?.avatar_url,token):null}
       onClose={()=>setDialog('')}>
       <Btn quiet onPress={()=>setDialog('roomAppearance')}>Hình nền riêng của hội thoại</Btn>
+      {room&&room.scope!=='world'&&<>
+        <Btn quiet onPress={()=>{setPrivateDeleteIds([]);setDialog('privateDelete');}}>Chọn và xóa nhiều tin nhắn</Btn>
+        <Btn danger onPress={()=>confirmDeleteConversation(room)}>Xóa cuộc trò chuyện</Btn>
+      </>}
       {room?.scope==='dm'&&<>
         <View style={css.detailsCard}>
           <Text style={css.detailsSectionTitle}>Biệt danh</Text>

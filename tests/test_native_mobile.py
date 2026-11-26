@@ -336,7 +336,7 @@ def test_native_support_owned_ticket_sync_and_authorization():
                for m in browser.get(f'/api/support/tickets/{ticket_id}/messages').json()['messages'])
     with fresh.websocket_connect('/ws',headers=headers) as ws:
         reply=admin.post(f'/api/admin/tickets/{ticket_id}/messages',
-                         json={'body':'Hỗ trợ đã nhận','admin_pin':'2345'})
+                         json={'body':'Hỗ trợ đã nhận'})
         assert reply.status_code==200,reply.text
         event=ws.receive_json()
         assert event['type']=='support-message' and event['ticket_id']==ticket_id
@@ -371,7 +371,7 @@ def test_android_support_reply_push_to_owner_without_private_body(monkeypatch):
         # cannot reliably wake a cross-loop asyncio.Queue.
         running.cookies.update(admin.cookies)
         sent=running.post(f'/api/admin/tickets/{tid}/messages',
-                          json={'body':'Thông tin tài khoản riêng tư','admin_pin':'2345'})
+                          json={'body':'Thông tin tài khoản riêng tư'})
         assert sent.status_code==200,sent.text
         [message]=received.get(timeout=4)
         assert message['to']==token
