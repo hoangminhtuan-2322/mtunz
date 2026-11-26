@@ -2660,3 +2660,6 @@ from community_plus_v7 import install as _install_community_plus_v7
 _install_community_plus_v7(_sys.modules[__name__])
 from admin_readiness_v7 import install as _install_admin_readiness_v7
 _install_admin_readiness_v7(_sys.modules[__name__])
+
+from fishing_life import install as _install_fishing_life
+_install_fishing_life(_sys.modules[__name__])

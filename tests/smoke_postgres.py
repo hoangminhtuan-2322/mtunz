@@ -205,6 +205,17 @@ with TestClient(app, base_url="https://testserver") as admin:
         assert guest.get(f"/api/support/tickets/{ticket_id}/messages").status_code==404
         assert not admin.patch(intake,json={"paused":False,"admin_pin":"2345"}).json()["paused"]
 
+        # Exercise the integrated game against disposable PostgreSQL, not production.
+        fish=guest.get('/api/fishing/state')
+        assert fish.status_code==200,fish.text
+        assert fish.json()['gold']==150
+        assert len(fish.json()['daily']['quests'])==3
+        cast=guest.post('/api/fishing/cast',json={'region':0,'bait':0})
+        assert cast.status_code==200,cast.text
+        active=cast.json()['cast']
+        assert active and active['region']==0 and 'fish' not in active
+        assert guest.post('/api/fishing/cancel',json={'cast_id':active['id'],'step':active['step']}).json()['cast'] is None
+        assert guest.post('/api/fishing/sell-common',json={'fish_ids':['0'*32]}).json()['gold']==150
         endpoint="/api/admin/security/maintenance"
         enabled=admin.post(endpoint,json={"enabled":True,"admin_pin":"2345"})
         assert enabled.status_code==200,enabled.text
