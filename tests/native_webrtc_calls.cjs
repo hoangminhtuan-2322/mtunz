@@ -97,3 +97,21 @@ assert.deepEqual(freshIce([{at:1,signal:ice},{at:50000,signal:ice},{at:60000,sig
 assert(calls.includes('c.applyingAnswer||c.pc.remoteDescription')&&calls.includes('pendingIce.current.clear()'));
 assert(calls.includes('disabled={accepting}')&&calls.includes('secondsRemaining(incoming.startedAt'));
 console.log('Duplicate invitation/answer guards, bounded expiring ICE, accept state and countdown: PASS');
+
+const {validDescription,createLocalIceGate}=require('../mobile/src/callSignalPolicy');
+assert(validDescription({type:'answer',sdp:'v=0'},'answer'));
+assert(!validDescription({type:'answer',sdp:'x'.repeat(14000)},'answer'));
+assert(!validDescription({type:'offer',sdp:'v=0'},'answer'));
+const sent=[];
+const gate=createLocalIceGate(x=>{sent.push(x.candidate);return true;},2);
+assert(gate.push(ice));assert(gate.push({...ice,candidate:'candidate:2'}));
+assert(!gate.push({...ice,candidate:'candidate:3'}));assert.deepEqual(sent,[]);
+sent.push('offer');assert(gate.release());assert(gate.push({...ice,candidate:'candidate:4'}));
+assert.deepEqual(sent,['offer','candidate:1','candidate:2','candidate:4']);
+gate.close();assert(!gate.push(ice));assert(!gate.release());
+const broken=createLocalIceGate(()=>false);broken.push(ice);assert(!broken.release());assert(!broken.push(ice));
+assert(calls.includes('c.localIce.push(item)')&&calls.includes('c.localIce?.close()'));
+assert.equal((calls.match(/c\.localIce\.release\(\)/g)||[]).length,2);
+assert(calls.includes('if(event.track)tracks.push(event.track)'));
+assert(calls.includes("validDescription(data.signal,'answer')"));
+console.log('SDP-before-ICE sequencing, bounded queue, cancelled-call isolation, answer validation and streamless track handling: PASS');
