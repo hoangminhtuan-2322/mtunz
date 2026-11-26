@@ -1347,7 +1347,8 @@ async def get_friends(request: Request):
                  last.sender_id AS last_sender,
                  (SELECT count(*) FROM messages
                    WHERE f.state='accepted' AND recipient_id=? AND sender_id=u.id AND read_at IS NULL
-                   AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)) AS unread
+                   AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)
+                   AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=messages.recipient_id AND h.scope='dm' AND h.chat_id=messages.sender_id AND h.message_id=messages.id)) AS unread
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
@@ -1358,11 +1359,12 @@ async def get_friends(request: Request):
               WHERE f.state='accepted' AND ((m.sender_id=? AND m.recipient_id=u.id)
                   OR (m.sender_id=u.id AND m.recipient_id=?))
                 AND (m.expires_at IS NULL OR m.expires_at>?) AND m.deleted_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=u.id AND h.message_id=m.id)
               ORDER BY m.id DESC LIMIT 1)
           WHERE f.u1=? OR f.u2=?
           ORDER BY f.created_at DESC
         ''',(u['id'],now(),u['id'],u['id'],u['id'],u['id'],
-             u['id'],u['id'],now(),u['id'],u['id']))
+             u['id'],u['id'],now(),u['id'],u['id'],u['id']))
         for r in allrows:
             accepted=r['state']=='accepted'
             visibility=r.pop('profile_visibility')
@@ -1498,11 +1500,14 @@ async def message_history(request:Request,other_id:int,before:int=Query(0,ge=0,l
         params=[u['id'],other_id,other_id,u['id']]
         sql+=' AND (expires_at IS NULL OR expires_at>?)'
         params.append(now())
+        sql+=" AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=? AND h.message_id=messages.id)"
+        params.extend((u['id'],other_id))
         unread=None
         if not before and not after and not latest:
             unread=one(c,'''SELECT MIN(id) AS id FROM messages WHERE sender_id=? AND recipient_id=?
-                            AND deleted_at IS NULL AND read_at IS NULL AND (expires_at IS NULL OR expires_at>?)''',
-                       (other_id,u['id'],params[-1]))['id']
+                            AND deleted_at IS NULL AND read_at IS NULL AND (expires_at IS NULL OR expires_at>?)
+                            AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=? AND h.message_id=messages.id)''',
+                       (other_id,u['id'],params[4],u['id'],other_id))['id']
         rows,more_after=history_window(c,many,sql,params,before,after,latest or not unread_window,unread)
         result=message_page(c,rows,viewer_id=u['id'])
         # Hide read receipts when the reader opted out or restricted the sender.
