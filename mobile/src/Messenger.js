@@ -461,6 +461,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return hidden.key===key?rows.filter(m=>Number(m.id)<=0||(!hidden.ids.has(Number(m.id))&&Number(m.id)>hidden.through)):rows;
   },[]);
   const applyPrivateHide=useCallback(change=>{
+    if(change.conversation_deleted){
+      if(change.scope==='group')setGroups(old=>old.map(g=>g.id===change.chat_id?{...g,conversation_deleted:true,last_message:null,unread:0}:g));
+      else setFriends(old=>old.map(f=>f.other_id===change.chat_id?{...f,conversation_deleted:true,last_message:null,unread:0,pinned:false,archived:false}:f));
+    }
     const target=roomRef.current;
     if(!target||target.scope!==change.scope||target.id!==change.chat_id)return;
     const key=conversationKey(target);
@@ -473,6 +477,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     setSelection(old=>old&&hiddenId(old.id)?null:old);
     setReply(old=>old&&hiddenId(old.id||old.edit_id)?null:old);
     setSearchResults(old=>old.filter(m=>!hiddenId(m.id)));
+    if(change.conversation_deleted){
+      Keyboard.dismiss();
+      roomWindowRef.current.reset(null);historyJournalRef.current.reset();roomRef.current=null;
+      setLoading(false);setRoom(null);setMessages([]);setSelection(null);setDialog('');setReply(null);setPrivateDeleteIds([]);
+    }
   },[filterPrivateRows]);
   const loadWindow=useCallback(async(target,before=0)=>{
     if(!target)return;
@@ -1198,12 +1207,12 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
     ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
-  const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted),[friends]);
+  const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&!f.conversation_deleted),[friends]);
   const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
   const unreadTotal=useMemo(()=>acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0),[acceptedFriends]);
-  const matchingFriends=useMemo(()=>filterInbox(friends,inboxQuery,inboxFilter,connection==='online'),[friends,inboxQuery,inboxFilter,connection]);
-  const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
-  const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length,[friends]);
+  const matchingFriends=useMemo(()=>filterInbox(friends.filter(f=>!f.conversation_deleted||inboxQuery.trim()),inboxQuery,inboxFilter,connection==='online'),[friends,inboxQuery,inboxFilter,connection]);
+  const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>(!g.conversation_deleted||query)&&normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
+  const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted&&!f.conversation_deleted).length,[friends]);
   const worldChat=room?.scope==='world';
   const {compactHeader,compactComposer}=chatLayout(width,fontScale,room?.scope);
   const renderMessage=useCallback(({item})=><MemoMessage item={item} own={item.sender_id===user.id||item.is_mine}
@@ -1215,13 +1224,19 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     inboxRefreshRef.current=true;setRefreshingInbox(true);
     try{await refreshLists();}finally{inboxRefreshRef.current=false;setRefreshingInbox(false);}
   }
+  function confirmDeleteConversation(target){
+    Alert.alert('Xóa cuộc trò chuyện?','Cuộc trò chuyện và lịch sử cũ sẽ biến mất khỏi danh sách của bạn trên mọi thiết bị. Người khác vẫn giữ tin nhắn. Tin mới sẽ tạo lại cuộc trò chuyện.',[
+      {text:'Hủy',style:'cancel'},{text:'Xóa cuộc trò chuyện',style:'destructive',onPress:()=>hidePrivate(target,[],true)}
+    ]);
+  }
   function quickChatActions(friend){
     Keyboard.dismiss();
     Alert.alert(label(friend),'Quản lý cuộc trò chuyện',[
       {text:friend.pinned?'Bỏ ghim':'Ghim lên đầu',onPress:()=>quickPreference(friend,'pinned')},
       {text:friend.archived?'Khôi phục':'Lưu trữ',onPress:()=>quickPreference(friend,'archived')},
-      {text:'Tùy chọn khác',onPress:()=>Alert.alert(label(friend),'Thông báo cuộc trò chuyện',[
+      {text:'Tùy chọn khác',onPress:()=>Alert.alert(label(friend),'Quản lý cuộc trò chuyện',[
         {text:'Hủy',style:'cancel'},{text:friend.muted?'Bật thông báo':'Tắt thông báo',onPress:()=>quickPreference(friend,'muted')},
+        {text:'Xóa cuộc trò chuyện',style:'destructive',onPress:()=>confirmDeleteConversation({scope:'dm',id:friend.other_id})},
       ])},
     ],{cancelable:true});
   }
@@ -1506,7 +1521,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </View>}
         ListEmptyComponent={<EmptyState symbol="♧" title={groupQuery?'Không tìm thấy nhóm':'Chưa có nhóm nào'}
           subtitle="Tạo nhóm riêng để trò chuyện cùng bạn bè."/>}
-        renderItem={({item})=><Pressable style={css.chatRow} onPress={()=>openRoom({scope:'group',id:item.id})}>
+        renderItem={({item})=><Pressable style={css.chatRow} onLongPress={()=>confirmDeleteConversation({scope:'group',id:item.id})} delayLongPress={350} onPress={()=>openRoom({scope:'group',id:item.id})}>
           <View style={[css.avatar,{backgroundColor:mode==='light'?'#dce9f6':'#24466a'}]}>
             <Text style={[css.avatarText,{fontSize:24}]}>▦</Text></View>
           <View style={css.chatCopy}><View style={css.chatTopLine}>
@@ -1735,8 +1750,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <Btn quiet onPress={()=>setDialog('roomAppearance')}>Hình nền riêng của hội thoại</Btn>
       {room&&room.scope!=='world'&&<>
         <Btn quiet onPress={()=>{setPrivateDeleteIds([]);setDialog('privateDelete');}}>Chọn và xóa nhiều tin nhắn</Btn>
-        <Btn danger onPress={()=>{const target=room;Alert.alert('Xóa toàn bộ hội thoại phía tôi?','Lịch sử hiện tại sẽ biến mất ở tài khoản của bạn; tin mới vẫn xuất hiện. Người khác không bị ảnh hưởng.',[
-          {text:'Hủy',style:'cancel'},{text:'Xóa toàn bộ',style:'destructive',onPress:()=>hidePrivate(target,[],true)}]);}}>Xóa toàn bộ hội thoại phía tôi</Btn>
+        <Btn danger onPress={()=>confirmDeleteConversation(room)}>Xóa cuộc trò chuyện</Btn>
       </>}
       {room?.scope==='dm'&&<>
         <View style={css.detailsCard}>
