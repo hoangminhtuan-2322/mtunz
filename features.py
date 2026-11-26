@@ -148,6 +148,11 @@ def install(core):
               CREATE INDEX IF NOT EXISTS message_pins_chat_idx
                 ON message_pins(user_id,scope,chat_id,created_at);
             ''')
+            c.execute('''CREATE TABLE IF NOT EXISTS private_message_hides (
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scope TEXT NOT NULL CHECK(scope IN ('dm','group')),
+                chat_id BIGINT NOT NULL, message_id BIGINT NOT NULL,
+                PRIMARY KEY(user_id,scope,chat_id,message_id))''')
             column('messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('group_messages','forwarded','INTEGER NOT NULL DEFAULT 0')
             column('attachments','file_content','BLOB')
@@ -593,7 +598,7 @@ def install(core):
             user=one(c,'SELECT username,created_at,display_name,bio,phone,email,terms_accepted_at,terms_accepted_version FROM users WHERE id=?',(u['id'],))
             direct=many(c,'''SELECT id,sender_id,recipient_id,body,created_at,edited_at,deleted_at FROM messages
                              WHERE (sender_id=? OR recipient_id=?) AND
-                             (expires_at IS NULL OR expires_at>?) ORDER BY id''',(u['id'],u['id'],now()))
+                             (expires_at IS NULL OR expires_at>?) AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.message_id=messages.id) ORDER BY id''',(u['id'],u['id'],now(),u['id']))
             groups=many(c,'''SELECT gm.group_id,g.title,gm.role FROM group_members gm
                              JOIN chat_groups g ON g.id=gm.group_id WHERE gm.user_id=?''',(u['id'],))
             tickets=many(c,'SELECT id,kind,claim,status,created_at FROM tickets WHERE owner_id=?',(u['id'],))
@@ -767,12 +772,12 @@ def install(core):
         with db() as c:
             rows=many(c,'''SELECT g.id,g.title,g.description,g.created_by,g.created_at,gm.role,gm.last_read_id,gm.alert_mode,gm.mute_until,
                            (SELECT COUNT(*) FROM group_members z WHERE z.group_id=g.id) AS member_count,
-                           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.deleted_at IS NULL AND m.sender_id!=?) AS unread
+                           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.id>gm.last_read_id AND m.deleted_at IS NULL AND m.sender_id!=? AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=gm.user_id AND h.scope='group' AND h.chat_id=g.id AND h.message_id=m.id)) AS unread
                            FROM chat_groups g JOIN group_members gm ON gm.group_id=g.id
                            WHERE gm.user_id=? ORDER BY g.id DESC''',(u['id'],u['id']))
             for g in rows:
                 last=one(c,'''SELECT m.id,m.body,m.sender_id,m.created_at,m.deleted_at,m.attachment_id,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username
-                          FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=? ORDER BY m.id DESC LIMIT 1''',(g['id'],))
+                          FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE m.group_id=? AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=m.group_id AND h.message_id=m.id) ORDER BY m.id DESC LIMIT 1''',(g['id'],u['id']))
                 g['last_message']=dict(last) if last else None
             rows.sort(key=lambda g:g['last_message']['created_at'] if g['last_message'] else g['created_at'],reverse=True)
         return {'groups':rows}
@@ -857,9 +862,11 @@ def install(core):
             unread=None
             if not before and not after and not latest:
                 unread=one(c,'''SELECT MIN(id) AS id FROM group_messages WHERE group_id=?
-                                AND id>? AND sender_id!=? AND deleted_at IS NULL''',
-                           (gid,member['last_read_id'],u['id']))['id']
-            rows,more_after=history_window(c,many,sql,(gid,),before,after,latest or not unread_window,unread,'m.id')
+                                AND id>? AND sender_id!=? AND deleted_at IS NULL
+                                AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=group_messages.group_id AND h.message_id=group_messages.id)''',
+                           (gid,member['last_read_id'],u['id'],u['id']))['id']
+            sql+=" AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=m.group_id AND h.message_id=m.id)"
+            rows,more_after=history_window(c,many,sql,(gid,u['id']),before,after,latest or not unread_window,unread,'m.id')
             result=message_page(c,rows,'group')
         return {'messages':result,'first_unread_id':unread,'more_after':more_after}
 
@@ -1003,6 +1010,57 @@ def install(core):
         return {'ok':True,**change}
 
 
+    class PrivateHide(BaseModel):
+        scope: Literal['dm','group']
+        chat_id: int = Field(gt=0)
+        message_ids: list[int] = Field(default_factory=list, max_length=100)
+        clear: bool = False
+
+    @app.post('/api/chat/hide')
+    async def hide_private_messages(request:Request,body:PrivateHide):
+        u=current_user(request)
+        uid=u['id']
+        if u['is_admin']:
+            raise HTTPException(403,'Chỉ thành viên được xóa tin nhắn phía mình.')
+        throttle(request,'private-message-hide',30,60,str(uid))
+        ids=sorted(set(body.message_ids))
+        if body.clear == bool(ids) or any(i<=0 or i>2**63-1 for i in ids):
+            raise HTTPException(422,'Chọn tin nhắn hoặc xóa toàn bộ hội thoại.')
+        with db() as c:
+            if body.scope=='dm':
+                require_peer(c,uid,body.chat_id)
+                table='messages'
+                where='((sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?))'
+                args=(uid,body.chat_id,body.chat_id,uid)
+            else:
+                active_member(c,body.chat_id,uid)
+                table='group_messages'
+                where='group_id=?'
+                args=(body.chat_id,)
+            if ids:
+                marks=','.join('?' for _ in ids)
+                where+=f' AND id IN ({marks})'
+                args+=tuple(ids)
+                found=many(c,f'SELECT id FROM {table} WHERE {where}',args)
+                if len(found)!=len(ids):
+                    raise HTTPException(404,'Có tin nhắn không thuộc cuộc trò chuyện.')
+            cutoff=0
+            if body.clear:
+                cutoff=one(c,f'SELECT MAX(id) AS n FROM {table} WHERE {where}',args)['n'] or 0
+                where+=' AND id<=?'
+                args+=(cutoff,)
+            c.execute(f'''INSERT INTO private_message_hides(user_id,scope,chat_id,message_id)
+                          SELECT ?,?,?,id FROM {table} WHERE {where}
+                          ON CONFLICT(user_id,scope,chat_id,message_id) DO NOTHING''',
+                      (uid,body.scope,body.chat_id,*args))
+            c.execute('''DELETE FROM message_pins WHERE user_id=? AND scope=? AND chat_id=?
+                          AND message_id IN (SELECT message_id FROM private_message_hides
+                              WHERE user_id=? AND scope=? AND chat_id=?)''',
+                      (uid,body.scope,body.chat_id,uid,body.scope,body.chat_id))
+        change={'scope':body.scope,'chat_id':body.chat_id,'message_ids':ids,'through_id':cutoff}
+        await hub.user(uid,'private-messages-hidden',**change)
+        return {'ok':True,**change}
+
     # Pinned messages are private bookmarks in each chat, not global moderation.
     class PinMessage(BaseModel):
         scope: Literal['dm','group']
@@ -1021,7 +1079,7 @@ def install(core):
             active_member(c,chat_id,uid)
             row=one(c,'SELECT * FROM group_messages WHERE id=? AND group_id=? AND deleted_at IS NULL',
                     (mid,chat_id))
-        if not row:
+        if not row or one(c,'SELECT 1 FROM private_message_hides WHERE user_id=? AND scope=? AND chat_id=? AND message_id=?',(uid,scope,chat_id,mid)):
             raise HTTPException(404,'Không tìm thấy tin nhắn trong cuộc trò chuyện này.')
         return row
 
@@ -1165,11 +1223,11 @@ def install(core):
             pattern='%'+q.strip().replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
             if group_id is not None:
                 active_member(c,group_id,u['id'])
-                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL ORDER BY m.id DESC LIMIT 50",(group_id,pattern))
+                rows=many(c,"SELECT m.id,m.body,m.created_at,COALESCE(NULLIF(u.display_name,''),'Thành viên') AS username FROM group_messages m JOIN users u ON u.id=m.sender_id WHERE group_id=? AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=m.group_id AND h.message_id=m.id) ORDER BY m.id DESC LIMIT 50",(group_id,pattern,u['id']))
             else:
                 if other_id is None:raise HTTPException(422,'Cần chọn một cuộc trò chuyện.')
                 require_peer(c,u['id'],other_id)
-                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now()))
+                rows=many(c,"SELECT id,body,created_at,sender_id FROM messages WHERE ((sender_id=? AND recipient_id=?) OR (recipient_id=? AND sender_id=?)) AND body LIKE ? ESCAPE '\\' AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?) AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='dm' AND h.chat_id=? AND h.message_id=messages.id) ORDER BY id DESC LIMIT 50",(u['id'],other_id,u['id'],other_id,pattern,now(),u['id'],other_id))
         return {'results':rows}
 
     @app.post('/api/notifications/read')
