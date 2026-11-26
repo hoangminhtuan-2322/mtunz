@@ -6,3 +6,6 @@ Independent branch from production main; R2 is not a dependency. No version bump
 - Account-scoped Neon/SQLite records and cascading deletion. Server state is shared by web and native Android, not live pushed. Refresh to reconcile multi-device changes.
 - Native view uses standard React Native components; no webview. Lightweight illustrated landscape (not final art). No audio, multiplayer, weather, leaderboard or offline play yet.
 - Timing and economy require physical-device and PostgreSQL integration testing; latency can reduce timing window. No production migration performed. 
+
+## Adaptive layout
+Desktop hides only the fishing workspace's redundant conversation list and uses two columns when available content width is at least 780 CSS pixels; compact web uses a single column and hides selectors during a cast. Five primary navigation items remain unchanged; Fishing Life is in More / Settings, and Android's account entertainment shortcut. Native uses a responsive width/font scale check, minimum 44dp targets and a larger primary control. Version remains batched with the pending coordinated release. Browser layout tests use a mocked API and real Chromium; device and whole-app visual testing still required.

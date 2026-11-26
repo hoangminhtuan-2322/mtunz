@@ -1,1 +1,30 @@
-.fishing-shell{overflow-y:auto;padding:18px!important}.fishing-shell #fishing-game{max-width:780px;margin:auto;display:grid;gap:14px}.fish-hero{background:linear-gradient(150deg,#102e35,#183e4a);color:#f4fbf6;border:1px solid #407c7d;border-radius:22px;padding:18px;display:grid;gap:12px}.fish-top,.fish-row,.fish-actions,.fish-tabs{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.fish-top b{letter-spacing:.12em}.fish-landscape{background:linear-gradient(#8ba4aa,#c7bfa0);border-radius:16px;overflow:hidden}.fish-landscape svg{display:block;width:100%;max-height:220px}.fish-picks{display:grid;grid-template-columns:1fr 1fr;gap:10px}.fish-picks label{display:grid;gap:5px;font-size:.85rem}.fish-picks select{width:100%;background:#153b43;color:#fff;border:1px solid #64918b;border-radius:10px;padding:10px}.fish-hero p{margin:0;min-height:1.5em}.fish-status{min-height:1.3em;color:#d3f1df;font-weight:700}.fish-meter{height:8px;border-radius:12px;background:#345a60;overflow:hidden}.fish-meter i{display:block;width:0;height:100%;background:#8de3b3}.fishing-shell button{background:#236c65;color:#fff;border:1px solid #4a9d8a;border-radius:10px;padding:10px 14px;cursor:pointer;font:inherit}.fishing-shell button:disabled{opacity:.45;cursor:default}.fish-actions button:first-child{flex:1;min-height:48px;background:#c5e9c8;color:#163f36;font-weight:700}.fish-tabs button{flex:1}.fish-list{display:grid;gap:8px}.fish-row{padding:12px;border:1px solid #54747455;border-radius:12px;background:#879c9210}.fish-row div{min-width:0;flex:1}.fish-row small{display:block;opacity:.85;font-size:.8rem;margin-top:5px}.fish-list h4{margin:10px 0 0}@media(max-width:480px){.fishing-shell{padding:9px!important}.fish-hero{padding:12px}.fish-picks{grid-template-columns:1fr}.fish-tabs{gap:5px}.fish-tabs button{padding:8px 6px;font-size:.8rem}}
+
+/* Fishing workspace only: no desktop conversation rail occupying the lake. */
+.shell.fishing-mode:not(.admin-shell)>.side{display:none!important}
+@media(min-width:801px){.shell.fishing-mode:not(.admin-shell){grid-template-columns:clamp(158px,16vw,194px) minmax(0,1fr)}.shell.fishing-mode:not(.admin-shell)>.main{grid-column:2;min-width:0}}
+.fishing-shell{container-type:inline-size;overflow-y:auto;overflow-x:hidden;min-width:0;padding:clamp(8px,2vw,24px)!important;overscroll-behavior:contain}
+.fishing-shell #fishing-game{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start;min-width:0}
+.fish-hero,.fish-side{min-width:0;box-sizing:border-box;border-radius:20px;padding:clamp(12px,2vw,22px);display:grid;gap:12px}
+.fish-hero{background:linear-gradient(150deg,#102e35,#183e4a);color:#f4fbf6;border:1px solid #407c7d}
+.fish-side{background:var(--card,#122735);border:1px solid #54747455}
+.fish-top,.fish-row,.fish-actions,.fish-tabs{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0}
+.fish-top b{letter-spacing:.08em}.fish-top span{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.fish-landscape{background:linear-gradient(#8ba4aa,#c7bfa0);border-radius:14px;overflow:hidden}
+.fish-landscape svg{display:block;width:100%;height:auto;max-height:330px}
+.fish-picks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fish-picks label{display:grid;gap:5px;font-size:.85rem;min-width:0}
+.fish-picks select{box-sizing:border-box;min-width:0;width:100%;min-height:44px;background:#153b43;color:#fff;border:1px solid #64918b;border-radius:10px;padding:8px;font:inherit;font-size:16px}
+.fish-hero p{margin:0;min-height:1.5em;overflow-wrap:anywhere}
+.fish-status{min-height:1.3em;color:#d3f1df;font-weight:700;font-variant-numeric:tabular-nums}
+.fish-meter{height:8px;border-radius:12px;background:#345a60;overflow:hidden}.fish-meter i{display:block;width:0;height:100%;background:#8de3b3}
+.fishing-shell button{box-sizing:border-box;min-height:44px;min-width:0;background:#236c65;color:#fff;border:1px solid #4a9d8a;border-radius:10px;padding:8px 12px;cursor:pointer;font:inherit;touch-action:manipulation;overflow-wrap:anywhere}
+.fishing-shell button:disabled{opacity:.45;cursor:default}.fishing-shell button:focus-visible,.fish-picks select:focus-visible{outline:3px solid #f1ce88;outline-offset:2px}
+.fish-actions button:first-child{flex:1;min-height:54px;background:#c5e9c8;color:#163f36;font-weight:700}.fish-actions button.fish-ready{background:#f7d892;color:#40341d;border-color:#fff3cf}
+.fish-tabs button{flex:1 1 auto;font-size:.82rem}.fish-tabs button[data-fish=refresh]{flex:0 0 44px}.fish-tabs button[aria-pressed=true]{background:#c5e9c8;color:#163f36;font-weight:700}
+.fish-list{display:grid;gap:8px;min-width:0}.fish-row{padding:10px;border:1px solid #54747455;border-radius:12px;background:#879c9210;align-items:center}
+.fish-row div{min-width:0;flex:1 1 130px;overflow-wrap:anywhere}.fish-row small{display:block;opacity:.9;font-size:.8rem;margin-top:5px;overflow-wrap:anywhere}.fish-row span{overflow-wrap:anywhere}.fish-list h4{margin:10px 0 0}
+@container (min-width:780px){.fishing-shell #fishing-game{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px}.fish-hero{position:sticky;top:0}.fish-side{align-self:start}}
+@container (max-width:540px){.fish-hero,.fish-side{padding:12px;border-radius:15px;gap:9px}.fish-landscape svg{max-height:156px}.fish-top{font-size:.86rem}.fish-tabs{gap:5px}.fish-tabs button{padding:7px 6px}.fish-casting .fish-picks{display:none}.fish-casting .fish-landscape svg{max-height:110px}.fish-actions{gap:6px}.fish-actions button:first-child{min-height:56px}.fish-row{gap:7px}}
+@container (max-width:340px){.fish-picks{grid-template-columns:minmax(0,1fr)}.fish-tabs button{flex:1 1 42%}.fish-tabs button[data-fish=refresh]{flex:1 1 42%}}
+@media(max-height:540px){.fish-casting .fish-landscape svg{max-height:80px}.fish-casting .fish-picks{display:none}}
+@media(prefers-reduced-motion:reduce){.fishing-shell *{animation:none!important;transition:none!important}}
