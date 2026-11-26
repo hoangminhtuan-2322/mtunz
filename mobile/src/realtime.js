@@ -122,4 +122,25 @@ function createRoomWindowGuard(){
     olderBusy(){return older!==null;}
   };
 }
-module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard};
+// Only arm a periodic job while the app is in the foreground.
+function createForegroundTicker(tick,delay,clock={setInterval,clearInterval}){
+  let timer=null,epoch=0;
+  return {
+    start(){if(timer!==null)return;const generation=++epoch;timer=clock.setInterval(()=>{if(generation===epoch)tick();},delay);},
+    stop(){epoch++;if(timer!==null){clock.clearInterval(timer);timer=null;}}
+  };
+}
+// Duplicate or out-of-order receipts must not rebuild an entire message list
+// or move an already confirmed delivery/read timestamp backwards.
+function applyReceipt(rows,userId,kind,upTo,at){
+  if(!['read','delivered'].includes(kind)||!Number.isSafeInteger(Number(upTo))||Number(upTo)<=0||!Number.isFinite(Number(at))||Number(at)<=0)return rows;
+  const field=kind==='read'?'read_at':'delivered_at';
+  let changed=false;
+  const next=rows.map(row=>{
+    if(row.sender_id!==userId||Number(row.id)>Number(upTo)||Number(row[field]||0)>=Number(at))return row;
+    changed=true;return {...row,[field]:Number(at)};
+  });
+  return changed?next:rows;
+}
+function reuseEqualPayload(previous,next){return equalPayload(previous,next)?previous:next;}
+module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload};

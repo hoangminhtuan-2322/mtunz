@@ -182,3 +182,9 @@ assert(chat.includes('guard.pageMore(request,next.length)')&&chat.includes('guar
 assert(chat.includes('key={conversationKey(room)} inverted data={newestFirst}'));
 assert(chat.includes('if(guard.current(visit)&&isAtLatestRef.current)listRef.current?.scrollToOffset'));
 console.log('Conversation-specific list and stale response/scroll guards: PASS');
+
+assert(chat.includes('createForegroundTicker(tick,30000)')&&chat.includes('check.stop();clearTimeout(retryTimer)'));
+assert(chat.includes('const previous=socket;socket=null;wsRef.current=null;setConnection'));
+assert(chat.includes('if(!closed&&activeRef.current&&wsRef.current===current)onEvent(event)'));
+assert(chat.includes('applyReceipt(old,user.id,data.type,data.up_to,data.at)'));
+console.log('Native foreground timer and stale socket isolation: PASS');

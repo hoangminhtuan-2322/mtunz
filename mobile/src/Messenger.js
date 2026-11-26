@@ -20,7 +20,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
-import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard} from './realtime';
+import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
@@ -336,7 +336,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [sessionsLoading,setSessionsLoading]=useState(false),
     [sessionMessage,setSessionMessage]=useState('');
   const newestFirst=useMemo(()=>[...messages].reverse(),[messages]);
-  const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
+  const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(AppState.currentState==='active'),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
     keyRef=useRef(null),
@@ -423,15 +423,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const tasks=await Promise.allSettled([
       invoke('/api/friends'),invoke('/api/groups'),invoke('/api/notifications')]);
     if(requested!==listRequestRef.current)return;
-    if(tasks[0].status==='fulfilled')setFriends((tasks[0].value.friends||[]).map(friend=>{
+    if(tasks[0].status==='fulfilled')setFriends(old=>reuseEqualPayload(old,(tasks[0].value.friends||[]).map(friend=>{
       const event=presenceEventsRef.current.get(friend.other_id);
       if(!event||event.version<=presenceBefore)return friend;
       return {...friend,online:event.online,last_seen:event.last_seen||friend.last_seen};
-    }));
-    if(tasks[1].status==='fulfilled')setGroups(tasks[1].value.groups||[]);
+    })));
+    if(tasks[1].status==='fulfilled')setGroups(old=>reuseEqualPayload(old,tasks[1].value.groups||[]));
     if(tasks[2].status==='fulfilled'){
       const n=tasks[2].value.notifications||[];
-      setNotices(n);setNoticesUnread(n.filter(x=>!x.read_at).length);
+      setNotices(old=>reuseEqualPayload(old,n));setNoticesUnread(n.filter(x=>!x.read_at).length);
     }
   }),[invoke]);
   const refreshSocial=useCallback(async()=>{
@@ -606,8 +606,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
       if(data.type==='read'&&target?.scope==='dm'&&data.by===target.id||
          data.type==='delivered'&&target?.scope==='dm'&&data.by===target.id){
-        setMessages(old=>old.map(m=>m.sender_id===user.id&&m.id<=data.up_to?
-          {...m,[data.type==='read'?'read_at':'delivered_at']:data.at}:m));
+        setMessages(old=>applyReceipt(old,user.id,data.type,data.up_to,data.at));
       }
       if(data.type==='world-message'&&target?.scope==='world'&&data.message?.room_id===target.id)
         setMessages(old=>upsertMessage(old,sanitize(data.message)));
@@ -670,27 +669,36 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         heartbeatTimer=setInterval(beat,6000);
         retryDelay=1200;setConnection('online');schedule(['lists','catchup']);
       };
-      current.onmessage=event=>{if(wsRef.current===current)onEvent(event);};
+      current.onmessage=event=>{if(!closed&&activeRef.current&&wsRef.current===current)onEvent(event);};
       current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
       current.onclose=()=>{
         if(wsRef.current!==current)return;
+        wsRef.current=null;socket=null;
         stopConnectTimer();stopHeartbeat();endNativeCall(false,'network');if(closed)return;
         setConnection('offline');
         typingRef.current.active=false;
         retry();
       };
     }
-    connect();
+    const check=createForegroundTicker(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN){schedule();if(!retryTimer&&socket?.readyState!==WebSocket.CONNECTING)connect();}},15000);
+    activeRef.current=AppState.currentState==='active';
+    if(activeRef.current){connect();check.start();}
     const sub=AppState.addEventListener('change',state=>{
-      activeRef.current=state==='active';
-      reportPushVisibility(socket,activeRef.current);
-      if(!activeRef.current){clearTimeout(retryTimer);retryTimer=null;stopConnectTimer();stopTyping();updateRemoteTyping(false);stopHeartbeat();socket?.close();return;}
+      const nextActive=state==='active';
+      if(nextActive===activeRef.current)return;
+      activeRef.current=nextActive;
+      reportPushVisibility(socket,nextActive);
+      if(!nextActive){
+        check.stop();clearTimeout(retryTimer);retryTimer=null;stopConnectTimer();stopTyping();updateRemoteTyping(false);stopHeartbeat();
+        const previous=socket;socket=null;wsRef.current=null;setConnection('offline');
+        try{previous?.close();}catch{}return;
+      }
+      check.start();
       if(socket?.readyState!==WebSocket.OPEN&&socket?.readyState!==WebSocket.CONNECTING)connect();
       schedule(['lists','catchup']);
     });
-    const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN){schedule();if(!retryTimer&&socket?.readyState!==WebSocket.CONNECTING)connect();}},15000);
-    return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopConnectTimer();stopHeartbeat();clearInterval(check);
-      sub.remove();socket?.close();wsRef.current=null;};
+    return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopConnectTimer();stopHeartbeat();check.stop();
+      sub.remove();const previous=socket;socket=null;wsRef.current=null;try{previous?.close();}catch{};};
   },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,exitSession,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
@@ -754,9 +762,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
     const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
-    const interval=setInterval(tick,30000);
-    const sub=AppState.addEventListener('change',tick);
-    return()=>{clearInterval(interval);sub.remove();};
+    const ticker=createForegroundTicker(tick,30000);
+    if(AppState.currentState==='active')ticker.start();
+    const sub=AppState.addEventListener('change',state=>{if(state==='active'){tick();ticker.start();}else ticker.stop();});
+    return()=>{ticker.stop();sub.remove();};
   },[]);
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
   const peerStatus=friendPresence(peer,connection==='online',presenceClock);

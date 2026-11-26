@@ -76,3 +76,22 @@ guard.reset(null);assert(!guard.accepts(r2));assert.equal(guard.begin('dm:1',0),
 guard.reset('group:2');const visit=guard.visit('group:2');guard.exhausted(visit);
 assert.equal(guard.pageMore(guard.begin('group:2',0),70),null);
 console.log('Room visit isolation, out-of-order REST and independent pagination ownership: PASS');
+
+const {createForegroundTicker,applyReceipt,reuseEqualPayload}=require('../mobile/src/realtime');
+let ticks=0,startsTicker=0,stopsTicker=0,callback;
+const ticker=createForegroundTicker(()=>ticks++,15000,{
+ setInterval(fn,delay){assert.equal(delay,15000);startsTicker++;callback=fn;return startsTicker;},
+ clearInterval(){stopsTicker++;}
+});
+ticker.start();ticker.start();assert.equal(startsTicker,1);
+const oldTick=callback;oldTick();assert.equal(ticks,1);
+ticker.stop();ticker.stop();oldTick();assert.equal(ticks,1);assert.equal(stopsTicker,1);
+ticker.start();oldTick();callback();assert.equal(ticks,2);ticker.stop();
+const receiptRows=[{id:1,sender_id:7,read_at:100},{id:2,sender_id:7},{id:3,sender_id:8}];
+assert.equal(applyReceipt(receiptRows,7,'read',1,90),receiptRows);
+assert.equal(applyReceipt(receiptRows,7,'read',1,100),receiptRows);
+assert.equal(applyReceipt(receiptRows,7,'read',2,null),receiptRows);
+const updated=applyReceipt(receiptRows,7,'read',2,100);
+assert.equal(updated[0],receiptRows[0]);assert.equal(updated[1].read_at,100);assert.equal(updated[2],receiptRows[2]);
+assert.equal(reuseEqualPayload(receiptRows,JSON.parse(JSON.stringify(receiptRows))),receiptRows);
+console.log('Foreground-only timers, stale timer callbacks and stable receipt/list references: PASS');
