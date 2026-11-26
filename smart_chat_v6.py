@@ -105,6 +105,8 @@ def install(core):
                        FROM group_messages m LEFT JOIN attachments a ON a.id=m.attachment_id
                        WHERE m.group_id=? AND m.deleted_at IS NULL'''
                 args=[chat_id]
+            sql+=' AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope=? AND h.chat_id=? AND h.message_id=m.id)'
+            args.extend([u['id'],scope,chat_id])
             if q.strip():
                 sql+=" AND (m.body LIKE ? ESCAPE '\\' OR COALESCE(a.original_name,'') LIKE ? ESCAPE '\\')"
                 args.extend([pattern,pattern])
@@ -135,6 +137,8 @@ def install(core):
                     raise HTTPException(403,'Bạn không thuộc nhóm.')
                 m=one(c,'SELECT * FROM group_messages WHERE group_id=? AND id=?',(chat_id,message_id))
                 if not m or m['deleted_at']:raise HTTPException(404,'Tin nhắn không còn tồn tại.')
+            if one(c,'SELECT 1 FROM private_message_hides WHERE user_id=? AND scope=? AND chat_id=? AND message_id=?',(u['id'],scope,chat_id,message_id)):
+                raise HTTPException(404,'Tin nhắn không còn tồn tại.')
             if m['sender_id']!=u['id']:
                 raise HTTPException(403,'Chỉ người gửi được xem lịch sử sửa tin của chính mình.')
             rows=many(c,'''SELECT previous_body,changed_at FROM message_edit_history
