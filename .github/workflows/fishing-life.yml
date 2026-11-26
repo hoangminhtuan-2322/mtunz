@@ -5,6 +5,7 @@ on:
       - 'fishing_life.py'
       - 'tests/test_fishing_life.py'
       - 'tests/test_fishing_responsive.py'
+      - 'tests/native_fishing_layout.cjs'
       - 'static/fishing-life.*'
       - 'mobile/src/FishingLife.js'
       - '.github/workflows/fishing-life.yml'
@@ -27,6 +28,7 @@ jobs:
       - run: python -m pytest -q tests/test_fishing_life.py
       - run: node --check static/fishing-life.js
       - run: node --check static/app.js
+      - run: node tests/native_fishing_layout.cjs
       - run: pip install playwright
       - run: python -m playwright install --with-deps chromium
       - run: python -m pytest -q tests/test_fishing_responsive.py
