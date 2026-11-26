@@ -41,3 +41,10 @@ jobs:
         run: python tests/smoke_legacy_upgrade.py
       - name: Test Python imports and SQL against PostgreSQL
         run: python tests/smoke_postgres.py
+      - name: Install matching PostgreSQL backup tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+      - name: Verify logical backup and restore into separate disposable database
+        run: python tests/smoke_backup_restore.py
