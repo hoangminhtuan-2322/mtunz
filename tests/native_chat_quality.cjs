@@ -175,3 +175,10 @@ assert(app.includes('mode:themeMode,ready:themeReady')&&app.includes("const [mod
 
 assert(chat.includes('const MemoMessage=React.memo(Message)')&&chat.includes('data={newestFirst}')&&chat.includes('renderItem={renderMessage}'));
 assert(chat.includes('useMemo(()=>[...messages].reverse(),[messages])')&&chat.includes('upsertMessage(old,sanitize('));
+
+assert(chat.includes('roomWindowRef.current.reset(key)')&&chat.includes('roomWindowRef.current.reset(null)'));
+assert(chat.includes('if(!guard.accepts(request)||conversationKey(roomRef.current)!==key)return'));
+assert(chat.includes('guard.pageMore(request,next.length)')&&chat.includes('guard.finish(request)'));
+assert(chat.includes('key={conversationKey(room)} inverted data={newestFirst}'));
+assert(chat.includes('if(guard.current(visit)&&isAtLatestRef.current)listRef.current?.scrollToOffset'));
+console.log('Conversation-specific list and stale response/scroll guards: PASS');

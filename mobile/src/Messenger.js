@@ -20,7 +20,7 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
-import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay} from './realtime';
+import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
@@ -339,12 +339,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
-    keyRef=useRef(null),olderRef=useRef(false),
-    listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    keyRef=useRef(null),
+    listRef=useRef(null),roomWindowRef=useRef(null),liveRef=useRef({}),
     isAtLatestRef=useRef(true),lastNewestIdRef=useRef(null),
     presenceVersionRef=useRef(0),presenceEventsRef=useRef(new Map()),
     supportTicketRef=useRef(null),
     sendRef=useRef(false);
+  if(!roomWindowRef.current)roomWindowRef.current=createRoomWindowGuard();
   roomRef.current=room;
   supportTicketRef.current=supportTicket;
   const replyRef=useRef(null);
@@ -444,16 +445,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   const loadWindow=useCallback(async(target,before=0)=>{
     if(!target)return;
-    const generation=++loadSeq.current;
-    const key=target.scope+':'+target.id;
+    const key=conversationKey(target),guard=roomWindowRef.current;
+    const request=guard.begin(key,before);
+    if(!request)return;
     if(!before)setLoading(true);
     try{
       const path=route(target);
       const url=before?toQuery(path,{before:String(before)}):path;
       const response=await invoke(url);
-      if(roomRef.current?.scope!==target.scope||roomRef.current?.id!==target.id)return;
+      if(!guard.accepts(request)||conversationKey(roomRef.current)!==key)return;
       const next=(response.messages||[]).map(sanitize);
       setMessages(current=>{
+        if(!guard.current(request))return current;
         if(before)return dedupe([...next,...current]);
         // Keep live events received while the REST request was in flight.
         // Only the overlapping IDs should be replaced by the server snapshot.
@@ -462,7 +465,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       keyRef.current=key;
       if(next.length&&(!before || liveRef.current[key]===undefined))
         liveRef.current[key]=Math.max(Number(liveRef.current[key]||0),Number(next[next.length-1].id));
-      setMore(next.length>=70);
+      const hasMore=guard.pageMore(request,next.length);
+      if(hasMore!==null)setMore(hasMore);
       if(!before&&activeRef.current&&target.scope!=='world'){
         const newest=next.reduce((max,m)=>m.sender_id!==user.id&&!m.deleted_at?
           Math.max(max,Number(m.id)):max,0);
@@ -472,8 +476,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           invoke(endpoint+'?up_to='+newest,'POST').catch(()=>{});
         }
       }
-    }catch(e){alertError(e);}
-    finally{if(!before&&generation===loadSeq.current)setLoading(false);olderRef.current=false;}
+    }catch(e){if(guard.accepts(request))alertError(e);}
+    finally{if(!before&&guard.accepts(request))setLoading(false);guard.finish(request);}
   },[invoke,alertError,user.id]);
 
   // Reconcile every unseen batch when a socket reconnects after network loss.
@@ -481,27 +485,30 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const reconcileRoom=useCallback(async(target)=>{
     if(!target)return;
     if(target.scope==='world'){await loadWindow(target);return;}
-    const key=target.scope+':'+target.id;
+    const key=conversationKey(target),guard=roomWindowRef.current,visit=guard.visit(key);
+    if(!visit)return;
+    const current=()=>guard.current(visit)&&conversationKey(roomRef.current)===key;
     let cursor=Number(liveRef.current[key]||0);
     if(!cursor){await loadWindow(target);return;}
     let page=0,moreAfter=false;
     try{
       do{
         const result=await invoke(toQuery(route(target),{after:String(cursor)}));
-        if(roomRef.current?.scope!==target.scope||roomRef.current?.id!==target.id)return;
+        if(!current())return;
         const rows=(result.messages||[]).map(sanitize);
         if(!rows.length)break;
-        setMessages(old=>dedupe([...old,...rows]));
+        setMessages(old=>guard.current(visit)?reuseMessageRows(old,dedupe([...old,...rows])):old);
         cursor=Number(rows[rows.length-1].id);
         liveRef.current[key]=Math.max(Number(liveRef.current[key]||0),cursor);
         moreAfter=!!result.more_after;
       }while(moreAfter&&++page<20);
+      if(!current())return;
       if(moreAfter){
         setError('Cuộc trò chuyện có nhiều tin mới. Đang giới hạn tải nền để tránh giật lag; hãy mở lại để tải thêm.');
         return;
       }
       await loadWindow(target);
-    }catch(e){alertError(e);await loadWindow(target);}
+    }catch(e){if(current()){alertError(e);await loadWindow(target);}}
   },[invoke,loadWindow,alertError]);
 
   const loadInbox=useMemo(()=>createSerialRefresh(async()=>{
@@ -513,6 +520,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
     searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
+    const key=conversationKey(target);
+    roomWindowRef.current.reset(key);liveRef.current={[key]:0};
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
@@ -730,6 +739,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           if(!active)return;
           const item=(result.tickets||[]).find(ticket=>Number(ticket.id)===chatId);
           if(!item)return;
+          roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);cancelHistoryJump();
           setRoom(null);setDialog('support');setSupportTickets(result.tickets||[]);setSupportPaused(!!result.paused);
           await openSupportTicket(item);
         }
@@ -740,7 +750,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     return()=>{active=false;sub.remove();};
   },[openRoom,token,invoke,alertError]);
   const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
-    roomRef.current=null;isAtLatestRef.current=true;lastNewestIdRef.current=null;
+    roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
     const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
@@ -952,10 +962,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     finally{sendRef.current=false;setSending(false);setSendStage('');}
   }
   function loadOlder(){
-    if(!more||olderRef.current||historyBusyRef.current||loading||!messages.length||!room)return;
+    if(!more||roomWindowRef.current.olderBusy()||historyBusyRef.current||loading||!messages.length||!room)return;
     const oldest=Number(messages[0].id);
     if(!oldest||oldest<1)return;
-    olderRef.current=true;loadWindow(room,oldest);
+    loadWindow(room,oldest);
   }
 
   async function openInfo(){
@@ -1056,7 +1066,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     isAtLatestRef.current=true;setNewerMessages(false);
     // The inverted list may not have measured a just-sent image or message yet.
     // Scroll on the next frame, then let onContentSizeChange finish positioning.
-    requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated}));
+    const guard=roomWindowRef.current,visit=guard.visit(conversationKey(roomRef.current));
+    requestAnimationFrame(()=>{if(guard.current(visit)&&isAtLatestRef.current)listRef.current?.scrollToOffset({offset:0,animated});});
   }
   useEffect(()=>{
     if(!room)return;
@@ -1079,10 +1090,11 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   async function jumpToSearchResult(message){
     const target=roomRef.current,id=Number(message.id);
     if(!target||target.scope==='world'||!Number.isSafeInteger(id)||id<=0||historyBusyRef.current)return;
-    if(olderRef.current||loading){setSearchError('Đang tải hội thoại. Hãy thử lại khi hoàn tất.');return;}
+    if(roomWindowRef.current.olderBusy()||loading){setSearchError('Đang tải hội thoại. Hãy thử lại khi hoàn tất.');return;}
     const key=conversationKey(target),seq=++jumpSeq.current;
+    const guard=roomWindowRef.current,visit=guard.visit(key);
     historyBusyRef.current=true;setHistoryBusy(true);setSearchError('');
-    const current=()=>seq===jumpSeq.current&&conversationKey(roomRef.current)===key;
+    const current=()=>guard.current(visit)&&seq===jumpSeq.current&&conversationKey(roomRef.current)===key;
     try{
       const found=await findHistory(messages,id,async before=>{
         const result=await invoke(toQuery(route(target),{before:String(before)}));
@@ -1090,7 +1102,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       },current,8);
       if(!current())return;
       if(found.rows.length)setMessages(old=>dedupe([...found.rows,...old]));
-      if(found.exhausted)setMore(false);
+      if(found.exhausted){guard.exhausted(visit);setMore(false);}
       if(!found.found){setSearchError(found.exhausted?'Tin nhắn không còn trong lịch sử.':'Tin nhắn nằm xa hơn giới hạn tải nhanh. Hãy mở thêm lịch sử rồi thử lại.');return;}
       searchSeqRef.current++;setSearchBusy(false);setDialog('');Keyboard.dismiss();
       isAtLatestRef.current=false;setHighlightId(id);
@@ -1245,7 +1257,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     </Pressable>}
     {room?<View style={css.chatKeyboardArea}>
       {loading&&<ActivityIndicator color={P.accent}/>}
-      <FlatList ref={listRef} inverted data={newestFirst} keyExtractor={m=>String(m.id)}
+      <FlatList ref={listRef} key={conversationKey(room)} inverted data={newestFirst} keyExtractor={m=>String(m.id)}
         renderScrollComponent={renderChatScroll} style={[css.chatListViewport,{backgroundColor:wallpaperColor(chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)),mode)}]}
         onScrollToIndexFailed={recoverSearchScroll}
         onViewableItemsChanged={onSearchTargetVisible} viewabilityConfig={searchViewabilityConfig}

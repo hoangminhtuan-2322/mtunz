@@ -92,4 +92,34 @@ function createSerialRefresh(work){
 function reconnectDelay(base,random=Math.random()){
   return Math.min(30000,Math.max(600,Math.round(base*(0.8+Math.max(0,Math.min(1,random))*0.4))));
 }
-module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay};
+// Distinguish each opening of a room, including A -> B -> A. Keep latest
+// refresh and older-page ownership separate so their completion cannot race.
+function createRoomWindowGuard(){
+  let epoch=0,key=null,latest=0,older=null,paged=false;
+  const current=visit=>!!visit&&visit.epoch===epoch&&visit.key===key;
+  return {
+    reset(nextKey){epoch++;key=nextKey;latest=0;older=null;paged=false;},
+    visit(targetKey){return targetKey&&targetKey===key?{epoch,key}:null;},
+    current,
+    begin(targetKey,before){
+      if(!targetKey||targetKey!==key)return null;
+      if(before){
+        if(older)return null;
+        older={epoch,key,before};return older;
+      }
+      return {epoch,key,latest:++latest};
+    },
+    accepts(request){
+      return current(request)&&(request.before?request===older:request.latest===latest);
+    },
+    pageMore(request,count){
+      if(!this.accepts(request))return null;
+      if(request.before){paged=true;return count>=70;}
+      return paged?null:count>=70;
+    },
+    exhausted(visit){if(current(visit))paged=true;},
+    finish(request){if(current(request)&&request===older){older=null;return true;}return false;},
+    olderBusy(){return older!==null;}
+  };
+}
+module.exports = {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard};

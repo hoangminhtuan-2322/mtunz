@@ -8,7 +8,7 @@
     "userInterfaceStyle": "dark",
     "android": {
       "package": "com.mtunz.web",
-      "versionCode": 30,
+      "versionCode": 31,
       "permissions": [
         "POST_NOTIFICATIONS",
         "RECORD_AUDIO",

@@ -57,3 +57,22 @@ const {createRefreshQueue, mergeRecentWindow,reuseMessageRows,upsertMessage,crea
   assert.equal(reconnectDelay(1200,0),960);assert.equal(reconnectDelay(1200,1),1440);assert.equal(reconnectDelay(30000,1),30000);
   console.log('native realtime queue, stable rows, serial refresh and reconnect jitter regression tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+const {createRoomWindowGuard}=require('../mobile/src/realtime');
+const guard=createRoomWindowGuard();
+guard.reset('dm:1');
+const oldVisit=guard.visit('dm:1'),oldLatest=guard.begin('dm:1',0),oldPage=guard.begin('dm:1',100);
+assert(guard.olderBusy());assert.equal(guard.begin('dm:1',50),null);
+guard.reset('dm:2');guard.reset('dm:1');
+const latest=guard.begin('dm:1',0),newPage=guard.begin('dm:1',200);
+assert(!guard.current(oldVisit)&&!guard.accepts(oldLatest)&&!guard.accepts(oldPage));
+assert(!guard.finish(oldPage));assert(guard.olderBusy());
+assert.equal(guard.pageMore(newPage,12),false);
+assert.equal(guard.pageMore(latest,70),null,'Latest refresh cannot reopen exhausted pagination');
+assert(guard.finish(newPage));assert(!guard.olderBusy());
+const r1=guard.begin('dm:1',0),r2=guard.begin('dm:1',0);
+assert(!guard.accepts(r1)&&guard.accepts(r2));
+guard.reset(null);assert(!guard.accepts(r2));assert.equal(guard.begin('dm:1',0),null);
+guard.reset('group:2');const visit=guard.visit('group:2');guard.exhausted(visit);
+assert.equal(guard.pageMore(guard.begin('group:2',0),70),null);
+console.log('Room visit isolation, out-of-order REST and independent pagination ownership: PASS');
