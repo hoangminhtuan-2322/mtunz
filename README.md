@@ -38,7 +38,7 @@ Trên Render: **tuyệt đối không đưa `.env` hoặc `DATABASE_URL` lên Gi
 ## Hạn chế của gói Free
 
 - Render tự ngủ sau 15 phút không có lưu lượng HTTP/WebSocket. Lần mở lại cần thời gian khởi động; socket đang kết nối có thể bị ngắt, giao diện cần kết nối lại.
-- Database Neon sống độc lập trên Render; **không mất tài khoản/tin nhắn khi Render ngủ**. Tệp đính kèm tối đa **2 MB/tệp**, giới hạn **25 MB/người dùng**, lưu thành bytea trên Neon.
+- Database Neon sống độc lập trên Render; **không mất tài khoản/tin nhắn khi Render ngủ**. Video MP4/WebM tối đa **16 MiB/tệp**, tệp khác tối đa **2 MiB/tệp**, giới hạn tổng **25 MiB/người dùng**, lưu thành bytea trên Neon. Video tải lên không bị máy chủ nén lại. Để hỗ trợ video HD dài nhiều phút cần kho lưu trữ đối tượng riêng, không tăng vô hạn quota Neon.
 - Neon Free có hạn mức lưu trữ, compute và có thể thay đổi điều khoản. Chỉ phù hợp thử nghiệm, chưa được kiểm toán bảo mật độc lập.
 - Gọi thoại/video dùng WebRTC cơ bản; mạng phức tạp có thể cần TURN riêng (thường phát sinh chi phí).
 - Không hỗ trợ mã hóa đầu-cuối (E2EE). Admin có khả năng kiểm duyệt nội dung và người dùng cần được thông báo về điều này.

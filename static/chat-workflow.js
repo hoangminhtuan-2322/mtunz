@@ -144,7 +144,10 @@ function sendAttachment(file,ctx=activeWorkflowChat(),retry=null){
  if(!workflowCurrent(ctx))return Promise.resolve(false);
  abortStaleWorkflowUpload();
  if(workflowUpload?.status==='busy')return Promise.reject(Error('Đang tải tệp. Bạn có thể hủy lần tải này.'));
- if(file.size>12*1024*1024)return Promise.reject(Error('Tệp vượt giới hạn tải lên.'));
+ const video=/^video\/(mp4|webm)$/i.test(file.type);
+ const maxBytes=(video?16:2)*1024*1024;
+ if(file.size>maxBytes)return Promise.reject(Error('Tệp vượt giới hạn '+(video?16:2)+' MB.'));
+ // Send the selected video unchanged; never compress or transcode it here.
  const attempt=retry||{file,ctx,key:v4Nonce()};
  const xhr=new XMLHttpRequest();
  Object.assign(attempt,{xhr,status:'busy',error:''});
@@ -162,7 +165,7 @@ function sendAttachment(file,ctx=activeWorkflowChat(),retry=null){
    resolve(!!attachment&&workflowCurrent(ctx));
   };
   xhr.open('POST','/api/uploads');
-  xhr.timeout=60000;
+  xhr.timeout=video?180000:60000;
   xhr.upload.addEventListener('progress',event=>{
    const progress=$('.compose-upload-status progress');
    if(!progress||!workflowCurrent(ctx)||!event.lengthComputable)return;

@@ -146,9 +146,10 @@ with TestClient(app, base_url="https://testserver") as admin:
             assert links.status_code==200,links.text
             assert links.json()["items"][0]["links"][0]["host"]=="example.org"
 
-            video=b"\x00\x00\x00\x18ftypisom"+bytes(range(64))
+            video=b"\x00\x00\x00\x18ftypisom"+bytes(range(256))*(12288)  # synthetic > 3 MiB upload
             uploaded=guest.post("/api/uploads",files={"file":("clip.mp4",video,"video/mp4")})
             assert uploaded.status_code==200,uploaded.text
+            assert uploaded.json()["attachment"]["size"]==len(video)
             media=uploaded.json()["attachment"]["url"]
             assert peer.get(media,headers={"Range":"bytes=0-1"}).status_code==403
             attached=guest.post("/api/messages",json={"recipient_id":victim["id"],
@@ -165,6 +166,11 @@ with TestClient(app, base_url="https://testserver") as admin:
             full=peer.get(media,params={"download":"1"},headers={"Range":"bytes=0-1"})
             assert full.status_code==200 and full.content==video
             assert full.headers["content-disposition"].startswith("attachment;")
+            assert peer.get(media,headers={"Range":"bytes=1048576-1048607"}).content==video[1048576:1048608]
+            oversized=guest.post("/api/uploads",files={"file":("too-large.mp4",b"\x00\x00\x00\x18ftypisom"+b"x"*(16*1024*1024),"video/mp4")})
+            assert oversized.status_code==413,oversized.text
+            nonvideo=guest.post("/api/uploads",files={"file":("too-large.txt",b"x"*(2*1024*1024+1),"text/plain")})
+            assert nonvideo.status_code==413,nonvideo.text
 
             group=guest.post("/api/groups",json={"title":"Nhóm kiểm thử","member_ids":[victim["id"]]})
             assert group.status_code==200,group.text

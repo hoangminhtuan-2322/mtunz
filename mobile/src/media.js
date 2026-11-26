@@ -22,6 +22,8 @@ const EXTENSIONS = {
   '.ogg':'audio/ogg',
 };
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
+const attachmentLimit = mime => mime.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
 const cleanFileName = value => String(value || 'attachment').replace(/[\/\\:\x00-\x1f]/g, '_').slice(0, 95);
 
 function selected(asset) {
@@ -30,8 +32,8 @@ function selected(asset) {
   const ext = '.' + filename.split('.').pop().toLowerCase();
   const mime = asset.mimeType || EXTENSIONS[ext] || '';
   if (!ALLOWED.has(mime)) throw new Error('Định dạng tệp không được mtunz hỗ trợ.');
-  if (Number(asset.size ?? asset.fileSize ?? 0) > MAX_FILE_BYTES) {
-    throw new Error('Tệp vượt quá 2 MB của máy chủ hiện tại.');
+  if (Number(asset.size ?? asset.fileSize ?? 0) > attachmentLimit(mime)) {
+    throw new Error('Tệp vượt quá '+(attachmentLimit(mime)/1024/1024)+' MB. Video MP4/WebM được giữ nguyên tệp tải lên.');
   }
   return { uri:asset.uri, name:filename, type:mime, size:Number(asset.size || asset.fileSize || 0) };
 }
@@ -59,6 +61,7 @@ export async function chooseFile() {
 
 export async function uploadAttachment(token,file,uploadKey) {
   if (!token || !file) throw new Error('Không có phiên đăng nhập hoặc tệp.');
+  if(!ALLOWED.has(file.type)||Number(file.size||0)>attachmentLimit(file.type))throw new ApiError('Tệp không hợp lệ hoặc vượt giới hạn dung lượng.',413);
   const data = new FormData();
   data.append('file',{uri:file.uri,name:file.name,type:file.type});
   // The same ID as the chat send retry. A lost HTTP response must not upload
@@ -66,7 +69,7 @@ export async function uploadAttachment(token,file,uploadKey) {
   if(uploadKey)data.append('upload_key',uploadKey);
   let response;
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),60000);
+  const timer=setTimeout(()=>controller.abort(),file.type.startsWith('video/')?180000:60000);
   try {
     response = await fetch(API_ORIGIN+'/api/uploads',{
       method:'POST',headers:{Authorization:'Bearer '+token},body:data,signal:controller.signal,

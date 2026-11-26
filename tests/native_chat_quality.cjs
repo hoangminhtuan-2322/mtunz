@@ -218,3 +218,10 @@ assert(chat.includes("dialog==='compactChatActions'")&&chat.includes("dialog==='
 assert(chat.includes('toolButton:{width:44,height:44')&&chat.includes('headerAction:{minWidth:47,minHeight:44'));
 assert(chat.includes('accessibilityLabel="Thông tin hội thoại"'));
 console.log('Responsive chat header/composer, large text, full action access and touch targets: PASS');
+
+const mediaSource=read('mobile/src/media.js'),webUpload=read('static/chat-workflow.js'),serverUpload=read('features.py');
+assert(mediaSource.includes('MAX_VIDEO_BYTES = 16 * 1024 * 1024')&&mediaSource.includes('attachmentLimit(mime)'));
+assert(mediaSource.includes("file.type.startsWith('video/')?180000:60000"));
+assert(webUpload.includes('(video?16:2)*1024*1024')&&webUpload.includes('xhr.timeout=video?180000:60000'));
+assert(serverUpload.includes('MAX_VIDEO_UPLOAD = 16 * 1024 * 1024')&&serverUpload.includes('substring(file_content,?,?)'));
+console.log('Original video upload size, network timeout and PostgreSQL byte-window delivery: PASS');

@@ -24,6 +24,8 @@ from pydantic import BaseModel, Field
 
 EMOJIS = {'❤️', '😂', '👍', '😮', '😢', '🔥', '👏', '🎉'}
 MAX_UPLOAD = 12 * 1024 * 1024
+MAX_VIDEO_UPLOAD = 16 * 1024 * 1024
+HOSTED_ATTACHMENT_QUOTA = 25 * 1024 * 1024
 # Safe, deliberately limited allow-list; executable, HTML and SVG files are forbidden.
 ALLOWED = {
     'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
@@ -37,22 +39,29 @@ ALLOWED = {
 }
 
 
+def attachment_range(range_header, total):
+    """Return a half-open byte window, None for a full response, or () for 416."""
+    match=re.fullmatch(r'bytes=([0-9]{0,19})-([0-9]{0,19})',range_header.strip(),re.I)
+    if not match or not any(match.groups()):
+        return None
+    first,last=match.groups()
+    if first:
+        start=int(first)
+        end=min(int(last)+1,total) if last else total
+    else:
+        start=max(0,total-int(last))
+        end=total
+    return (start,end) if start<end else ()
+
+
 def hosted_attachment_response(content, mime, headers, range_header=''):
-    if range_header:
-        match=re.fullmatch(r'bytes=([0-9]{0,19})-([0-9]{0,19})',range_header.strip(),re.I)
-        if match and any(match.groups()):
-            first,last=match.groups()
-            total=len(content)
-            if first:
-                start=int(first)
-                end=min(int(last)+1,total) if last else total
-            else:
-                start=max(0,total-int(last))
-                end=total
-            if start>=end:
-                return Response(status_code=416,headers={**headers,'Content-Range':f'bytes */{total}'})
-            return Response(content[start:end],status_code=206,media_type=mime,
-                            headers={**headers,'Content-Range':f'bytes {start}-{end-1}/{total}'})
+    window=attachment_range(range_header,len(content))
+    if window==():
+        return Response(status_code=416,headers={**headers,'Content-Range':f'bytes */{len(content)}'})
+    if window:
+        start,end=window
+        return Response(content[start:end],status_code=206,media_type=mime,
+                        headers={**headers,'Content-Range':f'bytes {start}-{end-1}/{len(content)}'})
     return Response(content,media_type=mime,headers=headers)
 
 
@@ -608,6 +617,7 @@ def install(core):
         mime=(file.content_type or '').lower().split(';')[0]
         if mime not in ALLOWED:
             raise HTTPException(415,'Định dạng không hỗ trợ. Hãy dùng ảnh, video MP4/WebM, âm thanh, PDF, TXT, DOCX, XLSX hoặc ZIP.')
+        file_limit=MAX_VIDEO_UPLOAD if mime.startswith('video/') else upload_limit
         safe_name=re.sub(r'[\x00-\x1f\x7f/\\]+','_', Path(file.filename or 'tep-tin').name).strip('. ')[:120] or 'tep-tin'
         if safe_name.lower().endswith(('.html','.htm','.svg','.js','.exe','.bat','.cmd','.ps1')):
             raise HTTPException(415,'Định dạng có thể thực thi không được cho phép.')
@@ -629,7 +639,7 @@ def install(core):
                 first=b''
                 while chunk:=await file.read(65536):
                     total+=len(chunk)
-                    if total>upload_limit:raise HTTPException(413,'Tệp vượt quá hạn mức cho phép (2 MB trên Render Free).')
+                    if total>file_limit:raise HTTPException(413,f'Tệp vượt giới hạn {file_limit//(1024*1024)} MB.')
                     if len(first)<20:first+=(chunk[:20-len(first)])
                     out.write(chunk)
                     if digest:digest.update(chunk)
@@ -670,7 +680,7 @@ def install(core):
                 else:
                     if hosted:
                         used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=?',(u['id'],))['total']
-                        if used + total > 25*1024*1024:
+                        if used + total > HOSTED_ATTACHMENT_QUOTA:
                             raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')
                     content=path.read_bytes() if hosted else None
                     cur=c.execute('''INSERT INTO attachments(owner_id,stored_name,original_name,mime,size,created_at,
@@ -721,11 +731,8 @@ def install(core):
         inline=not download and f['mime'].startswith(('image/','audio/','video/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
         if hosted:
-            # Read the blob only AFTER permission checks, never via a public static URL.
-            with db() as c:
-                payload=one(c,'SELECT file_content FROM attachments WHERE id=?',(file_id,))
-            if not payload or payload['file_content'] is None:
-                raise HTTPException(404,'Nội dung tệp chưa được lưu trong PostgreSQL.')
+            # Keep attachment authorization unchanged. For a byte range, send only
+            # the requested bytes over the PostgreSQL connection, not the full blob.
             disposition='inline' if inline else 'attachment'
             headers['Content-Disposition']=f"{disposition}; filename*=UTF-8''{quote(f['original_name'])}"
             range_header=''
@@ -733,7 +740,27 @@ def install(core):
                 headers['Accept-Ranges']='bytes'
                 if not request.headers.get('If-Range'):
                     range_header=request.headers.get('Range','')
-            return hosted_attachment_response(bytes(payload['file_content']),f['mime'],headers,range_header)
+            with db() as c:
+                if range_header:
+                    metadata=one(c,'SELECT octet_length(file_content) AS length FROM attachments WHERE id=?',(file_id,))
+                    if not metadata or metadata['length'] is None:
+                        raise HTTPException(404,'Nội dung tệp chưa được lưu trong PostgreSQL.')
+                    total=metadata['length']
+                    window=attachment_range(range_header,total)
+                    if window==():
+                        return Response(status_code=416,headers={**headers,'Content-Range':f'bytes */{total}'})
+                    if window:
+                        start,end=window
+                        payload=one(c,'SELECT substring(file_content,?,?) AS file_content FROM attachments WHERE id=?',
+                                    (start+1,end-start,file_id))
+                        if not payload or payload['file_content'] is None:
+                            raise HTTPException(404,'Nội dung tệp chưa được lưu trong PostgreSQL.')
+                        return Response(bytes(payload['file_content']),status_code=206,media_type=f['mime'],
+                                        headers={**headers,'Content-Range':f'bytes {start}-{end-1}/{total}'})
+                payload=one(c,'SELECT file_content FROM attachments WHERE id=?',(file_id,))
+            if not payload or payload['file_content'] is None:
+                raise HTTPException(404,'Nội dung tệp chưa được lưu trong PostgreSQL.')
+            return hosted_attachment_response(bytes(payload['file_content']),f['mime'],headers)
         path=upload_dir/f['stored_name']
         if not path.is_file():raise HTTPException(404,'Dữ liệu tệp không còn trên máy chủ.')
         return FileResponse(path, media_type=f['mime'],
