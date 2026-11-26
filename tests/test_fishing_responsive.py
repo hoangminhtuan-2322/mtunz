@@ -20,6 +20,7 @@ def test_fishing_layout():
             page.add_script_tag(path=str(ROOT/'static/fishing-life.js'))
             page.evaluate('fishingMount()')
             page.locator('[data-fish=cast]').wait_for()
+            assert page.locator('.fish-scene').get_attribute('src')=='/static/fishing-art/scene-0.svg'
             page.wait_for_function("!document.querySelector('[data-fish=cast]').disabled")
             result=page.evaluate("""() => {
               const host=document.querySelector('.fishing-shell'),g=document.querySelector('#fishing-game'),a=document.querySelector('.fish-hero'),b=document.querySelector('.fish-side'),btn=document.querySelector('[data-fish=cast]');

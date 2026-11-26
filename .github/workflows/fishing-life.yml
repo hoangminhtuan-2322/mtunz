@@ -8,6 +8,9 @@ on:
       - 'tests/native_fishing_layout.cjs'
       - 'static/fishing-life.*'
       - 'mobile/src/FishingLife.js'
+      - 'mobile/src/FishingArt.js'
+      - 'static/fishing-art/**'
+      - 'mobile/assets/fishing/**'
       - '.github/workflows/fishing-life.yml'
   workflow_dispatch:
 permissions:

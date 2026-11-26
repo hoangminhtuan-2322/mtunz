@@ -28,3 +28,21 @@
 @container (max-width:340px){.fish-picks{grid-template-columns:minmax(0,1fr)}.fish-tabs button{flex:1 1 42%}.fish-tabs button[data-fish=refresh]{flex:1 1 42%}}
 @media(max-height:540px){.fish-casting .fish-landscape svg{max-height:80px}.fish-casting .fish-picks{display:none}}
 @media(prefers-reduced-motion:reduce){.fishing-shell *{animation:none!important;transition:none!important}}
+
+/* Shared local vector art: no external requests, no expensive canvas or blur. */
+.fish-landscape{position:relative;background:#40696d;isolation:isolate}
+.fish-scene{display:block;width:100%;height:auto;max-height:330px;object-fit:fill}
+.fish-location{position:absolute;top:10px;left:10px;padding:6px 9px;border-radius:9px;background:#102c39d9;color:#f7f4df;font-size:.78rem;font-weight:650}
+.fish-float-anchor{position:absolute;left:40%;top:72%;width:32px;height:18px;display:grid;place-items:center;pointer-events:none}
+.fish-ripple{position:absolute;width:30px;height:9px;border:1.5px solid #e7f8e9;border-radius:50%;animation:fish-ripple 1.7s ease-out infinite}
+.fish-bobber{position:absolute;top:-5px;width:7px;height:14px;border-radius:6px;background:linear-gradient(#dc715e 0 48%,#fff6df 48%);animation:fish-bob 1.7s ease-in-out infinite}
+.fish-bite .fish-ripple{border-color:#ffe3a7;animation-duration:.5s}.fish-bite .fish-bobber{animation-duration:.5s}
+@keyframes fish-ripple{from{transform:scale(.7);opacity:.8}to{transform:scale(1.7);opacity:.15}}@keyframes fish-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
+.fish-art{width:58px;height:44px;object-fit:contain;flex:none;display:block;background:#d7eee80c;border-radius:9px}
+.fish-art-large{width:108px;height:72px;background:none}.fish-unknown{width:58px;height:44px;display:grid;place-items:center;flex:none;background:#9cb4b51a;border-radius:9px;color:#a7baba}
+.fish-row>span:not(.fish-unknown){flex:1;min-width:0}.fish-reward{display:flex;align-items:center;gap:10px;border:1px solid var(--fish-rarity);border-radius:14px;background:#102f38;padding:8px;min-width:0;animation:fish-reveal .24s ease-out}
+.fish-reward>div{min-width:0;display:grid;gap:4px;overflow-wrap:anywhere}.fish-reward strong{color:var(--fish-rarity);font-size:1.1rem}.fish-reward small,.fish-reward span{color:#d1e5df;font-size:.8rem}
+@keyframes fish-reveal{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@container (max-width:540px){.fish-scene{max-height:166px}.fish-casting .fish-scene{max-height:112px}.fish-art{width:48px;height:38px}.fish-art-large{width:82px;height:58px}.fish-location{font-size:.7rem;top:5px;left:5px;padding:4px 6px}}
+@media(max-height:540px){.fish-casting .fish-scene{max-height:80px}}
+@media(prefers-reduced-motion:reduce){.fish-bobber,.fish-ripple,.fish-reward{animation:none!important}}

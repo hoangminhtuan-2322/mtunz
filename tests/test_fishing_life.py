@@ -49,7 +49,7 @@ def test_fishing_flow(tmp_path,monkeypatch):
     assert client.post(prefix+'cast',json={'region':2},headers=a).status_code==403
     d=post('cast',{'region':0,'bait':0})
     first=d['cast']
-    assert 'fish' not in first
+    assert 'fish' not in first and first['region']==0
     assert post('cast',{'region':0})['cast']==first
     payload={'cast_id':first['id'],'step':0}
     assert post('tap',payload)['cast']==first

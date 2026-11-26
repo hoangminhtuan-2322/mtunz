@@ -125,7 +125,7 @@ def install(core):
           'xp':p['xp'],'level':1+int(p['xp'])//100,'bag':bag,'bag_limit':BAG_LIMIT,
           'book':book,'server_ms':now,'message':message or p['last_result'],
           'cast':{'id':p['cast_id'],'step':p['step'],'action_at':p['action_at'],
-                  'deadline':p['deadline'],'pulls':p['pulls']} if p['cast_id'] else None,
+                  'deadline':p['deadline'],'pulls':p['pulls'],'region':json.loads(p['cast_fish'])['region']} if p['cast_id'] else None,
           'catalog':{'tiers':[{'name':t[0],'weight':t[1]} for t in TIERS],
             'mutations':[{'name':m[0],'weight':m[1]} for m in MUTATIONS],
             'rods':RODS,'baits':BAITS,'maps':MAPS}}
