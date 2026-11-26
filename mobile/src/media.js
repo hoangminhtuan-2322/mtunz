@@ -2,6 +2,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File } from 'expo-file-system';
+import {fetch as expoFetch} from 'expo/fetch';
+import * as Crypto from 'expo-crypto';
 import {withTemporaryMedia} from './mediaCache';
 import * as Clipboard from 'expo-clipboard';
 import { API_ORIGIN, ApiError, api } from './client';
@@ -23,7 +25,8 @@ const EXTENSIONS = {
 };
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 16 * 1024 * 1024;
-const attachmentLimit = mime => mime.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
+const MAX_LARGE_VIDEO_BYTES = 500 * 1024 * 1024;
+const attachmentLimit = mime => mime.startsWith('video/') ? MAX_LARGE_VIDEO_BYTES : MAX_FILE_BYTES;
 const cleanFileName = value => String(value || 'attachment').replace(/[\/\\:\x00-\x1f]/g, '_').slice(0, 95);
 
 function selected(asset) {
@@ -32,10 +35,11 @@ function selected(asset) {
   const ext = '.' + filename.split('.').pop().toLowerCase();
   const mime = asset.mimeType || EXTENSIONS[ext] || '';
   if (!ALLOWED.has(mime)) throw new Error('Định dạng tệp không được mtunz hỗ trợ.');
-  if (Number(asset.size ?? asset.fileSize ?? 0) > attachmentLimit(mime)) {
+  const bytes=Number(asset.size ?? asset.fileSize ?? new File(asset.uri).size ?? 0);
+  if (bytes > attachmentLimit(mime)) {
     throw new Error('Tệp vượt quá '+(attachmentLimit(mime)/1024/1024)+' MB. Video MP4/WebM được giữ nguyên tệp tải lên.');
   }
-  return { uri:asset.uri, name:filename, type:mime, size:Number(asset.size || asset.fileSize || 0) };
+  return { uri:asset.uri, name:filename, type:mime, size:bytes };
 }
 
 export async function chooseMedia() {
@@ -59,9 +63,36 @@ export async function chooseFile() {
   return result.canceled ? null : selected(result.assets[0]);
 }
 
-export async function uploadAttachment(token,file,uploadKey) {
+async function uploadLargeVideo(token,file,uploadKey,onProgress){
+  const root='/api/video-uploads',source=new File(file.uri),size=source.size;
+  if(!Number.isSafeInteger(size)||size<=0||size>MAX_LARGE_VIDEO_BYTES)throw Error('Dung lượng video không hợp lệ.');
+  const config=await api(root+'/config',{token});
+  if(!config.enabled)throw Error('Kho video lớn chưa kích hoạt. Hiện chỉ gửi video tối đa 16 MB.');
+  const session=await api(root,{token,method:'POST',data:{client_key:uploadKey||Crypto.randomUUID(),name:file.name,mime:file.type,size}});
+  if(session.attachment)return session.attachment;
+  const done=new Set(session.completed_parts),step=session.part_bytes;
+  if(step!==8*1024*1024||session.size!==size)throw Error('Phiên tải không hợp lệ.');
+  for(let start=0,n=1;start<size;start+=step,n++){
+    const end=Math.min(start+step,size);
+    if(!done.has(n)){
+      const signed=await api(root+'/'+session.upload_id+'/parts/'+n,{token,method:'POST'});
+      if(signed.bytes!==end-start||!/^https:\/\/[a-f0-9]{32}\.r2\.cloudflarestorage\.com\//i.test(signed.url))throw Error('Liên kết tải không hợp lệ.');
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),180000);
+      try{
+        const response=await expoFetch(signed.url,{method:'PUT',body:source.slice(start,end),signal:controller.signal,redirect:'error'});
+        if(!response.ok)throw Error('Không tải được phần video. Thử lại để tiếp tục.');
+      }finally{clearTimeout(timer);}
+    }
+    onProgress?.(Math.min(99,Math.floor(end/size*100)));
+  }
+  const result=await api(root+'/'+session.upload_id+'/complete',{token,method:'POST',timeoutMs:120000});
+  if(!result.attachment?.id)throw Error('Video chưa sẵn sàng.');
+  return result.attachment;
+}
+export async function uploadAttachment(token,file,uploadKey,onProgress) {
   if (!token || !file) throw new Error('Không có phiên đăng nhập hoặc tệp.');
   if(!ALLOWED.has(file.type)||Number(file.size||0)>attachmentLimit(file.type))throw new ApiError('Tệp không hợp lệ hoặc vượt giới hạn dung lượng.',413);
+  if(file.type.startsWith('video/')&&Math.max(Number(file.size||0),Number(new File(file.uri).size||0))>MAX_VIDEO_BYTES)return uploadLargeVideo(token,file,uploadKey,onProgress);
   const data = new FormData();
   data.append('file',{uri:file.uri,name:file.name,type:file.type});
   // The same ID as the chat send retry. A lost HTTP response must not upload

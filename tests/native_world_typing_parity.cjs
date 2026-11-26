@@ -17,7 +17,7 @@ for(const needle of [
   "data.type==='world-rooms-updated'",
   "if(requested!==listRequestRef.current)return",
   "data.type==='presence'",
-  "uploadAttachment(token,file,nonce)"
+  "uploadAttachment(token,file,nonce,percent=>{if(active())setSendStage("
 ])assert(chat.includes(needle),'Missing native parity: '+needle);
 assert(server.includes("anonymous_name:str=Field(default='',max_length=24)"));
 assert(profile.includes("world_anonymous: bool|None=None"));

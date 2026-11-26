@@ -679,7 +679,7 @@ def install(core):
                     ident=old['id']
                 else:
                     if hosted:
-                        used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=?',(u['id'],))['total']
+                        used=one(c,'SELECT COALESCE(SUM(size),0) AS total FROM attachments WHERE owner_id=? AND substr(stored_name,1,3)<>?',(u['id'],'r2-'))['total']
                         if used + total > HOSTED_ATTACHMENT_QUOTA:
                             raise HTTPException(413,'Đã đạt giới hạn 25 MB tệp lưu trữ mỗi tài khoản trên gói miễn phí.')
                     content=path.read_bytes() if hosted else None
@@ -730,6 +730,12 @@ def install(core):
             if not allowed:raise HTTPException(403,'Bạn không có quyền tải tệp này.')
         inline=not download and f['mime'].startswith(('image/','audio/','video/'))
         headers={'X-Content-Type-Options':'nosniff', 'Cache-Control':'private, no-store'}
+        if f['stored_name'].startswith('r2-'):
+            from video_upload_api import stream_attachment
+            disposition='inline' if inline else 'attachment'
+            headers['Content-Disposition']=f"{disposition}; filename*=UTF-8''{quote(f['original_name'])}"
+            range_header=request.headers.get('Range','') if inline and not request.headers.get('If-Range') else ''
+            return await asyncio.to_thread(stream_attachment,core,f,headers,range_header,attachment_range)
         if hosted:
             # Keep attachment authorization unchanged. For a byte range, send only
             # the requested bytes over the PostgreSQL connection, not the full blob.
