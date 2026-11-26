@@ -25,6 +25,7 @@ import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,m
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
+import {createVoiceCapture} from './voiceCapture';
 import {createPendingSend,deliverPendingSend} from './pendingSend';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
@@ -373,7 +374,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordState=useAudioRecorderState(recorder,400);
   const [voiceBusy,setVoiceBusy]=useState(false);
-  const voiceDeadlineRef=useRef(null);
+  const voiceCaptureRef=useRef(null);
+  if(!voiceCaptureRef.current)voiceCaptureRef.current=createVoiceCapture();
+  const cancelVoice=useCallback(()=>voiceCaptureRef.current.cancel(),[]);
+  useEffect(()=>{
+    const sub=AppState.addEventListener('change',state=>{if(state==='background')cancelVoice();});
+    return()=>{sub.remove();cancelVoice();};
+  },[cancelVoice]);
 
   // Emit native typing transitions and recover if the peer disconnects abruptly.
   const transmitTyping=useCallback((target,on)=>{
@@ -517,7 +524,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     if(results[1].status==='fulfilled')setBlocked(results[1].value.users||[]);
   }),[invoke]);
   const openRoom=useCallback(target=>{
-    stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
+    cancelVoice();stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
     searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     const key=conversationKey(target);
@@ -525,7 +532,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
-  },[loadWindow,stopTyping,updateRemoteTyping]);
+  },[loadWindow,stopTyping,updateRemoteTyping,cancelVoice]);
 
   // One WebSocket for the entire authenticated mobile session. Reconcile on resume.
   useEffect(()=>{
@@ -747,7 +754,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           if(!active)return;
           const item=(result.tickets||[]).find(ticket=>Number(ticket.id)===chatId);
           if(!item)return;
-          roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);cancelHistoryJump();
+          cancelVoice();roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);cancelHistoryJump();
           setRoom(null);setDialog('support');setSupportTickets(result.tickets||[]);setSupportPaused(!!result.paused);
           await openSupportTicket(item);
         }
@@ -756,8 +763,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const sub=Notifications.addNotificationResponseReceivedListener(response=>{void onResponse(response);});
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result&&active)void onResponse(result);}).catch(()=>{});
     return()=>{active=false;sub.remove();};
-  },[openRoom,token,invoke,alertError]);
-  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
+  },[openRoom,token,invoke,alertError,cancelVoice]);
+  const jumpBack=()=>{Keyboard.dismiss();cancelVoice();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
     roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
@@ -776,7 +783,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const roomTitle=room?.scope==='dm'?label(peer):room?.scope==='group'?(group?.title||'Nhóm'):worldRooms.find(r=>r.id===room?.id)?.title||'Chat thế giới';
 
   async function doSend(){
-    if(!room||sending||sendRef.current)return;
+    if(!room||sending||sendRef.current||voiceCaptureRef.current.active())return;
     const target=room,originalRoom=conversationKey(target);
     let pending=pendingSendsRef.current.get(originalRoom);
     if(!pending&&mediaBatch){await sendMediaBatch();return;}
@@ -833,44 +840,31 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     ]);
   }
   async function toggleVoice(){
-    if(voiceBusy||sending||sendRef.current||pendingSend||mediaBatch||reply?.edit_id)return;
-    setVoiceBusy(true);
-    try{
-      if(recordState.isRecording){
-        await recorder.stop();
-        clearTimeout(voiceDeadlineRef.current);
-        voiceDeadlineRef.current=null;
-        await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
-        if(!recorder.uri)throw Error('Không tìm thấy bản ghi âm.');
-        const name='mtunz-voice-'+Date.now()+'.m4a';
-        setPicked({uri:recorder.uri,name,type:'audio/mp4',size:recordState.fileSize||0});
-      }else{
-        const permission=await AudioModule.requestRecordingPermissionsAsync();
-        if(!permission.granted)throw Error('Chưa cấp quyền micro để ghi âm.');
-        await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true});
-        await recorder.prepareToRecordAsync();
-        recorder.record();
-        voiceDeadlineRef.current=setTimeout(async()=>{
-          try{
-            await recorder.stop();
-            await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
-            if(recorder.uri)setPicked({
-              uri:recorder.uri,name:'mtunz-voice-'+Date.now()+'.m4a',
-              type:'audio/mp4',size:0});
-          }catch(e){alertError(e);}
-        },110000);
-      }
-    }catch(e){alertError(e);}
-    finally{setVoiceBusy(false);}
+    const capture=voiceCaptureRef.current;
+    if(capture.recording()){await capture.stop();return;}
+    if(!room||capture.active()||voiceBusy||sending||sendRef.current||pendingSend||mediaBatch||picked||pickerBusyRef.current||reply?.edit_id)return;
+    const key=conversationKey(roomRef.current),guard=roomWindowRef.current,visit=guard.visit(key);
+    await capture.start({
+      current:()=>guard.current(visit)&&conversationKey(roomRef.current)===key&&AppState.currentState!=='background',
+      busy:setVoiceBusy,
+      permission:()=>AudioModule.requestRecordingPermissionsAsync(),
+      enableMode:()=>setAudioModeAsync({allowsRecording:true,playsInSilentMode:true}),
+      resetMode:()=>setAudioModeAsync({allowsRecording:false,playsInSilentMode:true}),
+      prepare:()=>recorder.prepareToRecordAsync(),
+      record:()=>recorder.record(),
+      stop:()=>recorder.stop(),
+      uri:()=>recorder.uri,
+      deliver:uri=>setPicked({uri,name:'mtunz-voice-'+Date.now()+'.m4a',type:'audio/mp4',size:0,voiceNote:true}),
+      error:alertError
+    });
   }
-  useEffect(()=>()=>clearTimeout(voiceDeadlineRef.current),[]);
   async function pick(kind){
-    if(sendRef.current||!room||pickerBusyRef.current||pendingSend||mediaBatch||recordState.isRecording||reply?.edit_id)return;
-    const key=conversationKey(room),multi=kind==='media'&&room.scope!=='world';
+    if(sendRef.current||!room||pickerBusyRef.current||pendingSend||mediaBatch||voiceCaptureRef.current.active()||reply?.edit_id)return;
+    const key=conversationKey(room),guard=roomWindowRef.current,visit=guard.visit(key),multi=kind==='media'&&room.scope!=='world';
     pickerBusyRef.current=true;
     try{
       const result=multi?await chooseMediaBatch():kind==='media'?await chooseMedia():await chooseFile();
-      if(!result||conversationKey(roomRef.current)!==key||sendRef.current||pendingSendsRef.current.has(key))return;
+      if(!result||!guard.current(visit)||conversationKey(roomRef.current)!==key||sendRef.current||pendingSendsRef.current.has(key))return;
       const assets=multi?result:[result];
       if(!assets.length)return;
       if(assets.length===1){setPicked(assets[0]);}
@@ -959,7 +953,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     }catch(e){alertError(e);}
   }
   async function sendEdit(){
-    const mid=reply?.edit_id;if(!mid||!draft.trim()||!room||sendRef.current)return;
+    const mid=reply?.edit_id;if(!mid||!draft.trim()||!room||sendRef.current||voiceCaptureRef.current.active())return;
     sendRef.current=true;setSending(true);setSendStage('Đang lưu chỉnh sửa…');
     try{
       await invoke(room.scope==='dm'?'/api/messages/'+mid:
@@ -1302,7 +1296,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <View style={{flex:1,minWidth:0,gap:3}}><Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời tin nhắn'}</Text>
           {!reply.edit_id&&<Text style={css.strong} numberOfLines={1}>{reply.body||'Tệp đính kèm'}</Text>}</View>
         <Pressable onPress={()=>{setReply(null);if(reply.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
-      {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
+      {recordState.isRecording&&<View style={css.replyBar}><Text style={[css.muted,{flex:1}]}>Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text><Pressable accessibilityRole="button" accessibilityLabel="Hủy ghi âm" onPress={cancelVoice}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {!!pendingSend&&<View style={css.batchPanel}>
         <View style={css.hrow}><Ionicons name="time-outline" size={20} color={P.accent}/><Text style={[css.strong,{flex:1}]}>{sending?'Đang gửi':'Tin nhắn chờ xác nhận'}</Text>
           <Pressable accessibilityRole="button" disabled={sending} onPress={discardPending}><Text style={css.link}>Bỏ</Text></Pressable></View>
@@ -1326,8 +1320,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {picked.type?.startsWith('image/')?
           <><Image source={{uri:picked.uri}} style={css.pendingPhoto}/>
             <Text style={css.muted}>Ảnh đã chọn</Text></>:
-          <><Ionicons name="attach-outline" size={19} color={P.accent}/>
-            <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.name}</Text></>}
+          <><Ionicons name={picked.voiceNote?'mic-outline':'attach-outline'} size={19} color={P.accent}/>
+            <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.voiceNote?'Tin nhắn thoại · Chưa gửi':picked.name}</Text></>}
         <Pressable accessibilityRole="button" accessibilityLabel="Bỏ tệp đính kèm"
           disabled={sending} onPress={()=>setPicked(null)}>
           <Ionicons name="close-circle" size={22} color={P.accent}/></Pressable>
@@ -1358,8 +1352,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             setDraft(value);
           }}/>
         <Pressable accessibilityRole="button" accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}
-          disabled={sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
-          style={[css.sendIconButton,(sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
+          disabled={sending||voiceBusy||recordState.isRecording||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
+          style={[css.sendIconButton,(sending||voiceBusy||recordState.isRecording||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
           {sending?<ActivityIndicator size="small" color={mode==='light'?'#ffffff':P.bg}/>:
             <Ionicons name="send" size={20} color={mode==='light'?'#ffffff':P.bg}/>}
         </Pressable>

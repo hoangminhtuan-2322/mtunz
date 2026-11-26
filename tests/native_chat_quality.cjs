@@ -188,3 +188,20 @@ assert(chat.includes('const previous=socket;socket=null;wsRef.current=null;setCo
 assert(chat.includes('if(!closed&&activeRef.current&&wsRef.current===current)onEvent(event)'));
 assert(chat.includes('applyReceipt(old,user.id,data.type,data.up_to,data.at)'));
 console.log('Native foreground timer and stale socket isolation: PASS');
+
+const {createVoiceCapture}=require('../mobile/src/voiceCapture');
+(async()=>{
+ const capture=createVoiceCapture();let delivered=[],events=[],allowed=true;
+ let resolvePermission;const permission=new Promise(resolve=>{resolvePermission=resolve;});
+ const ops={current:()=>allowed,busy:v=>events.push('busy:'+v),permission:()=>permission,enableMode:async()=>events.push('mode'),resetMode:async()=>events.push('reset'),prepare:async()=>events.push('prepare'),record:()=>events.push('record'),stop:async()=>events.push('stop'),uri:()=>'/voice.m4a',deliver:u=>delivered.push(u),error:e=>{throw e;}};
+ const first=capture.start(ops);capture.cancel();assert(capture.active());assert.equal(await capture.start(ops),false);
+ resolvePermission({granted:true});assert.equal(await first,false);assert(!capture.active());assert(!events.includes('record'));
+ assert(await capture.start({...ops,permission:async()=>({granted:true})}));await capture.stop();assert.deepEqual(delivered,['/voice.m4a']);
+ assert(await capture.start({...ops,permission:async()=>({granted:true})}));capture.cancel();await new Promise(resolve=>setImmediate(resolve));assert(!capture.active());assert.equal(delivered.length,1);
+ let prepareDone;const pending=capture.start({...ops,permission:async()=>({granted:true}),prepare:()=>new Promise(resolve=>{prepareDone=resolve;})});
+ while(!prepareDone)await Promise.resolve();capture.cancel();prepareDone();assert.equal(await pending,false);assert(!capture.active());assert.equal(delivered.length,1);
+ console.log('Voice permission race, room cancellation, exclusive recording and explicit send preview: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+assert(chat.includes('cancelVoice();stopTyping()')&&chat.includes('voiceCaptureRef.current.active()'));
+assert(chat.includes("state==='background')cancelVoice()")&&chat.includes('Tin nhắn thoại · Chưa gửi'));
+assert(chat.includes('!guard.current(visit)||conversationKey(roomRef.current)!==key'));
