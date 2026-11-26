@@ -35,9 +35,9 @@ async function refreshGroups(redraw=false){
 }
 function groupSideItems(){
  const q=(state.sideFilter||'').toLowerCase();
- const list=state.groups.filter(g=>g.title.toLowerCase().includes(q));
- return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<div class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
- <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></div>`).join('')}`;
+ const list=state.groups.filter(g=>(!g.conversation_deleted||q.trim())&&g.title.toLowerCase().includes(q));
+ return `<div class="side-label">Nhóm chat · ${list.length}</div>${list.map(g=>`<div class="private-chat-list-row" style="display:flex;align-items:center"><div style="flex:1;min-width:0" class="side-item ${state.groupSelected===g.id&&state.tab==='groups'?'active':''}" data-act="open-group" data-id="${g.id}">
+ <div class="avatar sm">#</div><div class="grow"><div class="row between"><b class="name truncate">${esc(g.title)}</b>${g.unread?`<span class="badge-count">${g.unread}</span>`:''}</div><div class="sub">${g.last_message?esc(short(g.last_message.deleted_at?'Tin nhắn đã thu hồi':g.last_message.body||'Đã gửi tệp',30)):`${g.member_count} thành viên`}</div></div></div><button type="button" class="btn ghost sm" data-act="delete-conversation" data-scope="group" data-id="${g.id}" aria-label="Xóa cuộc trò chuyện" title="Xóa cuộc trò chuyện">${icon('trash',16)}</button></div>`).join('')}`;
 }
 function groupLobby(){
  const members=state.friends.filter(f=>f.state==='accepted'&&!f.restricted);
@@ -439,20 +439,35 @@ function applyPrivateHide(change){
    const extra=$('#compose-extra');if(extra)extra.innerHTML=composerExtras();
   }
  }
+ if(change.conversation_deleted){
+  const group=change.scope==='group';
+  const entries=group?state.groups:state.friends;
+  const item=entries.find(x=>(group?x.id:x.other_id)===change.chat_id);
+  if(item){item.conversation_deleted=true;item.last_message=null;item.unread=0;if(!group){item.pinned=false;item.archived=false;}}
+  if(ctx&&ctx.scope===change.scope&&ctx.chat_id===change.chat_id){
+   state.selected=null;state.groupSelected=null;state.replyTo=null;state.pendingAttachment=null;
+   renderApp();
+  }else renderSideItems();
+ }
  if(change.scope==='group')scheduleGroupsRefresh(80);
  else scheduleFriendsRefresh(60);
+}
+function confirmDeleteConversation(scope,chat_id){
+ if(!state.user||!['dm','group'].includes(scope)||!Number.isSafeInteger(chat_id)||chat_id<=0)return;
+ const ctx={scope,chat_id,owner:state.user.id};
+ ask('Xóa cuộc trò chuyện?','Cuộc trò chuyện và lịch sử cũ sẽ biến mất khỏi danh sách của bạn trên mọi thiết bị. Người khác vẫn giữ tin nhắn; tin nhắn mới sẽ tạo lại cuộc trò chuyện.',()=>privateHide(ctx,[],true),'Xóa cuộc trò chuyện',true);
 }
 async function privateHide(ctx,ids,clear=false){
  if(state.user?.id!==ctx.owner)return;
  const result=await post('/api/chat/hide',{scope:ctx.scope,chat_id:ctx.chat_id,message_ids:ids,clear});
  if(state.user?.id!==ctx.owner)return;
- applyPrivateHide(result);toast('Đã xóa phía bạn.','ok');
+ applyPrivateHide(result);toast(clear?'Đã xóa cuộc trò chuyện.':'Đã xóa phía bạn.','ok');
 }
 function privateDeleteMenu(){
  const ctx=privateChatContext();if(!ctx)return;
  const rows=(ctx.scope==='group'?state.groupMessages:state.messages).filter(m=>m.id>0).slice(-100);
  modal({title:'Xóa tin nhắn phía tôi',description:'Chọn tối đa 100 tin đã tải. Người khác vẫn giữ nguyên tin nhắn.',
-  content:`<div style="max-height:45vh;overflow:auto">${rows.map(m=>`<label class="people-row"><input type="checkbox" data-private-hide-id="${Number(m.id)}"><span class="grow">${esc(short(m.deleted_at?'Tin nhắn đã thu hồi':m.body||'Tệp đính kèm',100))}<small class="muted"> · ${date(m.created_at)}</small></span></label>`).join('')||'<p>Không có tin nhắn.</p>'}</div><button type="button" class="btn danger sm" data-act="private-clear-chat">Xóa toàn bộ phía tôi</button>`,
+  content:`<div style="max-height:45vh;overflow:auto">${rows.map(m=>`<label class="people-row"><input type="checkbox" data-private-hide-id="${Number(m.id)}"><span class="grow">${esc(short(m.deleted_at?'Tin nhắn đã thu hồi':m.body||'Tệp đính kèm',100))}<small class="muted"> · ${date(m.created_at)}</small></span></label>`).join('')||'<p>Không có tin nhắn.</p>'}</div><button type="button" class="btn danger sm" data-act="private-clear-chat">Xóa cuộc trò chuyện</button>`,
   confirm:'Xóa tin đã chọn',handler:async()=>{const ids=[...document.querySelectorAll('[data-private-hide-id]:checked')].map(el=>Number(el.dataset.privateHideId));if(!ids.length)throw new Error('Hãy chọn tin nhắn.');await privateHide(ctx,ids);}});
 }
 async function actOnMessage(btn){
@@ -498,6 +513,7 @@ async function extraAction(btn){
  const act=btn.dataset.act,id=Number(btn.dataset.id);
  if(['message-reply','message-react','message-delete','message-edit','message-hide-private'].includes(act)){await actOnMessage(btn);return;}
  switch(act){
+ case 'delete-conversation':confirmDeleteConversation(btn.dataset.scope,Number(btn.dataset.id));break;
  case 'private-delete-menu':privateDeleteMenu();break;
  case 'private-clear-chat':{const ctx=privateChatContext();if(ctx)ask('Xóa toàn bộ hội thoại phía tôi?','Lịch sử hiện tại sẽ biến mất ở tài khoản của bạn; tin mới vẫn xuất hiện bình thường. Người khác không bị ảnh hưởng.',()=>privateHide(ctx,[],true),'Xóa toàn bộ',true);break;}
  case 'open-group':await openGroup(id);break;
@@ -930,7 +946,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','message-hide-private','private-delete-menu','private-clear-chat','search-chat','notice-read','notice-settings','notice-permission','notice-push-off','notice-push-test','notice-sound',
+ 'message-reply','message-react','message-delete','message-edit','message-hide-private','private-delete-menu','private-clear-chat','delete-conversation','search-chat','notice-read','notice-settings','notice-permission','notice-push-off','notice-push-test','notice-sound',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}
