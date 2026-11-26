@@ -1344,7 +1344,7 @@ async def get_friends(request: Request):
                  CASE WHEN r.owner_id IS NULL THEN 0 ELSE 1 END AS restricted,
                  CASE WHEN pr.owner_id IS NULL THEN 0 ELSE 1 END AS peer_restricted,
                  last.body AS last_body, last.created_at AS last_created,
-                 last.sender_id AS last_sender,
+                 last.sender_id AS last_sender,last.id AS last_id,d.through_id AS deleted_through,
                  (SELECT count(*) FROM messages
                    WHERE f.state='accepted' AND recipient_id=? AND sender_id=u.id AND read_at IS NULL
                    AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at>?)
@@ -1352,6 +1352,7 @@ async def get_friends(request: Request):
           FROM friendships f
           JOIN users u ON u.id=CASE WHEN f.u1=? THEN f.u2 ELSE f.u1 END
           LEFT JOIN chat_preferences p ON p.user_id=? AND p.other_id=u.id
+          LEFT JOIN private_conversation_deletions d ON d.user_id=CASE WHEN f.u1=u.id THEN f.u2 ELSE f.u1 END AND d.scope='dm' AND d.chat_id=u.id
           LEFT JOIN restrictions r ON r.owner_id=? AND r.other_id=u.id
           LEFT JOIN restrictions pr ON pr.owner_id=u.id AND pr.other_id=?
           LEFT JOIN messages last ON last.id=(
@@ -1381,6 +1382,9 @@ async def get_friends(request: Request):
             r['avatar_url']=(f'/api/profile/{r["other_id"]}/avatar'
                              if r.pop('avatar_attachment_id') and can_view_avatar else None)
             r.pop('show_online',None)
+            cutoff=r.pop('deleted_through')
+            last_id=r.pop('last_id')
+            r['conversation_deleted']=accepted and cutoff is not None and not (last_id and last_id>cutoff)
             last_created=r.pop('last_created')
             last_body=r.pop('last_body')
             last_sender=r.pop('last_sender')
