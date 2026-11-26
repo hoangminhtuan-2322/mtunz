@@ -1016,6 +1016,7 @@ function renderAuth(){
        </svg>
        ${authTabs()}
        <section class="auth-screen" aria-live="polite">${screenMarkup}</section>
+       <button type="button" class="btn ghost full auth-android-download" data-act="android-download">Tải ứng dụng Android</button>
        <div class="auth-footer">© 2026 mtunz · Kết nối gọn gàng, bảo mật rõ ràng</div>
      </div>
    </main></div>`;
@@ -1665,6 +1666,7 @@ function settingsContent(){
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>
    <div class="rail-settings-actions">
+     <button class="btn ghost sm mobile-android-download" type="button" data-act="android-download">${icon('download',16)} Tải Android</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="world">${icon('group',16)} Lịch sử Chat thế giới</button>
@@ -2687,7 +2689,7 @@ function selectPublicAndroidRelease(rows){
 async function showAndroidDownload(){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),6000);
-  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":21,"size_bytes":140539424,"published_at":"2026-11-25T00:04:53Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code21/mtunz-android-v1.0.0-code21.apk","sha256":"ac154459ee44c4857a9927ed45de7a3937e6f06a7dbc4a1f02acd37f335b1435"};
+  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":30,"size_bytes":140609372,"published_at":"2026-11-26T00:06:34Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code30/mtunz-android-v1.0.0-code30.apk","sha256":"6f9c81c453a48afd0b49c2b1f6ed964b7945fa54ed2511e21a0b43cadc296840"};
   let release={...floor,stale:true};
   const candidates=await Promise.allSettled([
     api('/api/mobile/release',{signal:controller.signal}),

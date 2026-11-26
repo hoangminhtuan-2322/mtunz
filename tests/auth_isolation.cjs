@@ -66,6 +66,7 @@ context.renderAuth();
 assert.equal(initialShellWrites,1,'Initial mount once');
 assert.equal(artRenderCount,1,'Hero rendered once');
 assert.match(host.markup,/STATIC BRAND/);
+assert.match(host.markup,/class="btn ghost full auth-android-download" data-act="android-download">Tải ứng dụng Android<\/button>/,'Download is available without login or extra rendering dependencies');
 assert(!host.markup.includes('auth-top-glow'), 'Remove top-only glow in favor of full perimeter');
 const tabSource=code.slice(code.indexOf('function authTabs(){'),code.indexOf('function authLogin(){'));
 assert(!tabSource.includes('auth-nav-perimeter'), 'Tabs have no animated perimeter SVG');

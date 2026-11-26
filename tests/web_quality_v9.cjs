@@ -17,6 +17,13 @@ const {chromium}=require('playwright-core');
     route.fulfill({json:{messages:[],first_unread_id:null,more_after:false}}));
    await page.goto('http://127.0.0.1:8791/');
    await page.locator('form').first().waitFor();
+   const floor=require('../static/android-release-floor.json');
+   await page.route('**/api/mobile/release',route=>route.fulfill({json:floor}));
+   await page.route('https://api.github.com/repos/hoangminhtuan-2322/mtunz/releases?per_page=100',route=>route.fulfill({json:[]}));
+   await page.locator('.auth-android-download').click();
+   await page.getByRole('dialog').getByText('Build '+floor.version_code,{exact:false}).waitFor();
+   await page.locator('#modal-cancel').click();
+   await page.getByRole('dialog').waitFor({state:'detached'});
    await page.evaluate(()=>{
     state.user={id:9,username:'demo',display_name:'Demo',public_id:9};
     state.tab='messages';
@@ -27,6 +34,14 @@ const {chromium}=require('playwright-core');
     }));
     renderApp();
    });
+   if(width<800){
+    await page.evaluate(()=>{state.tab='settings';renderApp();});
+    await page.locator('.mobile-android-download').click();
+    await page.getByRole('dialog').getByText('Build '+floor.version_code,{exact:false}).waitFor();
+    await page.locator('#modal-cancel').click();
+    await page.getByRole('dialog').waitFor({state:'detached'});
+    await page.evaluate(()=>{state.tab='messages';renderApp();});
+   }
    const chats=page.locator('#side-items button[data-act="open-chat"]');
    assert.equal(await chats.count(),60,'Initial sidebar must be DOM-bounded at '+width);
    await page.locator('#side-items [data-act="sidebar-more"]').click();
