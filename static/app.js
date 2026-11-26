@@ -1122,18 +1122,18 @@ async function refreshFriends(redraw=true){
 function chatContactName(f){return f.nickname||f.display_name||f.username;}
 function friendItem(f){
   const active=state.selected===f.other_id&&state.tab==='messages';
-  return `<button type="button" class="side-item ${active?'active':''}" data-act="open-chat"
+  return `<div class="private-chat-list-row" style="display:flex;align-items:center"><button type="button" style="flex:1;min-width:0" class="side-item ${active?'active':''}" data-act="open-chat"
     data-id="${f.other_id}" aria-current="${active?'true':'false'}"
     aria-label="Mở trò chuyện với ${esc(chatContactName(f))}">
    ${avatar(f.username,f.online,'',f.avatar_url)}<div class="grow"><span class="chat-pin-mini">${f.pinned?'📌 ':''}</span><div class="row between"><span class="name truncate">${esc(chatContactName(f))}</span>${f.unread?`<span class="badge-count">${f.unread}</span>`:''}</div>
-   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button>`;
+   <div class="sub">${f.last_message?`${f.last_message.sender_id===state.user.id?'Bạn: ':''}${esc(short(f.last_message.body,30))}`:f.online?'Đang hoạt động':'Bắt đầu nhắn tin'}</div></div></button><button type="button" class="btn ghost sm" data-act="delete-conversation" data-scope="dm" data-id="${f.other_id}" aria-label="Xóa cuộc trò chuyện" title="Xóa cuộc trò chuyện">${icon('trash',16)}</button></div>`;
 }
 function sideBody(){
   const accepted=state.friends.filter(f=>f.state==='accepted'&&!f.restricted&&!f.archived);
   const pending=state.friends.filter(f=>f.state==='pending'&&f.requested_by!==state.user.id);
   const q=state.sideFilter||'';
   const normalized=q.toLocaleLowerCase('vi');
-  const filtered=accepted.filter(x=>[chatContactName(x),x.display_name||x.username].some(name=>String(name||'').toLocaleLowerCase('vi').includes(normalized)));
+  const filtered=accepted.filter(x=>(!x.conversation_deleted||normalized.trim())&&[chatContactName(x),x.display_name||x.username].some(name=>String(name||'').toLocaleLowerCase('vi').includes(normalized)));
   const visibleLimit=Math.max(60,Number(state.sidebarVisibleCount)||60);
   const visible=filtered.slice(0,visibleLimit);
   return `${pending.length?`<div class="side-label">Lời mời chờ · ${pending.length}</div>${pending.slice(0,3).map(f=>`<div class="side-item" data-act="app-tab" data-tab="friends">${avatar(f.username,false,'sm')}<div class="grow"><b>${esc(f.username)}</b><div class="sub">Muốn kết bạn với bạn</div></div></div>`).join('')}`:''}
@@ -1649,7 +1649,7 @@ function friendsContent(){
  <button class="btn ghost sm" data-act="open-chat" data-id="${f.other_id}">${icon('chat',15)} Nhắn tin</button><button type="button" class="btn ghost sm" data-world-report-user="${f.other_id}">${icon('shield',14)} Báo cáo</button><button class="btn danger sm" data-act="friend-remove" data-id="${f.other_id}">Hủy kết bạn</button></div>`).join(''):'<div class="empty">Chưa có bạn bè nào.</div>'}</div>`;
 }
 function archiveContent(){
- const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived);
+ const archived=state.friends.filter(f=>f.state==='accepted'&&f.archived&&!f.conversation_deleted);
  return `<div class="section-wrap"><span class="eyebrow">TIN NHẮN ĐÃ CẤT GIỮ</span>
  <h1 class="section-title">Hội thoại lưu trữ</h1>
  <p class="section-lead">Ẩn cuộc trò chuyện khỏi hộp thư chính nhưng không xóa tin nhắn. Có thể mở lại bất cứ lúc nào.</p>
