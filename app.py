@@ -1510,6 +1510,7 @@ async def message_history(request:Request,other_id:int,before:int=Query(0,ge=0,l
                        (other_id,u['id'],params[4],u['id'],other_id))['id']
         rows,more_after=history_window(c,many,sql,params,before,after,latest or not unread_window,unread)
         result=message_page(c,rows,viewer_id=u['id'])
+        hide_revision=one(c,"SELECT COUNT(*) AS n FROM private_message_hides WHERE user_id=? AND scope='dm' AND chat_id=?",(u['id'],other_id))['n']
         # Hide read receipts when the reader opted out or restricted the sender.
         peer=one(c,'SELECT show_receipts FROM users WHERE id=?',(other_id,))
         if not peer['show_receipts'] or is_restricted(c,other_id,u['id']):
@@ -1517,7 +1518,7 @@ async def message_history(request:Request,other_id:int,before:int=Query(0,ge=0,l
                 if item['sender_id']==u['id']:
                     item['read_at']=None
                     item['delivered_at']=None
-    return {'messages':result,'first_unread_id':unread,'more_after':more_after}
+    return {'messages':result,'first_unread_id':unread,'more_after':more_after,'private_hide_revision':hide_revision}
 
 
 @app.post('/api/messages')
