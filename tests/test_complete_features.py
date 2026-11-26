@@ -316,10 +316,13 @@ def test_private_delete_dm_and_group(monkeypatch):
     assert bob.get(f'/api/chats/dm/{a}/shared',params={'kind':'links'}).json()['items']==[]
     assert all(uid==b for uid,kind,_ in events if kind=='private-messages-hidden')
     assert hide(bob,'dm',a,clear=True).status_code==200
+    assert next(f for f in bob.get('/api/friends').json()['friends'] if f['other_id']==a)['conversation_deleted'] is True
+    assert next(f for f in alice.get('/api/friends').json()['friends'] if f['other_id']==b)['conversation_deleted'] is False
     assert ids(bob,f'/api/messages/{a}')==[]
     assert ids(alice,f'/api/messages/{b}')==[first,second]
     third=alice.post('/api/messages',json={'recipient_id':b,'body':'new after clear'}).json()['message']['id']
     assert ids(bob,f'/api/messages/{a}')==[third]
+    assert next(f for f in bob.get('/api/friends').json()['friends'] if f['other_id']==a)['conversation_deleted'] is False
     assert alice.delete(f'/api/messages/{third}').status_code==200
     assert bob.get(f'/api/messages/{a}').json()['messages'][0]['deleted_at']
 
@@ -332,3 +335,8 @@ def test_private_delete_dm_and_group(monkeypatch):
     assert hide(bob,'group',gid,clear=True).status_code==200
     assert ids(bob,f'/api/groups/{gid}/messages')==[]
     assert ids(alice,f'/api/groups/{gid}/messages')==group_ids
+    assert next(g for g in bob.get('/api/groups').json()['groups'] if g['id']==gid)['conversation_deleted'] is True
+    assert next(g for g in alice.get('/api/groups').json()['groups'] if g['id']==gid)['conversation_deleted'] is False
+    new_group=alice.post(f'/api/groups/{gid}/messages',json={'body':'new group after clear'}).json()['message']['id']
+    assert ids(bob,f'/api/groups/{gid}/messages')==[new_group]
+    assert next(g for g in bob.get('/api/groups').json()['groups'] if g['id']==gid)['conversation_deleted'] is False
