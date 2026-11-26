@@ -82,11 +82,11 @@ def install(core):
     def conversation(c,uid,scope,chat):
         if scope=='dm':
             core.require_peer(c,uid,chat)
-            return ('messages', '((m.sender_id=? AND m.recipient_id=?) OR (m.sender_id=? AND m.recipient_id=?)) AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?)',
-                    (uid,chat,chat,uid,core.now()))
+            return ('messages', '((m.sender_id=? AND m.recipient_id=?) OR (m.sender_id=? AND m.recipient_id=?)) AND m.deleted_at IS NULL AND (m.expires_at IS NULL OR m.expires_at>?) AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope=\'dm\' AND h.chat_id=? AND h.message_id=m.id)',
+                    (uid,chat,chat,uid,core.now(),uid,chat))
         if not one(c,'SELECT 1 FROM group_members WHERE group_id=? AND user_id=?',(chat,uid)):
             raise HTTPException(403,'Bạn không phải thành viên của nhóm này.')
-        return 'group_messages','m.group_id=? AND m.deleted_at IS NULL',(chat,)
+        return 'group_messages',"m.group_id=? AND m.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM private_message_hides h WHERE h.user_id=? AND h.scope='group' AND h.chat_id=m.group_id AND h.message_id=m.id)",(chat,uid)
 
     def member(request):
         user = core.current_user(request)
