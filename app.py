@@ -2190,21 +2190,20 @@ async def delete_support_ticket(request:Request,tid:int,body:DeleteSupportTicket
     return {'ok':True}
 
 
-class AdminSupportMessage(SupportMessage):
-    admin_pin:str=Field(default='',max_length=6)
-
-
 @app.post('/api/admin/tickets/{tid}/messages')
-async def admin_send_ticket(request:Request,tid:int,body:AdminSupportMessage):
+async def admin_send_ticket(request:Request,tid:int,body:SupportMessage):
     admin=require_admin(request)
-    verify_admin_pin_stepup(request,admin,body.admin_pin)
+    throttle(request,'admin-support-reply',90,60,str(admin['id']))
+    message=body.body.strip()
+    if not message:
+        raise HTTPException(422,'Tin nhắn không được để trống.')
     with db() as c:
         lock_support_write(c)
         t=support_ticket(c,tid,lock=True)
         if t['status']!='open':raise HTTPException(409,'Hãy mở lại phiếu trước khi trả lời.')
         cur=c.execute('INSERT INTO ticket_messages(ticket_id,from_admin,body,created_at) VALUES(?,1,?,?)',
-                      (tid,body.body.strip(),now()))
-        msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':1,'body':body.body.strip(),'created_at':now()}
+                      (tid,message,now()))
+        msg={'id':cur.lastrowid,'ticket_id':tid,'from_admin':1,'body':message,'created_at':now()}
         admin_log(c,admin['id'],'support_reply',str(tid))
     await hub.guest(t['guest_id'],'support-message',ticket_id=tid,message=msg)
     if t['owner_id']:

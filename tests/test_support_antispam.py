@@ -167,3 +167,21 @@ def test_delete_closed_ticket_removes_history_and_revokes_unused_grant():
         tombstone=c.execute('SELECT guest_id,owner_id,claim FROM tickets WHERE id=?',(ticket,)).fetchone()
         assert tuple(tombstone)==('',None,'')
         assert c.execute("SELECT 1 FROM audit WHERE action='support_delete' AND detail=?",(f'ticket_id={ticket}',)).fetchone()
+
+
+def test_admin_support_reply_requires_session_not_pin():
+    admin=logged_admin()
+    guest,ticket=guest_ticket()
+    path=f'/api/admin/tickets/{ticket}'
+    assert guest.post(path+'/messages',json={'body':'Giả mạo admin'}).status_code in (401,403)
+    assert admin.post(path+'/messages',json={'body':'   '}).status_code==422
+    for text in ('Chào bạn','Tôi đang kiểm tra'):
+        response=admin.post(path+'/messages',json={'body':text})
+        assert response.status_code==200,response.text
+    assert [m['body'] for m in guest.get(f'/api/support/tickets/{ticket}/messages').json()['messages']]==['Chào bạn','Tôi đang kiểm tra']
+    assert admin.post(path+'/status',json={'status':'closed'}).status_code==401
+    assert admin.post(path+'/status',json={'status':'closed','admin_pin':'2345'}).status_code==200
+    assert admin.post(path+'/messages',json={'body':'Phiếu đã đóng'}).status_code==409
+    assert admin.request('DELETE',path,json={}).status_code==401
+    with db() as c:
+        assert c.execute("SELECT COUNT(*) AS n FROM audit WHERE action='support_reply'").fetchone()['n']>=2

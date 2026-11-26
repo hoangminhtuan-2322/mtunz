@@ -1860,6 +1860,7 @@ world:['Điều hành Chat thế giới','Bật/tắt, lịch mở cửa và qu�
 reports:['Báo cáo người dùng','Tiếp nhận, đọc bằng chứng và đưa ra quyết định kiểm duyệt.']};
 let adminLoadSequence=0;
 let adminTicketSequence=0;
+const adminSupportRepliesInFlight=new Set();
 async function loadAdmin(){
  if(!state.user?.is_admin)return;
  const owner=state.user.id,tab=state.adminTab,request=++adminLoadSequence;
@@ -3154,10 +3155,24 @@ document.addEventListener('submit',async event=>{
    case 'admin-ticket-reply':{
     const ticket=Number(form.dataset.ticketId),body=val('body');
     if(!ticket||!body)return;
-    modal({title:`Gửi phản hồi cho phiếu #${ticket}`,content:adminProofFields(),confirm:'Gửi phản hồi',handler:async host=>{
-     await post(`/api/admin/tickets/${ticket}/messages`,{body,...adminProofValue(host)});
-     if(state.adminTab==='tickets'&&state.adminTicket===ticket)await loadAdmin();
-    }});
+    const owner=state.user?.id,sequence=adminTicketSequence,replyKey=owner+':'+ticket;
+    if(!state.user?.is_admin||adminSupportRepliesInFlight.has(replyKey))break;
+    adminSupportRepliesInFlight.add(replyKey);
+    const current=()=>state.user?.id===owner&&state.adminTab==='tickets'&&state.adminTicket===ticket&&adminTicketSequence===sequence;
+    try{
+     const result=await post(`/api/admin/tickets/${ticket}/messages`,{body});
+     if(current()){
+      const input=document.querySelector('form[data-form="admin-ticket-reply"] input[name="body"]');
+      if(input?.value.trim()===body)input.value='';
+      if(result.message&&!state.adminTicketMessages.some(m=>m.id===result.message.id)){
+       state.adminTicketMessages.push(result.message);
+       const thread=$('#admin-ticket-messages');
+       if(thread){thread.innerHTML=renderTicketBubbles(state.adminTicketMessages);thread.scrollTop=thread.scrollHeight;}
+      }
+      input?.focus();
+     }
+     toast('Đã gửi phản hồi.','ok');
+    }finally{adminSupportRepliesInFlight.delete(replyKey);}
     break;
    }
    case 'admin-broadcast':{
