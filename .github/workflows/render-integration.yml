@@ -41,35 +41,38 @@ jobs:
         run: python tests/smoke_legacy_upgrade.py
       - name: Test Python imports and SQL against PostgreSQL
         run: python tests/smoke_postgres.py
-      - name: Install matching PostgreSQL backup tools
+      - name: Verify logical backup and restore using the exact service image
+        env:
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
         run: |
-          # pg_dump must be at least as new as the PostgreSQL 16 server.
-          # Prefer a preinstalled client; the latest runner's distro may not
-          # provide the version-specific postgresql-client-16 package.
-          client=""
-          for tool in /usr/lib/postgresql/*/bin/pg_dump "$(command -v pg_dump || true)"; do
-            [ -x "$tool" ] || continue
-            major=$("$tool" --version | grep -oE '[0-9]+' | head -1)
-            if [ "$major" -ge 16 ] && [ -x "$(dirname "$tool")/pg_restore" ]; then
-              client="$(dirname "$tool")"
-              break
-            fi
-          done
-          if [ -z "$client" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y postgresql-client
-            for tool in /usr/lib/postgresql/*/bin/pg_dump; do
-              [ -x "$tool" ] || continue
-              major=$("$tool" --version | grep -oE '[0-9]+' | head -1)
-              if [ "$major" -ge 16 ] && [ -x "$(dirname "$tool")/pg_restore" ]; then
-                client="$(dirname "$tool")"
-                break
-              fi
-            done
-          fi
-          test -n "$client"
-          "$client/pg_dump" --version
-          "$client/pg_restore" --version
-          echo "$client" >> "$GITHUB_PATH"
-      - name: Verify logical backup and restore into separate disposable database
-        run: python tests/smoke_backup_restore.py
+          # A newer pg_restore may emit SET statements unknown to PostgreSQL 16.
+          # Reuse the exact running service image (already present locally).
+          export MTUNZ_CI_PG_IMAGE="$(docker inspect --format '{{.Image}}' "$POSTGRES_SERVICE_ID")"
+          test -n "$MTUNZ_CI_PG_IMAGE"
+          export MTUNZ_CI_BACKUP_DIR="$(mktemp -d "$RUNNER_TEMP/mtunz-pg-backup.XXXXXX")"
+          export TMPDIR="$MTUNZ_CI_BACKUP_DIR"
+          tools="$(mktemp -d "$RUNNER_TEMP/mtunz-pg-tools.XXXXXX")"
+          trap 'rm -rf "$MTUNZ_CI_BACKUP_DIR" "$tools"' EXIT
+          cat > "$tools/pg_dump" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          tool="$(basename "$0")"
+          case "$tool" in pg_dump|pg_restore) ;; *) exit 64 ;; esac
+          exec docker run --rm --network host \
+            --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$MTUNZ_CI_BACKUP_DIR,dst=$MTUNZ_CI_BACKUP_DIR" \
+            --env PGHOST --env PGPORT --env PGDATABASE --env PGUSER \
+            --env PGPASSWORD --env PGSSLMODE --env PGCHANNELBINDING \
+            --env PGCONNECT_TIMEOUT --env PGSSLROOTCERT \
+            "$MTUNZ_CI_PG_IMAGE" "$tool" "$@"
+          SH
+          chmod +x "$tools/pg_dump"
+          ln -s pg_dump "$tools/pg_restore"
+          export PATH="$tools:$PATH"
+          dump_version="$(pg_dump --version)"
+          restore_version="$(pg_restore --version)"
+          echo "$dump_version"
+          echo "$restore_version"
+          [[ "$dump_version" =~ ^pg_dump\ \(PostgreSQL\)\ 16\. ]]
+          [[ "$restore_version" =~ ^pg_restore\ \(PostgreSQL\)\ 16\. ]]
+          python tests/smoke_backup_restore.py
