@@ -3,7 +3,7 @@ import {Alert,AppState,Modal,Pressable,StyleSheet,Text,View} from 'react-native'
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {finishCall,formatCallDuration,callStatusLabel,appendCallHistory} from './callHistory';
 import {readCallVault,appendCallVault,clearCallVault} from './callVault';
-import {INVITE_TIMEOUT_MS,secondsRemaining,offerDisposition,validIce,freshIce} from './callSignalPolicy';
+import {INVITE_TIMEOUT_MS,secondsRemaining,offerDisposition,validIce,freshIce,validDescription,createLocalIceGate} from './callSignalPolicy';
 import {mediaDevices,MediaStream,RTCPeerConnection,RTCIceCandidate,RTCSessionDescription,RTCView} from 'react-native-webrtc';
 
 const ICE={iceServers:[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]};
@@ -57,6 +57,7 @@ export function useNativeCall(wsRef,friends,token){
       if(signal)transmit('call-hangup',c.peerId);
       if(c.timer)clearTimeout(c.timer);
       if(c.disconnectTimer)clearTimeout(c.disconnectTimer);
+      c.localIce?.close();
       try{c.local?.getTracks().forEach(track=>track.stop());}catch{}
       try{c.remote?.getTracks().forEach(track=>track.stop());}catch{}
       try{c.pc?.close();}catch{}
@@ -78,18 +79,19 @@ export function useNativeCall(wsRef,friends,token){
       muted:false,cameraDisabled:false,timer:null,disconnectTimer:null,ice:[],
       direction:invite?'incoming':'outgoing',startedAt:invite?.startedAt||Date.now(),connectedAt:null};
     callRef.current=c;
+    c.localIce=createLocalIceGate(item=>callRef.current===c&&transmit('call-ice',peerId,item),MAX_ICE);
     local.getTracks().forEach(track=>pc.addTrack(track,local));
     pc.onicecandidate=event=>{
       if(callRef.current!==c||!event.candidate)return;
       const item=event.candidate.toJSON?.()||event.candidate;
-      transmit('call-ice',peerId,item);
+      c.localIce.push(item);
     };
     pc.ontrack=event=>{
       if(callRef.current!==c)return;
-      for(const stream of event.streams||[]){
-        for(const track of stream.getTracks()){
-          if(!c.remote.getTracks().some(t=>t.id===track.id))c.remote.addTrack(track);
-        }
+      const tracks=(event.streams||[]).flatMap(stream=>stream.getTracks());
+      if(event.track)tracks.push(event.track);
+      for(const track of tracks){
+        if(!c.remote.getTracks().some(t=>t.id===track.id))c.remote.addTrack(track);
       }
       update();
     };
@@ -107,7 +109,7 @@ export function useNativeCall(wsRef,friends,token){
       if(state==='disconnected'&&!c.disconnectTimer){
         c.disconnectTimer=setTimeout(()=>{if(callRef.current===c&&pc.connectionState!=='connected')endCall(true,'network');},15000);
       }
-      if(state==='failed'||state==='closed'){endCall(false,'network');return;}
+      if(state==='failed'||state==='closed'){endCall(true,'network');return;}
       update();
     };
     c.timer=setTimeout(()=>{
@@ -134,9 +136,10 @@ export function useNativeCall(wsRef,friends,token){
       const offer=await c.pc.createOffer();if(callRef.current!==c)return;
       await c.pc.setLocalDescription(offer);if(callRef.current!==c)return;
       const signal=c.pc.localDescription?.toJSON?.()||offer;
-      if(!transmit('call-offer',c.peerId,signal,video))throw Error('Mất kết nối với máy chủ.');
+      if(!validDescription(signal,'offer')||!transmit('call-offer',c.peerId,signal,video))throw Error('Không thể gửi yêu cầu gọi.');
+      if(!c.localIce.release())throw Error('Mất kết nối khi thiết lập cuộc gọi.');
     }catch(error){
-      if(generationRef.current===generation){endCall(false,'failed');
+      if(generationRef.current===generation){endCall(true,'failed');
         Alert.alert('Không thể gọi',error?.message||'Không thể bật micro hoặc camera.');}
     }finally{if(generationRef.current===generation)startingRef.current=false;}
   },[endCall,setup,transmit,update,wsRef]);
@@ -157,16 +160,19 @@ export function useNativeCall(wsRef,friends,token){
       if(inviteTimerRef.current){clearTimeout(inviteTimerRef.current);inviteTimerRef.current=null;}
       incomingRef.current=null;setIncoming(null);setAccepting(false);
       await c.pc.setRemoteDescription(new RTCSessionDescription(invite.signal));
+      if(callRef.current!==c)return;
       const queued=freshIce(pendingIce.current.get(invite.peerId),Date.now());
       pendingIce.current.delete(invite.peerId);
       for(const item of queued){if(callRef.current!==c)return;try{await c.pc.addIceCandidate(new RTCIceCandidate(item.signal));}catch{}}
       if(callRef.current!==c)return;
       const answer=await c.pc.createAnswer();if(callRef.current!==c)return;
       await c.pc.setLocalDescription(answer);if(callRef.current!==c)return;
-      if(!transmit('call-answer',invite.peerId,c.pc.localDescription?.toJSON?.()||answer))
-        throw Error('Mất kết nối với máy chủ.');
+      const signal=c.pc.localDescription?.toJSON?.()||answer;
+      if(!validDescription(signal,'answer')||!transmit('call-answer',invite.peerId,signal))
+        throw Error('Không thể gửi phản hồi cuộc gọi.');
+      if(!c.localIce.release())throw Error('Mất kết nối khi thiết lập cuộc gọi.');
     }catch(error){
-      if(generationRef.current===generation){endCall(false,'failed');transmit('call-decline',invite.peerId);
+      if(generationRef.current===generation){endCall(true,'failed');
         Alert.alert('Không thể nghe máy',error?.message||'Kiểm tra quyền micro/camera.');}
     }finally{if(generationRef.current===generation){startingRef.current=false;setAccepting(false);}}
   },[endCall,setup,transmit]);
@@ -208,7 +214,7 @@ export function useNativeCall(wsRef,friends,token){
       else if(incomingRef.current?.peerId===from)endCall(false,'remote');
       return;
     }
-    if(data.type==='call-answer'&&c?.peerId===from&&c.direction==='outgoing'&&data.signal?.type==='answer'){
+    if(data.type==='call-answer'&&c?.peerId===from&&c.direction==='outgoing'&&validDescription(data.signal,'answer')){
       if(c.applyingAnswer||c.pc.remoteDescription)return;
       c.applyingAnswer=true;
       try{
@@ -217,7 +223,7 @@ export function useNativeCall(wsRef,friends,token){
         const queued=freshIce(pendingIce.current.get(from),Date.now());
         pendingIce.current.delete(from);
         for(const item of queued){if(callRef.current!==c)return;try{await c.pc.addIceCandidate(new RTCIceCandidate(item.signal));}catch{}}
-      }catch{if(callRef.current===c){endCall(false,'failed');Alert.alert('Lỗi cuộc gọi','Không thể thiết lập kết nối thoại/video.');}}
+      }catch{if(callRef.current===c){endCall(true,'failed');Alert.alert('Lỗi cuộc gọi','Không thể thiết lập kết nối thoại/video.');}}
     }
   },[endCall,transmit]);
   const toggleMic=useCallback(()=>{

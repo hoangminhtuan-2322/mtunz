@@ -175,3 +175,46 @@ assert(app.includes('mode:themeMode,ready:themeReady')&&app.includes("const [mod
 
 assert(chat.includes('const MemoMessage=React.memo(Message)')&&chat.includes('data={newestFirst}')&&chat.includes('renderItem={renderMessage}'));
 assert(chat.includes('useMemo(()=>[...messages].reverse(),[messages])')&&chat.includes('upsertMessage(old,sanitize('));
+
+assert(chat.includes('roomWindowRef.current.reset(key)')&&chat.includes('roomWindowRef.current.reset(null)'));
+assert(chat.includes('if(!guard.accepts(request)||conversationKey(roomRef.current)!==key)return'));
+assert(chat.includes('guard.pageMore(request,next.length)')&&chat.includes('guard.finish(request)'));
+assert(chat.includes('key={conversationKey(room)} inverted data={newestFirst}'));
+assert(chat.includes('if(guard.current(visit)&&isAtLatestRef.current)listRef.current?.scrollToOffset'));
+console.log('Conversation-specific list and stale response/scroll guards: PASS');
+
+assert(chat.includes('createForegroundTicker(tick,30000)')&&chat.includes('check.stop();clearTimeout(retryTimer)'));
+assert(chat.includes('const previous=socket;socket=null;wsRef.current=null;setConnection'));
+assert(chat.includes('if(!closed&&activeRef.current&&wsRef.current===current)onEvent(event)'));
+assert(chat.includes('applyReceipt(old,user.id,data.type,data.up_to,data.at)'));
+console.log('Native foreground timer and stale socket isolation: PASS');
+
+const {createVoiceCapture}=require('../mobile/src/voiceCapture');
+(async()=>{
+ const capture=createVoiceCapture();let delivered=[],events=[],allowed=true;
+ let resolvePermission;const permission=new Promise(resolve=>{resolvePermission=resolve;});
+ const ops={current:()=>allowed,busy:v=>events.push('busy:'+v),permission:()=>permission,enableMode:async()=>events.push('mode'),resetMode:async()=>events.push('reset'),prepare:async()=>events.push('prepare'),record:()=>events.push('record'),stop:async()=>events.push('stop'),uri:()=>'/voice.m4a',deliver:u=>delivered.push(u),error:e=>{throw e;}};
+ const first=capture.start(ops);capture.cancel();assert(capture.active());assert.equal(await capture.start(ops),false);
+ resolvePermission({granted:true});assert.equal(await first,false);assert(!capture.active());assert(!events.includes('record'));
+ assert(await capture.start({...ops,permission:async()=>({granted:true})}));await capture.stop();assert.deepEqual(delivered,['/voice.m4a']);
+ assert(await capture.start({...ops,permission:async()=>({granted:true})}));capture.cancel();await new Promise(resolve=>setImmediate(resolve));assert(!capture.active());assert.equal(delivered.length,1);
+ let prepareDone;const pending=capture.start({...ops,permission:async()=>({granted:true}),prepare:()=>new Promise(resolve=>{prepareDone=resolve;})});
+ while(!prepareDone)await Promise.resolve();capture.cancel();prepareDone();assert.equal(await pending,false);assert(!capture.active());assert.equal(delivered.length,1);
+ console.log('Voice permission race, room cancellation, exclusive recording and explicit send preview: PASS');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+assert(chat.includes('cancelVoice();stopTyping()')&&chat.includes('voiceCaptureRef.current.active()'));
+assert(chat.includes("state==='background')cancelVoice()")&&chat.includes('Tin nhắn thoại · Chưa gửi'));
+assert(chat.includes('!guard.current(visit)||conversationKey(roomRef.current)!==key'));
+
+const {chatLayout}=require('../mobile/src/chatLayout');
+assert.deepEqual(chatLayout(320,1,'dm'),{compactHeader:true,compactComposer:true});
+assert.deepEqual(chatLayout(500,1,'dm'),{compactHeader:false,compactComposer:false});
+assert.deepEqual(chatLayout(460,1.5,'dm'),{compactHeader:true,compactComposer:false});
+assert(chatLayout(390,1.5,'group').compactComposer);
+assert(!chatLayout(400,1,'group').compactHeader);
+assert(!chatLayout(320,1,'world').compactHeader);
+assert(chat.includes('useWindowDimensions()')&&chat.includes('chatLayout(width,fontScale,room?.scope)'));
+assert(chat.includes("dialog==='compactChatActions'")&&chat.includes("dialog==='compactAttachments'"));
+assert(chat.includes('toolButton:{width:44,height:44')&&chat.includes('headerAction:{minWidth:47,minHeight:44'));
+assert(chat.includes('accessibilityLabel="Thông tin hội thoại"'));
+console.log('Responsive chat header/composer, large text, full action access and touch targets: PASS');

@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import sqlite3
-import os
 import tempfile
 import time
 import zipfile
@@ -46,5 +45,12 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Sao lưu mtunz an toàn')
     parser.add_argument('output',nargs='?',default=str(ROOT/'backups'))
     args=parser.parse_args()
-    result=make_backup(Path(args.output),Path(os.getenv('DATA_DIR',str(ROOT/'data'))))
+    direct_url=os.getenv('MTUNZ_BACKUP_DATABASE_URL','').strip()
+    if direct_url:
+        from postgres_backup import make_postgres_backup
+        result=make_postgres_backup(Path(args.output),direct_url)
+    elif os.getenv('DATABASE_URL') or os.getenv('REQUIRE_POSTGRES')=='1':
+        raise SystemExit('Cần MTUNZ_BACKUP_DATABASE_URL (kết nối PostgreSQL trực tiếp); không sao lưu nhầm SQLite.')
+    else:
+        result=make_backup(Path(args.output),Path(os.getenv('DATA_DIR',str(ROOT/'data'))))
     print(f'Đã sao lưu: {result}')

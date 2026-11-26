@@ -393,12 +393,12 @@ def test_expo_receipt_checks_report_delivery_errors_and_expire_tokens(monkeypatc
     token='ExpoPushToken['+('Z'*28)+']'
     assert native.post('/api/mobile/push',headers=headers,json={'token':token}).status_code==200
     with db() as c:
-        row=c.execute('SELECT session_hash FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()
+        row=c.execute('SELECT session_hash,registration_id FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()
         assert row is not None
         sid=row['session_hash']
         c.execute('''INSERT INTO mobile_push_receipts
-                     (receipt_id,token,session_hash,created_at) VALUES(?,?,?,?)''',
-                  ('expo-receipt-invalid',token,sid,int(time.time())-1000))
+                     (receipt_id,token,session_hash,created_at,registration_id) VALUES(?,?,?,?,?)''',
+                  ('expo-receipt-invalid',token,sid,int(time.time())-1000,row['registration_id']))
     called=[]
     def receipt_request(url,**kwargs):
         assert url==mobile_push.EXPO_RECEIPTS_GATEWAY
@@ -519,3 +519,36 @@ def test_revoked_native_socket_rechecks_session_on_heartbeat(monkeypatch):
         with client.websocket_connect('/ws',headers=headers):
             pass
     assert caught.value.code==1008
+
+
+def test_old_push_receipt_cannot_revoke_reregistered_token(monkeypatch):
+    import time
+    import mobile_push
+    from requests import Response
+    admin=logged_admin()
+    register_user(admin,'native_receipt_retry')
+    native,headers=native_login('native_receipt_retry')
+    token='ExpoPushToken['+('W'*28)+']'
+    assert native.post('/api/mobile/push',headers=headers,json={'token':token}).status_code==200
+    with db() as c:
+        old=c.execute('SELECT session_hash,registration_id FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()
+        c.execute('''INSERT INTO mobile_push_receipts
+                     (receipt_id,token,session_hash,created_at,registration_id) VALUES(?,?,?,?,?)''',
+                  ('stale-registration',token,old['session_hash'],int(time.time())-1000,old['registration_id']))
+    assert native.post('/api/mobile/push',headers=headers,json={'token':token}).status_code==200
+    with db() as c:
+        current=c.execute('SELECT session_hash,registration_id FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()
+        assert current['session_hash']==old['session_hash']
+        assert current['registration_id']!=old['registration_id']
+    def request(url,**kwargs):
+        assert url==mobile_push.EXPO_RECEIPTS_GATEWAY
+        response=Response()
+        response.status_code=200
+        response._content=b'{"data":{"stale-registration":{"status":"error","details":{"error":"DeviceNotRegistered"}}}}'
+        return response
+    monkeypatch.setattr(mobile_push.requests,'post',request)
+    assert app.state.mobile_check_expo_receipts()>=1
+    assert native.get('/api/mobile/push',headers=headers).json()['enabled'] is True
+    with db() as c:
+        assert c.execute('SELECT registration_id FROM mobile_push_tokens WHERE token=?',(token,)).fetchone()['registration_id']==current['registration_id']
+        assert not c.execute('SELECT 1 FROM mobile_push_receipts WHERE receipt_id=?',('stale-registration',)).fetchone()

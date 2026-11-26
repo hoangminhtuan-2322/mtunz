@@ -1,0 +1,5 @@
+# Chat reliability candidate (Build 41)
+Independent integration candidate based on Build 38 stack (PRs 102, 104–110). Excludes larger-video/R2 and Fishing Life branches intentionally. Android display name/version and signing identity unchanged; versionCode 41 reserved for this candidate.
+- Web DM and group opening uses the latest server window, not unread-window backfill. Preserve unread marker metadata and older history pagination; background refresh does not request forced scroll.
+- Native history response replays relevant edit, reaction and receipt events recorded during the request. Per-request bounded journal invalidated on room switches; duplicate reactions do not rebuild rows. On overflow the app rejects stale response and asks to refresh. Send acknowledgements do not overwrite a row already received live.
+- Regression tests cover latest landing, replay, duplicates and room reset. Requires full CI, actual device keyboard/screen and network-loss validation before merge/release. No production changes.

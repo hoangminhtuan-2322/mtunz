@@ -10,7 +10,7 @@ import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
 import {ActivityIndicator,Alert,Animated,AppState,FlatList,Image,Keyboard,PanResponder,
-  Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+  Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,useWindowDimensions} from 'react-native';
 import {KeyboardChatScrollView,KeyboardStickyView} from 'react-native-keyboard-controller';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {SafeAreaView,useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -20,11 +20,13 @@ import {attachmentSource,avatarSource,chooseFile,chooseMedia,chooseMediaBatch,co
 
 import DevicePushSettings,{reportPushVisibility} from './DevicePushSettings';
 import {useNativeCall,NativeCallOverlay,formatCallDuration,callStatusLabel} from './NativeCall';
-import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay} from './realtime';
+import {createRefreshQueue,mergeRecentWindow,reuseMessageRows,upsertMessage,createSerialRefresh,reconnectDelay,createRoomWindowGuard,createForegroundTicker,applyReceipt,reuseEqualPayload,createHistoryJournal,applyHistoryEvent,replayHistoryEvents} from './realtime';
 import {conversationKey,filterInbox,normalizeSearch,updateDraft,clearSentDraft,mergeHydratedDrafts,isReplySwipe,findHistory} from './inboxTools';
 import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
+import {createVoiceCapture} from './voiceCapture';
+import {chatLayout} from './chatLayout';
 import {createPendingSend,deliverPendingSend} from './pendingSend';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
@@ -112,8 +114,8 @@ function ModalSheet({visible,onClose,title,children}){
   const {P,css}=useMessengerTheme();
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={css.overlay}><View style={css.sheet}>
-      <View style={css.hrow}><Text style={css.h2}>{title}</Text>
-        <Pressable onPress={onClose}><Text style={css.link}>Đóng</Text></Pressable></View>
+      <View style={css.hrow}><Text style={[css.h2,{flex:1,minWidth:0}]}>{title}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Đóng bảng tùy chọn" onPress={onClose} style={{minHeight:44,minWidth:44,justifyContent:'center',alignItems:'center'}}><Text style={css.link}>Đóng</Text></Pressable></View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:10,paddingBottom:20}}>{children}</ScrollView>
     </View></View>
   </Modal>;
@@ -233,6 +235,7 @@ const ChatScrollView=React.forwardRef(function ChatScrollView({inverted,...props
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const {P,css,mode,ready:themeReady,saving:themeSaving,changeMode}=useMessengerTheme();
   const {bottom:keyboardBottomInset}=useSafeAreaInsets();
+  const {width,fontScale}=useWindowDimensions();
   const [backgroundId,setBackgroundId]=useState('midnight');
   const [roomAppearance,setRoomAppearance]=useState({account:null,values:{},ready:false});
   const appearanceAccount=String(user.id);
@@ -336,15 +339,17 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     [sessionsLoading,setSessionsLoading]=useState(false),
     [sessionMessage,setSessionMessage]=useState('');
   const newestFirst=useMemo(()=>[...messages].reverse(),[messages]);
-  const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(true),
+  const roomRef=useRef(null),wsRef=useRef(null),activeRef=useRef(AppState.currentState==='active'),
     typingRef=useRef({active:false,lastSentAt:0,roomKey:'',timer:null}),
     remoteTypingRef=useRef(null),listRequestRef=useRef(0),
-    keyRef=useRef(null),olderRef=useRef(false),
-    listRef=useRef(null),loadSeq=useRef(0),liveRef=useRef({}),
+    keyRef=useRef(null),
+    listRef=useRef(null),roomWindowRef=useRef(null),liveRef=useRef({}),
     isAtLatestRef=useRef(true),lastNewestIdRef=useRef(null),
     presenceVersionRef=useRef(0),presenceEventsRef=useRef(new Map()),
     supportTicketRef=useRef(null),
     sendRef=useRef(false);
+  if(!roomWindowRef.current)roomWindowRef.current=createRoomWindowGuard();
+  const historyJournalRef=useRef(null);if(!historyJournalRef.current)historyJournalRef.current=createHistoryJournal();
   roomRef.current=room;
   supportTicketRef.current=supportTicket;
   const replyRef=useRef(null);
@@ -372,7 +377,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const recorder=useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordState=useAudioRecorderState(recorder,400);
   const [voiceBusy,setVoiceBusy]=useState(false);
-  const voiceDeadlineRef=useRef(null);
+  const voiceCaptureRef=useRef(null);
+  if(!voiceCaptureRef.current)voiceCaptureRef.current=createVoiceCapture();
+  const cancelVoice=useCallback(()=>voiceCaptureRef.current.cancel(),[]);
+  useEffect(()=>{
+    const sub=AppState.addEventListener('change',state=>{if(state==='background')cancelVoice();});
+    return()=>{sub.remove();cancelVoice();};
+  },[cancelVoice]);
 
   // Emit native typing transitions and recover if the peer disconnects abruptly.
   const transmitTyping=useCallback((target,on)=>{
@@ -422,15 +433,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const tasks=await Promise.allSettled([
       invoke('/api/friends'),invoke('/api/groups'),invoke('/api/notifications')]);
     if(requested!==listRequestRef.current)return;
-    if(tasks[0].status==='fulfilled')setFriends((tasks[0].value.friends||[]).map(friend=>{
+    if(tasks[0].status==='fulfilled')setFriends(old=>reuseEqualPayload(old,(tasks[0].value.friends||[]).map(friend=>{
       const event=presenceEventsRef.current.get(friend.other_id);
       if(!event||event.version<=presenceBefore)return friend;
       return {...friend,online:event.online,last_seen:event.last_seen||friend.last_seen};
-    }));
-    if(tasks[1].status==='fulfilled')setGroups(tasks[1].value.groups||[]);
+    })));
+    if(tasks[1].status==='fulfilled')setGroups(old=>reuseEqualPayload(old,tasks[1].value.groups||[]));
     if(tasks[2].status==='fulfilled'){
       const n=tasks[2].value.notifications||[];
-      setNotices(n);setNoticesUnread(n.filter(x=>!x.read_at).length);
+      setNotices(old=>reuseEqualPayload(old,n));setNoticesUnread(n.filter(x=>!x.read_at).length);
     }
   }),[invoke]);
   const refreshSocial=useCallback(async()=>{
@@ -444,17 +455,22 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   const loadWindow=useCallback(async(target,before=0)=>{
     if(!target)return;
-    const generation=++loadSeq.current;
-    const key=target.scope+':'+target.id;
+    const key=conversationKey(target),guard=roomWindowRef.current;
+    const request=guard.begin(key,before);
+    if(!request)return;
     if(!before)setLoading(true);
+    const journal=historyJournalRef.current,tracking=journal.begin();
     try{
       const path=route(target);
       const url=before?toQuery(path,{before:String(before)}):path;
       const response=await invoke(url);
-      if(roomRef.current?.scope!==target.scope||roomRef.current?.id!==target.id)return;
-      const next=(response.messages||[]).map(sanitize);
+      if(!guard.accepts(request)||conversationKey(roomRef.current)!==key)return;
+      const events=journal.finish(tracking);
+      if(events===null){setError('Hội thoại cập nhật liên tục. Hãy làm mới để tải lịch sử chính xác.');return;}
+      const next=replayHistoryEvents((response.messages||[]).map(sanitize),events,user.id);
       setMessages(current=>{
-        if(before)return dedupe([...next,...current]);
+        if(!guard.current(request))return current;
+        if(before)return reuseMessageRows(current,dedupe([...next,...current]));
         // Keep live events received while the REST request was in flight.
         // Only the overlapping IDs should be replaced by the server snapshot.
         return reuseMessageRows(current,mergeRecentWindow(current,next));
@@ -462,7 +478,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       keyRef.current=key;
       if(next.length&&(!before || liveRef.current[key]===undefined))
         liveRef.current[key]=Math.max(Number(liveRef.current[key]||0),Number(next[next.length-1].id));
-      setMore(next.length>=70);
+      const hasMore=guard.pageMore(request,next.length);
+      if(hasMore!==null)setMore(hasMore);
       if(!before&&activeRef.current&&target.scope!=='world'){
         const newest=next.reduce((max,m)=>m.sender_id!==user.id&&!m.deleted_at?
           Math.max(max,Number(m.id)):max,0);
@@ -472,8 +489,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           invoke(endpoint+'?up_to='+newest,'POST').catch(()=>{});
         }
       }
-    }catch(e){alertError(e);}
-    finally{if(!before&&generation===loadSeq.current)setLoading(false);olderRef.current=false;}
+    }catch(e){if(guard.accepts(request))alertError(e);}
+    finally{journal.finish(tracking);if(!before&&guard.accepts(request))setLoading(false);guard.finish(request);}
   },[invoke,alertError,user.id]);
 
   // Reconcile every unseen batch when a socket reconnects after network loss.
@@ -481,28 +498,34 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const reconcileRoom=useCallback(async(target)=>{
     if(!target)return;
     if(target.scope==='world'){await loadWindow(target);return;}
-    const key=target.scope+':'+target.id;
+    const key=conversationKey(target),guard=roomWindowRef.current,visit=guard.visit(key);
+    if(!visit)return;
+    const current=()=>guard.current(visit)&&conversationKey(roomRef.current)===key;
     let cursor=Number(liveRef.current[key]||0);
     if(!cursor){await loadWindow(target);return;}
     let page=0,moreAfter=false;
     try{
       do{
-        const result=await invoke(toQuery(route(target),{after:String(cursor)}));
-        if(roomRef.current?.scope!==target.scope||roomRef.current?.id!==target.id)return;
-        const rows=(result.messages||[]).map(sanitize);
+        const journal=historyJournalRef.current,tracking=journal.begin();
+        let result,events;
+        try{result=await invoke(toQuery(route(target),{after:String(cursor)}));}finally{events=journal.finish(tracking);}
+        if(!current())return;
+        if(events===null){await loadWindow(target);return;}
+        const rows=replayHistoryEvents((result.messages||[]).map(sanitize),events,user.id);
         if(!rows.length)break;
-        setMessages(old=>dedupe([...old,...rows]));
+        setMessages(old=>guard.current(visit)?reuseMessageRows(old,dedupe([...old,...rows])):old);
         cursor=Number(rows[rows.length-1].id);
         liveRef.current[key]=Math.max(Number(liveRef.current[key]||0),cursor);
         moreAfter=!!result.more_after;
       }while(moreAfter&&++page<20);
+      if(!current())return;
       if(moreAfter){
         setError('Cuộc trò chuyện có nhiều tin mới. Đang giới hạn tải nền để tránh giật lag; hãy mở lại để tải thêm.');
         return;
       }
       await loadWindow(target);
-    }catch(e){alertError(e);await loadWindow(target);}
-  },[invoke,loadWindow,alertError]);
+    }catch(e){if(current()){alertError(e);await loadWindow(target);}}
+  },[invoke,loadWindow,alertError,user.id]);
 
   const loadInbox=useMemo(()=>createSerialRefresh(async()=>{
     const results=await Promise.allSettled([invoke('/api/message-requests'),invoke('/api/blocks')]);
@@ -510,13 +533,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     if(results[1].status==='fulfilled')setBlocked(results[1].value.users||[]);
   }),[invoke]);
   const openRoom=useCallback(target=>{
-    stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
+    cancelVoice();stopTyping();updateRemoteTyping(false);Keyboard.dismiss();
     searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);setDialog('');setSelection(null);
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
+    const key=conversationKey(target);
+    roomWindowRef.current.reset(key);historyJournalRef.current.reset();liveRef.current={[key]:0};
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
-  },[loadWindow,stopTyping,updateRemoteTyping]);
+  },[loadWindow,stopTyping,updateRemoteTyping,cancelVoice]);
 
   // One WebSocket for the entire authenticated mobile session. Reconcile on resume.
   useEffect(()=>{
@@ -583,22 +608,21 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
       if(data.type==='message-updated'&&target?.scope==='dm'&&data.peer_id===target.id||
          data.type==='group-message-updated'&&target?.scope==='group'&&data.group_id===target.id){
-        setMessages(old=>old.map(m=>m.id===data.message_id?
-          {...m,body:data.body,deleted_at:data.deleted_at,edited_at:data.edited_at,
-           attachment:data.deleted_at?null:m.attachment,reactions:data.deleted_at?[]:m.reactions}:m));
+        const patch={kind:'edit',id:data.message_id,body:data.body,deletedAt:data.deleted_at,editedAt:data.edited_at};
+        historyJournalRef.current.record(patch);
+        setMessages(old=>applyHistoryEvent(old,patch,user.id));
       }
       if(data.type==='message-reaction'&&target?.scope==='dm'&&data.peer_id===target.id||
          data.type==='group-message-reaction'&&target?.scope==='group'&&data.group_id===target.id){
-        setMessages(old=>old.map(m=>{
-          if(m.id!==data.message_id)return m;
-          const others=(m.reactions||[]).filter(r=>!(r.user_id===data.user_id&&r.emoji===data.emoji));
-          return {...m,reactions:data.active?[...others,{user_id:data.user_id,emoji:data.emoji}]:others};
-        }));
+        const patch={kind:'reaction',id:data.message_id,userId:data.user_id,emoji:data.emoji,active:!!data.active};
+        historyJournalRef.current.record(patch);
+        setMessages(old=>applyHistoryEvent(old,patch,user.id));
       }
       if(data.type==='read'&&target?.scope==='dm'&&data.by===target.id||
          data.type==='delivered'&&target?.scope==='dm'&&data.by===target.id){
-        setMessages(old=>old.map(m=>m.sender_id===user.id&&m.id<=data.up_to?
-          {...m,[data.type==='read'?'read_at':'delivered_at']:data.at}:m));
+        const patch={kind:'receipt',type:data.type,upTo:data.up_to,at:data.at};
+        historyJournalRef.current.record(patch);
+        setMessages(old=>applyReceipt(old,user.id,data.type,data.up_to,data.at));
       }
       if(data.type==='world-message'&&target?.scope==='world'&&data.message?.room_id===target.id)
         setMessages(old=>upsertMessage(old,sanitize(data.message)));
@@ -661,27 +685,36 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         heartbeatTimer=setInterval(beat,6000);
         retryDelay=1200;setConnection('online');schedule(['lists','catchup']);
       };
-      current.onmessage=event=>{if(wsRef.current===current)onEvent(event);};
+      current.onmessage=event=>{if(!closed&&activeRef.current&&wsRef.current===current)onEvent(event);};
       current.onerror=()=>{if(wsRef.current===current)setConnection('offline');};
       current.onclose=()=>{
         if(wsRef.current!==current)return;
+        wsRef.current=null;socket=null;
         stopConnectTimer();stopHeartbeat();endNativeCall(false,'network');if(closed)return;
         setConnection('offline');
         typingRef.current.active=false;
         retry();
       };
     }
-    connect();
+    const check=createForegroundTicker(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN){schedule();if(!retryTimer&&socket?.readyState!==WebSocket.CONNECTING)connect();}},15000);
+    activeRef.current=AppState.currentState==='active';
+    if(activeRef.current){connect();check.start();}
     const sub=AppState.addEventListener('change',state=>{
-      activeRef.current=state==='active';
-      reportPushVisibility(socket,activeRef.current);
-      if(!activeRef.current){clearTimeout(retryTimer);retryTimer=null;stopConnectTimer();stopTyping();updateRemoteTyping(false);stopHeartbeat();socket?.close();return;}
+      const nextActive=state==='active';
+      if(nextActive===activeRef.current)return;
+      activeRef.current=nextActive;
+      reportPushVisibility(socket,nextActive);
+      if(!nextActive){
+        check.stop();clearTimeout(retryTimer);retryTimer=null;stopConnectTimer();stopTyping();updateRemoteTyping(false);stopHeartbeat();
+        const previous=socket;socket=null;wsRef.current=null;setConnection('offline');
+        try{previous?.close();}catch{}return;
+      }
+      check.start();
       if(socket?.readyState!==WebSocket.OPEN&&socket?.readyState!==WebSocket.CONNECTING)connect();
       schedule(['lists','catchup']);
     });
-    const check=setInterval(()=>{if(activeRef.current&&socket?.readyState!==WebSocket.OPEN){schedule();if(!retryTimer&&socket?.readyState!==WebSocket.CONNECTING)connect();}},15000);
-    return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopConnectTimer();stopHeartbeat();clearInterval(check);
-      sub.remove();socket?.close();wsRef.current=null;};
+    return()=>{closed=true;stopTyping();if(remoteTypingRef.current)clearTimeout(remoteTypingRef.current);refreshQueue.stop();clearTimeout(retryTimer);stopConnectTimer();stopHeartbeat();check.stop();
+      sub.remove();const previous=socket;socket=null;wsRef.current=null;try{previous?.close();}catch{};};
   },[token,user.id,invoke,refreshLists,loadWindow,loadInbox,refreshSocial,reconcileRoom,alertError,exitSession,onProfile,stopTyping,updateRemoteTyping,onCallSignal,endNativeCall]);
 
   useEffect(()=>{refreshLists().catch(alertError);loadInbox().catch(()=>{});},[refreshLists,loadInbox,alertError]);
@@ -730,6 +763,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           if(!active)return;
           const item=(result.tickets||[]).find(ticket=>Number(ticket.id)===chatId);
           if(!item)return;
+          cancelVoice();roomWindowRef.current.reset(null);roomRef.current=null;setLoading(false);cancelHistoryJump();
           setRoom(null);setDialog('support');setSupportTickets(result.tickets||[]);setSupportPaused(!!result.paused);
           await openSupportTicket(item);
         }
@@ -738,15 +772,16 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     const sub=Notifications.addNotificationResponseReceivedListener(response=>{void onResponse(response);});
     Notifications.getLastNotificationResponseAsync().then(result=>{if(result&&active)void onResponse(result);}).catch(()=>{});
     return()=>{active=false;sub.remove();};
-  },[openRoom,token,invoke,alertError]);
-  const jumpBack=()=>{Keyboard.dismiss();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
-    roomRef.current=null;isAtLatestRef.current=true;lastNewestIdRef.current=null;
+  },[openRoom,token,invoke,alertError,cancelVoice]);
+  const jumpBack=()=>{Keyboard.dismiss();cancelVoice();stopTyping();updateRemoteTyping(false);searchSeqRef.current++;cancelHistoryJump();setSearchBusy(false);persistDrafts();
+    roomWindowRef.current.reset(null);historyJournalRef.current.reset();roomRef.current=null;setLoading(false);isAtLatestRef.current=true;lastNewestIdRef.current=null;
     setNewerMessages(false);setRoom(null);setSelection(null);setDialog('');refreshLists().catch(()=>{});};
   useEffect(()=>{
     const tick=()=>{if(AppState.currentState==='active')setPresenceClock(Date.now());};
-    const interval=setInterval(tick,30000);
-    const sub=AppState.addEventListener('change',tick);
-    return()=>{clearInterval(interval);sub.remove();};
+    const ticker=createForegroundTicker(tick,30000);
+    if(AppState.currentState==='active')ticker.start();
+    const sub=AppState.addEventListener('change',state=>{if(state==='active'){tick();ticker.start();}else ticker.stop();});
+    return()=>{ticker.stop();sub.remove();};
   },[]);
   const peer=friends.find(f=>f.other_id===room?.id),group=groups.find(g=>g.id===room?.id);
   const peerStatus=friendPresence(peer,connection==='online',presenceClock);
@@ -757,7 +792,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const roomTitle=room?.scope==='dm'?label(peer):room?.scope==='group'?(group?.title||'Nhóm'):worldRooms.find(r=>r.id===room?.id)?.title||'Chat thế giới';
 
   async function doSend(){
-    if(!room||sending||sendRef.current)return;
+    if(!room||sending||sendRef.current||voiceCaptureRef.current.active())return;
     const target=room,originalRoom=conversationKey(target);
     let pending=pendingSendsRef.current.get(originalRoom);
     if(!pending&&mediaBatch){await sendMediaBatch();return;}
@@ -784,7 +819,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       pendingSendsRef.current.delete(originalRoom);
       if(conversationKey(roomRef.current)===originalRoom){
         if(!draftsRef.current[originalRoom])stopTyping();
-        if(result.message)setMessages(old=>upsertMessage(old,sanitize(result.message)));
+        if(result.message)setMessages(old=>old.some(row=>row.id===result.message.id)?old:upsertMessage(old,sanitize(result.message)));
         if(pending.scope==='world'&&!result.message)loadWindow(target);
         setDraft(draftsRef.current[originalRoom]||'');setPendingSend(null);
         scrollToLatest();
@@ -814,44 +849,31 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     ]);
   }
   async function toggleVoice(){
-    if(voiceBusy||sending||sendRef.current||pendingSend||mediaBatch||reply?.edit_id)return;
-    setVoiceBusy(true);
-    try{
-      if(recordState.isRecording){
-        await recorder.stop();
-        clearTimeout(voiceDeadlineRef.current);
-        voiceDeadlineRef.current=null;
-        await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
-        if(!recorder.uri)throw Error('Không tìm thấy bản ghi âm.');
-        const name='mtunz-voice-'+Date.now()+'.m4a';
-        setPicked({uri:recorder.uri,name,type:'audio/mp4',size:recordState.fileSize||0});
-      }else{
-        const permission=await AudioModule.requestRecordingPermissionsAsync();
-        if(!permission.granted)throw Error('Chưa cấp quyền micro để ghi âm.');
-        await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true});
-        await recorder.prepareToRecordAsync();
-        recorder.record();
-        voiceDeadlineRef.current=setTimeout(async()=>{
-          try{
-            await recorder.stop();
-            await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
-            if(recorder.uri)setPicked({
-              uri:recorder.uri,name:'mtunz-voice-'+Date.now()+'.m4a',
-              type:'audio/mp4',size:0});
-          }catch(e){alertError(e);}
-        },110000);
-      }
-    }catch(e){alertError(e);}
-    finally{setVoiceBusy(false);}
+    const capture=voiceCaptureRef.current;
+    if(capture.recording()){await capture.stop();return;}
+    if(!room||capture.active()||voiceBusy||sending||sendRef.current||pendingSend||mediaBatch||picked||pickerBusyRef.current||reply?.edit_id)return;
+    const key=conversationKey(roomRef.current),guard=roomWindowRef.current,visit=guard.visit(key);
+    await capture.start({
+      current:()=>guard.current(visit)&&conversationKey(roomRef.current)===key&&AppState.currentState!=='background',
+      busy:setVoiceBusy,
+      permission:()=>AudioModule.requestRecordingPermissionsAsync(),
+      enableMode:()=>setAudioModeAsync({allowsRecording:true,playsInSilentMode:true}),
+      resetMode:()=>setAudioModeAsync({allowsRecording:false,playsInSilentMode:true}),
+      prepare:()=>recorder.prepareToRecordAsync(),
+      record:()=>recorder.record(),
+      stop:()=>recorder.stop(),
+      uri:()=>recorder.uri,
+      deliver:uri=>setPicked({uri,name:'mtunz-voice-'+Date.now()+'.m4a',type:'audio/mp4',size:0,voiceNote:true}),
+      error:alertError
+    });
   }
-  useEffect(()=>()=>clearTimeout(voiceDeadlineRef.current),[]);
   async function pick(kind){
-    if(sendRef.current||!room||pickerBusyRef.current||pendingSend||mediaBatch||recordState.isRecording||reply?.edit_id)return;
-    const key=conversationKey(room),multi=kind==='media'&&room.scope!=='world';
+    if(sendRef.current||!room||pickerBusyRef.current||pendingSend||mediaBatch||voiceCaptureRef.current.active()||reply?.edit_id)return;
+    const key=conversationKey(room),guard=roomWindowRef.current,visit=guard.visit(key),multi=kind==='media'&&room.scope!=='world';
     pickerBusyRef.current=true;
     try{
       const result=multi?await chooseMediaBatch():kind==='media'?await chooseMedia():await chooseFile();
-      if(!result||conversationKey(roomRef.current)!==key||sendRef.current||pendingSendsRef.current.has(key))return;
+      if(!result||!guard.current(visit)||conversationKey(roomRef.current)!==key||sendRef.current||pendingSendsRef.current.has(key))return;
       const assets=multi?result:[result];
       if(!assets.length)return;
       if(assets.length===1){setPicked(assets[0]);}
@@ -886,7 +908,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             removeSentDraft(key,batch.originalDraft);persistDrafts();
             if(active()){setDraft(draftsRef.current[key]||'');setReply(null);}
           }
-          if(active()&&result.message){setMessages(old=>upsertMessage(old,sanitize(result.message)));scrollToLatest();}
+          if(active()&&result.message){setMessages(old=>old.some(row=>row.id===result.message.id)?old:upsertMessage(old,sanitize(result.message)));scrollToLatest();}
           if(active())setMediaBatch({...batch});
         }
       });
@@ -940,7 +962,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     }catch(e){alertError(e);}
   }
   async function sendEdit(){
-    const mid=reply?.edit_id;if(!mid||!draft.trim()||!room||sendRef.current)return;
+    const mid=reply?.edit_id;if(!mid||!draft.trim()||!room||sendRef.current||voiceCaptureRef.current.active())return;
     sendRef.current=true;setSending(true);setSendStage('Đang lưu chỉnh sửa…');
     try{
       await invoke(room.scope==='dm'?'/api/messages/'+mid:
@@ -952,10 +974,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     finally{sendRef.current=false;setSending(false);setSendStage('');}
   }
   function loadOlder(){
-    if(!more||olderRef.current||historyBusyRef.current||loading||!messages.length||!room)return;
+    if(!more||roomWindowRef.current.olderBusy()||historyBusyRef.current||loading||!messages.length||!room)return;
     const oldest=Number(messages[0].id);
     if(!oldest||oldest<1)return;
-    olderRef.current=true;loadWindow(room,oldest);
+    loadWindow(room,oldest);
   }
 
   async function openInfo(){
@@ -1056,7 +1078,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     isAtLatestRef.current=true;setNewerMessages(false);
     // The inverted list may not have measured a just-sent image or message yet.
     // Scroll on the next frame, then let onContentSizeChange finish positioning.
-    requestAnimationFrame(()=>listRef.current?.scrollToOffset({offset:0,animated}));
+    const guard=roomWindowRef.current,visit=guard.visit(conversationKey(roomRef.current));
+    requestAnimationFrame(()=>{if(guard.current(visit)&&isAtLatestRef.current)listRef.current?.scrollToOffset({offset:0,animated});});
   }
   useEffect(()=>{
     if(!room)return;
@@ -1079,18 +1102,22 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   async function jumpToSearchResult(message){
     const target=roomRef.current,id=Number(message.id);
     if(!target||target.scope==='world'||!Number.isSafeInteger(id)||id<=0||historyBusyRef.current)return;
-    if(olderRef.current||loading){setSearchError('Đang tải hội thoại. Hãy thử lại khi hoàn tất.');return;}
+    if(roomWindowRef.current.olderBusy()||loading){setSearchError('Đang tải hội thoại. Hãy thử lại khi hoàn tất.');return;}
     const key=conversationKey(target),seq=++jumpSeq.current;
+    const guard=roomWindowRef.current,visit=guard.visit(key);
     historyBusyRef.current=true;setHistoryBusy(true);setSearchError('');
-    const current=()=>seq===jumpSeq.current&&conversationKey(roomRef.current)===key;
+    const current=()=>guard.current(visit)&&seq===jumpSeq.current&&conversationKey(roomRef.current)===key;
     try{
       const found=await findHistory(messages,id,async before=>{
-        const result=await invoke(toQuery(route(target),{before:String(before)}));
-        return (result.messages||[]).map(sanitize);
+        const journal=historyJournalRef.current,tracking=journal.begin();
+        let result,events;
+        try{result=await invoke(toQuery(route(target),{before:String(before)}));}finally{events=journal.finish(tracking);}
+        if(events===null)throw Error('Lịch sử vừa thay đổi. Hãy thử tìm lại.');
+        return replayHistoryEvents((result.messages||[]).map(sanitize),events,user.id);
       },current,8);
       if(!current())return;
       if(found.rows.length)setMessages(old=>dedupe([...found.rows,...old]));
-      if(found.exhausted)setMore(false);
+      if(found.exhausted){guard.exhausted(visit);setMore(false);}
       if(!found.found){setSearchError(found.exhausted?'Tin nhắn không còn trong lịch sử.':'Tin nhắn nằm xa hơn giới hạn tải nhanh. Hãy mở thêm lịch sử rồi thử lại.');return;}
       searchSeqRef.current++;setSearchBusy(false);setDialog('');Keyboard.dismiss();
       isAtLatestRef.current=false;setHighlightId(id);
@@ -1132,6 +1159,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
   const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length,[friends]);
   const worldChat=room?.scope==='world';
+  const {compactHeader,compactComposer}=chatLayout(width,fontScale,room?.scope);
   const renderMessage=useCallback(({item})=><MemoMessage item={item} own={item.sender_id===user.id||item.is_mine}
     token={token} onSelect={worldChat?ignoreMessageSelection:setSelection}
     onReply={worldChat?null:replyToMessage} highlighted={highlightId===Number(item.id)}
@@ -1192,7 +1220,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {room?<Ionicons name="arrow-back" size={25} color={P.text}/>:
           <Image source={require('../assets/brand-logo.png')} style={css.webIcon} resizeMode="contain"/>}
       </Pressable>
-      {!!room&&room.scope==='dm'&&<View style={css.headerPeerAvatar}>
+      {!!room&&room.scope==='dm'&&!compactHeader&&<View style={css.headerPeerAvatar}>
         {peer?.avatar_url?<Image source={avatarSource(peer.avatar_url,token)} style={css.headerPeerImage}/>:
           <Text style={css.headerPeerInitial}>{roomTitle.slice(0,1).toUpperCase()}</Text>}
         {peerStatus.online&&<View style={css.headerPeerOnline}/>}
@@ -1221,17 +1249,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,false);}}>
           <Ionicons name="call-outline" color={connection==='online'?P.accent:P.soft} size={22}/>
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={'Gọi video cho '+roomTitle}
+        {!compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel={'Gọi video cho '+roomTitle}
           disabled={connection!=='online'} style={css.headerAction}
           onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,true);}}>
           <Ionicons name="videocam-outline" color={connection==='online'?P.accent:P.soft} size={23}/>
-        </Pressable>
+        </Pressable>}
       </>}
-      {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" accessibilityLabel="Tìm tin nhắn"
+      {!!room&&room.scope!=='world'&&!compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel="Tìm tin nhắn"
         style={css.headerAction} onPress={openMessageSearch}>
         <Ionicons name="search-outline" color={P.accent} size={21}/></Pressable>}
-      {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
+      {!!room&&room.scope!=='world'&&!compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel="Thông tin hội thoại" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
+      {!!room&&room.scope!=='world'&&compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel="Tùy chọn hội thoại" style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('compactChatActions');}}><Ionicons name="ellipsis-horizontal" size={22} color={P.accent}/></Pressable>}
       {room?.scope==='world'&&<Pressable accessibilityRole="button" accessibilityLabel="Hình nền riêng" style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('roomAppearance');}}><Ionicons name="color-palette-outline" size={22} color={P.accent}/></Pressable>}
       {!room&&tab==='dm'&&<Pressable accessibilityRole="button" accessibilityLabel="Lịch sử cuộc gọi"
         style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('callHistory');}}>
@@ -1245,7 +1274,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     </Pressable>}
     {room?<View style={css.chatKeyboardArea}>
       {loading&&<ActivityIndicator color={P.accent}/>}
-      <FlatList ref={listRef} inverted data={newestFirst} keyExtractor={m=>String(m.id)}
+      <FlatList ref={listRef} key={conversationKey(room)} inverted data={newestFirst} keyExtractor={m=>String(m.id)}
         renderScrollComponent={renderChatScroll} style={[css.chatListViewport,{backgroundColor:wallpaperColor(chatBackground(roomBackgroundId(roomBackgrounds,conversationKey(room),backgroundId)),mode)}]}
         onScrollToIndexFailed={recoverSearchScroll}
         onViewableItemsChanged={onSearchTargetVisible} viewabilityConfig={searchViewabilityConfig}
@@ -1281,7 +1310,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         <View style={{flex:1,minWidth:0,gap:3}}><Text style={css.muted}>{reply.edit_id?'Chỉnh sửa tin nhắn':'↪ Trả lời tin nhắn'}</Text>
           {!reply.edit_id&&<Text style={css.strong} numberOfLines={1}>{reply.body||'Tệp đính kèm'}</Text>}</View>
         <Pressable onPress={()=>{setReply(null);if(reply.edit_id)setDraft(draftsRef.current[conversationKey(room)]||'');}}><Text style={css.link}>Hủy</Text></Pressable></View>}
-      {recordState.isRecording&&<View style={css.replyBar}><Text style={css.muted}>🔴 Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text></View>}
+      {recordState.isRecording&&<View style={css.replyBar}><Text style={[css.muted,{flex:1}]}>Đang ghi âm {Math.round((recordState.durationMillis||0)/1000)} giây · nhấn ■ để dừng (tối đa 110 giây)</Text><Pressable accessibilityRole="button" accessibilityLabel="Hủy ghi âm" onPress={cancelVoice}><Text style={css.link}>Hủy</Text></Pressable></View>}
       {!!pendingSend&&<View style={css.batchPanel}>
         <View style={css.hrow}><Ionicons name="time-outline" size={20} color={P.accent}/><Text style={[css.strong,{flex:1}]}>{sending?'Đang gửi':'Tin nhắn chờ xác nhận'}</Text>
           <Pressable accessibilityRole="button" disabled={sending} onPress={discardPending}><Text style={css.link}>Bỏ</Text></Pressable></View>
@@ -1305,8 +1334,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {picked.type?.startsWith('image/')?
           <><Image source={{uri:picked.uri}} style={css.pendingPhoto}/>
             <Text style={css.muted}>Ảnh đã chọn</Text></>:
-          <><Ionicons name="attach-outline" size={19} color={P.accent}/>
-            <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.name}</Text></>}
+          <><Ionicons name={picked.voiceNote?'mic-outline':'attach-outline'} size={19} color={P.accent}/>
+            <Text style={[css.muted,{flex:1}]} numberOfLines={1}>{picked.voiceNote?'Tin nhắn thoại · Chưa gửi':picked.name}</Text></>}
         <Pressable accessibilityRole="button" accessibilityLabel="Bỏ tệp đính kèm"
           disabled={sending} onPress={()=>setPicked(null)}>
           <Ionicons name="close-circle" size={22} color={P.accent}/></Pressable>
@@ -1319,10 +1348,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </Text></Pressable>}
       {!!sendStage&&<View style={css.sendStatus}><ActivityIndicator size="small" color={P.accent}/><Text style={css.muted}>{sendStage}</Text></View>}
       <View style={css.compose}>
+        {compactComposer?<Pressable accessibilityLabel="Thêm ảnh, video hoặc tệp" accessibilityRole="button"
+          disabled={voiceBusy||recordState.isRecording||sending||!!pendingSend||!!mediaBatch||!!reply?.edit_id}
+          style={css.toolButton} onPress={()=>{Keyboard.dismiss();setDialog('compactAttachments');}}><Ionicons name="add-circle-outline" size={25} color={P.accent}/></Pressable>:<>
         <Pressable accessibilityLabel="Gửi ảnh hoặc video" accessibilityRole="button"
           style={css.toolButton} onPress={()=>pick('media')}><Ionicons name="images-outline" size={21} color={P.accent}/></Pressable>
         <Pressable accessibilityLabel="Đính kèm tệp" accessibilityRole="button"
-          style={css.toolButton} onPress={()=>pick('file')}><Ionicons name="attach-outline" size={23} color={P.accent}/></Pressable>
+          style={css.toolButton} onPress={()=>pick('file')}><Ionicons name="attach-outline" size={23} color={P.accent}/></Pressable></>}
         <Pressable accessibilityLabel={recordState.isRecording?'Dừng ghi âm':'Ghi âm'}
           accessibilityRole="button" style={css.toolButton}
           onPress={toggleVoice} disabled={voiceBusy||sending}><Ionicons name={recordState.isRecording?'stop-circle':'mic-outline'} size={21}
@@ -1337,8 +1369,8 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
             setDraft(value);
           }}/>
         <Pressable accessibilityRole="button" accessibilityLabel={sending?'Đang gửi tin nhắn':'Gửi tin nhắn'}
-          disabled={sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
-          style={[css.sendIconButton,(sending||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
+          disabled={sending||voiceBusy||recordState.isRecording||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch)} onPress={reply?.edit_id?sendEdit:doSend}
+          style={[css.sendIconButton,(sending||voiceBusy||recordState.isRecording||!!pendingSend||(!draft.trim()&&!picked&&!mediaBatch))&&css.disabled]}>
           {sending?<ActivityIndicator size="small" color={mode==='light'?'#ffffff':P.bg}/>:
             <Ionicons name="send" size={20} color={mode==='light'?'#ffffff':P.bg}/>}
         </Pressable>
@@ -1694,6 +1726,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <SharedConversationGallery room={room} token={token} onError={alertError}/>
       <Btn quiet onPress={openMessageSearch}>⌕ Tìm tin nhắn trong hội thoại</Btn>
     </ConversationInfoSheet>}
+    <ModalSheet visible={!!room&&dialog==='compactChatActions'} onClose={()=>setDialog('')} title="Tùy chọn hội thoại">
+      {room?.scope==='dm'&&<Btn quiet disabled={connection!=='online'} onPress={()=>{setDialog('');void nativeCall.startCall(room.id,roomTitle,true);}}>Gọi video</Btn>}
+      <Btn quiet onPress={openMessageSearch}>Tìm tin nhắn</Btn>
+      <Btn quiet onPress={openInfo}>Thông tin hội thoại</Btn>
+    </ModalSheet>
+    <ModalSheet visible={!!room&&dialog==='compactAttachments'} onClose={()=>setDialog('')} title="Đính kèm">
+      <Btn quiet onPress={()=>{setDialog('');void pick('media');}}>Ảnh hoặc video</Btn>
+      <Btn quiet onPress={()=>{setDialog('');void pick('file');}}>Tệp tài liệu</Btn>
+    </ModalSheet>
     <ModalSheet visible={dialog==='search'} onClose={closeMessageSearch} title="Tìm kiếm tin nhắn">
       <Field value={searchText} onChangeText={value=>{searchSeqRef.current++;setSearchText(value);setSearchResults([]);setSearchBusy(false);setSearchDone(false);setSearchError('');}} placeholder="Nhập nội dung cần tìm"/>
       <Btn disabled={searchBusy||!searchText.trim()} onPress={searchMessages}>{searchBusy?'Đang tìm…':'Tìm kiếm'}</Btn>
@@ -1928,7 +1969,7 @@ const baseStyles={
     borderColor:'#3b5d7f',alignItems:'center',justifyContent:'center'},
   backGlyph:{fontSize:34,color:P.text,fontWeight:'500',lineHeight:40},
   webIcon:{width:43,height:43},
-  headerAction:{minWidth:47,minHeight:42,alignItems:'center',justifyContent:'center',
+  headerAction:{minWidth:47,minHeight:44,alignItems:'center',justifyContent:'center',
     paddingHorizontal:8,borderRadius:12,backgroundColor:'#1b3451'},
   headerActionText:{color:P.accent,fontWeight:'800',fontSize:12},
   refreshGlyph:{color:P.accent,fontWeight:'600',fontSize:24},
@@ -2088,7 +2129,7 @@ const baseStyles={
   compose:{flexDirection:'row',gap:6,paddingHorizontal:10,paddingTop:11,paddingBottom:10,
     width:'100%',minWidth:0,alignItems:'flex-end',borderTopColor:'#2d4a64',
     borderTopWidth:1,backgroundColor:'#10253a'},
-  toolButton:{width:36,height:44,borderRadius:14,alignItems:'center',
+  toolButton:{width:44,height:44,borderRadius:14,alignItems:'center',
     justifyContent:'center',backgroundColor:'#23405d'},
   toolGlyph:{color:P.accent,fontSize:20,fontWeight:'800'},
   composeInput:{flex:1,minWidth:40,minHeight:44,maxHeight:118,borderRadius:20,
