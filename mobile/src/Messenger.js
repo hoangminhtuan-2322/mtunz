@@ -10,7 +10,7 @@ import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import {AudioModule,RecordingPresets,useAudioRecorder,useAudioRecorderState,setAudioModeAsync} from 'expo-audio';
 import {ActivityIndicator,Alert,Animated,AppState,FlatList,Image,Keyboard,PanResponder,
-  Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+  Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View,useWindowDimensions} from 'react-native';
 import {KeyboardChatScrollView,KeyboardStickyView} from 'react-native-keyboard-controller';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {SafeAreaView,useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -26,6 +26,7 @@ import {readDraftVault,writeDraftVault} from './draftVault';
 import {parsePushResponse,combineReplyDraft} from './notificationActions';
 import {createMediaBatch,runMediaBatch} from './mediaBatch';
 import {createVoiceCapture} from './voiceCapture';
+import {chatLayout} from './chatLayout';
 import {createPendingSend,deliverPendingSend} from './pendingSend';
 import SharedConversationGallery from './SharedConversationGallery';
 import {friendPresence} from './presence';
@@ -113,8 +114,8 @@ function ModalSheet({visible,onClose,title,children}){
   const {P,css}=useMessengerTheme();
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={css.overlay}><View style={css.sheet}>
-      <View style={css.hrow}><Text style={css.h2}>{title}</Text>
-        <Pressable onPress={onClose}><Text style={css.link}>Đóng</Text></Pressable></View>
+      <View style={css.hrow}><Text style={[css.h2,{flex:1,minWidth:0}]}>{title}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Đóng bảng tùy chọn" onPress={onClose} style={{minHeight:44,minWidth:44,justifyContent:'center',alignItems:'center'}}><Text style={css.link}>Đóng</Text></Pressable></View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{gap:10,paddingBottom:20}}>{children}</ScrollView>
     </View></View>
   </Modal>;
@@ -234,6 +235,7 @@ const ChatScrollView=React.forwardRef(function ChatScrollView({inverted,...props
 export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const {P,css,mode,ready:themeReady,saving:themeSaving,changeMode}=useMessengerTheme();
   const {bottom:keyboardBottomInset}=useSafeAreaInsets();
+  const {width,fontScale}=useWindowDimensions();
   const [backgroundId,setBackgroundId]=useState('midnight');
   const [roomAppearance,setRoomAppearance]=useState({account:null,values:{},ready:false});
   const appearanceAccount=String(user.id);
@@ -1147,6 +1149,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   const matchingGroups=useMemo(()=>{const query=normalizeSearch(groupQuery);return groups.filter(g=>normalizeSearch(g.title).includes(query));},[groups,groupQuery]);
   const archivedCount=useMemo(()=>friends.filter(f=>f.state==='accepted'&&f.archived&&!f.restricted).length,[friends]);
   const worldChat=room?.scope==='world';
+  const {compactHeader,compactComposer}=chatLayout(width,fontScale,room?.scope);
   const renderMessage=useCallback(({item})=><MemoMessage item={item} own={item.sender_id===user.id||item.is_mine}
     token={token} onSelect={worldChat?ignoreMessageSelection:setSelection}
     onReply={worldChat?null:replyToMessage} highlighted={highlightId===Number(item.id)}
@@ -1207,7 +1210,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         {room?<Ionicons name="arrow-back" size={25} color={P.text}/>:
           <Image source={require('../assets/brand-logo.png')} style={css.webIcon} resizeMode="contain"/>}
       </Pressable>
-      {!!room&&room.scope==='dm'&&<View style={css.headerPeerAvatar}>
+      {!!room&&room.scope==='dm'&&!compactHeader&&<View style={css.headerPeerAvatar}>
         {peer?.avatar_url?<Image source={avatarSource(peer.avatar_url,token)} style={css.headerPeerImage}/>:
           <Text style={css.headerPeerInitial}>{roomTitle.slice(0,1).toUpperCase()}</Text>}
         {peerStatus.online&&<View style={css.headerPeerOnline}/>}
@@ -1236,17 +1239,18 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,false);}}>
           <Ionicons name="call-outline" color={connection==='online'?P.accent:P.soft} size={22}/>
         </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={'Gọi video cho '+roomTitle}
+        {!compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel={'Gọi video cho '+roomTitle}
           disabled={connection!=='online'} style={css.headerAction}
           onPress={()=>{Keyboard.dismiss();void nativeCall.startCall(room.id,roomTitle,true);}}>
           <Ionicons name="videocam-outline" color={connection==='online'?P.accent:P.soft} size={23}/>
-        </Pressable>
+        </Pressable>}
       </>}
-      {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" accessibilityLabel="Tìm tin nhắn"
+      {!!room&&room.scope!=='world'&&!compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel="Tìm tin nhắn"
         style={css.headerAction} onPress={openMessageSearch}>
         <Ionicons name="search-outline" color={P.accent} size={21}/></Pressable>}
-      {!!room&&room.scope!=='world'&&<Pressable accessibilityRole="button" style={css.headerAction} onPress={openInfo}>
+      {!!room&&room.scope!=='world'&&!compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel="Thông tin hội thoại" style={css.headerAction} onPress={openInfo}>
         <Ionicons name="information-circle-outline" color={P.accent} size={23}/></Pressable>}
+      {!!room&&room.scope!=='world'&&compactHeader&&<Pressable accessibilityRole="button" accessibilityLabel="Tùy chọn hội thoại" style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('compactChatActions');}}><Ionicons name="ellipsis-horizontal" size={22} color={P.accent}/></Pressable>}
       {room?.scope==='world'&&<Pressable accessibilityRole="button" accessibilityLabel="Hình nền riêng" style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('roomAppearance');}}><Ionicons name="color-palette-outline" size={22} color={P.accent}/></Pressable>}
       {!room&&tab==='dm'&&<Pressable accessibilityRole="button" accessibilityLabel="Lịch sử cuộc gọi"
         style={css.headerAction} onPress={()=>{Keyboard.dismiss();setDialog('callHistory');}}>
@@ -1334,10 +1338,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         </Text></Pressable>}
       {!!sendStage&&<View style={css.sendStatus}><ActivityIndicator size="small" color={P.accent}/><Text style={css.muted}>{sendStage}</Text></View>}
       <View style={css.compose}>
+        {compactComposer?<Pressable accessibilityLabel="Thêm ảnh, video hoặc tệp" accessibilityRole="button"
+          disabled={voiceBusy||recordState.isRecording||sending||!!pendingSend||!!mediaBatch||!!reply?.edit_id}
+          style={css.toolButton} onPress={()=>{Keyboard.dismiss();setDialog('compactAttachments');}}><Ionicons name="add-circle-outline" size={25} color={P.accent}/></Pressable>:<>
         <Pressable accessibilityLabel="Gửi ảnh hoặc video" accessibilityRole="button"
           style={css.toolButton} onPress={()=>pick('media')}><Ionicons name="images-outline" size={21} color={P.accent}/></Pressable>
         <Pressable accessibilityLabel="Đính kèm tệp" accessibilityRole="button"
-          style={css.toolButton} onPress={()=>pick('file')}><Ionicons name="attach-outline" size={23} color={P.accent}/></Pressable>
+          style={css.toolButton} onPress={()=>pick('file')}><Ionicons name="attach-outline" size={23} color={P.accent}/></Pressable></>}
         <Pressable accessibilityLabel={recordState.isRecording?'Dừng ghi âm':'Ghi âm'}
           accessibilityRole="button" style={css.toolButton}
           onPress={toggleVoice} disabled={voiceBusy||sending}><Ionicons name={recordState.isRecording?'stop-circle':'mic-outline'} size={21}
@@ -1709,6 +1716,15 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       <SharedConversationGallery room={room} token={token} onError={alertError}/>
       <Btn quiet onPress={openMessageSearch}>⌕ Tìm tin nhắn trong hội thoại</Btn>
     </ConversationInfoSheet>}
+    <ModalSheet visible={!!room&&dialog==='compactChatActions'} onClose={()=>setDialog('')} title="Tùy chọn hội thoại">
+      {room?.scope==='dm'&&<Btn quiet disabled={connection!=='online'} onPress={()=>{setDialog('');void nativeCall.startCall(room.id,roomTitle,true);}}>Gọi video</Btn>}
+      <Btn quiet onPress={openMessageSearch}>Tìm tin nhắn</Btn>
+      <Btn quiet onPress={openInfo}>Thông tin hội thoại</Btn>
+    </ModalSheet>
+    <ModalSheet visible={!!room&&dialog==='compactAttachments'} onClose={()=>setDialog('')} title="Đính kèm">
+      <Btn quiet onPress={()=>{setDialog('');void pick('media');}}>Ảnh hoặc video</Btn>
+      <Btn quiet onPress={()=>{setDialog('');void pick('file');}}>Tệp tài liệu</Btn>
+    </ModalSheet>
     <ModalSheet visible={dialog==='search'} onClose={closeMessageSearch} title="Tìm kiếm tin nhắn">
       <Field value={searchText} onChangeText={value=>{searchSeqRef.current++;setSearchText(value);setSearchResults([]);setSearchBusy(false);setSearchDone(false);setSearchError('');}} placeholder="Nhập nội dung cần tìm"/>
       <Btn disabled={searchBusy||!searchText.trim()} onPress={searchMessages}>{searchBusy?'Đang tìm…':'Tìm kiếm'}</Btn>
@@ -1943,7 +1959,7 @@ const baseStyles={
     borderColor:'#3b5d7f',alignItems:'center',justifyContent:'center'},
   backGlyph:{fontSize:34,color:P.text,fontWeight:'500',lineHeight:40},
   webIcon:{width:43,height:43},
-  headerAction:{minWidth:47,minHeight:42,alignItems:'center',justifyContent:'center',
+  headerAction:{minWidth:47,minHeight:44,alignItems:'center',justifyContent:'center',
     paddingHorizontal:8,borderRadius:12,backgroundColor:'#1b3451'},
   headerActionText:{color:P.accent,fontWeight:'800',fontSize:12},
   refreshGlyph:{color:P.accent,fontWeight:'600',fontSize:24},
@@ -2103,7 +2119,7 @@ const baseStyles={
   compose:{flexDirection:'row',gap:6,paddingHorizontal:10,paddingTop:11,paddingBottom:10,
     width:'100%',minWidth:0,alignItems:'flex-end',borderTopColor:'#2d4a64',
     borderTopWidth:1,backgroundColor:'#10253a'},
-  toolButton:{width:36,height:44,borderRadius:14,alignItems:'center',
+  toolButton:{width:44,height:44,borderRadius:14,alignItems:'center',
     justifyContent:'center',backgroundColor:'#23405d'},
   toolGlyph:{color:P.accent,fontSize:20,fontWeight:'800'},
   composeInput:{flex:1,minWidth:40,minHeight:44,maxHeight:118,borderRadius:20,

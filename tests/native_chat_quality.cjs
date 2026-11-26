@@ -205,3 +205,16 @@ const {createVoiceCapture}=require('../mobile/src/voiceCapture');
 assert(chat.includes('cancelVoice();stopTyping()')&&chat.includes('voiceCaptureRef.current.active()'));
 assert(chat.includes("state==='background')cancelVoice()")&&chat.includes('Tin nhắn thoại · Chưa gửi'));
 assert(chat.includes('!guard.current(visit)||conversationKey(roomRef.current)!==key'));
+
+const {chatLayout}=require('../mobile/src/chatLayout');
+assert.deepEqual(chatLayout(320,1,'dm'),{compactHeader:true,compactComposer:true});
+assert.deepEqual(chatLayout(500,1,'dm'),{compactHeader:false,compactComposer:false});
+assert.deepEqual(chatLayout(460,1.5,'dm'),{compactHeader:true,compactComposer:false});
+assert(chatLayout(390,1.5,'group').compactComposer);
+assert(!chatLayout(400,1,'group').compactHeader);
+assert(!chatLayout(320,1,'world').compactHeader);
+assert(chat.includes('useWindowDimensions()')&&chat.includes('chatLayout(width,fontScale,room?.scope)'));
+assert(chat.includes("dialog==='compactChatActions'")&&chat.includes("dialog==='compactAttachments'"));
+assert(chat.includes('toolButton:{width:44,height:44')&&chat.includes('headerAction:{minWidth:47,minHeight:44'));
+assert(chat.includes('accessibilityLabel="Thông tin hội thoại"'));
+console.log('Responsive chat header/composer, large text, full action access and touch targets: PASS');
