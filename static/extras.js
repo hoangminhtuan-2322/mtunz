@@ -61,6 +61,7 @@ function groupHeader(){
  if(!g)return '';
  return `<header class="main-head"><button class="btn circle ghost" data-act="back-to-list" title="Trở lại">${icon('back')}</button>
  ${avatar(g.title,false,'sm')}<div class="grow"><h3>${esc(g.title)}</h3><div class="small muted">${g.member_count} thành viên</div></div>
+ <button type="button" class="btn ghost sm" data-act="private-delete-menu" title="Quản lý xóa tin nhắn">${icon('trash',16)}</button>
  <button class="btn ghost sm" data-act="search-chat" title="Tìm tin nhắn">${icon('search',17)}</button>
  <button type="button" class="btn ghost sm" data-chat-library aria-label="Nội dung đã chia sẻ" title="Nội dung đã chia sẻ">${icon('file',16)}</button>
  <button type="button" class="btn ghost sm" data-workflow-alert title="Thông báo hội thoại">${icon('bell',16)}</button>
@@ -181,6 +182,7 @@ function bubblesFor(messages,isGroup=false,context=messages){
    ${['❤️','😂','👍'].map(emoji=>`<button type="button" data-act="message-react" data-id="${m.id}" data-scope="${scope}" data-emoji="${emoji}" title="Thả cảm xúc">${emoji}</button>`).join('')}
    ${mine&&Date.now()/1000-m.created_at<=900?`<button type="button" data-act="message-edit" data-id="${m.id}" data-scope="${scope}" title="Sửa tin nhắn">${icon('edit',13)}</button>`:''}
    ${mine&&m.edited_at?`<button type="button" data-v6-act="message-versions" data-v6-id="${Number(m.id)}" data-v6-scope="${scope}" title="Xem lịch sử chỉnh sửa">${icon('history',13)}</button>`:''}
+   <button type="button" data-act="message-hide-private" data-id="${m.id}" data-scope="${scope}" title="Xóa chỉ phía tôi" aria-label="Xóa chỉ phía tôi">Xóa phía tôi</button>
    ${mine?`<button type="button" data-act="message-delete" data-id="${m.id}" data-scope="${scope}" title="Thu hồi">${icon('trash',13)}</button>`:''}
    ${!mine?`<button type="button" data-world-report-user="${Number(m.sender_id)}" data-world-message="${Number(m.id)}" data-world-scope="${scope}" ${isGroup?`data-world-group="${Number(state.groupSelected)}"`:''} title="Báo cáo tin nhắn">${icon('shield',13)}</button>`:''}</div>`:'';
   html+=`<div class="bubble-wrap ${mine?'mine':''}" id="msg-${scope}-${m.id}">
@@ -388,6 +390,46 @@ async function showSearch(){
  }});
 }
 const reactionsInFlight=new Set();
+function privateChatContext(){
+ const scope=state.tab==='groups'?'group':state.tab==='messages'?'dm':null;
+ const chat_id=scope==='group'?state.groupSelected:state.selected;
+ return scope&&chat_id&&state.user?{scope,chat_id,owner:state.user.id}:null;
+}
+function applyPrivateHide(change){
+ const ctx=privateChatContext();
+ if(ctx&&ctx.scope===change.scope&&ctx.chat_id===change.chat_id){
+  const ids=new Set(change.message_ids||[]);
+  const keep=m=>m.id<=0||(!ids.has(m.id)&&m.id>Number(change.through_id||0));
+  if(ctx.scope==='group'){
+   ++groupHistoryRequest;
+   state.groupMessages=state.groupMessages.filter(keep);
+   paintGroupThread(false);
+  }else{
+   ++dmLoadGeneration;
+   state.messages=state.messages.filter(keep);
+   renderMessageThread(false);
+  }
+  if(state.replyTo&&!keep({id:state.replyTo.id})){
+   state.replyTo=null;
+   const extra=$('#compose-extra');if(extra)extra.innerHTML=composerExtras();
+  }
+ }
+ if(change.scope==='group')scheduleGroupsRefresh(80);
+ else scheduleFriendsRefresh(60);
+}
+async function privateHide(ctx,ids,clear=false){
+ if(state.user?.id!==ctx.owner)return;
+ const result=await post('/api/chat/hide',{scope:ctx.scope,chat_id:ctx.chat_id,message_ids:ids,clear});
+ if(state.user?.id!==ctx.owner)return;
+ applyPrivateHide(result);toast('Đã xóa phía bạn.','ok');
+}
+function privateDeleteMenu(){
+ const ctx=privateChatContext();if(!ctx)return;
+ const rows=(ctx.scope==='group'?state.groupMessages:state.messages).filter(m=>m.id>0).slice(-100);
+ modal({title:'Xóa tin nhắn phía tôi',description:'Chọn tối đa 100 tin đã tải. Người khác vẫn giữ nguyên tin nhắn.',
+  content:`<div style="max-height:45vh;overflow:auto">${rows.map(m=>`<label class="people-row"><input type="checkbox" data-private-hide-id="${Number(m.id)}"><span class="grow">${esc(short(m.deleted_at?'Tin nhắn đã thu hồi':m.body||'Tệp đính kèm',100))}<small class="muted"> · ${date(m.created_at)}</small></span></label>`).join('')||'<p>Không có tin nhắn.</p>'}</div><button type="button" class="btn danger sm" data-act="private-clear-chat">Xóa toàn bộ phía tôi</button>`,
+  confirm:'Xóa tin đã chọn',handler:async()=>{const ids=[...document.querySelectorAll('[data-private-hide-id]:checked')].map(el=>Number(el.dataset.privateHideId));if(!ids.length)throw new Error('Hãy chọn tin nhắn.');await privateHide(ctx,ids);}});
+}
 async function actOnMessage(btn){
  const id=Number(btn.dataset.id),scope=btn.dataset.scope,group=scope==='group',m=(group?state.groupMessages:state.messages).find(m=>m.id===id);
  if(!m)return;
@@ -410,6 +452,11 @@ async function actOnMessage(btn){
    }finally{reactionsInFlight.delete(key);}
    return;
  }
+ if(action==='message-hide-private'){
+   const ctx=privateChatContext();if(!ctx)return;
+   ask('Xóa chỉ phía tôi','Tin nhắn sẽ biến mất trên tài khoản của bạn. Người khác vẫn xem được.',()=>privateHide(ctx,[id]),'Xóa phía tôi',true);
+   return;
+ }
  if(action==='message-delete'){
    ask('Thu hồi tin nhắn','Tin nhắn sẽ bị thu hồi đối với mọi thành viên trong cuộc trò chuyện.',async()=>{
       update(await del(base));
@@ -424,8 +471,10 @@ async function actOnMessage(btn){
 }
 async function extraAction(btn){
  const act=btn.dataset.act,id=Number(btn.dataset.id);
- if(['message-reply','message-react','message-delete','message-edit'].includes(act)){await actOnMessage(btn);return;}
+ if(['message-reply','message-react','message-delete','message-edit','message-hide-private'].includes(act)){await actOnMessage(btn);return;}
  switch(act){
+ case 'private-delete-menu':privateDeleteMenu();break;
+ case 'private-clear-chat':{const ctx=privateChatContext();if(ctx)ask('Xóa toàn bộ hội thoại phía tôi?','Lịch sử hiện tại sẽ biến mất ở tài khoản của bạn; tin mới vẫn xuất hiện bình thường. Người khác không bị ảnh hưởng.',()=>privateHide(ctx,[],true),'Xóa toàn bộ',true);break;}
  case 'open-group':await openGroup(id);break;
  case 'group-manage':groupManageDialog();break;
  case 'group-leave':ask('Rời khỏi nhóm','Bạn sẽ không còn đọc được tin nhắn mới hoặc truy cập tệp của nhóm.',async()=>{
@@ -710,6 +759,7 @@ function appendGroupMessage(groupId,message){
 }
 async function extraSocket(data){
  const t=data.type;
+ if(t==='private-messages-hidden'){applyPrivateHide(data);return;}
  if(t==='groups-updated'){scheduleGroupsRefresh(80);return;}
  if(t==='group-message'){
   if(state.groupSelected===data.group_id)appendGroupMessage(data.group_id,data.message);
@@ -855,7 +905,7 @@ async function handleCallSignal(d){
 document.addEventListener('click',async e=>{
  const btn=e.target.closest('[data-act]');if(!btn)return;
  if(!['open-group','group-manage','group-leave','group-kick','cancel-reply','cancel-file',
- 'message-reply','message-react','message-delete','message-edit','search-chat','notice-read','notice-settings','notice-permission','notice-push-off','notice-push-test','notice-sound',
+ 'message-reply','message-react','message-delete','message-edit','message-hide-private','private-delete-menu','private-clear-chat','search-chat','notice-read','notice-settings','notice-permission','notice-push-off','notice-push-test','notice-sound',
  'profile-view','mute-chat','archive-chat','revoke-sessions','list-sessions','device-rename','device-revoke','admin-group-messages',
  'admin-group-delete','call-audio','call-video'].includes(btn.dataset.act))return;
  try{await extraAction(btn);}catch(err){toast(err.message,'error');}
