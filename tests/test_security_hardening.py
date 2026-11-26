@@ -122,3 +122,14 @@ def test_revoked_websocket_cannot_receive_private_events_while_closing():
 def test_malformed_origin_is_rejected_without_server_error():
     client=TestClient(app)
     assert client.post('/api/username/check',json={'username':'safe_demo'},headers={'Origin':'https://[invalid'}).status_code==403
+
+
+def test_attachment_range_parser_bounds():
+    from features import attachment_range
+    assert attachment_range('bytes=0-1',100)==(0,2)
+    assert attachment_range('bytes=98-',100)==(98,100)
+    assert attachment_range('bytes=-4',100)==(96,100)
+    assert attachment_range('bytes=100-',100)==()
+    assert attachment_range('bytes=-0',100)==()
+    assert attachment_range('bytes=3-2',100)==()
+    assert attachment_range('bytes=0-1,4-5',100) is None

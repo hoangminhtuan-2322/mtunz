@@ -438,7 +438,7 @@ hub = Hub()
 # Lightweight per-process guardrails. Use centralized Redis counters for multi-worker hosting.
 RATE_BUCKETS: dict[tuple, list[int]] = defaultdict(list)
 MAX_JSON_REQUEST = 64 * 1024
-MAX_UPLOAD_REQUEST = 3 * 1024 * 1024
+MAX_UPLOAD_REQUEST = 17 * 1024 * 1024  # 16 MiB video + bounded multipart overhead
 MAX_WEBSOCKET_EVENT = 16 * 1024
 MAX_WEBSOCKET_EVENTS_PER_WINDOW = 100
 # Idle timeout for heartbeat-aware web/native sockets. Older clients retain protocol keepalive.
