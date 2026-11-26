@@ -30,18 +30,21 @@ def test_chat_image_compression_allowed_by_csp_without_untrusted_scripts():
         assert "frame-ancestors 'none'" in csp
 
 
-def test_home_removes_only_chatgpt_referral_query():
+def test_public_pages_remove_marketing_parameters_without_altering_functional_query():
     with TestClient(app) as client:
-        response = client.get('/?utm_source=chatgpt.com')
-        assert response.status_code == 200
-        assert response.url.path == '/' and not response.url.query
-        assert len(response.history) == 1
+        for path in ('/', '/terms', '/privacy'):
+            response = client.get(path + '?utm_source=referral&utm_medium=link&utm_campaign=launch')
+            assert response.status_code == 200
+            assert response.url.path == path and not response.url.query
+            assert len(response.history) == 1
 
-        response = client.get('/?label=a%20b&utm_source=chatgpt.com&utm_source=other&tag=1&tag=2',
-                              follow_redirects=False)
-        assert response.status_code == 302
-        assert response.headers['location'] == '/?label=a%20b&utm_source=other&tag=1&tag=2'
-        assert client.get('/?utm_source=other', follow_redirects=False).status_code == 200
+            response = client.get(path + '?label=a%20b&utm_source=one&utm_source=two&tag=1&tag=2&%55TM_medium=link&fbclid=abc',
+                                  follow_redirects=False)
+            assert response.status_code == 302
+            assert response.headers['location'] == path + '?label=a%20b&tag=1&tag=2'
+            assert client.get(path + '?tag=1&tag=2', follow_redirects=False).status_code == 200
+            assert client.get(path + '?label=utm_source%3Dreferral', follow_redirects=False).status_code == 200
+        assert client.get('/health?utm_source=referral', follow_redirects=False).status_code == 200
 
 
 def test_android_app_link_contains_only_the_published_package_and_certificate():
