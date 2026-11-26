@@ -590,27 +590,40 @@ async def health():
         result['commit'] = release[:12]
     return result
 
+def clean_public_url(request: Request):
+    """Drop marketing attribution from public page URLs without altering other parameters."""
+    parts = request.url.query.split('&')
+    remaining = []
+    removed = False
+    for part in parts:
+        key = unquote_plus(part.partition('=')[0]).lower()
+        if key.startswith('utm_') or key in ('gclid', 'fbclid', 'msclkid', 'dclid', 'ttclid', 'igshid'):
+            removed = True
+        else:
+            remaining.append(part)
+    if not removed:
+        return None
+    query = '&'.join(remaining)
+    # Only fixed public paths call this helper; never redirect off-site.
+    return RedirectResponse(request.url.path + ('?' + query if query else ''), status_code=302)
+
+
 @app.get('/')
 async def home(request: Request):
-    if 'chatgpt.com' in request.query_params.getlist('utm_source'):
-        remaining = []
-        for part in request.url.query.split('&'):
-            key, _, value = part.partition('=')
-            if (unquote_plus(key), unquote_plus(value)) != ('utm_source', 'chatgpt.com'):
-                remaining.append(part)
-        query = '&'.join(remaining)
-        return RedirectResponse('/?' + query if query else '/', status_code=302)
-    return FileResponse(ROOT / 'static' / 'index.html')
+    redirect = clean_public_url(request)
+    return redirect if redirect is not None else FileResponse(ROOT / 'static' / 'index.html')
 
 
 @app.get('/terms')
-async def public_terms():
-    return FileResponse(ROOT / 'static' / 'terms.html', media_type='text/html')
+async def public_terms(request: Request):
+    redirect = clean_public_url(request)
+    return redirect if redirect is not None else FileResponse(ROOT / 'static' / 'terms.html', media_type='text/html')
 
 
 @app.get('/privacy')
-async def public_privacy():
-    return FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
+async def public_privacy(request: Request):
+    redirect = clean_public_url(request)
+    return redirect if redirect is not None else FileResponse(ROOT / 'static' / 'privacy.html', media_type='text/html')
 
 
 def parse_maintenance_schedule(value):
