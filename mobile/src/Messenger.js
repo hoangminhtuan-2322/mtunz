@@ -455,6 +455,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   },[invoke,alertError,user.bio]);
 
   const hiddenRef=useRef({key:null,ids:new Set(),through:0});
+  const hideRevisionRef=useRef({key:null,value:0});
   const filterPrivateRows=useCallback((rows,key)=>{
     const hidden=hiddenRef.current;
     return hidden.key===key?rows.filter(m=>Number(m.id)<=0||(!hidden.ids.has(Number(m.id))&&Number(m.id)>hidden.through)):rows;
@@ -488,9 +489,13 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       const events=journal.finish(tracking);
       if(events===null){setError('Hội thoại cập nhật liên tục. Hãy làm mới để tải lịch sử chính xác.');return;}
       const next=filterPrivateRows(replayHistoryEvents((response.messages||[]).map(sanitize),events,user.id),key);
+      const revision=Number(response.private_hide_revision||0);
+      const resetForHide=!before&&target.scope!=='world'&&hideRevisionRef.current.key===key&&hideRevisionRef.current.value!==revision;
+      if(!before&&target.scope!=='world')hideRevisionRef.current={key,value:revision};
       setMessages(current=>{
         if(!guard.current(request))return current;
         if(before)return reuseMessageRows(current,filterPrivateRows(dedupe([...next,...current]),key));
+        if(resetForHide)return reuseMessageRows(current,dedupe([...next,...current.filter(m=>Number(m.id)<=0)]));
         // Keep live events received while the REST request was in flight.
         // Only the overlapping IDs should be replaced by the server snapshot.
         return reuseMessageRows(current,filterPrivateRows(mergeRecentWindow(current,next),key));
@@ -511,7 +516,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       }
     }catch(e){if(guard.accepts(request))alertError(e);}
     finally{journal.finish(tracking);if(!before&&guard.accepts(request))setLoading(false);guard.finish(request);}
-  },[invoke,alertError,user.id]);
+  },[invoke,alertError,user.id,filterPrivateRows]);
 
   // Reconcile every unseen batch when a socket reconnects after network loss.
   // A latest-only refresh would silently skip messages during longer outages.
@@ -558,7 +563,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
     isAtLatestRef.current=true;lastNewestIdRef.current=null;setNewerMessages(false);
     const key=conversationKey(target);
     roomWindowRef.current.reset(key);historyJournalRef.current.reset();liveRef.current={[key]:0};
-    hiddenRef.current={key,ids:new Set(),through:0};setPrivateDeleteIds([]);
+    hiddenRef.current={key,ids:new Set(),through:0};hideRevisionRef.current={key,value:0};setPrivateDeleteIds([]);
     roomRef.current=target;keyRef.current=null;setMessages([]);setRoom(target);
     setDraft(draftsRef.current[conversationKey(target)]||'');setMediaBatch(batchesRef.current.get(conversationKey(target))||null);setPendingSend(pendingSendsRef.current.get(conversationKey(target))||null);setPicked(null);setReply(null);setError('');setMore(false);setTyping(false);
     void loadWindow(target);
@@ -608,7 +613,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       if(data.type==='message'&&target?.scope==='dm'){
         const m=data.message;
         if(m&&(m.sender_id===target.id||m.recipient_id===target.id)){
-          setMessages(old=>upsertMessage(old,sanitize(m)));
+          setMessages(old=>filterPrivateRows(upsertMessage(old,sanitize(m)),conversationKey(target)));
           if(m.sender_id!==user.id&&activeRef.current){
             invoke('/api/messages/delivered/'+target.id,'POST',{up_to:m.id}).catch(()=>{});
             invoke('/api/messages/read/'+target.id+'?up_to='+m.id,'POST').catch(()=>{});
@@ -626,7 +631,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
         setPresenceClock(Date.now());
       }
       if(data.type==='group-message'&&target?.scope==='group'&&data.group_id===target.id&&data.message){
-        setMessages(old=>upsertMessage(old,sanitize(data.message)));
+        setMessages(old=>filterPrivateRows(upsertMessage(old,sanitize(data.message)),conversationKey(target)));
         if(activeRef.current&&data.message.sender_id!==user.id)
           invoke('/api/groups/'+target.id+'/read?up_to='+data.message.id,'POST').catch(()=>{});
       }
