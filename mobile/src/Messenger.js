@@ -1,3 +1,4 @@
+import FishingLife from './FishingLife';
 import AndroidUpdate from './AndroidUpdate';
 import {CHAT_BACKGROUNDS,chatBackground,roomBackgroundId,validRoomKey} from './chatAppearance';
 import {readChatBackground,saveChatBackground,readRoomBackgrounds,saveRoomBackground} from './chatAppearanceStore';
@@ -1123,7 +1124,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
   // Focus jumps to the latest message; the native IME animation handles movement.
 
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
-    ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
+    ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['fishing','Câu cá','fish'],['settings','Cá nhân','settings']];
   const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
   const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted),[friends]);
   const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
@@ -1518,6 +1519,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Text style={css.link}>›</Text>
         </Pressable>)}
       </ScrollView>}
+      {tab==='fishing'&&<FishingLife token={token} onExpired={onExpired}/>}
       {tab==='settings'&&<ScrollView keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false} contentContainerStyle={css.accountPage}>
         <View style={css.accountHero}>

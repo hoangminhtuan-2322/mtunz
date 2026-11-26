@@ -711,7 +711,7 @@ async function enterApp(resume=false){
    typeof loadMessageRequests==='function'?loadMessageRequests(false).catch(()=>{}):null
   ]);
   state.accountDeletion=deletion;
-  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support'];
+  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support','fishing'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
    state.friends.some(f=>f.other_id===previous.selected&&f.state==='accepted')){
@@ -1154,7 +1154,7 @@ function renderSideItems(){
  if(top)box.scrollTop=top;
 }
 function appRail(){
-  const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
+  const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['fishing','group','Câu cá'],['settings','settings','Cài đặt']];
   const secondary=[['restricted','shield','Danh sách hạn chế'],
     ['archive','archive','Đã lưu trữ'],['support','inbox','Hỗ trợ'],
     ...(state.worldData?.status?.open?[['world','group','Chat thế giới']]:[])];
@@ -1775,6 +1775,7 @@ function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
+  state.tab==='fishing'?fishingPage():
   state.tab==='world'?(typeof worldPage==='function'?worldPage():worldComingSoon()):
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='archive'?`${memberHeader('Lưu trữ','Tin nhắn được cất giữ an toàn')}<div class="main-body">${archiveContent()}</div>`:
@@ -1785,6 +1786,7 @@ function renderApp(){
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-mode':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ if(state.tab==='fishing')fishingMount();
  const sidebar=$('#side-items');
  if(sidebar)sidebar.sidebarMarkup=sidebar.innerHTML;
  const header=$('#chat-header');
