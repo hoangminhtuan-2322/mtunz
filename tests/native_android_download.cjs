@@ -27,8 +27,8 @@ assert(read('mobile/src/AdminDashboard.js').includes('<AndroidUpdate/>'));
 console.log('Native and web Android download catalog: PASS');
 
 const publishedFloor=JSON.parse(read('static/android-release-floor.json'));
-assert.equal(publishedFloor.version_code,30);
+assert.equal(publishedFloor.version_code,42);
 assert(web.includes('const floor='+JSON.stringify(publishedFloor)+';'));
 assert(update.includes('r.version_code<=2100000000'));
-assert(require('../mobile/app.json').expo.android.versionCode>=30);
+assert(require('../mobile/app.json').expo.android.versionCode>=publishedFloor.version_code);
 console.log('Native/web release metadata and unpublished candidate separation: PASS');
