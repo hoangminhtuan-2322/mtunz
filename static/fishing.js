@@ -9,8 +9,9 @@ function mountFishing(){
  if(!root){clearInterval(fishingView.timer);fishingView.timer=null;return;}
  if(fishingView.owner!==state.user.id){clearInterval(fishingView.timer);Object.assign(fishingView,{owner:state.user.id,data:null,busy:false,error:'',result:'',rank:null,timer:null,section:'bag',generation:fishingView.generation+1});}
  renderFishing();
- if(!fishingView.timer)fishingView.timer=setInterval(()=>{if(!fishingActive()||state.user.id!==fishingView.owner){clearInterval(fishingView.timer);fishingView.timer=null;return;}paintFishingClock();},100);
- if(!fishingView.data&&!fishingView.busy)void fishingRequest('read');
+ const entering=!fishingView.timer;
+ if(entering)fishingView.timer=setInterval(()=>{if(!fishingActive()||state.user.id!==fishingView.owner){clearInterval(fishingView.timer);fishingView.timer=null;return;}paintFishingClock();},100);
+ if((entering||!fishingView.data)&&!fishingView.busy)void fishingRequest('read');
 }
 async function fishingRequest(action,body){
  if(fishingView.busy||!fishingActive())return;

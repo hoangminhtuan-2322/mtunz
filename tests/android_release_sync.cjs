@@ -27,7 +27,7 @@ console.log('Android release catalog, stable download navigation, native update 
 const publisher=read('.github/workflows/android-publish-latest.yml');
 const floor=JSON.parse(read('static/android-release-floor.json'));
 assert(web.includes('const floor='+JSON.stringify(floor)+';'),'Web and server fallback metadata must match');
-assert.equal(floor.version_code,30,'Fallback must use verified published build 30');
+assert.equal(floor.version_code,42,'Fallback must use verified published build 42');
 assert(workflow.includes('group: mtunz-public-android-catalog')&&publisher.includes('group: mtunz-public-android-catalog'));
 assert(publisher.includes('[[ "$SHA" == "$HEAD" ]]')&&publisher.includes('[[ "$SOURCE_SHA" != "$HEAD" ]]'));
 assert(!publisher.includes('"$STATUS" == ahead'));

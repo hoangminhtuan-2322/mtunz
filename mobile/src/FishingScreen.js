@@ -1,11 +1,12 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {View,Text,Pressable,ScrollView,StyleSheet,AppState,useWindowDimensions} from 'react-native';
 const rarity={common:'Thường',uncommon:'Ít gặp',rare:'Hiếm',epic:'Sử thi',legendary:'Huyền thoại'};
-export const fishingPhase=(data,now)=>!data?.cast||now>data.cast.expires_at?'idle':now<data.cast.bite_at?'wait':'bite';
+import {fishingPhase} from './fishingRules';
 function Button({title,onPress,disabled=false,small=false}){return <Pressable accessibilityRole="button" accessibilityState={{disabled}} disabled={disabled} onPress={onPress} style={[s.button,small&&s.small,disabled&&s.disabled]}><Text style={s.buttonText}>{title}</Text></Pressable>;}
 export default function FishingScreen({invoke,onBack}){
- const [data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[result,setResult]=useState(''),[section,setSection]=useState('bag'),[rank,setRank]=useState([]),[tick,setTick]=useState(Date.now());
- const offset=useRef(0),inFlight=useRef(false),mounted=useRef(false);
+ const [data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[result,setResult]=useState(''),[section,setSection]=useState('bag'),[rank,setRank]=useState([]),[phase,setPhase]=useState('idle');
+ const offset=useRef(0),inFlight=useRef(false),mounted=useRef(false),dataRef=useRef(null),phaseRef=useRef('idle');
+ const updatePhase=()=>{const next=fishingPhase(dataRef.current,Date.now()+offset.current);if(next!==phaseRef.current){phaseRef.current=next;setPhase(next);}};
  const {width}=useWindowDimensions();
  async function request(action,body){
   if(inFlight.current||!mounted.current)return;
@@ -15,7 +16,7 @@ export default function FishingScreen({invoke,onBack}){
    const d=await invoke(path,action==='read'||action==='ranking'?'GET':'POST',body||{});
    if(!mounted.current)return;
    if(action==='ranking')setRank(d.ranking);
-   else {offset.current=d.server_now-Date.now();setTick(Date.now());setData(d);
+   else {offset.current=d.server_now-Date.now();dataRef.current=d;updatePhase();setData(d);
     if(action==='cast')setResult('');
     if(d.result){const f=d.fish.find(x=>x.id===d.result.fish_id);setResult(d.result.caught?'🎉 Bạn đã câu được '+f.name+'!':d.result.reason==='early'?'Giật cần quá sớm!':'Cá đã thoát mất!');}
     if(action==='sell')setResult('Đã bán cá!');if(action==='upgrade')setResult('Đã nâng cấp cần câu!');if(action==='daily')setResult('Đã nhận 100 xu!');
@@ -24,12 +25,12 @@ export default function FishingScreen({invoke,onBack}){
   finally{inFlight.current=false;if(mounted.current)setBusy(false);}
  }
  useEffect(()=>{mounted.current=true;void request('read');let timer=null;
-  const start=()=>{if(!timer)timer=setInterval(()=>setTick(Date.now()),100);},stop=()=>{clearInterval(timer);timer=null;};
+  const start=()=>{if(!timer)timer=setInterval(updatePhase,100);},stop=()=>{clearInterval(timer);timer=null;};
   if(AppState.currentState==='active')start();
   const sub=AppState.addEventListener('change',state=>{if(state==='active'){start();void request('read');}else stop();});
   return()=>{mounted.current=false;stop();sub.remove();};
  },[]);
- const phase=fishingPhase(data,tick+offset.current),rod=data?.rods[data.level-1],next=data?.rods[data.level];
+ const rod=data?.rods[data.level-1],next=data?.rods[data.level];
  const play=()=>{if(phase==='idle')void request('cast');else if(phase==='bite')void request('reel',{token:data.cast.token});};
  return <ScrollView style={s.root} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
   <View style={s.top}><Text style={s.eyebrow}>MTUNZ GAMING</Text><Button title="Quay lại" small onPress={onBack}/></View>

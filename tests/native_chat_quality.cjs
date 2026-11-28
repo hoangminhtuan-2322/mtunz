@@ -237,3 +237,17 @@ assert(chat.includes("onLongPress={()=>confirmDeleteConversation({scope:'group',
 assert(chat.includes("invoke('/api/chat/hide','POST'"));
 assert(chat.includes("data.type==='private-messages-hidden'")&&chat.includes('applyPrivateHide(data)'));
 console.log('Native conversation deletion, search and new-message reopening: PASS');
+
+const {fishingPhase}=require('../mobile/src/fishingRules');
+assert.equal(fishingPhase(null,0),'idle');
+const castFixture={cast:{bite_at:2000,expires_at:3500}};
+assert.equal(fishingPhase(castFixture,1999),'wait');
+assert.equal(fishingPhase(castFixture,2000),'bite');
+assert.equal(fishingPhase(castFixture,3500),'bite');
+assert.equal(fishingPhase(castFixture,3501),'idle');
+const fishingNative=read('mobile/src/FishingScreen.js');
+assert(chat.includes("tab==='fishing'&&<FishingScreen invoke={invoke}"));
+assert(fishingNative.includes("const path='/api/fishing'")&&fishingNative.includes("request('reel',{token:data.cast.token})"));
+assert(fishingNative.includes('sub.remove()')&&fishingNative.includes('clearInterval(timer)'));
+assert(fishingNative.includes('setPhase(next)'));
+console.log('Fishing native timer boundaries, shared server API and cleanup: PASS');

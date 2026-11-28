@@ -30,7 +30,7 @@ class CatalogTests(unittest.TestCase):
     def test_offline_fallback_is_verified_stable_release(self):
         floor=verified_release_floor()
         self.assertTrue(floor['available'])
-        self.assertEqual(floor['version_code'],30)
+        self.assertEqual(floor['version_code'],42)
         with patch('android_release_catalog._cached',None), patch('android_release_catalog._expires',0), patch('android_release_catalog.urlopen',side_effect=OSError('rate limit')):
             result=latest_android_release()
             self.assertEqual(result['download_url'],floor['download_url'])

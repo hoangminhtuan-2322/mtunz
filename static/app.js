@@ -2699,7 +2699,7 @@ function selectPublicAndroidRelease(rows){
 async function showAndroidDownload(){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),6000);
-  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":30,"size_bytes":140609372,"published_at":"2026-11-26T00:06:34Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code30/mtunz-android-v1.0.0-code30.apk","sha256":"6f9c81c453a48afd0b49c2b1f6ed964b7945fa54ed2511e21a0b43cadc296840"};
+  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":42,"size_bytes":140638000,"published_at":"2026-11-26T22:19:25Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code42/mtunz-android-v1.0.0-code42.apk","sha256":"d32f8ffd7a3f802cd74a41251ef2f75d1e4c2c0a187316a2a19fd7a4a28019dd"};
   let release={...floor,stale:true};
   const candidates=await Promise.allSettled([
     api('/api/mobile/release',{signal:controller.signal}),
