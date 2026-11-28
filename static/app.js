@@ -711,7 +711,7 @@ async function enterApp(resume=false){
    typeof loadMessageRequests==='function'?loadMessageRequests(false).catch(()=>{}):null
   ]);
   state.accountDeletion=deletion;
-  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support'];
+  const allowed=['messages','groups','friends','notices','settings','profile','world','restricted','archive','support','fishing'];
   if(previous&&allowed.includes(previous.tab))state.tab=previous.tab;
   if(state.tab==='messages'&&Number.isSafeInteger(previous?.selected)&&
    state.friends.some(f=>f.other_id===previous.selected&&f.state==='accepted')){
@@ -1155,7 +1155,7 @@ function renderSideItems(){
 }
 function appRail(){
   const primary=[['messages','chat','Tin nhắn'],['groups','group','Nhóm chat'],['friends','users','Bạn bè'],['notices','bell','Thông báo'],['settings','settings','Cài đặt']];
-  const secondary=[['restricted','shield','Danh sách hạn chế'],
+  const secondary=[['fishing','grid','Giải trí · Câu cá'],['restricted','shield','Danh sách hạn chế'],
     ['archive','archive','Đã lưu trữ'],['support','inbox','Hỗ trợ'],
     ...(state.worldData?.status?.open?[['world','group','Chat thế giới']]:[])];
   const moreOpen=!!state.railMoreOpen || secondary.some(([tab])=>state.tab===tab);
@@ -1672,6 +1672,7 @@ function settingsContent(){
    <h3>${icon('grid',17)} Tiện ích khác</h3>
    <p class="hint">Các thiết lập và hành động bảo mật được phân nhóm để dễ tìm. Hồ sơ nằm ở lối tắt trên Đăng xuất.</p>
    <div class="rail-settings-actions">
+     <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="fishing">🎣 mtunz Fishing</button>
      <button class="btn ghost sm mobile-android-download" type="button" data-act="android-download">${icon('download',16)} Tải Android</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="restricted">${icon('shield',16)} Danh sách hạn chế</button>
      <button class="btn ghost sm" type="button" data-act="app-tab" data-tab="support">${icon('inbox',16)} Trung tâm hỗ trợ</button>
@@ -1781,6 +1782,7 @@ function renderApp(){
  const isChat=state.tab==='messages'&&state.selected;
  const screen=state.tab==='messages'?conversation():
   state.tab==='groups'?(state.groupSelected?groupConversation():groupLobby()):
+  state.tab==='fishing'?fishingPage():
   state.tab==='world'?(typeof worldPage==='function'?worldPage():worldComingSoon()):
   state.tab==='notices'?`${memberHeader('Thông báo','Hoạt động mới nhất')} ${notificationsContent()}`:
   state.tab==='archive'?`${memberHeader('Lưu trữ','Tin nhắn được cất giữ an toàn')}<div class="main-body">${archiveContent()}</div>`:
@@ -1791,6 +1793,7 @@ function renderApp(){
   `${memberHeader('Trung tâm hỗ trợ','Kết nối trực tiếp với quản trị viên')}<div class="main-body">${supportInApp()}</div>`;
  const activeMain=state.tab!=='messages'||Boolean(isChat);
  root().innerHTML=`<div class="shell ${activeMain?'chat-open':''} ${state.tab==='world'?'world-mode':''}">${appRail()}${sideBar()}<main class="main">${screen}</main></div>`;
+ if(typeof mountFishing==='function')mountFishing();
  const sidebar=$('#side-items');
  if(sidebar)sidebar.sidebarMarkup=sidebar.innerHTML;
  const header=$('#chat-header');
@@ -2696,7 +2699,7 @@ function selectPublicAndroidRelease(rows){
 async function showAndroidDownload(){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),6000);
-  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":30,"size_bytes":140609372,"published_at":"2026-11-26T00:06:34Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code30/mtunz-android-v1.0.0-code30.apk","sha256":"6f9c81c453a48afd0b49c2b1f6ed964b7945fa54ed2511e21a0b43cadc296840"};
+  const floor={"available":true,"platform":"android","package":"com.mtunz.web","version":"1.0.0","version_code":42,"size_bytes":140638000,"published_at":"2026-11-26T22:19:25Z","download_url":"https://github.com/hoangminhtuan-2322/mtunz/releases/download/android-v1.0.0-code42/mtunz-android-v1.0.0-code42.apk","sha256":"d32f8ffd7a3f802cd74a41251ef2f75d1e4c2c0a187316a2a19fd7a4a28019dd"};
   let release={...floor,stale:true};
   const candidates=await Promise.allSettled([
     api('/api/mobile/release',{signal:controller.signal}),

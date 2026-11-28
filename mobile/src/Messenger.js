@@ -1,3 +1,4 @@
+import FishingScreen from './FishingScreen';
 import AndroidUpdate from './AndroidUpdate';
 import {CHAT_BACKGROUNDS,chatBackground,roomBackgroundId,validRoomKey} from './chatAppearance';
 import {readChatBackground,saveChatBackground,readRoomBackgrounds,saveRoomBackground} from './chatAppearanceStore';
@@ -1206,7 +1207,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
 
   const tabs=[['dm','Tin nhắn','chatbubbles'],['groups','Nhóm','people'],
     ['people','Bạn bè','person-add'],['world','Thế giới','earth'],['settings','Cá nhân','settings']];
-  const currentTab=tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
+  const currentTab=tab==='fishing'?'mtunz Fishing':tabs.find(x=>x[0]===tab)?.[1]||'Tin nhắn';
   const acceptedFriends=useMemo(()=>friends.filter(f=>f.state==='accepted'&&!f.archived&&!f.restricted&&!f.conversation_deleted),[friends]);
   const activeFriends=useMemo(()=>connection==='online'?acceptedFriends.filter(f=>f.online===true):[],[acceptedFriends,connection]);
   const unreadTotal=useMemo(()=>acceptedFriends.reduce((total,f)=>total+Number(f.unread||0),0),[acceptedFriends]);
@@ -1574,8 +1575,10 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
           <Text style={css.link}>Nhắn tin</Text>
         </Pressable>)}
       </ScrollView>}
+      {tab==='fishing'&&<FishingScreen invoke={invoke} onBack={()=>setTab('world')}/>}
       {tab==='world'&&<ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={css.sectionContent}>
+        <Btn onPress={()=>setTab('fishing')}>🎣 mtunz Fishing · Giải trí</Btn>
         <View style={css.worldHero}>
           <Text style={css.eyebrow}>MTUNZ COMMUNITY</Text>
           <Text style={css.h2}>Chat thế giới</Text>
@@ -1613,6 +1616,7 @@ export default function Messenger({token,user,onLogout,onExpired,onProfile}){
       </ScrollView>}
       {tab==='settings'&&<ScrollView keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false} contentContainerStyle={css.accountPage}>
+        <Btn onPress={()=>setTab('fishing')}>🎣 mtunz Fishing</Btn>
         <View style={css.accountHero}>
           <View style={css.accountHeroAvatar}>
             {user.avatar_url?<Image source={avatarSource(user.avatar_url,token)} style={css.accountHeroImage}/>:
